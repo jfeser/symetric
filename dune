@@ -1,0 +1,5 @@
+(executable
+ (name synth)
+ (libraries core core_bench combinat)
+ (preprocess (pps ppx_sexp_conv ppx_compare ppx_hash ppx_stage.ppx))
+ )
