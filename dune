@@ -1,5 +1,26 @@
+(library
+ (name values)
+ (libraries core)
+ (modules int_list int_tuple_set int_array_tuple_set)
+ (preprocess (pps ppx_sexp_conv ppx_compare ppx_hash)))
+
 (executable
- (name synth)
- (libraries core core_bench combinat)
- (preprocess (pps ppx_sexp_conv ppx_compare ppx_hash ppx_stage.ppx))
- )
+ (name mk_bench)
+ (libraries core core_bench combinat values)
+ (modules mk_bench stage grammar sigs synth deepcoder)
+ (preprocess
+  (per_module
+   ((pps ppx_sexp_conv ppx_compare ppx_hash) grammar synth sigs)
+   ((pps ppx_sexp_conv ppx_compare ppx_hash ppx_stage.ppx) stage deepcoder mk_bench)))
+ (flags (:standard -warn-error -A)))
+
+(rule
+ (target bench.ml)
+ (action (with-stdout-to bench.ml (run ./mk_bench.exe))))
+
+(executable
+ (name bench)
+ (libraries core core_bench values)
+ (modules bench)
+ (flags (:standard -warn-error -A)))
+
