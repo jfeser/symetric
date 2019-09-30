@@ -1,16 +1,16 @@
 open! Core
 open Ppx_stage
 
-module Value = struct
-  type t =
-    | A of int array code
-    | I of int code
-    | F_int of (int code -> int code)
-    | F_bool of (int code -> bool code)
-    | F_int2 of (int code -> int code -> int code)
-end
+module Lang (C : Cstage.CODE) = struct
+  module Value = struct
+    type t =
+      | A of int array C.t
+      | I of int C.t
+      | F_int of (int C.t -> int C.t)
+      | F_bool of (int C.t -> bool C.t)
+      | F_int2 of (int C.t -> int C.t -> int C.t)
+  end
 
-module Lang = struct
   let grammar : Grammar.t =
     let open Grammar in
     let open Grammar.Term in
@@ -59,86 +59,75 @@ module Lang = struct
 
   open Value
 
+  let to_array = function A x -> x | _ -> assert false
+
+  let to_int = function I x -> x | _ -> assert false
+
   let rec eval ctx =
     let open Grammar.Term in
+    let open C in
     function
-    | Id "k" -> I [%code 2]
-    | Id "b" -> A [%code [| 3; 5; 4; 7; 5 |]]
-    | Id "(+1)" -> F_int (fun x -> [%code [%e x] + 1])
-    | Id "(-1)" -> F_int (fun x -> [%code [%e x] - 1])
-    | Id "(*2)" -> F_int (fun x -> [%code [%e x] * 2])
-    | Id "(/2)" -> F_int (fun x -> [%code [%e x] / 2])
-    | Id "(*(-1))" -> F_int (fun x -> [%code -[%e x]])
-    | Id "(**2)" -> F_int (fun x -> [%code [%e x] * [%e x]])
-    | Id "(*3)" -> F_int (fun x -> [%code [%e x] * 3])
-    | Id "(/3)" -> F_int (fun x -> [%code [%e x] / 3])
-    | Id "(*4)" -> F_int (fun x -> [%code [%e x] * 4])
-    | Id "(/4)" -> F_int (fun x -> [%code [%e x] / 4])
-    | Id "(>0)" -> F_bool (fun x -> [%code [%e x] > 0])
-    | Id "(<0)" -> F_bool (fun x -> [%code [%e x] < 0])
-    | Id "(%2==0)" -> F_bool (fun x -> [%code [%e x] mod 2 = 0])
-    | Id "(%2==1)" -> F_bool (fun x -> [%code [%e x] mod 2 = 1])
-    | Id "(+)" -> F_int2 (fun x y -> [%code [%e x] + [%e y]])
-    | Id "(-)" -> F_int2 (fun x y -> [%code [%e x] - [%e y]])
-    | Id "(*)" -> F_int2 (fun x y -> [%code [%e x] * [%e y]])
-    | Id "min" ->
-        F_int2 (fun x y -> [%code if [%e x] < [%e y] then [%e x] else [%e y]])
-    | Id "max" ->
-        F_int2 (fun x y -> [%code if [%e x] < [%e y] then [%e y] else [%e x]])
+    | Id "k" -> I (int 2)
+    | Id "b" -> A (array int [| 3; 5; 4; 7; 5 |])
+    | Id "(+1)" -> F_int (fun x -> x + int 1)
+    | Id "(-1)" -> F_int (fun x -> x - int 1)
+    | Id "(*2)" -> F_int (fun x -> x * int 2)
+    | Id "(/2)" -> F_int (fun x -> x / int 2)
+    | Id "(*(-1))" -> F_int (fun x -> -x)
+    | Id "(**2)" -> F_int (fun x -> x * x)
+    | Id "(*3)" -> F_int (fun x -> x * int 3)
+    | Id "(/3)" -> F_int (fun x -> x / int 3)
+    | Id "(*4)" -> F_int (fun x -> x * int 4)
+    | Id "(/4)" -> F_int (fun x -> x / int 4)
+    | Id "(>0)" -> F_bool (fun x -> x > int 0)
+    | Id "(<0)" -> F_bool (fun x -> x < int 0)
+    | Id "(%2==0)" -> F_bool (fun x -> x mod int 2 = int 0)
+    | Id "(%2==1)" -> F_bool (fun x -> x mod int 2 = int 1)
+    | Id "(+)" -> F_int2 (fun x y -> x + y)
+    | Id "(-)" -> F_int2 (fun x y -> x - y)
+    | Id "(*)" -> F_int2 (fun x y -> x * y)
+    | Id "min" -> F_int2 (fun x y -> ite (x < y) x y)
+    | Id "max" -> F_int2 (fun x y -> ite (x > y) x y)
     | Id x -> Map.find_exn ctx x
     | App ("head", [ e ]) ->
-        let (A a) = eval ctx e in
-        I [%code [%e a].(0)]
+        let a = eval ctx e |> to_array in
+        I (get a (int 0))
     | App ("last", [ e ]) ->
-        let (A a) = eval ctx e in
-        I [%code [%e a].(Array.length [%e a] - 1)]
+        let a = eval ctx e |> to_array in
+        I (get a (length a - int 1))
     | App ("take", [ n; e ]) ->
-        let (A arr) = eval ctx e in
-        let (I n) = eval ctx n in
-        A [%code Array.sub [%e arr] 0 [%e n]]
+        let a = eval ctx e |> to_array in
+        let n = eval ctx n |> to_int in
+        A (sub a (int 0) n)
     | App ("drop", [ n; e ]) ->
-        let (A arr) = eval ctx e in
-        let (I elems) = eval ctx n in
-        A
-          [%code
-            Array.sub [%e arr] [%e elems] (Array.length [%e arr] - [%e elems])]
+        let a = eval ctx e |> to_array in
+        let n = eval ctx n |> to_int in
+        A (sub a n (length a - int 1))
     | App ("access", [ n; e ]) ->
-        let (A a) = eval ctx e in
-        let (I n) = eval ctx n in
-        I [%code [%e a].([%e n])]
+        let a = eval ctx e |> to_array in
+        let n = eval ctx n |> to_int in
+        I (get a n)
     | App ("minimum", [ e ]) ->
-        let (A arr) = eval ctx e in
-        I
-          [%code
-            let min = ref max_int in
-            for i = 0 to Array.length [%e arr] - 1 do
-              min := if [%e arr].(i) < !min then [%e arr].(i) else !min
-            done;
-            !min]
+        let a = eval ctx e |> to_array in
+        I (fold ~init:(int max_int) ~f:(fun acc x -> ite (x < acc) x acc) a)
     | App ("maximum", [ e ]) ->
-        let (A arr) = eval ctx e in
-        I
-          [%code
-            let max = ref min_int in
-            for i = 0 to Array.length [%e arr] - 1 do
-              max := if [%e arr].(i) > !max then [%e arr].(i) else !max
-            done;
-            !max]
+        let a = eval ctx e |> to_array in
+        I (fold ~init:(int max_int) ~f:(fun acc x -> ite (x > acc) x acc) a)
     | App ("reverse", [ e ]) ->
-        let (A arr) = eval ctx e in
-        A
+        let a = eval ctx e |> to_array in
+        A (init (length a) (fun i -> get ()))
           [%code
             let l = Array.length [%e arr] in
             Array.init l (fun i -> [%e arr].(l - i - 1))]
     | App ("sort", [ e ]) ->
-        let (A a) = eval ctx e in
+        let a = eval ctx e |> to_array in
         A
           [%code
             let a' = Array.copy [%e a] in
             Array.sort compare a';
             a']
     | App ("sum", [ e ]) ->
-        let (A a) = eval ctx e in
+        let a = eval ctx e |> to_array in
         I
           [%code
             let sum = ref 0 in
