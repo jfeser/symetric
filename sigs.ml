@@ -7,12 +7,11 @@ module type CACHE = sig
 
   type value
 
-  val empty : (t -> 'a code) -> 'a code
+  val empty : value -> (t -> 'a code) -> 'a code
 
-  val put : sym:string -> size:int -> t -> value code -> unit code
+  val put : sym:string -> size:int -> sizes:int list -> t -> value -> unit code
 
-  val iter :
-    sym:string -> size:int -> f:(value code -> unit code) -> t -> unit code
+  val iter : sym:string -> size:int -> f:(value -> unit code) -> t -> unit code
 
   val print_size : t -> unit code
 end
@@ -25,5 +24,5 @@ module type LANG = sig
 
   val grammar : Grammar.t
 
-  val eval : value code Map.M(String).t -> Grammar.Term.t -> value code
+  val eval : value Map.M(String).t -> Grammar.Term.t -> value
 end

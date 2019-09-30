@@ -1,11 +1,22 @@
+open! Core
 open Ppx_stage
-open Sigs
+
+module Value = struct
+  type t =
+    | A of int array code
+    | I of int code
+    | F_int of (int code -> int code)
+    | F_bool of (int code -> bool code)
+    | F_int2 of (int code -> int code -> int code)
+end
 
 module Lang = struct
   let grammar : Grammar.t =
     let open Grammar in
     let open Grammar.Term in
     [
+      ("I", Id "k");
+      ("L", Id "b");
       ("I", App ("head", [ Id "L" ]));
       ("I", App ("last", [ Id "L" ]));
       ("L", App ("take", [ Id "I"; Id "L" ]));
@@ -42,17 +53,17 @@ module Lang = struct
       ("FIII", Id "max");
     ]
     |> inline "FII" |> inline "FIB" |> inline "FIII"
+    |> List.filter ~f:(fun (lhs, _) -> String.(lhs = "L" || lhs = "I"))
 
-  type value =
-    | A of int array code
-    | I of int code
-    | F_int of (int code -> int code)
-    | F_bool of (int code -> bool code)
-    | F_int2 of (int code -> int code -> int code)
+  type value = Value.t
+
+  open Value
 
   let rec eval ctx =
     let open Grammar.Term in
     function
+    | Id "k" -> I [%code 2]
+    | Id "b" -> A [%code [| 3; 5; 4; 7; 5 |]]
     | Id "(+1)" -> F_int (fun x -> [%code [%e x] + 1])
     | Id "(-1)" -> F_int (fun x -> [%code [%e x] - 1])
     | Id "(*2)" -> F_int (fun x -> [%code [%e x] * 2])
@@ -74,6 +85,7 @@ module Lang = struct
         F_int2 (fun x y -> [%code if [%e x] < [%e y] then [%e x] else [%e y]])
     | Id "max" ->
         F_int2 (fun x y -> [%code if [%e x] < [%e y] then [%e y] else [%e x]])
+    | Id x -> Map.find_exn ctx x
     | App ("head", [ e ]) ->
         let (A a) = eval ctx e in
         I [%code [%e a].(0)]
@@ -197,32 +209,73 @@ end
 module Cache = struct
   open Values
 
-  type t = Int_tuple_set.t code * Int_array_tuple_set.t code
+  type value = Value.t
 
-  let empty k =
+  type t = {
+    target : Value.t;
+    ints : Int_tuple_set.t array code;
+    arrays : Int_array_tuple_set.t array code;
+  }
+
+  let empty target (k : t -> 'a code) : 'a code =
     [%code
       let tbl_i = Array.init 100 (fun _ -> Values.Int_tuple_set.create ()) in
       let tbl_a =
         Array.init 100 (fun _ -> Values.Int_array_tuple_set.create ())
       in
-      [%e k (tbl_i, tbl_a)]]
+      [%e k { target; ints = tbl_i; arrays = tbl_a }]]
 
-  let put ~sym:_ ~size (tbl_i, tbl_a) v =
+  let put ~sym:_ ~size ~sizes { target; ints = tbl_i; arrays = tbl_a; _ } v =
     let key = Lift.int size in
-    match v with
-    | I v -> [%code Core.Hash_set.add [%e tbl_i].([%e key]) [%e v]]
-    | A v -> [%code Core.Hash_set.add [%e tbl_a].([%e key]) [%e v]]
+    let sizes = Stage.Lift.(list int) sizes in
+    match (v, target) with
+    | Value.I v, Value.I v' ->
+        [%code
+          let v = [%e v] in
+          let v' = [%e v'] in
+          if v = v' then failwith "Found solution";
+          Core.Hash_set.add
+            [%e tbl_i].([%e key])
+            { Values.Int_tuple_set.Elt.value = v; sizes = [%e sizes] }]
+    | Value.I v, _ ->
+        [%code
+          Core.Hash_set.add
+            [%e tbl_i].([%e key])
+            { Values.Int_tuple_set.Elt.value = [%e v]; sizes = [%e sizes] }]
+    | A v, A v' ->
+        [%code
+          let v = [%e v] in
+          let v' = [%e v'] in
+          if v = v' then failwith "Found solution";
+          Core.Hash_set.add
+            [%e tbl_a].([%e key])
+            { Values.Int_array_tuple_set.Elt.value = v; sizes = [%e sizes] }]
+    | A v, _ ->
+        [%code
+          Core.Hash_set.add
+            [%e tbl_a].([%e key])
+            {
+              Values.Int_array_tuple_set.Elt.value = [%e v];
+              sizes = [%e sizes];
+            }]
     | _ -> assert false
 
-  let iter ~sym:_ ~size (tbl_i, tbl_a) v =
+  let iter ~sym ~size ~f { ints = tbl_i; arrays = tbl_a; _ } =
     let key = Lift.int size in
     match sym with
     | "I" ->
         [%code
-          Core.Hash_set.iter [%e tbl_i].([%e key]) ~f:(fun v -> [%e f (I v)])]
+          Core.Hash_set.iter
+            [%e tbl_i].([%e key])
+            ~f:(fun v ->
+              [%e f (Value.I [%code [%e v].Values.Int_tuple_set.Elt.value])])]
     | "L" ->
         [%code
-          Core.Hash_set.iter [%e tbl_a].([%e key]) ~f:(fun v -> [%e f (A v)])]
+          Core.Hash_set.iter
+            [%e tbl_a].([%e key])
+            ~f:(fun v ->
+              [%e
+                f (Value.A [%code [%e v].Values.Int_array_tuple_set.Elt.value])])]
     | _ -> assert false
 
   let print_size _tbl = [%code ()]

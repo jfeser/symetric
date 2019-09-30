@@ -7,12 +7,16 @@ let for_all a f =
   in
   loop 0
 
+let to_list a = List.init (Bigarray.Array1.dim a) ~f:(fun i -> a.{i})
+
 module Make (L : Sigs.LANG) (C : Sigs.CACHE with type value = L.value) = struct
   open L
   open C
   module G = Grammar
 
-  let enumerate max_cost =
+  exception Done
+
+  let enumerate max_cost (target : L.value) =
     let nt = G.non_terminals grammar in
     let enum tbl made cost =
       List.filter grammar ~f:(fun rule -> G.rule_size rule <= cost)
@@ -38,8 +42,8 @@ module Make (L : Sigs.LANG) (C : Sigs.CACHE with type value = L.value) = struct
              let n_holes = List.length !holes in
              if n_holes = 0 && G.rule_size rule = cost then
                [
-                 C.put ~sym:lhs ~size:cost tbl
-                   (eval (Map.empty (module String)) rhs);
+                 eval (Map.empty (module String)) rhs
+                 |> put ~sym:lhs ~size:cost ~sizes:[] tbl;
                ]
              else
                Combinat.Partition.fold
@@ -50,8 +54,8 @@ module Make (L : Sigs.LANG) (C : Sigs.CACHE with type value = L.value) = struct
                    if for_all costs (Set.mem made) then
                      let loop =
                        let put_all ctx =
-                         (put ~sym:lhs ~size:cost tbl)
-                           (eval (Map.of_alist_exn (module String) ctx) rhs)
+                         eval (Map.of_alist_exn (module String) ctx) rhs
+                         |> put ~sym:lhs ~size:cost ~sizes:(to_list costs) tbl
                        in
                        List.foldi !holes ~init:put_all
                          ~f:(fun i put_all (sym, name) ->
@@ -65,7 +69,7 @@ module Make (L : Sigs.LANG) (C : Sigs.CACHE with type value = L.value) = struct
                      loop [] :: code
                    else code))
     in
-    C.empty (fun tbl ->
+    C.empty target (fun tbl ->
         let _, loops =
           List.init max_cost ~f:(fun c -> c)
           |> List.fold_left

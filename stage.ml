@@ -8,6 +8,10 @@ module Lift = struct
     let x = l1 x in
     let y = l2 y in
     [%code [%e x], [%e y]]
+
+  let rec list lift = function
+    | [] -> [%code []]
+    | x :: xs -> [%code [%e lift x] :: [%e list lift xs]]
 end
 
 let rec of_list = function
@@ -36,7 +40,7 @@ end
 
 module type INT_CACHE = Sigs.CACHE with type value = int
 
-module Simple_cache : INT_CACHE = struct
+module Simple_cache = struct
   type t = int list T.t code
 
   type value = int
@@ -60,7 +64,7 @@ module Simple_cache : INT_CACHE = struct
     [%code print_endline (string_of_int (T.length [%e tbl]))]
 end
 
-module Better_cache : INT_CACHE = struct
+module Better_cache = struct
   type t = S.t array code
 
   type value = int
@@ -82,7 +86,7 @@ module Better_cache : INT_CACHE = struct
     [%code print_endline (string_of_int (Array.length [%e tbl]))]
 end
 
-module Best_cache : INT_CACHE = struct
+module Best_cache = struct
   type t = S.t code * int list ref array code
 
   type value = int
@@ -112,7 +116,7 @@ module Best_cache : INT_CACHE = struct
     [%code print_endline (string_of_int (Core.Hash_set.length [%e s]))]
 end
 
-module Arith : Sigs.LANG with type value = int = struct
+module Arith = struct
   type value = int
 
   open Grammar.Term
@@ -171,7 +175,7 @@ module Better_cache_L = struct
   let print_size _tbl = [%code ()]
 end
 
-module Arith_list : Sigs.LANG with type value = Values.Int_list.t = struct
+module Arith_list = struct
   type value = Values.Int_list.t
 
   open Grammar.Term

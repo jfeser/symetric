@@ -1,7 +1,7 @@
 (library
  (name values)
  (libraries core)
- (modules int_list int_tuple_set int_array_tuple_set)
+ (modules int_list int_tuple_set int_array_tuple_set trace)
  (preprocess (pps ppx_sexp_conv ppx_compare ppx_hash)))
 
 (executable
