@@ -1,10 +1,11 @@
 open! Core
 open! Core_bench.Std
-open Ppx_stage
 open Deepcoder
 
 let () =
-  let module S = Synth.Make (Deepcoder.Lang) (Deepcoder.Cache) in
+  let module S = Cstage.T () in
+  let module Deepcoder = Deepcoder.Make (S) in
+  let module DeepSynth = Synth.Make (S) (Deepcoder.Lang) (Deepcoder.Cache) in
   let synth = S.enumerate 18 in
   [%code
     let synth () =

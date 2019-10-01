@@ -1,5 +1,4 @@
 open! Core
-open Stage
 
 let for_all a f =
   let rec loop i =
@@ -9,12 +8,19 @@ let for_all a f =
 
 let to_list a = List.init (Bigarray.Array1.dim a) ~f:(fun i -> a.{i})
 
-module Make (L : Sigs.LANG) (C : Sigs.CACHE with type value = L.value) = struct
+module Make
+    (S : Sigs.CODE)
+    (L : Sigs.LANG with type 'a code = 'a S.t)
+    (C : Sigs.CACHE with type value = L.value and type 'a code = 'a S.t) =
+struct
   open L
   open C
   module G = Grammar
 
-  exception Done
+  let rec of_list = function
+    | [] -> S.unit
+    | [ l ] -> l
+    | l :: ls -> S.seq l (of_list ls)
 
   let enumerate max_cost (target : L.value) =
     let nt = G.non_terminals grammar in

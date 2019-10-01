@@ -8,10 +8,7 @@
  (name mk_bench)
  (libraries core core_bench combinat values)
  (modules mk_bench stage grammar sigs synth deepcoder cstage)
- (preprocess
-  (per_module
-   ((pps ppx_sexp_conv ppx_compare ppx_hash) grammar synth sigs cstage)
-   ((pps ppx_sexp_conv ppx_compare ppx_hash ppx_stage.ppx) stage deepcoder mk_bench)))
+ (preprocess (pps ppx_sexp_conv ppx_compare ppx_hash))
  (flags (:standard -warn-error -A)))
 
 (rule

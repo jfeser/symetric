@@ -1,89 +1,109 @@
 open! Core
+module Seq = Sequence
 
-module type CODE = sig
-  type +'a t
+module Code () : Sigs.CODE = struct
+  type ctype = Unit | Int | Array of ctype
 
-  type 'a scope
+  let elem_type = function Array x -> x | _ -> failwith ""
 
-  val new_scope : ('a scope -> 'a t) -> 'a t
+  type 'a t = {
+    decls : string list;
+    body : string list;
+    ret : string;
+    type_ : ctype;
+  }
 
-  val genlet : 'a scope -> 'b t -> 'b t
+  let fresh =
+    let ctr = ref 0 in
+    fun () ->
+      incr ctr;
+      !ctr
 
-  val int : int -> int t
+  let rec type_to_str = function
+    | Int -> "int"
+    | Array t -> sprintf "%s*" (type_to_str t)
+    | Unit -> failwith "Cannot create value of type unit."
 
-  val bool : bool -> bool t
+  let name () = sprintf "x%d" (fresh ())
 
-  val array : ('a -> 'a t) -> 'a array -> 'a array t
+  let decl ctx name type_ =
+    { ctx with decls = sprintf "%s %s;" type_ name :: ctx.decls }
 
-  val int : int -> int t
+  let unop fmt type_ x = { x with ret = sprintf fmt x.ret; type_ }
 
-  val ( ~- ) : int t -> int t
+  let binop fmt type_ x x' =
+    {
+      ret = sprintf fmt x.ret x'.ret;
+      decls = x.decls @ x'.decls;
+      body = x.body @ x'.body;
+      type_;
+    }
 
-  val ( + ) : int t -> int t -> int t
+  let of_value t v = { decls = []; body = []; ret = v; type_ = t }
 
-  val ( - ) : int t -> int t -> int t
+  let int x = sprintf "%d" x |> of_value Int
 
-  val ( * ) : int t -> int t -> int t
+  let bool x = (if x then "1" else "0") |> of_value Int
 
-  val ( / ) : int t -> int t -> int t
+  let unit = of_value Unit ""
 
-  val ( mod ) : int t -> int t -> int t
+  let array f a =
+    let elems = Array.map a ~f in
+    let decls = Array.fold elems ~init:[] ~f:(fun xs x -> x.decls @ xs) in
+    let elem_type = elems.(0).type_ in
+    let name = name () in
+    let type_ = Array elem_type in
+    let decl =
+      let elems_str =
+        Array.to_list elems
+        |> List.map ~f:(fun x -> x.ret)
+        |> String.concat ~sep:", "
+      in
+      sprintf "%s %s[] = { %s };" (type_to_str type_) name elems_str
+    in
+    { decls = decl :: decls; body = []; ret = name; type_ }
 
-  val ( > ) : int t -> int t -> bool t
+  let ( ~- ) = unop "(-%s)" Int
 
-  val ( < ) : int t -> int t -> bool t
+  let ( + ) = binop "(%s + %s)" Int
 
-  val ( >= ) : int t -> int t -> bool t
+  let ( - ) = binop "(%s - %s)" Int
 
-  val ( <= ) : int t -> int t -> bool t
+  let ( * ) = binop "(%s * %s)" Int
 
-  val ( = ) : int t -> int t -> bool t
+  let ( / ) = binop "(%s / %s)" Int
 
-  val ( && ) : bool t -> bool t -> bool t
+  let ( mod ) = binop "(%s %% %s)" Int
 
-  val ( || ) : bool t -> bool t -> bool t
+  let ( = ) = binop "(%s == %s)" Int
 
-  val not : bool t -> bool t
+  let ( > ) = binop "(%s > %s)" Int
 
-  val get : 'a array t -> int t -> 'a t
+  let ( < ) = binop "(%s < %s)" Int
 
-  val set : 'a array t -> int t -> 'a t -> 'a array t
+  let ( <= ) = binop "(%s <= %s)" Int
 
-  val fold : 'a array t -> init:'b t -> f:('b t -> 'a t -> 'b t) -> 'b t
+  let ( >= ) = binop "(%s >= %s)" Int
 
-  val sub : 'a array t -> int t -> int t -> 'a array t
+  let ( && ) = binop "(%s && %s)" Int
 
-  val init : int t -> (int t -> 'a t) -> 'a array t
+  let ( || ) = binop "(%s || %s)" Int
 
-  val ite : bool t -> 'a t -> 'a t -> 'a t
+  let not = unop "(!%s)" Int
 
-  val range : int t -> (int t -> unit t) -> unit t
+  let init _ _ = failwith ""
 
-  val seq : unit t -> unit t -> unit t
-end
+  let get a = binop "(%s[%s])" (elem_type a.type_) a
 
-module type DYN_ARRAY = sig
-  type +'a code
+  let set _ = failwith ""
 
-  type 'a t
+  let sub _ _ _ = failwith ""
 
-  val create : int code -> 'a t code
+  let fold _ ~init:_ ~f:_ = failwith ""
 
-  val get : 'a t code -> int code -> 'a code
+  let let_ _ _ = failwith ""
 
-  val set : 'a t code -> int code -> 'a code -> 'a t code
-end
+  let ite _ _ _ = failwith ""
 
-module type STA_ARRAY = sig
-  type +'a code
-
-  type 'a t
-
-  val create : int -> 'a t code
-
-  val length : 'a t code -> int code
-
-  val get : 'a t code -> int code -> 'a code
-
-  val set : 'a t code -> int code -> 'a code -> 'a t code
+  let seq _ _ = failwith ""
 end
