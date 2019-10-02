@@ -71,9 +71,10 @@ module Make (C : Sigs.CODE) = struct
 
     let rec eval ctx =
       let open C in
+      let open Array in
       function
       | Grammar.Term.Id "k" -> I (int 2)
-      | Id "b" -> A (array int [| 3; 5; 4; 7; 5 |])
+      | Id "b" -> A (const Int [| int 3; int 5; int 4; int 7; int 5 |])
       | Id "(+1)" -> F_int (fun x -> x + int 1)
       | Id "(-1)" -> F_int (fun x -> x - int 1)
       | Id "(*2)" -> F_int (fun x -> x * int 2)
@@ -127,14 +128,15 @@ module Make (C : Sigs.CODE) = struct
       | App ("reverse", [ e ]) ->
           let a = eval ctx e |> to_array in
           A
-            (let_ (length a) (fun l -> init l (fun i -> get a (l - i - int 1))))
+            (let_ (length a) (fun l ->
+                 init Int l (fun i -> get a (l - i - int 1))))
       | App ("sum", [ e ]) ->
           let a = eval ctx e |> to_array in
           I (fold ~init:(int 0) ~f:( + ) a)
       | App ("map", [ f; e ]) ->
           let a = eval ctx e |> to_array in
           let f = eval ctx f |> to_int_f in
-          A (init (length a) (fun i -> f (get a i)))
+          A (init Int (length a) (fun i -> f (get a i)))
       | App ("count", [ f; e ]) ->
           let f = eval ctx f |> to_bool_f in
           let a = eval ctx e |> to_array in
@@ -144,50 +146,50 @@ module Make (C : Sigs.CODE) = struct
           let f = eval ctx f |> to_int2_f in
           let a = eval ctx e |> to_array in
           let a' = eval ctx e' |> to_array in
-          A (init (length a) (fun i -> f (get a i) (get a' i)))
+          A (init Int (length a) (fun i -> f (get a i) (get a' i)))
       | _ -> assert false
   end
 
-  module Cache = struct
-    open Values
-
-    type value = Value.t
-
-    type t = {
-      target : Value.t;
-      ints : int C.set array C.t;
-      arrays : int array C.set array C.t;
-    }
-
-    let max_size = 100
-
-    open C
-
-    let empty target k =
-      let tbl_i = init (int max_size) (fun _ -> empty unit) in
-      let tbl_a = init (int max_size) (fun _ -> empty unit) in
-      k { target; ints = tbl_i; arrays = tbl_a }
-
-    let array_eq a a' = failwith ""
-
-    let put ~sym:_ ~size ~sizes { target; ints = tbl_i; arrays = tbl_a; _ } v =
-      let key = int size in
-      let add_int v = add (get tbl_i key) v in
-      let add_array v = add (get tbl_a key) v in
-      match (v, target) with
-      | Value.I v, Value.I v' ->
-          ite (v = v') (failwith "Found solution") (add_int v)
-      | Value.I v, _ -> add_int v
-      | A v, A v' ->
-          ite (array_eq v v') (failwith "Found solution") (add_array v)
-      | A v, _ -> add_array v
-      | _ -> assert false
-
-    let iter ~sym ~size ~f { ints = tbl_i; arrays = tbl_a; _ } =
-      let key = int size in
-      match sym with
-      | "I" -> iter (get tbl_i key) (fun v -> f (Value.I v))
-      | "L" -> iter (get tbl_a key) (fun v -> f (Value.A v))
-      | _ -> assert false
-  end
+  (* module Cache = struct
+   *   open Values
+   * 
+   *   type value = Value.t
+   * 
+   *   type t = {
+   *     target : Value.t;
+   *     ints : int C.set array C.t;
+   *     arrays : int array C.set array C.t;
+   *   }
+   * 
+   *   let max_size = 100
+   * 
+   *   open C
+   * 
+   *   let empty target k =
+   *     let tbl_i = init (int max_size) (fun _ -> empty unit) in
+   *     let tbl_a = init (int max_size) (fun _ -> empty unit) in
+   *     k { target; ints = tbl_i; arrays = tbl_a }
+   * 
+   *   let array_eq a a' = failwith ""
+   * 
+   *   let put ~sym:_ ~size ~sizes { target; ints = tbl_i; arrays = tbl_a; _ } v =
+   *     let key = int size in
+   *     let add_int v = add (get tbl_i key) v in
+   *     let add_array v = add (get tbl_a key) v in
+   *     match (v, target) with
+   *     | Value.I v, Value.I v' ->
+   *         ite (v = v') (failwith "Found solution") (add_int v)
+   *     | Value.I v, _ -> add_int v
+   *     | A v, A v' ->
+   *         ite (array_eq v v') (failwith "Found solution") (add_array v)
+   *     | A v, _ -> add_array v
+   *     | _ -> assert false
+   * 
+   *   let iter ~sym ~size ~f { ints = tbl_i; arrays = tbl_a; _ } =
+   *     let key = int size in
+   *     match sym with
+   *     | "I" -> iter (get tbl_i key) (fun v -> f (Value.I v))
+   *     | "L" -> iter (get tbl_a key) (fun v -> f (Value.A v))
+   *     | _ -> assert false
+   * end *)
 end

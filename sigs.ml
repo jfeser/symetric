@@ -29,7 +29,11 @@ end
 module type CODE = sig
   type +'a t
 
-  type 'a set
+  type ctype = Unit | Int | Array of { name : string; elem_type : ctype }
+
+  val to_string : 'a t -> string
+
+  (* type 'a set *)
 
   (* Values *)
   val unit : unit t
@@ -37,8 +41,6 @@ module type CODE = sig
   val int : int -> int t
 
   val bool : bool -> bool t
-
-  val array : ('a -> 'a t) -> 'a array -> 'a array t
 
   (* Integer operations *)
   val ( ~- ) : int t -> int t
@@ -71,24 +73,30 @@ module type CODE = sig
   val not : bool t -> bool t
 
   (* Array operations *)
-  val get : 'a array t -> int t -> 'a t
+  module Array : sig
+    val mk_type : ctype -> ctype
 
-  val set : 'a array t -> int t -> 'a t -> 'a array t
+    val const : ctype -> 'a t array -> 'a array t
 
-  val length : 'a array t -> int t
+    val get : 'a array t -> int t -> 'a t
 
-  val fold : 'a array t -> init:'b t -> f:('b t -> 'a t -> 'b t) -> 'b t
+    val set : 'a array t -> int t -> 'a t -> 'a array t
 
-  val sub : 'a array t -> int t -> int t -> 'a array t
+    val length : 'a array t -> int t
 
-  val init : int t -> (int t -> 'a t) -> 'a array t
+    val fold : 'a array t -> init:'b t -> f:('b t -> 'a t -> 'b t) -> 'b t
+
+    val sub : 'a array t -> int t -> int t -> 'a array t
+
+    val init : ctype -> int t -> (int t -> 'a t) -> 'a array t
+  end
 
   (* Set operations *)
-  val empty : unit t -> 'a set t
-
-  val add : 'a set t -> 'a t -> unit t
-
-  val iter : 'a set t -> ('a t -> unit t) -> unit t
+  (* val empty : unit t -> 'a set t
+   * 
+   * val add : 'a set t -> 'a t -> unit t
+   * 
+   * val iter : 'a set t -> ('a t -> unit t) -> unit t *)
 
   (* Control flow *)
   val ite : bool t -> 'a t -> 'a t -> 'a t
