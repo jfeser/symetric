@@ -1,0 +1,4 @@
+(executable
+ (name mk_bench)
+ (libraries core core_bench combinat staged_synth)
+ (preprocess (pps ppx_sexp_conv ppx_compare ppx_hash)))

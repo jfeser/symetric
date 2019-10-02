@@ -1,0 +1,6 @@
+(library
+ (name staged_synth)
+ (libraries core combinat)
+ (preprocess (pps ppx_sexp_conv ppx_compare ppx_hash ppx_expect))
+ (inline_tests))
+

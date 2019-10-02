@@ -12,17 +12,6 @@ module Code () : Sigs.CODE = struct
 
   type 'a t = { body : string; ret : string; type_ : ctype }
 
-  let append b b' =
-    b @ b' |> List.rev
-    |> List.fold_left
-         ~init:(Set.empty (module String), [])
-         ~f:(fun (seen, body) (k, v) ->
-           if Set.mem seen k then (seen, body)
-           else (Set.add seen k, (k, v) :: body))
-    |> fun (_, body) -> body
-
-  let concat bs = bs |> List.reduce ~f:append |> Option.value ~default:[]
-
   let type_decls = ref []
 
   let var_decls = ref []
@@ -48,11 +37,6 @@ module Code () : Sigs.CODE = struct
     name
 
   let elem_type = function Array x -> x.elem_type | _ -> failwith ""
-
-  let rec type_to_str = function
-    | Int -> "int"
-    | Array t -> sprintf "%s*" (type_to_str t.elem_type)
-    | Unit -> failwith "Cannot create value of type unit."
 
   let ret { ret; _ } = ret
 
