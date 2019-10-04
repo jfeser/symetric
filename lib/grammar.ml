@@ -1,7 +1,7 @@
 open! Core
 
 module Term = struct
-  type t = Id of string | App of string * t list
+  type t = Id of string | App of string * t list [@@deriving compare, sexp]
 
   let rec size = function
     | Id _ -> 1
