@@ -39,6 +39,7 @@ module type CODE = sig
     | Bool : bool ctype
     | Array : 'a ntype -> 'a array ctype
     | Set : 'a ntype -> 'a set ctype
+    | Tuple : string * 'a ctype * 'b ctype -> ('a * 'b) ctype
 
   val to_string : 'a t -> string
 
@@ -113,6 +114,17 @@ module type CODE = sig
     val add : 'a set t -> 'a t -> unit t
 
     val iter : 'a set t -> ('a t -> unit t) -> unit t
+  end
+
+  (* Tuples *)
+  module Tuple : sig
+    val mk_type : 'a ctype -> 'b ctype -> ('a * 'b) ctype
+
+    val create : 'a t -> 'b t -> ('a * 'b) t
+
+    val fst : ('a * 'b) t -> 'a t
+
+    val snd : ('a * 'b) t -> 'b t
   end
 
   (* Control flow *)

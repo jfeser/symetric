@@ -12,12 +12,14 @@ module Code () : Sigs.CODE = struct
     | Bool : bool ctype
     | Array : 'a ntype -> 'a array ctype
     | Set : 'a ntype -> 'a set ctype
+    | Tuple : string * 'a ctype * 'b ctype -> ('a * 'b) ctype
 
   let type_name (type a) (ctype : a ctype) =
     match ctype with
     | Unit -> "int"
     | Int -> "int"
     | Bool -> "int"
+    | Tuple (n, _, _) -> n
     | Array { name; _ } | Set { name; _ } -> name
 
   type 'a t = { body : string; ret : string; type_ : 'a ctype }
@@ -291,6 +293,41 @@ int main() {
                   format "$(name).insert($(val));"
                     [ ("name", C a); ("val", C x) ];
               }))
+  end
+
+  module Tuple = struct
+    let mk_type x y =
+      let name = sprintf "std::pair<%s,%s>" (type_name x) (type_name y) in
+      Tuple (name, x, y)
+
+    let fst_type = function Tuple (_, x, _) -> x | _ -> .
+
+    let snd_type = function Tuple (_, _, x) -> x | _ -> .
+
+    let create x y =
+      let type_ = mk_type x.type_ y.type_ in
+      let var_ = fresh_var type_ in
+      let body =
+        format "$(var) = std::make_pair($(x), $(y));"
+          [ ("var", C var_); ("x", C x); ("y", C y) ]
+      in
+      { var_ with body }
+
+    let fst t =
+      let type_ = fst_type t.type_ in
+      let var_ = fresh_var type_ in
+      let body =
+        format "$(var) = std::get<0>($(t));" [ ("var", C var_); ("t", C t) ]
+      in
+      { var_ with body }
+
+    let snd t =
+      let type_ = snd_type t.type_ in
+      let var_ = fresh_var type_ in
+      let body =
+        format "$(var) = std::get<1>($(t));" [ ("var", C var_); ("t", C t) ]
+      in
+      { var_ with body }
   end
 end
 
