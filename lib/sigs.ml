@@ -7,11 +7,17 @@ module type CACHE = sig
 
   type 'a code
 
-  val empty : value -> (t -> 'a code) -> 'a code
+  val empty : (t -> 'a code) -> 'a code
 
-  val put : sym:string -> size:int -> sizes:int list -> t -> value -> unit code
+  val put :
+    sym:string -> size:int -> sizes:int array code -> t -> value -> unit code
 
-  val iter : sym:string -> size:int -> f:(value -> unit code) -> t -> unit code
+  val iter :
+    sym:string ->
+    size:int code ->
+    f:(value * int array code -> unit code) ->
+    t ->
+    unit code
 
   val print_size : t -> unit code
 end
@@ -20,6 +26,8 @@ module type LANG = sig
   type value
 
   type 'a code
+
+  val ( = ) : value -> value -> bool code
 
   val grammar : Grammar.t
 
@@ -40,6 +48,7 @@ module type CODE = sig
     | Array : 'a ntype -> 'a array ctype
     | Set : 'a ntype -> 'a set ctype
     | Tuple : string * 'a ctype * 'b ctype -> ('a * 'b) ctype
+    | Func : 'a ctype * 'b ctype -> ('a -> 'b) ctype
 
   val to_string : 'a t -> string
 
@@ -133,4 +142,12 @@ module type CODE = sig
   val let_ : 'a t -> ('a t -> 'b t) -> 'b t
 
   val seq : unit t -> unit t -> unit t
+
+  (* Functions *)
+  val func : string -> ('a -> 'b) ctype -> ('a t -> 'b t) -> ('a -> 'b) t
+
+  val apply : ('a -> 'b) t -> 'a t -> 'b t
+
+  (* Utility *)
+  val print : string -> unit t
 end

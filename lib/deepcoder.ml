@@ -8,9 +8,19 @@ module Make (C : Sigs.CODE) = struct
       | F_int of (int C.t -> int C.t)
       | F_bool of (int C.t -> bool C.t)
       | F_int2 of (int C.t -> int C.t -> int C.t)
+
+    let ( = ) v v' =
+      match (v, v') with
+      | A a, A a' -> C.Array.O.(a = a')
+      | I x, I x' -> C.( = ) x x'
+      | F_int _, F_int _ | F_bool _, F_bool _ | F_int2 _, F_int2 _ ->
+          failwith "Cannot compare"
+      | _ -> C.bool false
   end
 
   module Lang = struct
+    include Value
+
     type value = Value.t
 
     type 'a code = 'a C.t
@@ -161,9 +171,8 @@ module Make (C : Sigs.CODE) = struct
     type 'a code = 'a C.t
 
     type t = {
-      target : Value.t;
-      ints : int C.set array code;
-      arrays : int array C.set array code;
+      ints : (int * int array) C.set array code;
+      arrays : (int array * int array) C.set array code;
     }
 
     let max_size = 100
@@ -172,35 +181,33 @@ module Make (C : Sigs.CODE) = struct
     open C.Array
     open C.Set
 
-    let empty target k =
-      let int_set = Set.mk_type Int in
-      let int_set_array = Array.mk_type int_set in
+    let empty k =
       let int_array = Array.mk_type Int in
-      let int_array_set = Set.mk_type int_array in
+      let int_set = Set.mk_type (Tuple.mk_type Int int_array) in
+      let int_set_array = Array.mk_type int_set in
+      let int_array_set = Set.mk_type (Tuple.mk_type int_array int_array) in
       let int_array_set_array = Array.mk_type int_array_set in
       let tbl_i = init int_set_array (int max_size) (fun _ -> empty int_set) in
       let tbl_a =
         init int_array_set_array (int max_size) (fun _ -> empty int_array_set)
       in
-      k { target; ints = tbl_i; arrays = tbl_a }
+      k { ints = tbl_i; arrays = tbl_a }
 
-    let put ~sym:_ ~size ~sizes:_ { target; ints = tbl_i; arrays = tbl_a; _ } v
-        =
+    let put ~sym:_ ~size ~sizes { ints = tbl_i; arrays = tbl_a; _ } v =
       let key = int size in
-      let add_int v = add (get tbl_i key) v in
-      let add_array v = add (get tbl_a key) v in
-      match (v, target) with
-      | Value.I v, Value.I v' -> ite (v = v') unit (add_int v)
-      | Value.I v, _ -> add_int v
-      | A v, A v' -> ite Array.O.(v = v') unit (add_array v)
-      | A v, _ -> add_array v
+      match v with
+      | Value.I v -> add (get tbl_i key) (Tuple.create v sizes)
+      | A v -> add (get tbl_a key) (Tuple.create v sizes)
       | _ -> assert false
 
-    let iter ~sym ~size ~f { ints = tbl_i; arrays = tbl_a; _ } =
-      let key = int size in
+    let iter ~sym ~size:key ~f { ints = tbl_i; arrays = tbl_a; _ } =
       match sym with
-      | "I" -> iter (get tbl_i key) (fun v -> f (Value.I v))
-      | "L" -> iter (get tbl_a key) (fun v -> f (Value.A v))
+      | "I" ->
+          iter (get tbl_i key) (fun v ->
+              f (Value.I (Tuple.fst v), Tuple.snd v))
+      | "L" ->
+          iter (get tbl_a key) (fun v ->
+              f (Value.A (Tuple.fst v), Tuple.snd v))
       | _ -> assert false
 
     let print_size _ = failwith "print_size"

@@ -1,4 +1,5 @@
 open! Core
+open Utils
 
 module Term = struct
   type t = Id of string | App of string * t list [@@deriving compare, sexp]
@@ -18,6 +19,10 @@ let num_holes (lhs, rhs) =
     | App (_, ts) -> List.sum (module Int) ~f:num ts
   in
   num rhs
+
+let rhs g s =
+  List.filter_map g ~f:(fun (s', t) ->
+      if String.(s = s') then Some t else None)
 
 let non_terminals g =
   List.map g ~f:(fun (x, _) -> x)
@@ -43,3 +48,19 @@ let inline sym g =
   in
   List.concat_map g ~f:(fun (lhs, rhs) ->
       subst_all rhs |> List.map ~f:(fun rhs' -> (lhs, rhs')))
+
+let with_holes ~fresh g t =
+  let open Term in
+  let nt = non_terminals g in
+  let holes = ref [] in
+  let rec rename = function
+    | Id v ->
+        if List.mem nt v ~equal:[%compare.equal: string] then (
+          let v' = v ^ Fresh.name fresh "%d" in
+          holes := (v, v') :: !holes;
+          Id v' )
+        else Id v
+    | App (f, ts) -> App (f, List.map ts ~f:rename)
+  in
+  let t' = rename t in
+  (t', !holes)

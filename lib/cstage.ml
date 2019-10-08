@@ -13,6 +13,7 @@ module Code () : Sigs.CODE = struct
     | Array : 'a ntype -> 'a array ctype
     | Set : 'a ntype -> 'a set ctype
     | Tuple : string * 'a ctype * 'b ctype -> ('a * 'b) ctype
+    | Func : 'a ctype * 'b ctype -> ('a -> 'b) ctype
 
   let type_name (type a) (ctype : a ctype) =
     match ctype with
@@ -21,10 +22,16 @@ module Code () : Sigs.CODE = struct
     | Bool -> "int"
     | Tuple (n, _, _) -> n
     | Array { name; _ } | Set { name; _ } -> name
+    | _ -> failwith "Type cannot be constructed."
 
   type 'a t = { body : string; ret : string; type_ : 'a ctype }
 
+  type func_decl =
+    | FuncDecl : ('a -> 'b) ctype * ('a -> 'b) t * string -> func_decl
+
   let var_decls = ref []
+
+  let func_decls = ref []
 
   let fresh =
     let ctr = ref 0 in
@@ -40,6 +47,8 @@ module Code () : Sigs.CODE = struct
 #include <set>
 using namespace std;
 
+%s
+
 int main() {
       %s
 
@@ -47,7 +56,12 @@ int main() {
 }
 |}
     in
-    sprintf template (String.concat ~sep:"\n" (List.rev !var_decls)) body
+    sprintf template
+      (String.concat ~sep:"\n"
+         ( List.rev !func_decls
+         |> List.map ~f:(fun (_, FuncDecl (_, _, decl)) -> decl) ))
+      (String.concat ~sep:"\n" (List.rev !var_decls))
+      body
 
   let add_var_decl t = var_decls := t :: !var_decls
 
@@ -160,6 +174,46 @@ int main() {
     }
 
   let seq e e' = { e' with body = e.body ^ e'.body }
+
+  let print s = { unit with body = sprintf "std::cout << %S << endl;" s }
+
+  let func (type a b) name (type_ : (a -> b) ctype) (f : a t -> b t) =
+    let (Func (in_type, ret_type)) = type_ in
+    match List.Assoc.find ~equal:String.( = ) !func_decls name with
+    | Some (FuncDecl (_, val_, _)) -> Obj.magic val_
+    | None ->
+        let arg = { ret = fresh_name (); body = ""; type_ = in_type } in
+        let val_ = { ret = name; body = ""; type_ } in
+        func_decls :=
+          List.Assoc.add ~equal:String.( = ) !func_decls name
+            (FuncDecl (type_, val_, ""));
+        let decl =
+          let args =
+            [
+              ("rtype", S (type_name ret_type));
+              ("name", S name);
+              ("itype", S (type_name in_type));
+              ("arg", S arg.ret);
+              ("body", C (f arg));
+            ]
+          in
+          format "$(rtype) $(name)($(itype) $(arg)) {" args
+          ^ format "return $(body); }" args
+        in
+        func_decls :=
+          List.Assoc.add ~equal:String.( = ) !func_decls name
+            (FuncDecl (type_, val_, decl));
+        val_
+
+  let apply f arg =
+    let (Func (_, type_)) = f.type_ in
+    let var_ = fresh_var type_ in
+    {
+      var_ with
+      body =
+        format "$(var) = $(f)($(arg))"
+          [ ("var", S var_.ret); ("f", S f.ret); ("arg", C arg) ];
+    }
 
   module Array = struct
     let mk_type e =
