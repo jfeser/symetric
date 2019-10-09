@@ -1,22 +1,22 @@
 open! Core
+open! Utils
 module Seq = Sequence
 
-module Code () : Sigs.CODE = struct
+module Code () = struct
   type 'a set = Set
 
-  type 'a ntype = { name : string; elem_type : 'a ctype }
+  type ntype = { name : string; elem_type : ctype }
 
-  and 'a ctype =
-    | Unit : unit ctype
-    | Int : int ctype
-    | Bool : bool ctype
-    | Array : 'a ntype -> 'a array ctype
-    | Set : 'a ntype -> 'a set ctype
-    | Tuple : string * 'a ctype * 'b ctype -> ('a * 'b) ctype
-    | Func : 'a ctype * 'b ctype -> ('a -> 'b) ctype
+  and ctype =
+    | Unit
+    | Int
+    | Bool
+    | Array of ntype
+    | Set of ntype
+    | Tuple of string * ctype * ctype
+    | Func of ctype * ctype
 
-  let type_name (type a) (ctype : a ctype) =
-    match ctype with
+  let type_name = function
     | Unit -> "int"
     | Int -> "int"
     | Bool -> "int"
@@ -24,58 +24,35 @@ module Code () : Sigs.CODE = struct
     | Array { name; _ } | Set { name; _ } -> name
     | _ -> failwith "Type cannot be constructed."
 
-  type 'a t = { body : string; ret : string; type_ : 'a ctype }
+  type 'a t = { ebody : string; ret : string; etype : ctype }
 
-  type func_decl =
-    | FuncDecl : ('a -> 'b) ctype * ('a -> 'b) t * string -> func_decl
+  type var_decl = { vname : string; vtype : ctype; init : Nothing.t t option }
 
-  let var_decls = ref []
+  type func_decl = {
+    fname : string;
+    ftype : ctype;
+    mutable locals : var_decl list;
+    mutable args : var_decl list;
+    mutable fbody : Nothing.t t;
+  }
 
-  let func_decls = ref []
+  type prog = {
+    mutable funcs : func_decl list;
+    mutable cur_func : func_decl;
+    fresh : Fresh.t;
+  }
 
-  let fresh =
-    let ctr = ref 0 in
-    fun () ->
-      incr ctr;
-      !ctr
-
-  let to_string { body; _ } =
-    let template =
-      format_of_string
-        {|
-#include <vector>
-#include <set>
-using namespace std;
-
-%s
-
-int main() {
-      %s
-
-      %s
-}
-|}
+  let prog =
+    let main =
+      {
+        fname = "main";
+        ftype = Func (Unit, Unit);
+        locals = [];
+        args = [];
+        fbody = { ebody = ""; ret = "0"; etype = Unit };
+      }
     in
-    sprintf template
-      (String.concat ~sep:"\n"
-         ( List.rev !func_decls
-         |> List.map ~f:(fun (_, FuncDecl (_, _, decl)) -> decl) ))
-      (String.concat ~sep:"\n" (List.rev !var_decls))
-      body
-
-  let add_var_decl t = var_decls := t :: !var_decls
-
-  let fresh_name () = sprintf "x%d" (fresh ())
-
-  let fresh_var (type a) (type_ : a ctype) =
-    let name = fresh_name () in
-    let decl = sprintf "%s %s;" (type_name type_) name in
-    add_var_decl decl;
-    { ret = name; body = ""; type_ }
-
-  let ret { ret; _ } = ret
-
-  let body { body; _ } = body
+    { funcs = [ main ]; cur_func = main; fresh = Fresh.create () }
 
   type fmt_arg = C : 'a t -> fmt_arg | S : string -> fmt_arg
 
@@ -88,30 +65,77 @@ int main() {
           | C v ->
               if String.is_substring fmt ~substring:pat then
                 let fmt =
-                  String.substr_replace_all fmt ~pattern:pat ~with_:(ret v)
+                  String.substr_replace_all fmt ~pattern:pat ~with_:v.ret
                 in
-                body v ^ fmt
+                v.ebody ^ fmt
               else fmt)
     in
     ( if String.contains fmt '$' then
       Error.(create "Incomplete template." fmt [%sexp_of: string] |> raise) );
     fmt
 
+  let to_string e =
+    let expr_to_str e = e.ebody in
+    let var_decl_to_str v =
+      let subst = [ ("type", S (type_name v.vtype)); ("name", S v.vname) ] in
+      match v.init with
+      | Some init ->
+          format "$(type) $(name) ($(init));" (("init", C init) :: subst)
+      | None -> format "$(type) $(name);" subst
+    in
+    let arg_to_str v = sprintf "%s %s" (type_name v.vtype) v.vname in
+    let func_to_str f =
+      let ret_type =
+        match f.ftype with Func (_, t) -> t | _ -> assert false
+      in
+      let locals_str =
+        List.rev f.locals
+        |> List.map ~f:var_decl_to_str
+        |> String.concat ~sep:" "
+      in
+      let args_str = List.map f.args ~f:arg_to_str |> String.concat ~sep:"," in
+      sprintf "%s %s(%s) { %s %s return %s; }" (type_name ret_type) f.fname
+        args_str locals_str (expr_to_str f.fbody) f.fbody.ret
+    in
+    prog.cur_func.fbody <-
+      { e with ebody = prog.cur_func.fbody.ebody ^ e.ebody };
+    let header = "#include <vector>\n#include <set>\n" in
+    let funcs =
+      List.rev prog.funcs |> List.map ~f:func_to_str |> String.concat ~sep:"\n"
+    in
+    header ^ funcs
+
+  let expr_of_var { vname; vtype; _ } =
+    { ebody = ""; ret = vname; etype = vtype }
+
+  let add_var_decl x = prog.cur_func.locals <- x :: prog.cur_func.locals
+
+  let fresh_name () = Fresh.name prog.fresh "x%d"
+
+  let fresh_var vtype =
+    let vname = fresh_name () in
+    add_var_decl { vname; vtype; init = None };
+    { ret = vname; ebody = ""; etype = vtype }
+
+  let ret { ret; _ } = ret
+
+  let body { ebody; _ } = ebody
+
   let assign = sprintf "%s = %s;"
 
-  let of_value (type a) (type_ : a ctype) x =
+  let of_value type_ x =
     let var_ = fresh_var type_ in
-    { var_ with body = var_.body ^ assign var_.ret x }
+    { var_ with ebody = var_.ebody ^ assign var_.ret x }
 
   let let_ v b =
-    let x = b { v with body = "" } in
-    { x with body = v.body ^ x.body }
+    let x = b { v with ebody = "" } in
+    { x with ebody = v.ebody ^ x.ebody }
 
   let unop fmt type_ x =
     let var_ = fresh_var type_ in
     {
       var_ with
-      body = var_.body ^ x.body ^ assign var_.ret (sprintf fmt (ret x));
+      ebody = var_.ebody ^ x.ebody ^ assign var_.ret (sprintf fmt (ret x));
     }
 
   let binop fmt type_ x x' =
@@ -120,50 +144,50 @@ int main() {
         let_ x' (fun x' ->
             {
               var_ with
-              body =
-                var_.body ^ x.body ^ x'.body
+              ebody =
+                var_.ebody ^ x.ebody ^ x'.ebody
                 ^ assign var_.ret (sprintf fmt (ret x) (ret x'));
             }))
 
-  let int x : int t = sprintf "%d" x |> of_value Int
+  let int x = sprintf "%d" x |> of_value Int
 
-  let bool x : bool t = (if x then "1" else "0") |> of_value Bool
+  let bool x = (if x then "1" else "0") |> of_value Bool
 
   let unit = of_value Unit "0"
 
-  let ( ~- ) = unop "(-%s)" Int
+  let ( ~- ) x = unop "(-%s)" Int x
 
-  let ( + ) = binop "(%s + %s)" Int
+  let ( + ) x y = binop "(%s + %s)" Int x y
 
-  let ( - ) = binop "(%s - %s)" Int
+  let ( - ) x y = binop "(%s - %s)" Int x y
 
-  let ( * ) = binop "(%s * %s)" Int
+  let ( * ) x y = binop "(%s * %s)" Int x y
 
-  let ( / ) = binop "(%s / %s)" Int
+  let ( / ) x y = binop "(%s / %s)" Int x y
 
-  let ( mod ) = binop "(%s %% %s)" Int
+  let ( mod ) x y = binop "(%s %% %s)" Int x y
 
-  let ( = ) = binop "(%s == %s)" Bool
+  let ( = ) x y = binop "(%s == %s)" Bool x y
 
-  let ( > ) = binop "(%s > %s)" Bool
+  let ( > ) x y = binop "(%s > %s)" Bool x y
 
-  let ( < ) = binop "(%s < %s)" Bool
+  let ( < ) x y = binop "(%s < %s)" Bool x y
 
-  let ( <= ) = binop "(%s <= %s)" Bool
+  let ( <= ) x y = binop "(%s <= %s)" Bool x y
 
-  let ( >= ) = binop "(%s >= %s)" Bool
+  let ( >= ) x y = binop "(%s >= %s)" Bool x y
 
-  let ( && ) = binop "(%s && %s)" Bool
+  let ( && ) x y = binop "(%s && %s)" Bool x y
 
-  let ( || ) = binop "(%s || %s)" Bool
+  let ( || ) x y = binop "(%s || %s)" Bool x y
 
-  let not = unop "(!%s)" Bool
+  let not x = unop "(!%s)" Bool x
 
   let ite cond then_ else_ =
-    let ret_var = fresh_var then_.type_ in
+    let ret_var = fresh_var then_.etype in
     {
       ret_var with
-      body =
+      ebody =
         format "if ($(cond)) { $(ret) = $(then); } else { $(ret) = $(else); }"
           [
             ("ret", C ret_var);
@@ -173,46 +197,42 @@ int main() {
           ];
     }
 
-  let seq e e' = { e' with body = e.body ^ e'.body }
+  let seq e e' = { e' with ebody = e.ebody ^ e'.ebody }
 
-  let print s = { unit with body = sprintf "std::cout << %S << endl;" s }
+  let print s = { unit with ebody = sprintf "std::cout << %S << endl;" s }
 
-  let func (type a b) name (type_ : (a -> b) ctype) (f : a t -> b t) =
-    let (Func (in_type, ret_type)) = type_ in
-    match List.Assoc.find ~equal:String.( = ) !func_decls name with
-    | Some (FuncDecl (_, val_, _)) -> Obj.magic val_
-    | None ->
-        let arg = { ret = fresh_name (); body = ""; type_ = in_type } in
-        let val_ = { ret = name; body = ""; type_ } in
-        func_decls :=
-          List.Assoc.add ~equal:String.( = ) !func_decls name
-            (FuncDecl (type_, val_, ""));
-        let decl =
-          let args =
-            [
-              ("rtype", S (type_name ret_type));
-              ("name", S name);
-              ("itype", S (type_name in_type));
-              ("arg", S arg.ret);
-              ("body", C (f arg));
-            ]
-          in
-          format "$(rtype) $(name)($(itype) $(arg)) {" args
-          ^ format "return $(body); }" args
-        in
-        func_decls :=
-          List.Assoc.add ~equal:String.( = ) !func_decls name
-            (FuncDecl (type_, val_, decl));
-        val_
+  let to_func_t = function Func (t, t') -> (t, t') | _ -> assert false
+
+  let find_func n = List.find prog.funcs ~f:(fun f -> String.(f.fname = n))
+
+  let add_func f = prog.funcs <- f :: prog.funcs
+
+  let func name type_ f =
+    let in_type, _ = to_func_t type_ in
+    let fval = { ret = name; ebody = ""; etype = type_ } in
+    if Option.is_none (find_func name) then (
+      let arg = { vname = fresh_name (); vtype = in_type; init = None } in
+      let func =
+        {
+          fname = name;
+          ftype = type_;
+          locals = [];
+          args = [ arg ];
+          fbody = unit;
+        }
+      in
+      add_func func;
+      func.fbody <- f (expr_of_var arg) );
+    fval
 
   let apply f arg =
-    let (Func (_, type_)) = f.type_ in
-    let var_ = fresh_var type_ in
+    let _, ret_type = to_func_t f.ftype in
+    let var_ = fresh_var ret_type in
     {
       var_ with
-      body =
+      ebody =
         format "$(var) = $(f)($(arg))"
-          [ ("var", S var_.ret); ("f", S f.ret); ("arg", C arg) ];
+          [ ("var", S var_.ret); ("f", S f.fname); ("arg", C arg) ];
     }
 
   module Array = struct
@@ -220,7 +240,9 @@ int main() {
       let name = sprintf "std::vector<%s>" (type_name e) in
       Array { name; elem_type = e }
 
-    let elem_type = function Array { elem_type; _ } -> elem_type | _ -> .
+    let elem_type = function
+      | Array { elem_type; _ } -> elem_type
+      | _ -> assert false
 
     module O = struct
       let ( = ) a a' = binop "(%s == %s)" Bool a a'
@@ -237,17 +259,9 @@ int main() {
               [ ("name", S name); ("idx", S (sprintf "%d" i)); ("val", C x) ])
         |> String.concat ~sep:" "
       in
-      let subst =
-        [
-          ("name", S name);
-          ("type", S (type_name t));
-          ("len", S (sprintf "%d" (List.length a)));
-          ("assigns", S assigns);
-        ]
-      in
-      let decl = format "$(type) $(name) ($(len));" subst in
-      add_var_decl decl;
-      { ret = name; body = assigns; type_ = t }
+      add_var_decl
+        { vname = name; vtype = t; init = Some (int (List.length a)) };
+      { ret = name; ebody = assigns; etype = t }
 
     let init t len f =
       let iter = fresh_var Int in
@@ -262,27 +276,26 @@ int main() {
           ("f_app", C f_app);
         ]
       in
-      let decl = format "$(type) $(name) ($(len));" subst in
-      add_var_decl decl;
-      let body =
+      add_var_decl { vname = name; vtype = t; init = Some len };
+      let ebody =
         format "for(int i = 0; i < $(len); i++) {\n" subst
         ^ format "$(name)[i] = $(f_app);\n" subst
         ^ "}\n"
       in
-      { ret = name; body; type_ = t }
+      { ret = name; ebody; etype = t }
 
     let set a i x =
-      let body =
+      let ebody =
         format "$(a)[$(i)] = $(x);" [ ("a", C a); ("i", C i); ("x", C x) ]
       in
-      { unit with body }
+      { unit with ebody }
 
-    let get a = binop "(%s[%s])" (elem_type a.type_) a
+    let get a = binop "(%s[%s])" (elem_type a.etype) a
 
-    let sub a s l = init a.type_ (l - s) (fun i -> get a (s + i))
+    let sub a s l = init a.etype (l - s) (fun i -> get a (s + i))
 
     let fold a ~init ~f =
-      let acc = fresh_var init.type_ in
+      let acc = fresh_var init.etype in
       let iter = fresh_var Int in
       let_ a (fun a ->
           let f_app = f acc (get a iter) in
@@ -296,14 +309,14 @@ int main() {
               ("iter", C iter);
             ]
           in
-          let body =
+          let ebody =
             format
               {| $(acc) = $(init); for($(iter) = 0; $(iter) < $(len); $(iter)++) { |}
               subst
             ^ format {|$(acc) = $(f_app);|} subst
             ^ "}"
           in
-          { acc with body })
+          { acc with ebody })
   end
 
   module Set = struct
@@ -311,39 +324,37 @@ int main() {
       let name = sprintf "std::set<%s>" (type_name e) in
       Set { name; elem_type = e }
 
-    let elem_type = function Set { elem_type; _ } -> elem_type | _ -> .
+    let elem_type = function
+      | Set { elem_type; _ } -> elem_type
+      | _ -> assert false
 
     let empty ctype =
       let set = fresh_name () in
-      let decl =
-        format "$(type) $(name);"
-          [ ("type", S (type_name ctype)); ("name", S set) ]
-      in
-      add_var_decl decl;
-      { ret = set; body = ""; type_ = ctype }
+      add_var_decl { vname = set; vtype = ctype; init = None };
+      { ret = set; ebody = ""; etype = ctype }
 
     let iter a f =
       let iter = fresh_name () in
       let_ a (fun a ->
-          let f_app = f (of_value (elem_type a.type_) (sprintf "*%s" iter)) in
+          let f_app = f (of_value (elem_type a.etype) (sprintf "*%s" iter)) in
           let subst =
             [ ("name", C a); ("f_app", C f_app); ("iter", S iter) ]
           in
-          let body =
+          let ebody =
             format
               "for(auto $(iter) = $(name).begin(); $(iter) != $(name).end(); \
                ++$(iter)) {"
               subst
             ^ format {|$(f_app);|} subst ^ "}"
           in
-          { unit with body })
+          { unit with ebody })
 
     let add a x =
       let_ a (fun a ->
           let_ x (fun x ->
               {
                 unit with
-                body =
+                ebody =
                   format "$(name).insert($(val));"
                     [ ("name", C a); ("val", C x) ];
               }))
@@ -354,34 +365,34 @@ int main() {
       let name = sprintf "std::pair<%s,%s>" (type_name x) (type_name y) in
       Tuple (name, x, y)
 
-    let fst_type = function Tuple (_, x, _) -> x | _ -> .
+    let fst_type = function Tuple (_, x, _) -> x | _ -> assert false
 
-    let snd_type = function Tuple (_, _, x) -> x | _ -> .
+    let snd_type = function Tuple (_, _, x) -> x | _ -> assert false
 
     let create x y =
-      let type_ = mk_type x.type_ y.type_ in
+      let type_ = mk_type x.etype y.etype in
       let var_ = fresh_var type_ in
-      let body =
+      let ebody =
         format "$(var) = std::make_pair($(x), $(y));"
           [ ("var", C var_); ("x", C x); ("y", C y) ]
       in
-      { var_ with body }
+      { var_ with ebody }
 
     let fst t =
-      let type_ = fst_type t.type_ in
+      let type_ = fst_type t.etype in
       let var_ = fresh_var type_ in
-      let body =
+      let ebody =
         format "$(var) = std::get<0>($(t));" [ ("var", C var_); ("t", C t) ]
       in
-      { var_ with body }
+      { var_ with ebody }
 
     let snd t =
-      let type_ = snd_type t.type_ in
+      let type_ = snd_type t.etype in
       let var_ = fresh_var type_ in
-      let body =
+      let ebody =
         format "$(var) = std::get<1>($(t));" [ ("var", C var_); ("t", C t) ]
       in
-      { var_ with body }
+      { var_ with ebody }
   end
 end
 
@@ -393,35 +404,31 @@ let%expect_test "" =
   |> to_string |> Util.clang_format |> print_endline;
   [%expect
     {|
+    #include <set>
     #include <vector>
-    using namespace std;
-
     int main() {
+      int x0;
+      int x1;
       int x2;
       int x3;
+      x2 = 10;
+      std::vector<int> x4(x2);
       int x5;
-      x3 = 10;
-      std::vector<int> x4(x3);
       int x6;
       int x7;
       int x8;
       int x9;
-      int x10;
-      int x11;
-
-      x3 = 10;
-      for (int i = 0; i < x3; i++) {
-        x5 = i;
-        x4[i] = x5;
+      x2 = 10;
+      for (int i = 0; i < x2; i++) {
+        x4[i] = x3;
       }
-      x11 = (x4).size();
-      x2 = 0;
-      x6 = x2;
-      for (int i = 0; i < x11; i++) {
-        x9 = x6;
-        x7 = i;
-        x8 = (x4[x7]);
-        x10 = (x9 + x8);
-        x6 = x10;
+      x9 = (x4).size();
+      x1 = 0;
+      x5 = x1;
+      for (x6 = 0; x6 < x9; x6++) {
+        x7 = (x4[x6]);
+        x8 = (x5 + x7);
+        x5 = x8;
       }
+      return x5;
     } |}]
