@@ -421,6 +421,7 @@ let%expect_test "" =
   |> to_string |> Util.clang_format |> print_endline;
   [%expect
     {|
+    #include <iostream>
     #include <set>
     #include <vector>
     int main();
@@ -453,6 +454,7 @@ let%expect_test "" =
   apply f (apply g (int 0)) |> to_string |> Util.clang_format |> print_endline;
   [%expect
     {|
+    #include <iostream>
     #include <set>
     #include <vector>
     int g(int x2);
