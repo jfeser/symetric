@@ -197,7 +197,8 @@ module Make (C : Sigs.CODE) = struct
         init int_array_set_array (C.int max_size) (fun _ ->
             empty int_array_set)
       in
-      k { ints = tbl_i; arrays = tbl_a }
+      C.let_ tbl_i (fun ti ->
+          C.let_ tbl_a (fun ta -> k { ints = ti; arrays = ta }))
 
     let put ~sym:_ ~size ~sizes { ints = tbl_i; arrays = tbl_a; _ } v =
       let key = C.int size in
