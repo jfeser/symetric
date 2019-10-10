@@ -56,6 +56,8 @@ module Code () : Sigs.CODE = struct
     in
     { funcs = [ main ]; cur_func = main; fresh = Fresh.create () }
 
+  let find_func n = List.find prog.funcs ~f:(fun f -> String.(f.fname = n))
+
   type fmt_arg = C : 'a t -> fmt_arg | S : string -> fmt_arg
 
   let format fmt args =
@@ -85,7 +87,7 @@ module Code () : Sigs.CODE = struct
           format "$(type) $(name) ($(init));" (("init", C init) :: subst)
       | None -> format "$(type) $(name);" subst
     in
-    let arg_to_str v = sprintf "%s %s" (type_name v.vtype) v.vname in
+    let arg_to_str v = sprintf "%s &%s" (type_name v.vtype) v.vname in
     let func_to_decl_str f =
       let ret_type =
         match f.ftype with Func (_, t) -> t | _ -> assert false
@@ -103,8 +105,12 @@ module Code () : Sigs.CODE = struct
         |> String.concat ~sep:" "
       in
       let args_str = List.map f.args ~f:arg_to_str |> String.concat ~sep:"," in
-      sprintf "%s %s(%s) { %s %s return %s; }" (type_name ret_type) f.fname
-        args_str locals_str (expr_to_str f.fbody) f.fbody.ret
+      if f.fname = "main" then
+        sprintf "%s %s(%s) { %s return %s; }" (type_name ret_type) f.fname
+          args_str (expr_to_str f.fbody) f.fbody.ret
+      else
+        sprintf "%s %s(%s) { %s %s return %s; }" (type_name ret_type) f.fname
+          args_str locals_str (expr_to_str f.fbody) f.fbody.ret
     in
     prog.cur_func.fbody <-
       { e with ebody = prog.cur_func.fbody.ebody ^ e.ebody };
@@ -112,12 +118,20 @@ module Code () : Sigs.CODE = struct
     let forward_decls =
       List.map prog.funcs ~f:func_to_decl_str |> String.concat ~sep:"\n"
     in
+    let main_decls =
+      find_func "main"
+      |> Option.map ~f:(fun func ->
+             List.rev func.locals
+             |> List.map ~f:var_decl_to_str
+             |> String.concat ~sep:" ")
+      |> Option.value ~default:""
+    in
     let funcs =
       List.rev prog.funcs
       |> List.map ~f:func_to_def_str
       |> String.concat ~sep:"\n"
     in
-    header ^ forward_decls ^ funcs
+    header ^ forward_decls ^ main_decls ^ funcs
 
   let expr_of_var { vname; vtype; _ } =
     { ebody = ""; ret = vname; etype = vtype }
@@ -195,16 +209,20 @@ module Code () : Sigs.CODE = struct
 
   let ite cond then_ else_ =
     let ret_var = fresh_var then_.etype in
+    let subst =
+      [
+        ("ret", C ret_var);
+        ("cond", C cond);
+        ("then", C then_);
+        ("else", C else_);
+      ]
+    in
     {
       ret_var with
       ebody =
-        format "if ($(cond)) { $(ret) = $(then); } else { $(ret) = $(else); }"
-          [
-            ("ret", C ret_var);
-            ("cond", C cond);
-            ("then", C then_);
-            ("else", C else_);
-          ];
+        format "if ($(cond)) {" subst
+        ^ format "$(ret) = $(then); } else {" subst
+        ^ format "$(ret) = $(else); }" subst;
     }
 
   let seq e e' = { e' with ebody = e.ebody ^ e'.ebody }
@@ -212,8 +230,6 @@ module Code () : Sigs.CODE = struct
   let print s = { unit with ebody = sprintf "std::cout << %S << std::endl;" s }
 
   let to_func_t = function Func (t, t') -> (t, t') | _ -> assert false
-
-  let find_func n = List.find prog.funcs ~f:(fun f -> String.(f.fname = n))
 
   let add_func f = prog.funcs <- f :: prog.funcs
 
@@ -362,7 +378,7 @@ module Code () : Sigs.CODE = struct
               "for(auto $(iter) = $(name).begin(); $(iter) != $(name).end(); \
                ++$(iter)) {"
               subst
-            ^ format {|$(f_app);|} subst ^ "}"
+            ^ f_app.ebody ^ "}"
           in
           { unit with ebody })
 
@@ -425,14 +441,14 @@ let%expect_test "" =
     #include <set>
     #include <vector>
     int main();
+    int x0;
+    std::vector<int> x1(10);
+    int x2;
+    int x3;
+    int x4;
+    int x5;
+    int x6;
     int main() {
-      int x0;
-      std::vector<int> x1(10);
-      int x2;
-      int x3;
-      int x4;
-      int x5;
-      int x6;
       for (int i = 0; i < 10; i++) {
         x1[i] = x0;
       }
@@ -457,23 +473,53 @@ let%expect_test "" =
     #include <iostream>
     #include <set>
     #include <vector>
-    int g(int x2);
-    int f(int x0);
+    int g(int &x2);
+    int f(int &x0);
     int main();
+    int x4;
+    int x5;
     int main() {
-      int x4;
-      int x5;
       x4 = g(0);
       x5 = f(x4);
       return x5;
     }
-    int f(int x0) {
+    int f(int &x0) {
       int x1;
       x1 = (x0 + 1);
       return x1;
     }
-    int g(int x2) {
+    int g(int &x2) {
       int x3;
       x3 = (x2 - 1);
       return x3;
+    } |}]
+
+let%expect_test "" =
+  let module C = Code () in
+  let open C in
+  let int_array = Array.mk_type Int in
+  let f = func "f" (Func (int_array, Int)) (fun a -> a.(int 0)) in
+  apply f (Array.init int_array (int 10) (fun i -> i))
+  |> to_string |> Util.clang_format |> print_endline;
+  [%expect
+    {|
+    #include <iostream>
+    #include <set>
+    #include <vector>
+    int f(std::vector<int> &x0);
+    int main();
+    int x2;
+    std::vector<int> x3(10);
+    int x4;
+    int main() {
+      for (int i = 0; i < 10; i++) {
+        x3[i] = x2;
+      }
+      x4 = f(x3);
+      return x4;
+    }
+    int f(std::vector<int> &x0) {
+      int x1;
+      x1 = (x0[0]);
+      return x1;
     } |}]

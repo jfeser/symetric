@@ -29,7 +29,7 @@ struct
 
   let rec seq_many = function [] -> S.unit | x :: xs -> S.seq x (seq_many xs)
 
-  let rec reconstruct tbl sym (costs : int32 array code) target =
+  let rec reconstruct tbl sym (costs' : int32 array code) target =
     let fresh = Fresh.create () in
     let func =
       S.func
@@ -81,7 +81,7 @@ struct
                  (case, code))
           |> case (fun size -> S.(Array.length costs = size)) S.unit)
     in
-    S.apply func costs
+    S.apply func costs'
 
   let enumerate max_cost (target : L.value) =
     let int_array = S.(Array.mk_type Int) in
