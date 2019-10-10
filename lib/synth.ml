@@ -29,13 +29,13 @@ struct
 
   let rec seq_many = function [] -> S.unit | x :: xs -> S.seq x (seq_many xs)
 
-  let rec reconstruct tbl sym costs target =
+  let rec reconstruct tbl sym (costs : int32 array code) target =
     let fresh = Fresh.create () in
     let func =
       S.func
         (sprintf "reconstruct_%s" sym)
         (Func (S.Array.mk_type Int, Unit))
-        (fun costs ->
+        (fun (costs : int32 array code) ->
           G.rhs L.grammar sym
           |> List.map ~f:(G.with_holes ~fresh L.grammar)
           |> List.group_by (module Int) (fun (_, hs) -> List.length hs)

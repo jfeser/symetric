@@ -3,11 +3,11 @@ open! Core
 module Make (C : Sigs.CODE) = struct
   module Value = struct
     type t =
-      | A of int array C.t
-      | I of int C.t
-      | F_int of (int C.t -> int C.t)
-      | F_bool of (int C.t -> bool C.t)
-      | F_int2 of (int C.t -> int C.t -> int C.t)
+      | A of int32 array C.t
+      | I of int32 C.t
+      | F_int of (int32 C.t -> int32 C.t)
+      | F_bool of (int32 C.t -> bool C.t)
+      | F_int2 of (int32 C.t -> int32 C.t -> int32 C.t)
 
     let ( = ) v v' =
       match (v, v') with
@@ -129,13 +129,15 @@ module Make (C : Sigs.CODE) = struct
       | App ("minimum", [ e ]) ->
           let a = eval ctx e |> to_array in
           I
-            (fold ~init:(int Int.max_value)
+            (fold
+               ~init:(int Int32.(max_value |> to_int_exn))
                ~f:(fun acc x -> ite (x < acc) x acc)
                a)
       | App ("maximum", [ e ]) ->
           let a = eval ctx e |> to_array in
           I
-            (fold ~init:(int Int.min_value)
+            (fold
+               ~init:(int Int32.(min_value |> to_int_exn))
                ~f:(fun acc x -> ite (x > acc) x acc)
                a)
       | App ("reverse", [ e ]) ->
@@ -171,43 +173,47 @@ module Make (C : Sigs.CODE) = struct
     type 'a code = 'a C.t
 
     type t = {
-      ints : (int * int array) C.set array code;
-      arrays : (int array * int array) C.set array code;
+      ints : (int32 * int32 array) C.set array code;
+      arrays : (int32 array * int32 array) C.set array code;
     }
 
     let max_size = 100
 
-    open C
     open C.Array
     open C.Set
 
     let empty k =
-      let int_array = Array.mk_type Int in
-      let int_set = Set.mk_type (Tuple.mk_type Int int_array) in
-      let int_set_array = Array.mk_type int_set in
-      let int_array_set = Set.mk_type (Tuple.mk_type int_array int_array) in
-      let int_array_set_array = Array.mk_type int_array_set in
-      let tbl_i = init int_set_array (int max_size) (fun _ -> empty int_set) in
+      let int_array = C.Array.mk_type Int in
+      let int_set = C.Set.mk_type (C.Tuple.mk_type Int int_array) in
+      let int_set_array = C.Array.mk_type int_set in
+      let int_array_set =
+        C.Set.mk_type (C.Tuple.mk_type int_array int_array)
+      in
+      let int_array_set_array = C.Array.mk_type int_array_set in
+      let tbl_i =
+        init int_set_array (C.int max_size) (fun _ -> empty int_set)
+      in
       let tbl_a =
-        init int_array_set_array (int max_size) (fun _ -> empty int_array_set)
+        init int_array_set_array (C.int max_size) (fun _ ->
+            empty int_array_set)
       in
       k { ints = tbl_i; arrays = tbl_a }
 
     let put ~sym:_ ~size ~sizes { ints = tbl_i; arrays = tbl_a; _ } v =
-      let key = int size in
+      let key = C.int size in
       match v with
-      | Value.I v -> add (get tbl_i key) (Tuple.create v sizes)
-      | A v -> add (get tbl_a key) (Tuple.create v sizes)
+      | Value.I v -> add (get tbl_i key) (C.Tuple.create v sizes)
+      | A v -> add (get tbl_a key) (C.Tuple.create v sizes)
       | _ -> assert false
 
     let iter ~sym ~size:key ~f { ints = tbl_i; arrays = tbl_a; _ } =
       match sym with
       | "I" ->
           iter (get tbl_i key) (fun v ->
-              f (Value.I (Tuple.fst v), Tuple.snd v))
+              f (Value.I (C.Tuple.fst v), C.Tuple.snd v))
       | "L" ->
           iter (get tbl_a key) (fun v ->
-              f (Value.A (Tuple.fst v), Tuple.snd v))
+              f (Value.A (C.Tuple.fst v), C.Tuple.snd v))
       | _ -> assert false
 
     let print_size _ = failwith "print_size"

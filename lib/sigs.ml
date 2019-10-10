@@ -10,12 +10,12 @@ module type CACHE = sig
   val empty : (t -> 'a code) -> 'a code
 
   val put :
-    sym:string -> size:int -> sizes:int array code -> t -> value -> unit code
+    sym:string -> size:int -> sizes:int32 array code -> t -> value -> unit code
 
   val iter :
     sym:string ->
-    size:int code ->
-    f:(value * int array code -> unit code) ->
+    size:int32 code ->
+    f:(value * int32 array code -> unit code) ->
     t ->
     unit code
 
@@ -57,32 +57,32 @@ module type CODE = sig
   (* Values *)
   val unit : unit t
 
-  val int : int -> int t
+  val int : int -> int32 t
 
   val bool : bool -> bool t
 
   (* Integer operations *)
-  val ( ~- ) : int t -> int t
+  val ( ~- ) : int32 t -> int32 t
 
-  val ( + ) : int t -> int t -> int t
+  val ( + ) : int32 t -> int32 t -> int32 t
 
-  val ( - ) : int t -> int t -> int t
+  val ( - ) : int32 t -> int32 t -> int32 t
 
-  val ( * ) : int t -> int t -> int t
+  val ( * ) : int32 t -> int32 t -> int32 t
 
-  val ( / ) : int t -> int t -> int t
+  val ( / ) : int32 t -> int32 t -> int32 t
 
-  val ( mod ) : int t -> int t -> int t
+  val ( mod ) : int32 t -> int32 t -> int32 t
 
-  val ( > ) : int t -> int t -> bool t
+  val ( > ) : int32 t -> int32 t -> bool t
 
-  val ( < ) : int t -> int t -> bool t
+  val ( < ) : int32 t -> int32 t -> bool t
 
-  val ( >= ) : int t -> int t -> bool t
+  val ( >= ) : int32 t -> int32 t -> bool t
 
-  val ( <= ) : int t -> int t -> bool t
+  val ( <= ) : int32 t -> int32 t -> bool t
 
-  val ( = ) : int t -> int t -> bool t
+  val ( = ) : int32 t -> int32 t -> bool t
 
   (* Boolean operations *)
   val ( && ) : bool t -> bool t -> bool t
@@ -101,17 +101,17 @@ module type CODE = sig
 
     val const : ctype -> 'a t array -> 'a array t
 
-    val get : 'a array t -> int t -> 'a t
+    val get : 'a array t -> int32 t -> 'a t
 
-    val set : 'a array t -> int t -> 'a t -> unit t
+    val set : 'a array t -> int32 t -> 'a t -> unit t
 
-    val length : 'a array t -> int t
+    val length : 'a array t -> int32 t
 
     val fold : 'a array t -> init:'b t -> f:('b t -> 'a t -> 'b t) -> 'b t
 
-    val sub : 'a array t -> int t -> int t -> 'a array t
+    val sub : 'a array t -> int32 t -> int32 t -> 'a array t
 
-    val init : ctype -> int t -> (int t -> 'a t) -> 'a array t
+    val init : ctype -> int32 t -> (int32 t -> 'a t) -> 'a array t
   end
 
   (* Set operations *)
