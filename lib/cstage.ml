@@ -108,7 +108,7 @@ module Code () : Sigs.CODE = struct
     in
     prog.cur_func.fbody <-
       { e with ebody = prog.cur_func.fbody.ebody ^ e.ebody };
-    let header = "#include <vector>\n#include <set>\n" in
+    let header = "#include <vector>\n#include <set>\n#include <iostream>\n" in
     let forward_decls =
       List.map prog.funcs ~f:func_to_decl_str |> String.concat ~sep:"\n"
     in
@@ -135,9 +135,7 @@ module Code () : Sigs.CODE = struct
 
   let assign = sprintf "%s = %s;"
 
-  let of_value type_ x =
-    let var_ = fresh_var type_ in
-    { var_ with ebody = var_.ebody ^ assign var_.ret x }
+  let of_value etype ret = { ebody = ""; ret; etype }
 
   let let_ v b =
     let x = b { v with ebody = "" } in
@@ -211,7 +209,7 @@ module Code () : Sigs.CODE = struct
 
   let seq e e' = { e' with ebody = e.ebody ^ e'.ebody }
 
-  let print s = { unit with ebody = sprintf "std::cout << %S << endl;" s }
+  let print s = { unit with ebody = sprintf "std::cout << %S << std::endl;" s }
 
   let to_func_t = function Func (t, t') -> (t, t') | _ -> assert false
 
@@ -425,31 +423,26 @@ let%expect_test "" =
     {|
     #include <set>
     #include <vector>
+    int main();
     int main() {
       int x0;
-      int x1;
+      std::vector<int> x1(10);
       int x2;
       int x3;
-      x2 = 10;
-      std::vector<int> x4(x2);
+      int x4;
       int x5;
       int x6;
-      int x7;
-      int x8;
-      int x9;
-      x2 = 10;
-      for (int i = 0; i < x2; i++) {
-        x4[i] = x3;
+      for (int i = 0; i < 10; i++) {
+        x1[i] = x0;
       }
-      x9 = (x4).size();
-      x1 = 0;
-      x5 = x1;
-      for (x6 = 0; x6 < x9; x6++) {
-        x7 = (x4[x6]);
-        x8 = (x5 + x7);
-        x5 = x8;
+      x6 = (x1).size();
+      x2 = 0;
+      for (x3 = 0; x3 < x6; x3++) {
+        x4 = (x1[x3]);
+        x5 = (x2 + x4);
+        x2 = x5;
       }
-      return x5;
+      return x2;
     } |}]
 
 let%expect_test "" =
@@ -462,27 +455,23 @@ let%expect_test "" =
     {|
     #include <set>
     #include <vector>
+    int g(int x2);
+    int f(int x0);
+    int main();
     int main() {
-      int x0;
-      int x7;
-      int x8;
-      int x9;
-      x7 = 0;
-      x8 = g(x7);
-      x9 = f(x8);
-      return x9;
-    }
-    int f(int x1) {
-      int x2;
-      int x3;
-      x2 = 1;
-      x3 = (x1 + x2);
-      return x3;
-    }
-    int g(int x4) {
+      int x4;
       int x5;
-      int x6;
-      x5 = 1;
-      x6 = (x4 - x5);
-      return x6;
+      x4 = g(0);
+      x5 = f(x4);
+      return x5;
+    }
+    int f(int x0) {
+      int x1;
+      x1 = (x0 + 1);
+      return x1;
+    }
+    int g(int x2) {
+      int x3;
+      x3 = (x2 - 1);
+      return x3;
     } |}]
