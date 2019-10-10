@@ -86,7 +86,14 @@ module Code () : Sigs.CODE = struct
       | None -> format "$(type) $(name);" subst
     in
     let arg_to_str v = sprintf "%s %s" (type_name v.vtype) v.vname in
-    let func_to_str f =
+    let func_to_decl_str f =
+      let ret_type =
+        match f.ftype with Func (_, t) -> t | _ -> assert false
+      in
+      let args_str = List.map f.args ~f:arg_to_str |> String.concat ~sep:"," in
+      sprintf "%s %s(%s);" (type_name ret_type) f.fname args_str
+    in
+    let func_to_def_str f =
       let ret_type =
         match f.ftype with Func (_, t) -> t | _ -> assert false
       in
@@ -102,10 +109,15 @@ module Code () : Sigs.CODE = struct
     prog.cur_func.fbody <-
       { e with ebody = prog.cur_func.fbody.ebody ^ e.ebody };
     let header = "#include <vector>\n#include <set>\n" in
-    let funcs =
-      List.rev prog.funcs |> List.map ~f:func_to_str |> String.concat ~sep:"\n"
+    let forward_decls =
+      List.map prog.funcs ~f:func_to_decl_str |> String.concat ~sep:"\n"
     in
-    header ^ funcs
+    let funcs =
+      List.rev prog.funcs
+      |> List.map ~f:func_to_def_str
+      |> String.concat ~sep:"\n"
+    in
+    header ^ forward_decls ^ funcs
 
   let expr_of_var { vname; vtype; _ } =
     { ebody = ""; ret = vname; etype = vtype }
@@ -222,7 +234,11 @@ module Code () : Sigs.CODE = struct
         }
       in
       add_func func;
-      func.fbody <- f (expr_of_var arg) );
+      let old_func = prog.cur_func in
+      prog.cur_func <- func;
+      func.fbody <- f (expr_of_var arg);
+      prog.cur_func <- old_func );
+
     fval
 
   let apply f arg =
@@ -233,14 +249,14 @@ module Code () : Sigs.CODE = struct
         {
           var_ with
           ebody =
-            format "$(var) = $(f)($(arg))"
+            format "$(var) = $(f)($(arg));"
               [ ("var", S var_.ret); ("f", S func.fname); ("arg", C arg) ];
         }
     | None -> failwith (sprintf "No function named %s" f.ret)
 
   module Array = struct
     let mk_type e =
-      let name = sprintf "std::vector<%s>" (type_name e) in
+      let name = sprintf "std::vector<%s >" (type_name e) in
       Array { name; elem_type = e }
 
     let elem_type = function
@@ -324,7 +340,7 @@ module Code () : Sigs.CODE = struct
 
   module Set = struct
     let mk_type e =
-      let name = sprintf "std::set<%s>" (type_name e) in
+      let name = sprintf "std::set<%s >" (type_name e) in
       Set { name; elem_type = e }
 
     let elem_type = function
@@ -365,7 +381,7 @@ module Code () : Sigs.CODE = struct
 
   module Tuple = struct
     let mk_type x y =
-      let name = sprintf "std::pair<%s,%s>" (type_name x) (type_name y) in
+      let name = sprintf "std::pair<%s,%s >" (type_name x) (type_name y) in
       Tuple (name, x, y)
 
     let fst_type = function Tuple (_, x, _) -> x | _ -> assert false
@@ -434,4 +450,39 @@ let%expect_test "" =
         x5 = x8;
       }
       return x5;
+    } |}]
+
+let%expect_test "" =
+  let module C = Code () in
+  let open C in
+  let f = func "f" (Func (Int, Int)) (fun i -> i + int 1) in
+  let g = func "g" (Func (Int, Int)) (fun i -> i - int 1) in
+  apply f (apply g (int 0)) |> to_string |> Util.clang_format |> print_endline;
+  [%expect
+    {|
+    #include <set>
+    #include <vector>
+    int main() {
+      int x0;
+      int x7;
+      int x8;
+      int x9;
+      x7 = 0;
+      x8 = g(x7);
+      x9 = f(x8);
+      return x9;
+    }
+    int f(int x1) {
+      int x2;
+      int x3;
+      x2 = 1;
+      x3 = (x1 + x2);
+      return x3;
+    }
+    int g(int x4) {
+      int x5;
+      int x6;
+      x5 = 1;
+      x6 = (x4 - x5);
+      return x6;
     } |}]
