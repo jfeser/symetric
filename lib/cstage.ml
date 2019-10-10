@@ -2,7 +2,7 @@ open! Core
 open! Utils
 module Seq = Sequence
 
-module Code () = struct
+module Code () : Sigs.CODE = struct
   type 'a set = Set
 
   type ntype = { name : string; elem_type : ctype }
@@ -24,16 +24,16 @@ module Code () = struct
     | Array { name; _ } | Set { name; _ } -> name
     | _ -> failwith "Type cannot be constructed."
 
-  type 'a t = { ebody : string; ret : string; etype : ctype }
+  type expr = { ebody : string; ret : string; etype : ctype }
 
-  type var_decl = { vname : string; vtype : ctype; init : Nothing.t t option }
+  type var_decl = { vname : string; vtype : ctype; init : expr option }
 
   type func_decl = {
     fname : string;
     ftype : ctype;
     mutable locals : var_decl list;
     mutable args : var_decl list;
-    mutable fbody : Nothing.t t;
+    mutable fbody : expr;
   }
 
   type prog = {
@@ -41,6 +41,8 @@ module Code () = struct
     mutable cur_func : func_decl;
     fresh : Fresh.t;
   }
+
+  type 'a t = expr
 
   let prog =
     let main =
@@ -118,8 +120,6 @@ module Code () = struct
     { ret = vname; ebody = ""; etype = vtype }
 
   let ret { ret; _ } = ret
-
-  let body { ebody; _ } = ebody
 
   let assign = sprintf "%s = %s;"
 
@@ -226,14 +226,17 @@ module Code () = struct
     fval
 
   let apply f arg =
-    let _, ret_type = to_func_t f.ftype in
-    let var_ = fresh_var ret_type in
-    {
-      var_ with
-      ebody =
-        format "$(var) = $(f)($(arg))"
-          [ ("var", S var_.ret); ("f", S f.fname); ("arg", C arg) ];
-    }
+    match find_func f.ret with
+    | Some func ->
+        let _, ret_type = to_func_t func.ftype in
+        let var_ = fresh_var ret_type in
+        {
+          var_ with
+          ebody =
+            format "$(var) = $(f)($(arg))"
+              [ ("var", S var_.ret); ("f", S func.fname); ("arg", C arg) ];
+        }
+    | None -> failwith (sprintf "No function named %s" f.ret)
 
   module Array = struct
     let mk_type e =

@@ -39,16 +39,16 @@ module type CODE = sig
 
   type 'a set = Set
 
-  type 'a ntype = { name : string; elem_type : 'a ctype }
+  type ntype = { name : string; elem_type : ctype }
 
-  and 'a ctype =
-    | Unit : unit ctype
-    | Int : int ctype
-    | Bool : bool ctype
-    | Array : 'a ntype -> 'a array ctype
-    | Set : 'a ntype -> 'a set ctype
-    | Tuple : string * 'a ctype * 'b ctype -> ('a * 'b) ctype
-    | Func : 'a ctype * 'b ctype -> ('a -> 'b) ctype
+  and ctype =
+    | Unit
+    | Int
+    | Bool
+    | Array of ntype
+    | Set of ntype
+    | Tuple of string * ctype * ctype
+    | Func of ctype * ctype
 
   val to_string : 'a t -> string
 
@@ -93,13 +93,13 @@ module type CODE = sig
 
   (* Array operations *)
   module Array : sig
-    val mk_type : 'a ctype -> 'a array ctype
+    val mk_type : ctype -> ctype
 
     module O : sig
       val ( = ) : 'a array t -> 'a array t -> bool t
     end
 
-    val const : 'a array ctype -> 'a t array -> 'a array t
+    val const : ctype -> 'a t array -> 'a array t
 
     val get : 'a array t -> int t -> 'a t
 
@@ -111,14 +111,14 @@ module type CODE = sig
 
     val sub : 'a array t -> int t -> int t -> 'a array t
 
-    val init : 'a array ctype -> int t -> (int t -> 'a t) -> 'a array t
+    val init : ctype -> int t -> (int t -> 'a t) -> 'a array t
   end
 
   (* Set operations *)
   module Set : sig
-    val mk_type : 'a ctype -> 'a set ctype
+    val mk_type : ctype -> ctype
 
-    val empty : 'a set ctype -> 'a set t
+    val empty : ctype -> 'a set t
 
     val add : 'a set t -> 'a t -> unit t
 
@@ -127,7 +127,7 @@ module type CODE = sig
 
   (* Tuples *)
   module Tuple : sig
-    val mk_type : 'a ctype -> 'b ctype -> ('a * 'b) ctype
+    val mk_type : ctype -> ctype -> ctype
 
     val create : 'a t -> 'b t -> ('a * 'b) t
 
@@ -144,7 +144,7 @@ module type CODE = sig
   val seq : unit t -> unit t -> unit t
 
   (* Functions *)
-  val func : string -> ('a -> 'b) ctype -> ('a t -> 'b t) -> ('a -> 'b) t
+  val func : string -> ctype -> ('a t -> 'b t) -> ('a -> 'b) t
 
   val apply : ('a -> 'b) t -> 'a t -> 'b t
 
