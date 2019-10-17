@@ -25,9 +25,17 @@ end
 module type LANG = sig
   type value
 
+  type type_
+
   type 'a code
 
-  val ( = ) : value -> value -> bool code
+  val ( = ) : value -> value -> bool code option
+
+  val code : value -> 'a code
+
+  val eq : value -> 'a code -> bool code
+
+  val type_of : value -> type_
 
   val grammar : Grammar.t
 
@@ -50,9 +58,11 @@ module type CODE = sig
     | Tuple of string * ctype * ctype
     | Func of ctype * ctype
 
+  val type_of : 'a t -> ctype
+
   val to_string : 'a t -> string
 
-  (* type 'a set *)
+  val cast : 'a t -> 'b t
 
   (* Values *)
   val unit : unit t
@@ -150,4 +160,6 @@ module type CODE = sig
 
   (* Utility *)
   val print : string -> unit t
+
+  val exit : unit t
 end

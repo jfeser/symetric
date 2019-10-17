@@ -12,7 +12,7 @@ let to_list a = List.init (Bigarray.Array1.dim a) ~f:(fun i -> a.{i})
 
 module Make
     (S : Sigs.CODE)
-    (L : Sigs.LANG with type 'a code = 'a S.t)
+    (L : Sigs.LANG with type 'a code = 'a S.t and type type_ = S.ctype)
     (C : Sigs.CACHE with type value = L.value and type 'a code = 'a S.t) =
 struct
   open C
@@ -29,13 +29,15 @@ struct
 
   let rec seq_many = function [] -> S.unit | x :: xs -> S.seq x (seq_many xs)
 
-  let rec reconstruct tbl sym (costs' : int32 array code) target =
+  let rec reconstruct tbl sym costs target =
     let fresh = Fresh.create () in
     let func =
       S.func
         (sprintf "reconstruct_%s" sym)
-        (Func (S.Array.mk_type Int, Unit))
-        (fun (costs : int32 array code) ->
+        (Func (S.Tuple.mk_type (S.Array.mk_type Int) (L.type_of target), Unit))
+        (fun tup ->
+          let costs = S.Tuple.fst tup in
+          let target = S.Tuple.snd tup in
           G.rhs L.grammar sym
           |> List.map ~f:(G.with_holes ~fresh L.grammar)
           |> List.group_by (module Int) (fun (_, hs) -> List.length hs)
@@ -50,8 +52,7 @@ struct
                        let check ctx =
                          let ectx = Map.map ctx ~f:(fun (v, _) -> v) in
                          let v = L.eval ectx term in
-                         S.ite
-                           L.(v = target)
+                         S.ite (L.eq v target)
                            (seq_many
                               ( S.print
                                   ( [%sexp_of: G.Term.t] term
@@ -81,10 +82,29 @@ struct
                  (case, code))
           |> case (fun size -> S.(Array.length costs = size)) S.unit)
     in
-    S.apply func costs'
+    S.apply func (S.Tuple.create costs (L.code target))
+
+  let put_all tbl ctx target cost costs lhs rhs =
+    let int_array = S.(Array.mk_type Int) in
+    let v = L.eval (Map.of_alist_exn (module String) ctx) rhs in
+    let sizes =
+      S.Array.const int_array (costs |> List.map ~f:S.int |> List.to_array)
+    in
+    Option.map
+      L.(v = target)
+      ~f:(fun cond ->
+        S.ite cond
+          S.(
+            seq_many
+              [
+                print "Starting reconstruction";
+                reconstruct tbl lhs sizes target;
+                exit;
+              ])
+          (put ~sym:lhs ~size:cost ~sizes tbl v))
+    |> Option.value ~default:S.unit
 
   let enumerate max_cost (target : L.value) =
-    let int_array = S.(Array.mk_type Int) in
     let enum tbl made cost =
       List.filter L.grammar ~f:(fun rule -> G.rule_size rule <= cost)
       |> List.concat_map ~f:(fun rule ->
@@ -93,12 +113,7 @@ struct
              let rhs, holes = G.with_holes ~fresh L.grammar rhs in
              let n_holes = List.length holes in
              if n_holes = 0 && G.rule_size rule = cost then
-               [
-                 L.eval (Map.empty (module String)) rhs
-                 |> put ~sym:lhs ~size:cost
-                      ~sizes:(S.Array.const int_array [||])
-                      tbl;
-               ]
+               [ put_all tbl [] target cost [] lhs rhs ]
              else
                Combinat.Partition.fold
                  ( cost - G.rule_size rule + List.length holes,
@@ -108,18 +123,7 @@ struct
                    if for_all costs (Set.mem made) then
                      let loop =
                        let put_all ctx =
-                         let v =
-                           L.eval (Map.of_alist_exn (module String) ctx) rhs
-                         in
-                         let sizes =
-                           S.Array.const int_array
-                             ( to_list costs |> List.map ~f:S.int
-                             |> List.to_array )
-                         in
-                         S.ite
-                           L.(v = target)
-                           (reconstruct tbl lhs sizes v)
-                           (put ~sym:lhs ~size:cost ~sizes tbl v)
+                         put_all tbl ctx target cost (to_list costs) lhs rhs
                        in
                        List.foldi holes ~init:put_all
                          ~f:(fun i put_all (sym, name) ->
@@ -140,7 +144,10 @@ struct
           |> List.fold_left
                ~init:(Set.empty (module Int), [])
                ~f:(fun (made, loops) cost ->
-                 let loops' = enum tbl made cost in
+                 let loops' =
+                   enum tbl made cost
+                   @ [ S.print (sprintf "Completed %d/%d" cost max_cost) ]
+                 in
                  if List.length loops' > 0 then
                    (Set.add made cost, loops @ loops')
                  else (made, loops))

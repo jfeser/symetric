@@ -9,13 +9,28 @@ module Make (C : Sigs.CODE) = struct
       | F_bool of (int32 C.t -> bool C.t)
       | F_int2 of (int32 C.t -> int32 C.t -> int32 C.t)
 
+    type type_ = C.ctype
+
     let ( = ) v v' =
       match (v, v') with
-      | A a, A a' -> C.Array.O.(a = a')
-      | I x, I x' -> C.( = ) x x'
+      | A a, A a' -> Some C.Array.O.(a = a')
+      | I x, I x' -> Some (C.( = ) x x')
       | F_int _, F_int _ | F_bool _, F_bool _ | F_int2 _, F_int2 _ ->
           failwith "Cannot compare"
-      | _ -> C.bool false
+      | _ -> None
+
+    let type_of = function
+      | A x -> C.type_of x
+      | I x -> C.type_of x
+      | _ -> assert false
+
+    let code = function A x -> C.cast x | I x -> C.cast x | _ -> assert false
+
+    let eq (type a) (x : t) (y : a C.t) =
+      match x with
+      | A x -> C.(Array.O.(x = cast y))
+      | I x -> C.(x = cast y)
+      | _ -> assert false
   end
 
   module Lang = struct

@@ -78,6 +78,10 @@ module Code () : Sigs.CODE = struct
       Error.(create "Incomplete template." fmt [%sexp_of: string] |> raise) );
     fmt
 
+  let type_of e = e.etype
+
+  let cast x = x
+
   let to_string e =
     let expr_to_str e = e.ebody in
     let var_decl_to_str v =
@@ -229,6 +233,8 @@ module Code () : Sigs.CODE = struct
 
   let print s = { unit with ebody = sprintf "std::cout << %S << std::endl;" s }
 
+  let exit = { unit with ebody = "exit(0);" }
+
   let to_func_t = function Func (t, t') -> (t, t') | _ -> assert false
 
   let add_func f = prog.funcs <- f :: prog.funcs
@@ -258,14 +264,15 @@ module Code () : Sigs.CODE = struct
   let apply f arg =
     match find_func f.ret with
     | Some func ->
-        let _, ret_type = to_func_t func.ftype in
-        let var_ = fresh_var ret_type in
-        {
-          var_ with
-          ebody =
-            format "$(var) = $(f)($(arg));"
-              [ ("var", S var_.ret); ("f", S func.fname); ("arg", C arg) ];
-        }
+        let_ arg (fun arg ->
+            let _, ret_type = to_func_t func.ftype in
+            let var_ = fresh_var ret_type in
+            {
+              var_ with
+              ebody =
+                format "$(var) = $(f)($(arg));"
+                  [ ("var", S var_.ret); ("f", S func.fname); ("arg", C arg) ];
+            })
     | None -> failwith (sprintf "No function named %s" f.ret)
 
   module Array = struct
@@ -283,7 +290,10 @@ module Code () : Sigs.CODE = struct
 
     let length x = unop "(%s).size()" Int x
 
+    let is_array_type = function Array _ -> () | _ -> assert false
+
     let const t a =
+      is_array_type t;
       let a = Array.to_list a in
       let name = fresh_name () in
       let assigns =
@@ -297,25 +307,28 @@ module Code () : Sigs.CODE = struct
       { ret = name; ebody = assigns; etype = t }
 
     let init t len f =
+      is_array_type t;
       let iter = fresh_var Int in
       let name = fresh_name () in
       let f_app = f iter in
-      let subst =
-        [
-          ("name", S name);
-          ("type", S (type_name t));
-          ("elem_type", S (type_name (elem_type t)));
-          ("len", C len);
-          ("f_app", C f_app);
-        ]
-      in
-      add_var_decl { vname = name; vtype = t; init = Some len };
-      let ebody =
-        format "for(int i = 0; i < $(len); i++) {\n" subst
-        ^ format "$(name)[i] = $(f_app);\n" subst
-        ^ "}\n"
-      in
-      { ret = name; ebody; etype = t }
+      add_var_decl { vname = name; vtype = t; init = None };
+      let_ len (fun len ->
+          let subst =
+            [
+              ("name", S name);
+              ("type", S (type_name t));
+              ("elem_type", S (type_name (elem_type t)));
+              ("len", C len);
+              ("f_app", C f_app);
+            ]
+          in
+          let ebody =
+            format "$(name).reserve($(len));" subst
+            ^ format "for(int i = 0; i < $(len); i++) {" subst
+            ^ format "$(name).push_back($(f_app));" subst
+            ^ "}"
+          in
+          { ret = name; ebody; etype = t })
 
     let set a i x =
       let ebody =
