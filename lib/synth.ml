@@ -1,5 +1,5 @@
 open! Core
-open! Utils
+module Fresh = Utils.Fresh
 open Utils.Collections
 
 let for_all a f =
@@ -17,6 +17,10 @@ module Make
 struct
   open C
   module G = Grammar
+
+  let debug = true
+
+  let debug_print msg = if debug then S.print msg else S.unit
 
   let rec of_list = function
     | [] -> S.unit
@@ -90,54 +94,76 @@ struct
     let sizes =
       S.Array.const int_array (costs |> List.map ~f:S.int |> List.to_array)
     in
+    let insert_code =
+      seq_many
+        [
+          debug_print
+            (sprintf "Inserting (%s -> %s) cost %d" lhs (G.Term.to_string rhs)
+               cost);
+          put ~sym:lhs ~size:cost ~sizes tbl v;
+        ]
+    in
+    let recon_code =
+      S.(
+        seq_many
+          [
+            print "Starting reconstruction";
+            reconstruct tbl lhs sizes target;
+            exit;
+          ])
+    in
     Option.map
       L.(v = target)
-      ~f:(fun cond ->
-        S.ite cond
-          S.(
-            seq_many
-              [
-                print "Starting reconstruction";
-                reconstruct tbl lhs sizes target;
-                exit;
-              ])
-          (put ~sym:lhs ~size:cost ~sizes tbl v))
-    |> Option.value ~default:S.unit
+      ~f:(fun cond -> S.ite cond recon_code insert_code)
+    |> Option.value ~default:insert_code
+
+  let put_leaf_rule tbl target cost (lhs, rhs) =
+    [ put_all tbl [] target cost [] lhs rhs ]
+
+  let put_rule tbl target cost holes made ((lhs, rhs) as rule) =
+    Combinat.Partition.fold
+      (cost - G.rule_size rule + List.length holes, List.length holes)
+      ~init:[]
+      ~f:(fun code costs ->
+        if for_all costs (Set.mem made) then (
+          Log.debug (fun m ->
+              m "Enumerating (%s -> %s) at cost %d" lhs (G.Term.to_string rhs)
+                cost);
+          let loop =
+            let put_all ctx =
+              put_all tbl ctx target cost (to_list costs) lhs rhs
+            in
+            List.foldi holes ~init:put_all ~f:(fun i put_all (sym, name) ->
+                let put_all ctx =
+                  C.iter ~sym
+                    ~size:(S.int costs.{i})
+                    ~f:(fun (v, _) -> put_all ((name, v) :: ctx))
+                    tbl
+                in
+                put_all)
+          in
+          loop [] :: code )
+        else (
+          Log.debug (fun m ->
+              m "Ignoring (%s -> %s) at cost %d" lhs (G.Term.to_string rhs)
+                cost);
+          code ))
+
+  let enumerate_rule tbl made cost target ((lhs, rhs) as rule) =
+    let fresh = Fresh.create () in
+    let rhs, holes = G.with_holes ~fresh L.grammar rhs in
+    let n_holes = List.length holes in
+    if n_holes = 0 && G.rule_size rule = cost then (
+      Log.debug (fun m ->
+          m "Enumerating (%s -> %s) at cost %d" lhs (G.Term.to_string rhs) cost);
+      put_leaf_rule tbl target cost rule )
+    else put_rule tbl target cost holes made (lhs, rhs)
+
+  let enumerate_cost tbl made cost target =
+    List.filter L.grammar ~f:(fun rule -> G.rule_size rule <= cost)
+    |> List.concat_map ~f:(enumerate_rule tbl made cost target)
 
   let enumerate max_cost (target : L.value) =
-    let enum tbl made cost =
-      List.filter L.grammar ~f:(fun rule -> G.rule_size rule <= cost)
-      |> List.concat_map ~f:(fun rule ->
-             let fresh = Fresh.create () in
-             let lhs, rhs = rule in
-             let rhs, holes = G.with_holes ~fresh L.grammar rhs in
-             let n_holes = List.length holes in
-             if n_holes = 0 && G.rule_size rule = cost then
-               [ put_all tbl [] target cost [] lhs rhs ]
-             else
-               Combinat.Partition.fold
-                 ( cost - G.rule_size rule + List.length holes,
-                   List.length holes )
-                 ~init:[]
-                 ~f:(fun code costs ->
-                   if for_all costs (Set.mem made) then
-                     let loop =
-                       let put_all ctx =
-                         put_all tbl ctx target cost (to_list costs) lhs rhs
-                       in
-                       List.foldi holes ~init:put_all
-                         ~f:(fun i put_all (sym, name) ->
-                           let put_all ctx =
-                             C.iter ~sym
-                               ~size:(S.int costs.{i})
-                               ~f:(fun (v, _) -> put_all ((name, v) :: ctx))
-                               tbl
-                           in
-                           put_all)
-                     in
-                     loop [] :: code
-                   else code))
-    in
     C.empty (fun tbl ->
         let _, loops =
           List.init max_cost ~f:(fun c -> c)
@@ -145,7 +171,7 @@ struct
                ~init:(Set.empty (module Int), [])
                ~f:(fun (made, loops) cost ->
                  let loops' =
-                   enum tbl made cost
+                   enumerate_cost tbl made cost target
                    @ [ S.print (sprintf "Completed %d/%d" cost max_cost) ]
                  in
                  if List.length loops' > 0 then

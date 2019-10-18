@@ -7,6 +7,12 @@ module Term = struct
   let rec size = function
     | Id _ -> 1
     | App (_, ts) -> 1 + List.sum (module Int) ~f:size ts
+
+  let rec to_string = function
+    | Id x -> x
+    | App (f, xs) ->
+        List.map xs ~f:to_string |> String.concat ~sep:", "
+        |> sprintf "%s(%s)" f
 end
 
 type t = (string * Term.t) list
