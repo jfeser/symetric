@@ -144,14 +144,46 @@ module Code () : Sigs.CODE = struct
 
   let fresh_name () = Fresh.name prog.fresh "x%d"
 
-  let fresh_var vtype =
+  let fresh_ref vtype init_fmt init_subst =
+    let vname = fresh_name () in
+    {
+      ret = vname;
+      ebody =
+        format
+          ("$(type) &$(var) = " ^ init_fmt)
+          ([ ("type", S (type_name vtype)); ("var", S vname) ] @ init_subst);
+      etype = vtype;
+    }
+
+  let fresh_local ?(is_ref = false) ?init vtype =
+    let vname = fresh_name () in
+    let ebody =
+      let subst =
+        [
+          ("type", S (type_name vtype));
+          ("var", S vname);
+          ("ref", S (if is_ref then "&" else ""));
+        ]
+      in
+      match init with
+      | Some init ->
+          format "$(type) $(ref) $(var) = $(init);" (("init", S init) :: subst)
+      | None -> format "$(type) $(ref) $(var);" subst
+    in
+    { ret = vname; ebody; etype = vtype }
+
+  let fresh_global ?init vtype =
     let vname = fresh_name () in
     add_var_decl { vname; vtype; init = None };
-    { ret = vname; ebody = ""; etype = vtype }
+    let ebody =
+      match init with
+      | Some init ->
+          format "$(var) = $(init);" [ ("init", S init); ("var", S vname) ]
+      | None -> ""
+    in
+    { ret = vname; ebody; etype = vtype }
 
   let ret { ret; _ } = ret
-
-  let assign = sprintf "%s = %s;"
 
   let of_value etype ret = { ebody = ""; ret; etype }
 
@@ -160,22 +192,12 @@ module Code () : Sigs.CODE = struct
     { x with ebody = v.ebody ^ x.ebody }
 
   let unop fmt type_ x =
-    let var_ = fresh_var type_ in
-    {
-      var_ with
-      ebody = var_.ebody ^ x.ebody ^ assign var_.ret (sprintf fmt (ret x));
-    }
+    let_ x (fun x -> fresh_local type_ ~init:(sprintf fmt (ret x)))
 
   let binop fmt type_ x x' =
-    let var_ = fresh_var type_ in
     let_ x (fun x ->
         let_ x' (fun x' ->
-            {
-              var_ with
-              ebody =
-                var_.ebody ^ x.ebody ^ x'.ebody
-                ^ assign var_.ret (sprintf fmt (ret x) (ret x'));
-            }))
+            fresh_local type_ ~init:(sprintf fmt (ret x) (ret x'))))
 
   let int x = sprintf "%d" x |> of_value Int
 
@@ -212,7 +234,7 @@ module Code () : Sigs.CODE = struct
   let not x = unop "(!%s)" Bool x
 
   let ite cond then_ else_ =
-    let ret_var = fresh_var then_.etype in
+    let ret_var = fresh_local then_.etype in
     let subst =
       [
         ("ret", C ret_var);
@@ -266,7 +288,7 @@ module Code () : Sigs.CODE = struct
     | Some func ->
         let_ arg (fun arg ->
             let _, ret_type = to_func_t func.ftype in
-            let var_ = fresh_var ret_type in
+            let var_ = fresh_local ret_type in
             {
               var_ with
               ebody =
@@ -308,27 +330,24 @@ module Code () : Sigs.CODE = struct
 
     let init t len f =
       is_array_type t;
-      let iter = fresh_var Int in
-      let name = fresh_name () in
-      let f_app = f iter in
-      add_var_decl { vname = name; vtype = t; init = None };
+      let arr = fresh_global t in
       let_ len (fun len ->
           let subst =
             [
-              ("name", S name);
+              ("arr", C arr);
               ("type", S (type_name t));
               ("elem_type", S (type_name (elem_type t)));
               ("len", C len);
-              ("f_app", C f_app);
+              ("f_app", C (f (of_value Int "i")));
             ]
           in
           let ebody =
-            format "$(name).reserve($(len));" subst
+            format "$(arr).reserve($(len));" subst
             ^ format "for(int i = 0; i < $(len); i++) {" subst
-            ^ format "$(name).push_back($(f_app));" subst
+            ^ format "$(arr).push_back($(f_app));" subst
             ^ "}"
           in
-          { ret = name; ebody; etype = t })
+          { arr with ebody })
 
     let set a i x =
       let ebody =
@@ -340,29 +359,28 @@ module Code () : Sigs.CODE = struct
 
     let sub a s l = init a.etype (l - s) (fun i -> get a (s + i))
 
-    let fold a ~init ~f =
-      let acc = fresh_var init.etype in
-      let iter = fresh_var Int in
-      let_ a (fun a ->
-          let f_app = f acc (get a iter) in
-          let len = length a in
-          let subst =
-            [
-              ("init", C init);
-              ("acc", C acc);
-              ("len", C len);
-              ("f_app", C f_app);
-              ("iter", C iter);
-            ]
-          in
-          let ebody =
-            format
-              {| $(acc) = $(init); for($(iter) = 0; $(iter) < $(len); $(iter)++) { |}
-              subst
-            ^ format {|$(acc) = $(f_app);|} subst
-            ^ "}"
-          in
-          { acc with ebody })
+    let fold arr ~init ~f =
+      let iter = fresh_global Int in
+      let acc = fresh_global init.etype in
+      let_ init (fun init ->
+          let_ arr (fun arr ->
+              let subst =
+                [
+                  ("init", C init);
+                  ("acc", C acc);
+                  ("len", C (length arr));
+                  ("f_app", C (f acc (get arr iter)));
+                  ("iter", C iter);
+                ]
+              in
+              let ebody =
+                format
+                  {| $(acc) = $(init); for($(iter) = 0; $(iter) < $(len); $(iter)++) { |}
+                  subst
+                ^ format {|$(acc) = $(f_app);|} subst
+                ^ "}"
+              in
+              { acc with ebody }))
   end
 
   module Set = struct
@@ -417,7 +435,7 @@ module Code () : Sigs.CODE = struct
 
     let create x y =
       let type_ = mk_type x.etype y.etype in
-      let var_ = fresh_var type_ in
+      let var_ = fresh_local type_ in
       let ebody =
         format "$(var) = std::make_pair($(x), $(y));"
           [ ("var", C var_); ("x", C x); ("y", C y) ]
@@ -426,19 +444,11 @@ module Code () : Sigs.CODE = struct
 
     let fst t =
       let type_ = fst_type t.etype in
-      let var_ = fresh_var type_ in
-      let ebody =
-        format "$(var) = std::get<0>($(t));" [ ("var", C var_); ("t", C t) ]
-      in
-      { var_ with ebody }
+      fresh_ref type_ "std::get<0>($(t));" [ ("t", C t) ]
 
     let snd t =
       let type_ = snd_type t.etype in
-      let var_ = fresh_var type_ in
-      let ebody =
-        format "$(var) = std::get<1>($(t));" [ ("var", C var_); ("t", C t) ]
-      in
-      { var_ with ebody }
+      fresh_ref type_ "std::get<1>($(t));" [ ("t", C t) ]
   end
 end
 
@@ -454,23 +464,20 @@ let%expect_test "" =
     #include <set>
     #include <vector>
     int main();
-    int x0;
-    std::vector<int> x1(10);
+    std::vector<int> x0;
+    int x1;
     int x2;
-    int x3;
-    int x4;
-    int x5;
-    int x6;
     int main() {
+      x0.reserve(10);
       for (int i = 0; i < 10; i++) {
-        x1[i] = x0;
+        x0.push_back(i);
       }
-      x6 = (x1).size();
+      int x5 = (x0).size();
       x2 = 0;
-      for (x3 = 0; x3 < x6; x3++) {
-        x4 = (x1[x3]);
-        x5 = (x2 + x4);
-        x2 = x5;
+      for (x1 = 0; x1 < x5; x1++) {
+        int x3 = (x0[x1]);
+        int x4 = (x2 + x3);
+        x2 = x4;
       }
       return x2;
     } |}]
@@ -489,21 +496,17 @@ let%expect_test "" =
     int g(int &x2);
     int f(int &x0);
     int main();
-    int x4;
-    int x5;
     int main() {
       x4 = g(0);
       x5 = f(x4);
       return x5;
     }
     int f(int &x0) {
-      int x1;
-      x1 = (x0 + 1);
+      int x1 = (x0 + 1);
       return x1;
     }
     int g(int &x2) {
-      int x3;
-      x3 = (x2 - 1);
+      int x3 = (x2 - 1);
       return x3;
     } |}]
 
@@ -521,18 +524,54 @@ let%expect_test "" =
     #include <vector>
     int f(std::vector<int> &x0);
     int main();
-    int x2;
-    std::vector<int> x3(10);
-    int x4;
+    std::vector<int> x2;
     int main() {
+      x2.reserve(10);
       for (int i = 0; i < 10; i++) {
-        x3[i] = x2;
+        x2.push_back(i);
       }
-      x4 = f(x3);
-      return x4;
+      x3 = f(x2);
+      return x3;
     }
     int f(std::vector<int> &x0) {
-      int x1;
-      x1 = (x0[0]);
+      int x1 = (x0[0]);
       return x1;
     } |}]
+
+let%expect_test "" =
+  let module C = Code () in
+  let open C in
+  let int_array = Array.mk_type Int in
+  let f =
+    let x =
+      C.Tuple.create
+        (Array.init int_array (int 10) (fun i -> i))
+        (Array.init int_array (int 10) (fun i -> i))
+    in
+    let y = C.Tuple.fst x in
+    C.Array.set y (int 5) (int 5)
+  in
+  f |> to_string |> Util.clang_format |> print_endline;
+  [%expect {|
+    #include <iostream>
+    #include <set>
+    #include <vector>
+    int main();
+    std::vector<int> x0;
+    std::vector<int> x1;
+    int main() {
+      x0.reserve(10);
+      for (int i = 0; i < 10; i++) {
+        x0.push_back(i);
+      }
+      x1.reserve(10);
+      for (int i = 0; i < 10; i++) {
+        x1.push_back(i);
+      }
+      std::pair<std::vector<int>, std::vector<int>> x2;
+      x2 = std::make_pair(x1, x0);
+      std::vector<int> &x3 = std::get<0>(x2);
+      x3[5] = 5;
+      return 0;
+    }
+ |}]
