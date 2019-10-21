@@ -128,7 +128,7 @@ module Make (C : Sigs.CODE) = struct
           I (get a (int 0))
       | App ("last", [ e ]) ->
           let a = eval ctx e |> to_array in
-          I (get a (length a - int 1))
+          I (let_ a (fun a -> get a (length a - int 1)))
       | App ("take", [ n; e ]) ->
           let a = eval ctx e |> to_array in
           let n = eval ctx n |> to_int in

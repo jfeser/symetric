@@ -235,7 +235,7 @@ module Code () : Sigs.CODE = struct
   let not x = unop "(!%s)" Bool x
 
   let ite cond then_ else_ =
-    let ret_var = fresh_local then_.etype in
+    let ret_var = fresh_global then_.etype in
     let subst =
       [
         ("ret", C ret_var);
