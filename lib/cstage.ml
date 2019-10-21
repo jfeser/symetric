@@ -150,25 +150,22 @@ module Code () : Sigs.CODE = struct
       ret = vname;
       ebody =
         format
-          ("$(type) &$(var) = " ^ init_fmt)
+          ("const $(type) &$(var) = " ^ init_fmt ^ ";")
           ([ ("type", S (type_name vtype)); ("var", S vname) ] @ init_subst);
       etype = vtype;
     }
 
-  let fresh_local ?(is_ref = false) ?init vtype =
+  let fresh_local ?init vtype =
     let vname = fresh_name () in
     let ebody =
-      let subst =
-        [
-          ("type", S (type_name vtype));
-          ("var", S vname);
-          ("ref", S (if is_ref then "&" else ""));
-        ]
-      in
       match init with
-      | Some init ->
-          format "$(type) $(ref) $(var) = $(init);" (("init", S init) :: subst)
-      | None -> format "$(type) $(ref) $(var);" subst
+      | Some (init_fmt, init_subst) ->
+          format
+            ("$(type) $(var) = " ^ init_fmt ^ ";")
+            ([ ("type", S (type_name vtype)); ("var", S vname) ] @ init_subst)
+      | None ->
+          format "$(type) $(var);"
+            [ ("type", S (type_name vtype)); ("var", S vname) ]
     in
     { ret = vname; ebody; etype = vtype }
 
@@ -192,12 +189,16 @@ module Code () : Sigs.CODE = struct
     { x with ebody = v.ebody ^ x.ebody }
 
   let unop fmt type_ x =
-    let_ x (fun x -> fresh_local type_ ~init:(sprintf fmt (ret x)))
+    let_ x (fun x ->
+        fresh_local type_ ~init:(sprintf fmt "$(arg)", [ ("arg", S (ret x)) ]))
 
   let binop fmt type_ x x' =
     let_ x (fun x ->
         let_ x' (fun x' ->
-            fresh_local type_ ~init:(sprintf fmt (ret x) (ret x'))))
+            fresh_local type_
+              ~init:
+                ( sprintf fmt "$(arg1)" "$(arg2)",
+                  [ ("arg1", S (ret x)); ("arg2", S (ret x')) ] )))
 
   let int x = sprintf "%d" x |> of_value Int
 
@@ -288,13 +289,8 @@ module Code () : Sigs.CODE = struct
     | Some func ->
         let_ arg (fun arg ->
             let _, ret_type = to_func_t func.ftype in
-            let var_ = fresh_local ret_type in
-            {
-              var_ with
-              ebody =
-                format "$(var) = $(f)($(arg));"
-                  [ ("var", S var_.ret); ("f", S func.fname); ("arg", C arg) ];
-            })
+            fresh_local ret_type
+              ~init:("$(f)($(arg))", [ ("f", S func.fname); ("arg", C arg) ]))
     | None -> failwith (sprintf "No function named %s" f.ret)
 
   module Array = struct
@@ -444,11 +440,11 @@ module Code () : Sigs.CODE = struct
 
     let fst t =
       let type_ = fst_type t.etype in
-      fresh_ref type_ "std::get<0>($(t));" [ ("t", C t) ]
+      fresh_ref type_ "std::get<0>($(t))" [ ("t", C t) ]
 
     let snd t =
       let type_ = snd_type t.etype in
-      fresh_ref type_ "std::get<1>($(t));" [ ("t", C t) ]
+      fresh_ref type_ "std::get<1>($(t))" [ ("t", C t) ]
   end
 end
 
@@ -497,8 +493,8 @@ let%expect_test "" =
     int f(int &x0);
     int main();
     int main() {
-      x4 = g(0);
-      x5 = f(x4);
+      int x4 = g(0);
+      int x5 = f(x4);
       return x5;
     }
     int f(int &x0) {
@@ -530,7 +526,7 @@ let%expect_test "" =
       for (int i = 0; i < 10; i++) {
         x2.push_back(i);
       }
-      x3 = f(x2);
+      int x3 = f(x2);
       return x3;
     }
     int f(std::vector<int> &x0) {
@@ -552,7 +548,8 @@ let%expect_test "" =
     C.Array.set y (int 5) (int 5)
   in
   f |> to_string |> Util.clang_format |> print_endline;
-  [%expect {|
+  [%expect
+    {|
     #include <iostream>
     #include <set>
     #include <vector>
@@ -570,7 +567,7 @@ let%expect_test "" =
       }
       std::pair<std::vector<int>, std::vector<int>> x2;
       x2 = std::make_pair(x1, x0);
-      std::vector<int> &x3 = std::get<0>(x2);
+      const std::vector<int> &x3 = std::get<0>(x2);
       x3[5] = 5;
       return 0;
     }
