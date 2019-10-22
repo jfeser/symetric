@@ -33,6 +33,11 @@ struct
 
   let rec seq_many = function [] -> S.unit | x :: xs -> S.seq x (seq_many xs)
 
+  let rec let_many f = function
+    | [] -> f []
+    | [ x ] -> S.let_ x (fun x -> f [ x ])
+    | x :: xs -> S.let_ x (fun x -> let_many (fun xs -> f (x :: xs)) xs)
+
   let rec reconstruct tbl sym costs target =
     let fresh = Fresh.create () in
     let func =
@@ -42,49 +47,59 @@ struct
         (fun tup ->
           let costs = S.Tuple.fst tup in
           let target = S.Tuple.snd tup in
-          G.rhs L.grammar sym
-          |> List.map ~f:(G.with_holes ~fresh L.grammar)
-          |> List.group_by (module Int) (fun (_, hs) -> List.length hs)
-          |> List.map ~f:(fun (n_holes, rhss) ->
-                 let case = S.int n_holes in
-                 let costs =
-                   List.init n_holes ~f:(fun i -> S.(costs.(int i)))
-                 in
-                 let code : unit S.t =
-                   List.map rhss ~f:(fun (term, holes) ->
-                       let hole_costs = List.zip_exn costs holes in
-                       let check ctx =
-                         let ectx = Map.map ctx ~f:(fun (v, _) -> v) in
-                         let v = L.eval ectx term in
-                         S.ite (L.eq v target)
-                           (seq_many
-                              ( S.print
-                                  ( [%sexp_of: G.Term.t] term
-                                  |> Sexp.to_string_hum )
-                              :: List.map hole_costs
-                                   ~f:(fun (_, (sym, name)) ->
-                                     let target, costs =
-                                       Map.find_exn ctx name
+          S.let_ costs (fun costs ->
+              S.let_ target (fun target ->
+                  G.rhs L.grammar sym
+                  |> List.map ~f:(G.with_holes ~fresh L.grammar)
+                  |> List.group_by (module Int) (fun (_, hs) -> List.length hs)
+                  |> List.map ~f:(fun (n_holes, rhss) ->
+                         let case = S.int n_holes in
+                         let costs =
+                           List.init n_holes ~f:(fun i -> S.(costs.(int i)))
+                         in
+                         let code : unit S.t =
+                           let_many
+                             (fun costs ->
+                               List.map rhss ~f:(fun (term, holes) ->
+                                   let hole_costs = List.zip_exn costs holes in
+                                   let check ctx =
+                                     let ectx =
+                                       Map.map ctx ~f:(fun (v, _) -> v)
                                      in
-                                     reconstruct tbl sym costs target) ))
-                           S.unit
-                       in
-                       let check =
-                         List.fold_left hole_costs ~init:check
-                           ~f:(fun check (cost, (sym, name)) ->
-                             let check ctx =
-                               C.iter ~sym ~size:cost
-                                 ~f:(fun v ->
-                                   check (Map.add_exn ctx ~key:name ~data:v))
-                                 tbl
-                             in
-                             check)
-                       in
-                       check (Map.empty (module String)))
-                   |> of_list
-                 in
-                 (case, code))
-          |> case (fun size -> S.(Array.length costs = size)) S.unit)
+                                     let v = L.eval ectx term in
+                                     S.ite (L.eq v target)
+                                       (seq_many
+                                          ( S.print
+                                              ( [%sexp_of: G.Term.t] term
+                                              |> Sexp.to_string_hum )
+                                          :: List.map hole_costs
+                                               ~f:(fun (_, (sym, name)) ->
+                                                 let target, costs =
+                                                   Map.find_exn ctx name
+                                                 in
+                                                 reconstruct tbl sym costs
+                                                   target) ))
+                                       S.unit
+                                   in
+                                   let check =
+                                     List.fold_left hole_costs ~init:check
+                                       ~f:(fun check (cost, (sym, name)) ->
+                                         let check ctx =
+                                           C.iter ~sym ~size:cost
+                                             ~f:(fun v ->
+                                               check
+                                                 (Map.add_exn ctx ~key:name
+                                                    ~data:v))
+                                             tbl
+                                         in
+                                         check)
+                                   in
+                                   check (Map.empty (module String)))
+                               |> of_list)
+                             costs
+                         in
+                         (case, code))
+                  |> case (fun size -> S.(Array.length costs = size)) S.unit)))
     in
     S.apply func (S.Tuple.create costs (L.code target))
 

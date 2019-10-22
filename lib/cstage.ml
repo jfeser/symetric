@@ -144,14 +144,19 @@ module Code () : Sigs.CODE = struct
 
   let fresh_name () = Fresh.name prog.fresh "x%d"
 
-  let fresh_ref vtype init_fmt init_subst =
+  let fresh_ref ?(const = true) vtype init_fmt init_subst =
     let vname = fresh_name () in
     {
       ret = vname;
       ebody =
         format
-          ("const $(type) &$(var) = " ^ init_fmt ^ ";")
-          ([ ("type", S (type_name vtype)); ("var", S vname) ] @ init_subst);
+          ("$(const) $(type) &$(var) = " ^ init_fmt ^ ";")
+          ( [
+              ("type", S (type_name vtype));
+              ("var", S vname);
+              ("const", S (if const then "const" else ""));
+            ]
+          @ init_subst );
       etype = vtype;
     }
 
@@ -351,7 +356,10 @@ module Code () : Sigs.CODE = struct
       in
       { unit with ebody }
 
-    let get a = binop "(%s[%s])" (elem_type a.etype) a
+    let get a x =
+      let const = match elem_type a.etype with Int -> true | _ -> false in
+      fresh_ref ~const (elem_type a.etype) "($(a)[$(x)])"
+        [ ("a", C a); ("x", C x) ]
 
     let sub a s l = init a.etype (l - s) (fun i -> get a (s + i))
 
@@ -540,12 +548,12 @@ let%expect_test "" =
   let int_array = Array.mk_type Int in
   let f =
     let x =
-      C.Tuple.create
+      Tuple.create
         (Array.init int_array (int 10) (fun i -> i))
         (Array.init int_array (int 10) (fun i -> i))
     in
-    let y = C.Tuple.fst x in
-    C.Array.set y (int 5) (int 5)
+    let y = Tuple.fst x in
+    y.(int 5) + y.(int 4)
   in
   f |> to_string |> Util.clang_format |> print_endline;
   [%expect
@@ -568,7 +576,20 @@ let%expect_test "" =
       std::pair<std::vector<int>, std::vector<int>> x2;
       x2 = std::make_pair(x1, x0);
       const std::vector<int> &x3 = std::get<0>(x2);
-      x3[5] = 5;
-      return 0;
+      int x5 = (x3[5]);
+      x0.reserve(10);
+      for (int i = 0; i < 10; i++) {
+        x0.push_back(i);
+      }
+      x1.reserve(10);
+      for (int i = 0; i < 10; i++) {
+        x1.push_back(i);
+      }
+      std::pair<std::vector<int>, std::vector<int>> x2;
+      x2 = std::make_pair(x1, x0);
+      const std::vector<int> &x3 = std::get<0>(x2);
+      int x4 = (x3[4]);
+      int x6 = (x5 + x4);
+      return x6;
     }
  |}]

@@ -108,7 +108,7 @@ module Make (C : Sigs.CODE) = struct
       | Id "(*2)" -> F_int (fun x -> x * int 2)
       | Id "(/2)" -> F_int (fun x -> x / int 2)
       | Id "(*(-1))" -> F_int (fun x -> -x)
-      | Id "(**2)" -> F_int (fun x -> x * x)
+      | Id "(**2)" -> F_int (fun x -> let_ x (fun x -> x * x))
       | Id "(*3)" -> F_int (fun x -> x * int 3)
       | Id "(/3)" -> F_int (fun x -> x / int 3)
       | Id "(*4)" -> F_int (fun x -> x * int 4)
@@ -136,7 +136,7 @@ module Make (C : Sigs.CODE) = struct
       | App ("drop", [ n; e ]) ->
           let a = eval ctx e |> to_array in
           let n = eval ctx n |> to_int in
-          A (sub a n (length a - int 1))
+          A (let_ a (fun a -> let_ n (fun n -> sub a n (length a - int 1))))
       | App ("access", [ n; e ]) ->
           let a = eval ctx e |> to_array in
           let n = eval ctx n |> to_int in
@@ -166,7 +166,8 @@ module Make (C : Sigs.CODE) = struct
       | App ("map", [ f; e ]) ->
           let a = eval ctx e |> to_array in
           let f = eval ctx f |> to_int_f in
-          A (init int_array (length a) (fun i -> f (get a i)))
+          A
+            (let_ a (fun a -> init int_array (length a) (fun i -> f (get a i))))
       | App ("count", [ f; e ]) ->
           let f = eval ctx f |> to_bool_f in
           let a = eval ctx e |> to_array in

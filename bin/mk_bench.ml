@@ -7,7 +7,7 @@ let main () =
   let module Deepcoder = Deepcoder.Make (Code) in
   let module DeepSynth = Synth.Make (Code) (Deepcoder.Lang) (Deepcoder.Cache)
   in
-  let synth = DeepSynth.enumerate 4 (Deepcoder.Value.I (Code.int 3)) in
+  let synth = DeepSynth.enumerate 4 (Deepcoder.Value.I (Code.int 7)) in
   print_endline (Code.to_string synth)
 
 let () =
