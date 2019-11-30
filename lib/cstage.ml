@@ -109,7 +109,7 @@ module Code () : Sigs.CODE = struct
         |> String.concat ~sep:" "
       in
       let args_str = List.map f.args ~f:arg_to_str |> String.concat ~sep:"," in
-      if f.fname = "main" then
+      if String.(f.fname = "main") then
         sprintf "%s %s(%s) { %s return %s; }" (type_name ret_type) f.fname
           args_str (expr_to_str f.fbody) f.fbody.ret
       else
@@ -405,9 +405,7 @@ module Code () : Sigs.CODE = struct
       let iter = fresh_name () in
       let_ a (fun a ->
           let f_app = f (of_value (elem_type a.etype) (sprintf "*%s" iter)) in
-          let subst =
-            [ ("name", C a); ("f_app", C f_app); ("iter", S iter) ]
-          in
+          let subst = [ ("name", C a); ("f_app", C f_app); ("iter", S iter) ] in
           let ebody =
             format
               "for(auto $(iter) = $(name).begin(); $(iter) != $(name).end(); \

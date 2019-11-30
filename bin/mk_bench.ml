@@ -1,12 +1,11 @@
 open! Core
-open! Core_bench.Std
+open! Core_bench
 open Staged_synth
 
 let main () =
   let module Code = Cstage.Code () in
   let module Deepcoder = Deepcoder.Make (Code) in
-  let module DeepSynth = Synth.Make (Code) (Deepcoder.Lang) (Deepcoder.Cache)
-  in
+  let module DeepSynth = Synth.Make (Code) (Deepcoder.Lang) (Deepcoder.Cache) in
   let synth = DeepSynth.enumerate 4 (Deepcoder.Value.I (Code.int 7)) in
   print_endline (Code.to_string synth)
 

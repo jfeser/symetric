@@ -1,11 +1,6 @@
 open! Core
 
-type expr =
-  | Zero
-  | One
-  | Add of expr * expr
-  | Mul of expr * expr
-  | Neg of expr
+type expr = Zero | One | Add of expr * expr | Mul of expr * expr | Neg of expr
 [@@deriving sexp]
 
 let rec eval = function
@@ -42,7 +37,7 @@ let enum_simple_distinct n =
                    List.concat_map e_r ~f:(fun e2 ->
                        [ Add (e1, e2); Mul (e1, e2) ]))) )
   in
-  let seen = Hash_set.create (module Int) () in
+  let seen = Hash_set.create (module Int) in
   enum n
   |> List.filter_map ~f:(fun e ->
          let v = eval e in
@@ -82,7 +77,7 @@ let enum_value_cache n =
   let neg x = -x in
   let add = ( + ) in
   let mul = ( * ) in
-  let seen = Hash_set.create (module Int) () in
+  let seen = Hash_set.create (module Int) in
   let tbl = Array.create ~len:30 [] in
   let peak = ref (-1) in
   let rec enum_cache_a n =
@@ -194,7 +189,7 @@ let enum_dfs n =
 
 let enum_dfs_distinct n =
   let n_distinct = ref 0 in
-  let seen = Hash_set.create (module Int) () in
+  let seen = Hash_set.create (module Int) in
   let rec enum n stack =
     if List.length stack = 1 then incr n_distinct;
     match stack with
