@@ -201,7 +201,9 @@ module Make (C : Sigs.CODE) = struct
           let a' = eval ctx e' |> to_array in
           A
             (map2 Value.array_type a a' ~f:(fun a a' ->
-                 init int_array (length a) (fun i -> f (get a i) (get a' i))))
+                 init int_array
+                   (min (length a) (length a'))
+                   (fun i -> f (get a i) (get a' i))))
       | e ->
           Error.create "Unexpected expression." e [%sexp_of: Grammar.Term.t]
           |> Error.raise

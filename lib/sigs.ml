@@ -95,6 +95,10 @@ module type CODE = sig
 
   val ( = ) : int32 t -> int32 t -> bool t
 
+  val min : int32 t -> int32 t -> int32 t
+
+  val max : int32 t -> int32 t -> int32 t
+
   (* Boolean operations *)
   val ( && ) : bool t -> bool t -> bool t
 

@@ -235,6 +235,10 @@ module Code () : Sigs.CODE = struct
 
   let not x = unop "(!%s)" Bool x
 
+  let min x y = binop "std::min(%s, %s)" Int x y
+
+  let max x y = binop "std::max(%s, %s)" Int x y
+
   let ite cond then_ else_ =
     let ret_var = fresh_global then_.etype in
     let subst =
@@ -329,18 +333,21 @@ module Code () : Sigs.CODE = struct
       is_array_type t;
       let arr = fresh_global t in
       let_ len (fun len ->
+          let idx = fresh_name () in
           let subst =
             [
               ("arr", C arr);
               ("type", S (type_name t));
+              ("idx", S idx);
               ("elem_type", S (type_name (elem_type t)));
               ("len", C len);
-              ("f_app", C (f (of_value Int "i")));
+              ("f_app", C (f (of_value Int idx)));
             ]
           in
           let ebody =
-            format "$(arr).reserve($(len));" subst
-            ^ format "for(int i = 0; i < $(len); i++) {" subst
+            format "$(arr).clear();" subst
+            ^ format "$(arr).reserve($(len));" subst
+            ^ format "for(int $(idx) = 0; $(idx) < $(len); $(idx)++) {" subst
             ^ format "$(arr).push_back($(f_app));" subst
             ^ "}"
           in
@@ -359,7 +366,7 @@ module Code () : Sigs.CODE = struct
 
     let map2 t a1 a2 ~f = init t (length a1) (fun i -> f (get a1 i) (get a2 i))
 
-    let sub a s l = init a.etype (l - s) (fun i -> get a (s + i))
+    let sub a s l = init a.etype (max (int 0) (l - s)) (fun i -> get a (s + i))
 
     let fold arr ~init ~f =
       let iter = fresh_global Int in

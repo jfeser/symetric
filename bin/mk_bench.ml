@@ -17,16 +17,21 @@ let main () =
             @@ [|
                  Array.const (Array.mk_type Code.Int)
                    [|
-                     Code.int 1; Code.int 2; Code.int 4; Code.int 5; Code.int 7;
+                     Code.int 3; Code.int 7; Code.int 5; Code.int 2; Code.int 8;
                    |];
                |] ) );
       ]
   in
   let output =
     let open Code in
-    Deepcoder.Value.I (Array.const (Array.mk_type Int) [| Code.int 9 |])
+    Deepcoder.Value.A
+      ( Array.const (Array.mk_type (Array.mk_type Int))
+      @@ [|
+           Array.const (Array.mk_type Code.Int)
+             [| Code.int 3; Code.int 2; Code.int 5; Code.int 2; Code.int 3 |];
+         |] )
   in
-  let synth = DeepSynth.enumerate 4 inputs output in
+  let synth = DeepSynth.enumerate 10 inputs output in
   print_endline (Code.to_string synth)
 
 let () =

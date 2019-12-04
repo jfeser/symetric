@@ -18,7 +18,7 @@ struct
   open C
   module G = Grammar
 
-  let debug = true
+  let debug = false
 
   let debug_print msg = if debug then S.print msg else S.unit
 
