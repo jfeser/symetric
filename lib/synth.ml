@@ -133,63 +133,26 @@ struct
 
   let put_leaf_rule tbl cost (lhs, rhs) = [ put_all tbl [] cost [] lhs rhs ]
 
-  let put_rule tbl cost holes made ((lhs, rhs) as rule) =
+  let put_rule tbl cost holes ((lhs, rhs) as rule) =
     Combinat.Partition.fold
       (cost - Gr.rule_size rule + List.length holes, List.length holes)
       ~init:[]
       ~f:(fun code costs ->
-        if for_all costs (Set.mem made) then (
-          Log.debug (fun m ->
-              m "Enumerating (%s -> %s) at cost %d" lhs (Gr.Term.to_string rhs)
-                cost);
-          let loop =
-            let put_all ctx = put_all tbl ctx cost (to_list costs) lhs rhs in
-            List.foldi holes ~init:put_all ~f:(fun i put_all (sym, name) ->
-                let put_all ctx =
-                  C.iter ~sym
-                    ~size:(S.int costs.{i})
-                    ~f:(fun (v, _) -> put_all ((name, v) :: ctx))
-                    tbl
-                in
-                put_all)
-          in
-          loop [] :: code )
-        else (
-          Log.debug (fun m ->
-              m "Ignoring (%s -> %s) at cost %d" lhs (Gr.Term.to_string rhs)
-                cost);
-          code ))
-
-  let enumerate_rule tbl made cost ((lhs, rhs) as rule) =
-    let fresh = Fresh.create () in
-    let rhs, holes = Gr.with_holes ~fresh L.grammar rhs in
-    let n_holes = List.length holes in
-    if n_holes = 0 && Gr.rule_size rule = cost then (
-      Log.debug (fun m ->
-          m "Enumerating (%s -> %s) at cost %d" lhs (Gr.Term.to_string rhs) cost);
-      put_leaf_rule tbl cost rule )
-    else put_rule tbl cost holes made (lhs, rhs)
-
-  let enumerate_cost tbl made cost =
-    List.filter L.grammar ~f:(fun rule -> Gr.rule_size rule <= cost)
-    |> List.concat_map ~f:(enumerate_rule tbl made cost)
-
-  let enumerate max_cost =
-    C.empty (fun tbl ->
-        let _, loops =
-          List.init max_cost ~f:(fun c -> c)
-          |> List.fold_left
-               ~init:(Set.empty (module Int), [])
-               ~f:(fun (made, loops) cost ->
-                 let loops' =
-                   enumerate_cost tbl made cost
-                   @ [ S.print (sprintf "Completed %d/%d" cost max_cost) ]
-                 in
-                 if List.length loops' > 0 then
-                   (Set.add made cost, loops @ loops')
-                 else (made, loops))
+        Log.debug (fun m ->
+            m "Enumerating (%s -> %s) at cost %d" lhs (Gr.Term.to_string rhs)
+              cost);
+        let loop =
+          let put_all ctx = put_all tbl ctx cost (to_list costs) lhs rhs in
+          List.foldi holes ~init:put_all ~f:(fun i put_all (sym, name) ->
+              let put_all ctx =
+                C.iter ~sym
+                  ~size:(S.int costs.{i})
+                  ~f:(fun (v, _) -> put_all ((name, v) :: ctx))
+                  tbl
+              in
+              put_all)
         in
-        of_list loops)
+        loop [] :: code)
 
   module V = struct
     type t = { cost : int; kind : [ `Lhs of string | `Rhs of Gr.Term.t ] }
@@ -217,26 +180,49 @@ struct
 
       let edge_attributes _ = []
 
-      include Graph.Imperative.Digraph.ConcreteBidirectional (V)
+      include Graph.Persistent.Digraph.ConcreteBidirectional (V)
     end
 
     include X
     include Graph.Graphviz.Dot (X)
     include Graph.Traverse.Dfs (X)
-    include Graph.Oper.I (X)
+    include Graph.Oper.P (X)
+    module Topo = Graph.Topological.Make_stable (X)
+
+    let filter_vertex g ~f =
+      fold_vertex (fun v g -> if f v then remove_vertex g v else g) g g
+
+    let add_edges g vs =
+      List.fold_left ~init:g ~f:(fun g (v, v') -> add_edge g v v') vs
+
+    let reverse g =
+      fold_edges (fun v v' g -> add_edge (remove_edge g v v') v' v) g g
   end
+
+  let contract_state g =
+    G.fold_vertex
+      (fun v g ->
+        match v.kind with
+        | `Lhs _ ->
+            (* Add edges from this node to its grandchildren. *)
+            G.succ g v
+            |> List.concat_map ~f:(G.succ g)
+            |> List.map ~f:(fun v' -> (v, v'))
+            |> G.add_edges g
+        | _ -> g)
+      g g
+    |> G.filter_vertex ~f:(fun v ->
+           match v.kind with `Rhs _ -> true | _ -> false)
 
   let search_graph max_cost =
     (* Compute search graph. *)
-    let g = G.create () in
+    let g = ref G.empty in
     for cost = 0 to max_cost do
       List.filter L.grammar ~f:(fun rule -> Gr.rule_size rule <= cost)
       |> List.iter ~f:(fun ((lhs, rhs) as rule) ->
              let lhs_v = V.{ cost; kind = `Lhs lhs } in
              let rhs_v = V.{ cost; kind = `Rhs rhs } in
-             G.add_vertex g lhs_v;
-             G.add_vertex g rhs_v;
-             G.add_edge g lhs_v rhs_v;
+             g := G.add_edge !g lhs_v rhs_v;
 
              let fresh = Fresh.create () in
              let _, holes = Gr.with_holes ~fresh L.grammar rhs in
@@ -248,12 +234,13 @@ struct
                    List.length holes )
                  ~f:(fun costs ->
                    List.iteri holes ~f:(fun i (sym, _) ->
-                       let v = V.{ cost = costs.{i}; kind = `Lhs sym } in
-                       G.add_vertex g v;
-                       G.add_edge g rhs_v v)))
+                       g :=
+                         G.add_edge !g rhs_v
+                           V.{ cost = costs.{i}; kind = `Lhs sym })))
     done;
 
     (* Prune nodes that the sinks don't depend on. *)
+    let g = !g in
     let g_trans = G.transitive_closure g in
     let out_sym, _ = L.output in
     let sinks =
@@ -266,13 +253,16 @@ struct
     in
     let sources =
       G.fold_vertex
-        (fun ({ kind; _ } as v) vs ->
-          if List.exists L.inputs ~f:(fun (sym, _) -> Poly.(kind = `Lhs sym))
+        (fun ({ kind; cost } as v) vs ->
+          if
+            List.existsi L.inputs ~f:(fun i _ ->
+                Poly.(kind = `Rhs (Id (sprintf "i%d" i))) && cost = 1)
           then v :: vs
           else vs)
         g []
     in
 
+    let g = ref g in
     G.iter_vertex
       (fun v ->
         let should_remove =
@@ -283,8 +273,44 @@ struct
                || List.exists sources ~f:(fun v' -> G.mem_edge g_trans v v') )
             )
         in
-        if should_remove then G.remove_vertex g v)
-      g;
+        if should_remove then g := G.remove_vertex !g v)
+      !g;
+    !g
 
-    g
+  let enumerate_rule tbl cost ((lhs, rhs) as rule) =
+    let fresh = Fresh.create () in
+    let rhs, holes = Gr.with_holes ~fresh L.grammar rhs in
+    let n_holes = List.length holes in
+    if n_holes = 0 && Gr.rule_size rule = cost then (
+      Log.debug (fun m ->
+          m "Enumerating (%s -> %s) at cost %d" lhs (Gr.Term.to_string rhs) cost);
+      put_leaf_rule tbl cost rule )
+    else put_rule tbl cost holes (lhs, rhs)
+
+  let enumerate max_cost =
+    let g = search_graph max_cost in
+
+    (* Generate a graph that only contains the state nodes. *)
+    let lhs_g = contract_state g |> G.reverse in
+
+    C.empty (fun tbl ->
+        (* Fold over the state nodes, generating code to fill them. *)
+        let loops =
+          G.Topo.fold
+            (fun v code ->
+              let lhs =
+                match v.kind with `Lhs x -> x | _ -> failwith "Unexpected rhs"
+              in
+              G.fold_succ
+                (fun v' loops ->
+                  let rhs =
+                    match v'.kind with
+                    | `Rhs x -> x
+                    | _ -> failwith "Unexpected lhs"
+                  in
+                  loops @ enumerate_rule tbl v.cost (lhs, rhs))
+                g v code)
+            lhs_g []
+        in
+        seq_many loops)
 end
