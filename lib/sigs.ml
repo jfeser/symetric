@@ -57,6 +57,7 @@ module type CODE = sig
     | Set of ntype
     | Tuple of string * ctype * ctype
     | Func of ctype * ctype
+  [@@deriving compare, sexp]
 
   val type_of : 'a t -> ctype
 
@@ -105,6 +106,8 @@ module type CODE = sig
   module Array : sig
     val mk_type : ctype -> ctype
 
+    val elem_type : ctype -> ctype
+
     module O : sig
       val ( = ) : 'a array t -> 'a array t -> bool t
     end
@@ -122,6 +125,15 @@ module type CODE = sig
     val sub : 'a array t -> int32 t -> int32 t -> 'a array t
 
     val init : ctype -> int32 t -> (int32 t -> 'a t) -> 'a array t
+
+    val map : ctype -> 'a array t -> f:('a t -> 'b t) -> 'b array t
+
+    val map2 :
+      ctype ->
+      'a array t ->
+      'b array t ->
+      f:('a t -> 'b t -> 'c t) ->
+      'c array t
   end
 
   (* Set operations *)

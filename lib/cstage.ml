@@ -15,6 +15,7 @@ module Code () : Sigs.CODE = struct
     | Set of ntype
     | Tuple of string * ctype * ctype
     | Func of ctype * ctype
+  [@@deriving compare, sexp]
 
   let type_name = function
     | Unit -> "int"
@@ -144,19 +145,14 @@ module Code () : Sigs.CODE = struct
 
   let fresh_name () = Fresh.name prog.fresh "x%d"
 
-  let fresh_ref ?(const = true) vtype init_fmt init_subst =
+  let fresh_ref vtype init_fmt init_subst =
     let vname = fresh_name () in
     {
       ret = vname;
       ebody =
         format
-          ("$(const) $(type) &$(var) = " ^ init_fmt ^ ";")
-          ( [
-              ("type", S (type_name vtype));
-              ("var", S vname);
-              ("const", S (if const then "const" else ""));
-            ]
-          @ init_subst );
+          ("auto &$(var) = " ^ init_fmt ^ ";")
+          ([ ("var", S vname) ] @ init_subst);
       etype = vtype;
     }
 
@@ -357,9 +353,11 @@ module Code () : Sigs.CODE = struct
       { unit with ebody }
 
     let get a x =
-      let const = match elem_type a.etype with Int -> true | _ -> false in
-      fresh_ref ~const (elem_type a.etype) "($(a)[$(x)])"
-        [ ("a", C a); ("x", C x) ]
+      fresh_ref (elem_type a.etype) "($(a)[$(x)])" [ ("a", C a); ("x", C x) ]
+
+    let map t arr ~f = init t (length arr) (fun i -> let_ (get arr i) f)
+
+    let map2 t a1 a2 ~f = init t (length a1) (fun i -> f (get a1 i) (get a2 i))
 
     let sub a s l = init a.etype (l - s) (fun i -> get a (s + i))
 
