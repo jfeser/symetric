@@ -1,6 +1,6 @@
 (library
  (name staged_synth)
- (libraries core combinat utils)
+ (libraries core combinat utils ocamlgraph)
  (preprocess (pps ppx_sexp_conv ppx_compare ppx_hash ppx_expect))
  (inline_tests))
 

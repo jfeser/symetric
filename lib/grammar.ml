@@ -2,7 +2,8 @@ open! Core
 open Utils
 
 module Term = struct
-  type t = Id of string | App of string * t list [@@deriving compare, sexp]
+  type t = Id of string | App of string * t list
+  [@@deriving compare, hash, sexp]
 
   let rec size = function
     | Id _ -> 1
@@ -27,8 +28,7 @@ let num_holes (lhs, rhs) =
   num rhs
 
 let rhs g s =
-  List.filter_map g ~f:(fun (s', t) ->
-      if String.(s = s') then Some t else None)
+  List.filter_map g ~f:(fun (s', t) -> if String.(s = s') then Some t else None)
 
 let non_terminals g =
   List.map g ~f:(fun (x, _) -> x)

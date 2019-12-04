@@ -41,8 +41,9 @@ module Make (C : Sigs.CODE) = struct
     let array_type = C.Array.mk_type (C.Array.mk_type C.Int)
   end
 
-  module Lang = struct
+  module Lang (E : Sigs.EXAMPLES with type value := Value.t) = struct
     include Value
+    include E
 
     type value = Value.t
 
@@ -51,43 +52,43 @@ module Make (C : Sigs.CODE) = struct
     let grammar : Grammar.t =
       let open Grammar in
       let open Grammar.Term in
-      [
-        ("L", Id "i");
-        ("I", App ("head", [ Id "L" ]));
-        ("I", App ("last", [ Id "L" ]));
-        ("L", App ("take", [ Id "I"; Id "L" ]));
-        ("L", App ("drop", [ Id "I"; Id "L" ]));
-        ("I", App ("access", [ Id "I"; Id "L" ]));
-        ("I", App ("minimum", [ Id "L" ]));
-        ("I", App ("maximum", [ Id "L" ]));
-        ("L", App ("reverse", [ Id "L" ]));
-        (* ("L", App ("sort", [ Id "L" ])); *)
-        ("I", App ("sum", [ Id "L" ]));
-        ("L", App ("map", [ Id "FII"; Id "L" ]));
-        (* ("L", App ("filter", [ Id "FIB"; Id "L" ])); *)
-        ("I", App ("count", [ Id "FIB"; Id "L" ]));
-        ("L", App ("zipwith", [ Id "FIII"; Id "L"; Id "L" ]));
-        (* ("L", App ("scanl1", [ Id "FIII"; Id "L" ])); *)
-        ("FII", Id "(+1)");
-        ("FII", Id "(-1)");
-        ("FII", Id "(*2)");
-        ("FII", Id "(/2)");
-        ("FII", Id "(*(-1))");
-        ("FII", Id "(**2)");
-        ("FII", Id "(*3)");
-        ("FII", Id "(/3)");
-        ("FII", Id "(*4)");
-        ("FII", Id "(/4)");
-        ("FIB", Id "(>0)");
-        ("FIB", Id "(<0)");
-        ("FIB", Id "(%2==0)");
-        ("FIB", Id "(%2==1)");
-        ("FIII", Id "(+)");
-        ("FIII", Id "(-)");
-        ("FIII", Id "(*)");
-        ("FIII", Id "min");
-        ("FIII", Id "max");
-      ]
+      List.mapi inputs ~f:(fun i (sym, _) -> (sym, Id (sprintf "i%d" i)))
+      @ [
+          ("I", App ("head", [ Id "L" ]));
+          ("I", App ("last", [ Id "L" ]));
+          ("L", App ("take", [ Id "I"; Id "L" ]));
+          ("L", App ("drop", [ Id "I"; Id "L" ]));
+          ("I", App ("access", [ Id "I"; Id "L" ]));
+          ("I", App ("minimum", [ Id "L" ]));
+          ("I", App ("maximum", [ Id "L" ]));
+          ("L", App ("reverse", [ Id "L" ]));
+          (* ("L", App ("sort", [ Id "L" ])); *)
+          ("I", App ("sum", [ Id "L" ]));
+          ("L", App ("map", [ Id "FII"; Id "L" ]));
+          (* ("L", App ("filter", [ Id "FIB"; Id "L" ])); *)
+          ("I", App ("count", [ Id "FIB"; Id "L" ]));
+          ("L", App ("zipwith", [ Id "FIII"; Id "L"; Id "L" ]));
+          (* ("L", App ("scanl1", [ Id "FIII"; Id "L" ])); *)
+          ("FII", Id "(+1)");
+          ("FII", Id "(-1)");
+          ("FII", Id "(*2)");
+          ("FII", Id "(/2)");
+          ("FII", Id "(*(-1))");
+          ("FII", Id "(**2)");
+          ("FII", Id "(*3)");
+          ("FII", Id "(/3)");
+          ("FII", Id "(*4)");
+          ("FII", Id "(/4)");
+          ("FIB", Id "(>0)");
+          ("FIB", Id "(<0)");
+          ("FIB", Id "(%2==0)");
+          ("FIB", Id "(%2==1)");
+          ("FIII", Id "(+)");
+          ("FIII", Id "(-)");
+          ("FIII", Id "(*)");
+          ("FIII", Id "min");
+          ("FIII", Id "max");
+        ]
       |> inline "FII" |> inline "FIB" |> inline "FIII"
       |> List.filter ~f:(fun (lhs, _) -> String.(lhs = "L" || lhs = "I"))
 
@@ -108,8 +109,7 @@ module Make (C : Sigs.CODE) = struct
 
     let int_array = Array.mk_type Int
 
-    let rec eval ctx expr =
-      match expr with
+    let rec eval ctx = function
       | Grammar.Term.Id "(+1)" -> F_int (fun x -> x + int 1)
       | Id "(-1)" -> F_int (fun x -> x - int 1)
       | Id "(*2)" -> F_int (fun x -> x * int 2)
@@ -129,7 +129,13 @@ module Make (C : Sigs.CODE) = struct
       | Id "(*)" -> F_int2 (fun x y -> x * y)
       | Id "min" -> F_int2 (fun x y -> ite (x < y) x y)
       | Id "max" -> F_int2 (fun x y -> ite (x > y) x y)
-      | Id x -> Map.find_exn ctx x
+      | Id x -> (
+          match
+            List.find_mapi inputs ~f:(fun i (_, v) ->
+                if String.(x = sprintf "i%d" i) then Some v else None)
+          with
+          | Some v -> v
+          | None -> Map.find_exn ctx x )
       | App ("head", [ e ]) ->
           I
             ( eval ctx e |> to_array

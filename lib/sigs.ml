@@ -1,5 +1,13 @@
 open! Core
 
+module type EXAMPLES = sig
+  type value
+
+  val inputs : (string * value) list
+
+  val output : string * value
+end
+
 module type CACHE = sig
   type t
 
@@ -28,6 +36,10 @@ module type LANG = sig
   type type_
 
   type 'a code
+
+  val inputs : (string * value) list
+
+  val output : string * value
 
   val ( = ) : value -> value -> bool code option
 

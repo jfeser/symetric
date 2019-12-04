@@ -5,33 +5,37 @@ open Staged_synth
 let main () =
   let module Code = Cstage.Code () in
   let module Deepcoder = Deepcoder.Make (Code) in
-  let module DeepSynth = Synth.Make (Code) (Deepcoder.Lang) (Deepcoder.Cache) in
-  let inputs =
-    let open Code in
-    Map.of_alist_exn
-      (module String)
+  let module Examples = struct
+    open Code
+    open Deepcoder
+
+    let inputs =
       [
-        ( "i",
-          Deepcoder.Value.A
+        ( "L",
+          Value.A
             ( Array.const (Array.mk_type (Array.mk_type Int))
             @@ [|
-                 Array.const (Array.mk_type Code.Int)
-                   [|
-                     Code.int 3; Code.int 7; Code.int 5; Code.int 2; Code.int 8;
-                   |];
+                 Array.const (Array.mk_type Int)
+                   [| int 3; int 7; int 5; int 2; int 8 |];
                |] ) );
       ]
+
+    let output =
+      ( "L",
+        Value.A
+          ( Array.const (Array.mk_type (Array.mk_type Int))
+          @@ [|
+               Array.const (Array.mk_type Int)
+                 [| int 3; int 2; int 5; int 2; int 3 |];
+             |] ) )
+  end in
+  let module DeepSynth =
+    Synth.Make (Code) (Deepcoder.Lang (Examples)) (Deepcoder.Cache)
   in
-  let output =
-    let open Code in
-    Deepcoder.Value.A
-      ( Array.const (Array.mk_type (Array.mk_type Int))
-      @@ [|
-           Array.const (Array.mk_type Code.Int)
-             [| Code.int 3; Code.int 2; Code.int 5; Code.int 2; Code.int 3 |];
-         |] )
-  in
-  let synth = DeepSynth.enumerate 10 inputs output in
+  let synth = DeepSynth.enumerate 10 in
+  let g = DeepSynth.search_graph 10 in
+  Out_channel.with_file "search.dot" ~f:(fun ch ->
+      DeepSynth.G.output_graph ch g);
   print_endline (Code.to_string synth)
 
 let () =
