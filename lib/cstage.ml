@@ -472,21 +472,22 @@ let%expect_test "" =
     #include <vector>
     int main();
     std::vector<int> x0;
-    int x1;
     int x2;
+    int x3;
     int main() {
+      x0.clear();
       x0.reserve(10);
-      for (int i = 0; i < 10; i++) {
-        x0.push_back(i);
+      for (int x1 = 0; x1 < 10; x1++) {
+        x0.push_back(x1);
       }
-      int x5 = (x0).size();
-      x2 = 0;
-      for (x1 = 0; x1 < x5; x1++) {
-        int x3 = (x0[x1]);
-        int x4 = (x2 + x3);
-        x2 = x4;
+      int x6 = (x0).size();
+      x3 = 0;
+      for (x2 = 0; x2 < x6; x2++) {
+        auto &x4 = (x0[x2]);
+        int x5 = (x3 + x4);
+        x3 = x5;
       }
-      return x2;
+      return x3;
     } |}]
 
 let%expect_test "" =
@@ -533,15 +534,16 @@ let%expect_test "" =
     int main();
     std::vector<int> x2;
     int main() {
+      x2.clear();
       x2.reserve(10);
-      for (int i = 0; i < 10; i++) {
-        x2.push_back(i);
+      for (int x3 = 0; x3 < 10; x3++) {
+        x2.push_back(x3);
       }
-      int x3 = f(x2);
-      return x3;
+      int x4 = f(x2);
+      return x4;
     }
     int f(std::vector<int> &x0) {
-      int x1 = (x0[0]);
+      auto &x1 = (x0[0]);
       return x1;
     } |}]
 
@@ -566,33 +568,37 @@ let%expect_test "" =
     #include <vector>
     int main();
     std::vector<int> x0;
-    std::vector<int> x1;
+    std::vector<int> x2;
     int main() {
+      x0.clear();
       x0.reserve(10);
-      for (int i = 0; i < 10; i++) {
-        x0.push_back(i);
+      for (int x1 = 0; x1 < 10; x1++) {
+        x0.push_back(x1);
       }
-      x1.reserve(10);
-      for (int i = 0; i < 10; i++) {
-        x1.push_back(i);
+      x2.clear();
+      x2.reserve(10);
+      for (int x3 = 0; x3 < 10; x3++) {
+        x2.push_back(x3);
       }
-      std::pair<std::vector<int>, std::vector<int>> x2;
-      x2 = std::make_pair(x1, x0);
-      const std::vector<int> &x3 = std::get<0>(x2);
-      int x5 = (x3[5]);
+      std::pair<std::vector<int>, std::vector<int>> x4;
+      x4 = std::make_pair(x2, x0);
+      auto &x5 = std::get<0>(x4);
+      auto &x7 = (x5[5]);
+      x0.clear();
       x0.reserve(10);
-      for (int i = 0; i < 10; i++) {
-        x0.push_back(i);
+      for (int x1 = 0; x1 < 10; x1++) {
+        x0.push_back(x1);
       }
-      x1.reserve(10);
-      for (int i = 0; i < 10; i++) {
-        x1.push_back(i);
+      x2.clear();
+      x2.reserve(10);
+      for (int x3 = 0; x3 < 10; x3++) {
+        x2.push_back(x3);
       }
-      std::pair<std::vector<int>, std::vector<int>> x2;
-      x2 = std::make_pair(x1, x0);
-      const std::vector<int> &x3 = std::get<0>(x2);
-      int x4 = (x3[4]);
-      int x6 = (x5 + x4);
-      return x6;
+      std::pair<std::vector<int>, std::vector<int>> x4;
+      x4 = std::make_pair(x2, x0);
+      auto &x5 = std::get<0>(x4);
+      auto &x6 = (x5[4]);
+      int x8 = (x7 + x6);
+      return x8;
     }
  |}]
