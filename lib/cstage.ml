@@ -2,6 +2,11 @@ open! Core
 open! Utils
 module Seq = Sequence
 
+let with_stackmark body =
+  let open Delimcc in
+  let p = new_prompt () in
+  push_prompt p (fun () -> body (fun () -> is_prompt_set p))
+
 module Code () : Sigs.CODE = struct
   type 'a set = Set
 
@@ -25,7 +30,15 @@ module Code () : Sigs.CODE = struct
     | Array { name; _ } | Set { name; _ } -> name
     | _ -> failwith "Type cannot be constructed."
 
-  type expr = { ebody : string; ret : string; etype : ctype }
+  type mark = unit -> bool
+
+  type expr = {
+    ebody : string;
+    ret : string;
+    etype : ctype;
+    efree : (string * (mark[@opaque])) list;
+  }
+  [@@deriving sexp]
 
   type var_decl = { vname : string; vtype : ctype; init : expr option }
 
@@ -43,7 +56,30 @@ module Code () : Sigs.CODE = struct
     fresh : Fresh.t;
   }
 
-  type 'a t = expr
+  module C = struct
+    type 'a t = expr
+
+    let sexp_of_t = sexp_of_expr
+
+    let is_well_scoped c = List.for_all c.efree ~f:(fun (_, m) -> m ())
+
+    let let_ v b =
+      let x = b { v with ebody = "" } in
+      { x with ebody = v.ebody ^ x.ebody; efree = x.efree @ v.efree }
+  end
+
+  include C
+  include Genlet.Make (C)
+
+  let seq e e' =
+    {
+      ebody = e.ebody ^ e'.ebody;
+      etype = e'.etype;
+      ret = e'.ret;
+      efree = e.efree @ e'.efree;
+    }
+
+  let free { efree; _ } = efree
 
   let prog =
     let main =
@@ -52,7 +88,7 @@ module Code () : Sigs.CODE = struct
         ftype = Func (Unit, Unit);
         locals = [];
         args = [];
-        fbody = { ebody = ""; ret = "0"; etype = Unit };
+        fbody = { ebody = ""; ret = "0"; etype = Unit; efree = [] };
       }
     in
     { funcs = [ main ]; cur_func = main; fresh = Fresh.create () }
@@ -67,17 +103,18 @@ module Code () : Sigs.CODE = struct
           let pat = sprintf "$(%s)" k in
           match v with
           | S v -> String.substr_replace_all fmt ~pattern:pat ~with_:v
-          | C v ->
-              if String.is_substring fmt ~substring:pat then
-                let fmt =
-                  String.substr_replace_all fmt ~pattern:pat ~with_:v.ret
-                in
-                v.ebody ^ fmt
-              else fmt)
+          | C v -> String.substr_replace_all fmt ~pattern:pat ~with_:v.ret)
     in
     ( if String.contains fmt '$' then
       Error.(create "Incomplete template." fmt [%sexp_of: string] |> raise) );
     fmt
+
+  let eformat ret etype fmt args =
+    let ebody = format fmt args in
+    let efree =
+      List.concat_map args ~f:(function _, C { efree; _ } -> efree | _ -> [])
+    in
+    { ebody; ret; etype; efree }
 
   let type_of e = e.etype
 
@@ -139,7 +176,7 @@ module Code () : Sigs.CODE = struct
     header ^ forward_decls ^ main_decls ^ funcs
 
   let expr_of_var { vname; vtype; _ } =
-    { ebody = ""; ret = vname; etype = vtype }
+    { ebody = ""; ret = vname; etype = vtype; efree = [] }
 
   let add_var_decl x = prog.cur_func.locals <- x :: prog.cur_func.locals
 
@@ -147,65 +184,47 @@ module Code () : Sigs.CODE = struct
 
   let fresh_ref vtype init_fmt init_subst =
     let vname = fresh_name () in
-    {
-      ret = vname;
-      ebody =
-        format
-          ("auto &$(var) = " ^ init_fmt ^ ";")
-          ([ ("var", S vname) ] @ init_subst);
-      etype = vtype;
-    }
+    eformat vname vtype
+      ("auto &$(var) = " ^ init_fmt ^ ";")
+      ([ ("var", S vname) ] @ init_subst)
 
   let fresh_local ?init vtype =
     let vname = fresh_name () in
-    let ebody =
-      match init with
-      | Some (init_fmt, init_subst) ->
-          format
-            ("$(type) $(var) = " ^ init_fmt ^ ";")
-            ([ ("type", S (type_name vtype)); ("var", S vname) ] @ init_subst)
-      | None ->
-          format "$(type) $(var);"
-            [ ("type", S (type_name vtype)); ("var", S vname) ]
-    in
-    { ret = vname; ebody; etype = vtype }
+    match init with
+    | Some (init_fmt, init_subst) ->
+        eformat vname vtype
+          ("$(type) $(var) = " ^ init_fmt ^ ";")
+          ([ ("type", S (type_name vtype)); ("var", S vname) ] @ init_subst)
+    | None ->
+        eformat vname vtype "$(type) $(var);"
+          [ ("type", S (type_name vtype)); ("var", S vname) ]
 
   let fresh_global ?init vtype =
     let vname = fresh_name () in
     add_var_decl { vname; vtype; init = None };
-    let ebody =
-      match init with
-      | Some init ->
-          format "$(var) = $(init);" [ ("init", S init); ("var", S vname) ]
-      | None -> ""
-    in
-    { ret = vname; ebody; etype = vtype }
+    match init with
+    | Some init ->
+        eformat vname vtype "$(var) = $(init);"
+          [ ("init", S init); ("var", S vname) ]
+    | None -> { ret = vname; ebody = ""; etype = vtype; efree = [] }
 
-  let ret { ret; _ } = ret
-
-  let of_value etype ret = { ebody = ""; ret; etype }
-
-  let let_ v b =
-    let x = b { v with ebody = "" } in
-    { x with ebody = v.ebody ^ x.ebody }
+  let fresh_var etype m =
+    let name = Fresh.name prog.fresh "x%d" in
+    { ret = name; etype; efree = [ (name, m) ]; ebody = "" }
 
   let unop fmt type_ x =
-    let_ x (fun x ->
-        fresh_local type_ ~init:(sprintf fmt "$(arg)", [ ("arg", S (ret x)) ]))
+    fresh_local type_ ~init:(sprintf fmt "$(arg)", [ ("arg", C x) ])
 
   let binop fmt type_ x x' =
-    let_ x (fun x ->
-        let_ x' (fun x' ->
-            fresh_local type_
-              ~init:
-                ( sprintf fmt "$(arg1)" "$(arg2)",
-                  [ ("arg1", S (ret x)); ("arg2", S (ret x')) ] )))
+    fresh_local type_
+      ~init:(sprintf fmt "$(arg1)" "$(arg2)", [ ("arg1", C x); ("arg2", C x') ])
 
-  let int x = sprintf "%d" x |> of_value Int
+  let int x = { etype = Int; ret = sprintf "%d" x; ebody = ""; efree = [] }
 
-  let bool x = (if x then "1" else "0") |> of_value Bool
+  let bool x =
+    { etype = Bool; ret = (if x then "1" else "0"); ebody = ""; efree = [] }
 
-  let unit = of_value Unit "0"
+  let unit = { etype = Unit; ret = "0"; ebody = ""; efree = [] }
 
   let ( ~- ) x = unop "(-%s)" Int x
 
@@ -249,15 +268,10 @@ module Code () : Sigs.CODE = struct
         ("else", C else_);
       ]
     in
-    {
-      ret_var with
-      ebody =
-        format "if ($(cond)) {" subst
-        ^ format "$(ret) = $(then); } else {" subst
-        ^ format "$(ret) = $(else); }" subst;
-    }
+    eformat ret_var.ret ret_var.etype
+      "if ($(cond)) { $(ret) = $(then); } else { $(ret) = $(else); }" subst
 
-  let seq e e' = { e' with ebody = e.ebody ^ e'.ebody }
+  let rec sseq = function [] -> unit | x :: xs -> seq x (sseq xs)
 
   let print s = { unit with ebody = sprintf "std::cout << %S << std::endl;" s }
 
@@ -269,7 +283,7 @@ module Code () : Sigs.CODE = struct
 
   let func name type_ f =
     let in_type, _ = to_func_t type_ in
-    let fval = { ret = name; ebody = ""; etype = type_ } in
+    let fval = { ret = name; ebody = ""; etype = type_; efree = [] } in
     if Option.is_none (find_func name) then (
       let arg = { vname = fresh_name (); vtype = in_type; init = None } in
       let func =
@@ -297,6 +311,28 @@ module Code () : Sigs.CODE = struct
             fresh_local ret_type
               ~init:("$(f)($(arg))", [ ("f", S func.fname); ("arg", C arg) ]))
     | None -> failwith (sprintf "No function named %s" f.ret)
+
+  let for_ lo step hi f =
+    let_locus @@ fun () ->
+    let i, body =
+      with_stackmark (fun m ->
+          let i = fresh_var Int m in
+          let body = let_locus @@ fun () -> f i in
+          (i, body))
+    in
+    eformat "0" Unit
+      {|
+for(int $(i) = $(lo); $(i) < $(hi); $(i)++) {
+      $(body)
+}
+|}
+      [
+        ("lo", C lo);
+        ("step", C step);
+        ("hi", C hi);
+        ("body", S body.ebody);
+        ("i", C i);
+      ]
 
   module Array = struct
     let mk_type e =
@@ -327,31 +363,30 @@ module Code () : Sigs.CODE = struct
       in
       add_var_decl
         { vname = name; vtype = t; init = Some (int (List.length a)) };
-      { ret = name; ebody = assigns; etype = t }
+      genlet
+        {
+          ret = name;
+          ebody = assigns;
+          etype = t;
+          efree = List.concat_map a ~f:free;
+        }
+
+    let clear a = eformat "0" Unit "$(a).clear();" [ ("a", C a) ]
+
+    let reserve a n =
+      eformat "0" Unit "$(a).reserve($(n));" [ ("a", C a); ("n", C n) ]
+
+    let push_back a x =
+      eformat "0" Unit "$(a).push_back($(x));" [ ("a", C a); ("x", C x) ]
 
     let init t len f =
-      is_array_type t;
-      let arr = fresh_global t in
-      let_ len (fun len ->
-          let idx = fresh_name () in
-          let subst =
-            [
-              ("arr", C arr);
-              ("type", S (type_name t));
-              ("idx", S idx);
-              ("elem_type", S (type_name (elem_type t)));
-              ("len", C len);
-              ("f_app", C (f (of_value Int idx)));
-            ]
-          in
-          let ebody =
-            format "$(arr).clear();" subst
-            ^ format "$(arr).reserve($(len));" subst
-            ^ format "for(int $(idx) = 0; $(idx) < $(len); $(idx)++) {" subst
-            ^ format "$(arr).push_back($(f_app));" subst
-            ^ "}"
-          in
-          { arr with ebody })
+      let a = fresh_global t in
+      sseq
+        [
+          clear a;
+          reserve a len;
+          for_ (int 0) (int 1) len (fun i -> push_back a (genlet (f i)));
+        ]
 
     let set a i x =
       let ebody =
@@ -404,12 +439,22 @@ module Code () : Sigs.CODE = struct
     let empty ctype =
       let set = fresh_name () in
       add_var_decl { vname = set; vtype = ctype; init = None };
-      { ret = set; ebody = ""; etype = ctype }
+      { ret = set; ebody = ""; etype = ctype; efree = [] }
 
     let iter a f =
       let iter = fresh_name () in
       let_ a (fun a ->
-          let f_app = f (of_value (elem_type a.etype) (sprintf "*%s" iter)) in
+          let f_app =
+            let arg =
+              {
+                ret = sprintf "*%s" iter;
+                ebody = "";
+                etype = elem_type a.etype;
+                efree = [];
+              }
+            in
+            f arg
+          in
           let subst = [ ("name", C a); ("f_app", C f_app); ("iter", S iter) ] in
           let ebody =
             format

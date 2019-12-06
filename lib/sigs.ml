@@ -77,6 +77,10 @@ module type CODE = sig
 
   val cast : 'a t -> 'b t
 
+  val genlet : 'a t -> 'a t
+
+  val let_locus : (unit -> 'a t) -> 'a t
+
   (* Values *)
   val unit : unit t
 
