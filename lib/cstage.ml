@@ -1,5 +1,4 @@
 open! Core
-open! Utils
 module Seq = Sequence
 
 let with_stackmark body =
@@ -93,6 +92,9 @@ module Code () : Sigs.CODE = struct
     in
     { funcs = [ main ]; cur_func = main; fresh = Fresh.create () }
 
+  let with_comment s e =
+    { e with ebody = sprintf "\n// begin %s\n%s// end %s\n" s e.ebody s }
+
   let find_func n = List.find prog.funcs ~f:(fun f -> String.(f.fname = n))
 
   type fmt_arg = C : 'a t -> fmt_arg | S : string -> fmt_arg
@@ -103,7 +105,8 @@ module Code () : Sigs.CODE = struct
           let pat = sprintf "$(%s)" k in
           match v with
           | S v -> String.substr_replace_all fmt ~pattern:pat ~with_:v
-          | C v -> String.substr_replace_all fmt ~pattern:pat ~with_:v.ret)
+          | C v ->
+              v.ebody ^ String.substr_replace_all fmt ~pattern:pat ~with_:v.ret)
     in
     ( if String.contains fmt '$' then
       Error.(create "Incomplete template." fmt [%sexp_of: string] |> raise) );
@@ -271,7 +274,7 @@ module Code () : Sigs.CODE = struct
     eformat ret_var.ret ret_var.etype
       "if ($(cond)) { $(ret) = $(then); } else { $(ret) = $(else); }" subst
 
-  let rec sseq = function [] -> unit | x :: xs -> seq x (sseq xs)
+  let rec sseq = function [] -> unit | [ x ] -> x | x :: xs -> seq x (sseq xs)
 
   let print s = { unit with ebody = sprintf "std::cout << %S << std::endl;" s }
 
@@ -312,6 +315,8 @@ module Code () : Sigs.CODE = struct
               ~init:("$(f)($(arg))", [ ("f", S func.fname); ("arg", C arg) ]))
     | None -> failwith (sprintf "No function named %s" f.ret)
 
+  let assign x v = eformat "0" Unit {|$(v) = $(x);|} [ ("x", C x); ("v", C v) ]
+
   let for_ lo step hi f =
     let_locus @@ fun () ->
     let i, body =
@@ -341,7 +346,9 @@ for(int $(i) = $(lo); $(i) < $(hi); $(i)++) {
 
     let elem_type = function
       | Array { elem_type; _ } -> elem_type
-      | _ -> assert false
+      | t ->
+          Error.create "Expected an array type." t [%sexp_of: ctype]
+          |> Error.raise
 
     module O = struct
       let ( = ) a a' = binop "(%s == %s)" Bool a a'
@@ -363,13 +370,13 @@ for(int $(i) = $(lo); $(i) < $(hi); $(i)++) {
       in
       add_var_decl
         { vname = name; vtype = t; init = Some (int (List.length a)) };
-      genlet
-        {
-          ret = name;
-          ebody = assigns;
-          etype = t;
-          efree = List.concat_map a ~f:free;
-        }
+      {
+        ret = name;
+        ebody = assigns;
+        etype = t;
+        efree = List.concat_map a ~f:free;
+      }
+      |> with_comment "Array.const"
 
     let clear a = eformat "0" Unit "$(a).clear();" [ ("a", C a) ]
 
@@ -386,7 +393,9 @@ for(int $(i) = $(lo); $(i) < $(hi); $(i)++) {
           clear a;
           reserve a len;
           for_ (int 0) (int 1) len (fun i -> push_back a (genlet (f i)));
+          a;
         ]
+      |> genlet |> with_comment "Array.init"
 
     let set a i x =
       let ebody =
@@ -404,27 +413,17 @@ for(int $(i) = $(lo); $(i) < $(hi); $(i)++) {
     let sub a s l = init a.etype (max (int 0) (l - s)) (fun i -> get a (s + i))
 
     let fold arr ~init ~f =
-      let iter = fresh_global Int in
       let acc = fresh_global init.etype in
-      let_ init (fun init ->
-          let_ arr (fun arr ->
-              let subst =
+      let_ arr (fun arr ->
+          let_ init (fun init ->
+              sseq
                 [
-                  ("init", C init);
-                  ("acc", C acc);
-                  ("len", C (length arr));
-                  ("f_app", C (f acc (get arr iter)));
-                  ("iter", C iter);
-                ]
-              in
-              let ebody =
-                format
-                  {| $(acc) = $(init); for($(iter) = 0; $(iter) < $(len); $(iter)++) { |}
-                  subst
-                ^ format {|$(acc) = $(f_app);|} subst
-                ^ "}"
-              in
-              { acc with ebody }))
+                  assign init acc;
+                  for_ (int 0) (int 1) (length arr) (fun i ->
+                      assign (f acc (get arr i)) acc);
+                  acc;
+                ]))
+      |> with_comment "Array.fold"
   end
 
   module Set = struct
@@ -508,8 +507,13 @@ let%expect_test "" =
   let module C = Code () in
   let open C in
   let open Array in
-  fold (init (mk_type Int) (int 10) (fun i -> i)) ~init:(int 0) ~f:( + )
-  |> to_string |> Util.clang_format |> print_endline;
+  let code =
+    let_locus @@ fun () ->
+    let_
+      (init (mk_type Int) (int 10) (fun i -> i))
+      (fun a -> fold a ~init:(int 0) ~f:( + ))
+  in
+  to_string code |> Util.clang_format |> print_endline;
   [%expect
     {|
     #include <iostream>
@@ -518,21 +522,25 @@ let%expect_test "" =
     int main();
     std::vector<int> x0;
     int x2;
-    int x3;
     int main() {
+      // begin Array.init
       x0.clear();
       x0.reserve(10);
       for (int x1 = 0; x1 < 10; x1++) {
         x0.push_back(x1);
       }
-      int x6 = (x0).size();
-      x3 = 0;
-      for (x2 = 0; x2 < x6; x2++) {
-        auto &x4 = (x0[x2]);
-        int x5 = (x3 + x4);
-        x3 = x5;
+      // end Array.init
+
+      // begin Array.fold
+      x2 = 0;
+      int x3 = (x0).size();
+      for (int x4 = 0; x4 < x3; x4++) {
+        auto &x5 = (x0[x4]);
+        int x6 = (x2 + x5);
+        x2 = x6;
       }
-      return x3;
+      // end Array.fold
+      return x2;
     } |}]
 
 let%expect_test "" =
@@ -579,11 +587,13 @@ let%expect_test "" =
     int main();
     std::vector<int> x2;
     int main() {
+      // begin Array.init
       x2.clear();
       x2.reserve(10);
       for (int x3 = 0; x3 < 10; x3++) {
         x2.push_back(x3);
       }
+      // end Array.init
       int x4 = f(x2);
       return x4;
     }
@@ -602,7 +612,8 @@ let%expect_test "" =
         (Array.init int_array (int 10) (fun i -> i))
         (Array.init int_array (int 10) (fun i -> i))
     in
-    let y = Tuple.fst x in
+    let_locus @@ fun () ->
+    let y = genlet (Tuple.fst x) in
     y.(int 5) + y.(int 4)
   in
   f |> to_string |> Util.clang_format |> print_endline;
@@ -615,34 +626,26 @@ let%expect_test "" =
     std::vector<int> x0;
     std::vector<int> x2;
     int main() {
+      // begin Array.init
       x0.clear();
       x0.reserve(10);
       for (int x1 = 0; x1 < 10; x1++) {
         x0.push_back(x1);
       }
+      // end Array.init
+
+      // begin Array.init
       x2.clear();
       x2.reserve(10);
       for (int x3 = 0; x3 < 10; x3++) {
         x2.push_back(x3);
       }
-      std::pair<std::vector<int>, std::vector<int>> x4;
-      x4 = std::make_pair(x2, x0);
-      auto &x5 = std::get<0>(x4);
-      auto &x7 = (x5[5]);
-      x0.clear();
-      x0.reserve(10);
-      for (int x1 = 0; x1 < 10; x1++) {
-        x0.push_back(x1);
-      }
-      x2.clear();
-      x2.reserve(10);
-      for (int x3 = 0; x3 < 10; x3++) {
-        x2.push_back(x3);
-      }
+      // end Array.init
       std::pair<std::vector<int>, std::vector<int>> x4;
       x4 = std::make_pair(x2, x0);
       auto &x5 = std::get<0>(x4);
       auto &x6 = (x5[4]);
+      auto &x7 = (x5[5]);
       int x8 = (x7 + x6);
       return x8;
     }

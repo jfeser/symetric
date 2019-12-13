@@ -18,6 +18,51 @@ struct
   open C
   module Gr = Grammar
 
+  module V = struct
+    type t = { cost : int; kind : [ `Lhs of string | `Rhs of Gr.Term.t ] }
+    [@@deriving compare, hash, sexp]
+
+    let equal = [%compare.equal: t]
+  end
+
+  module G = struct
+    module X = struct
+      let graph_attributes _ = []
+
+      let default_vertex_attributes _ = []
+
+      let vertex_name V.{ cost; kind } =
+        match kind with
+        | `Lhs sym -> sprintf "\"%s : %d\"" sym cost
+        | `Rhs term -> sprintf "\"%s : %d\"" (Gr.Term.to_string term) cost
+
+      let vertex_attributes _ = []
+
+      let get_subgraph _ = None
+
+      let default_edge_attributes _ = []
+
+      let edge_attributes _ = []
+
+      include Graph.Persistent.Digraph.ConcreteBidirectional (V)
+    end
+
+    include X
+    include Graph.Graphviz.Dot (X)
+    include Graph.Traverse.Dfs (X)
+    include Graph.Oper.P (X)
+    module Topo = Graph.Topological.Make_stable (X)
+
+    let filter_vertex g ~f =
+      fold_vertex (fun v g -> if f v then remove_vertex g v else g) g g
+
+    let add_edges g vs =
+      List.fold_left ~init:g ~f:(fun g (v, v') -> add_edge g v v') vs
+
+    let reverse g =
+      fold_edges (fun v v' g -> add_edge (remove_edge g v v') v' v) g g
+  end
+
   let debug = false
 
   let debug_print msg = if debug then S.print msg else S.unit
@@ -39,6 +84,66 @@ struct
     | x :: xs -> S.let_ x (fun x -> let_many (fun xs -> f (x :: xs)) xs)
 
   let costs_t = S.Array.mk_type Int
+
+  let rec reconstruct g node output =
+    let fresh = Fresh.create () in
+    let args_t = S.Tuple.mk_type costs_t (L.type_of output) in
+    let func_t = S.Func (args_t, Unit) in
+    let func_name = sprintf "reconstruct_%s" sym in
+    Log.debug (fun m ->
+        m "Building %s :: %s." func_name
+          ([%sexp_of: S.ctype] func_t |> Sexp.to_string));
+    let body costs target =
+      Gr.rhs L.grammar sym
+      |> List.map ~f:(Gr.with_holes ~fresh L.grammar)
+      |> List.group_by (module Int) (fun (_, hs) -> List.length hs)
+      |> List.map ~f:(fun (n_holes, rhss) ->
+             let case = S.int n_holes in
+             let costs = List.init n_holes ~f:(fun i -> S.(costs.(int i))) in
+             let code : unit S.t =
+               let_many
+                 (fun costs ->
+                   List.map rhss ~f:(fun (term, holes) ->
+                       let hole_costs = List.zip_exn costs holes in
+                       let check ctx =
+                         let ectx = Map.map ctx ~f:(fun (v, _) -> v) in
+                         let v = L.eval ectx term in
+                         S.ite (L.eq v target)
+                           (seq_many
+                              ( S.print
+                                  ( [%sexp_of: Gr.Term.t] term
+                                  |> Sexp.to_string_hum )
+                              :: List.map hole_costs ~f:(fun (_, (sym, name)) ->
+                                     let target, costs =
+                                       Map.find_exn ctx name
+                                     in
+                                     reconstruct tbl sym costs target) ))
+                           S.unit
+                       in
+                       let check =
+                         List.fold_left hole_costs ~init:check
+                           ~f:(fun check (cost, (sym, name)) ->
+                             let check ctx =
+                               C.iter ~sym ~size:cost
+                                 ~f:(fun v ->
+                                   check (Map.add_exn ctx ~key:name ~data:v))
+                                 tbl
+                             in
+                             check)
+                       in
+                       check (Map.empty (module String)))
+                   |> of_list)
+                 costs
+             in
+             (case, code))
+      |> case (fun size -> S.(Array.length costs = size)) S.unit
+    in
+    let func =
+      S.func func_name func_t (fun tup ->
+          S.let_ (S.Tuple.fst tup) (fun costs ->
+              S.let_ (S.Tuple.snd tup) (fun target -> body costs target)))
+    in
+    S.apply func (S.Tuple.create costs (L.code output))
 
   let rec reconstruct tbl sym costs output =
     let fresh = Fresh.create () in
@@ -153,51 +258,6 @@ struct
               put_all)
         in
         loop [] :: code)
-
-  module V = struct
-    type t = { cost : int; kind : [ `Lhs of string | `Rhs of Gr.Term.t ] }
-    [@@deriving compare, hash, sexp]
-
-    let equal = [%compare.equal: t]
-  end
-
-  module G = struct
-    module X = struct
-      let graph_attributes _ = []
-
-      let default_vertex_attributes _ = []
-
-      let vertex_name V.{ cost; kind } =
-        match kind with
-        | `Lhs sym -> sprintf "\"%s : %d\"" sym cost
-        | `Rhs term -> sprintf "\"%s : %d\"" (Gr.Term.to_string term) cost
-
-      let vertex_attributes _ = []
-
-      let get_subgraph _ = None
-
-      let default_edge_attributes _ = []
-
-      let edge_attributes _ = []
-
-      include Graph.Persistent.Digraph.ConcreteBidirectional (V)
-    end
-
-    include X
-    include Graph.Graphviz.Dot (X)
-    include Graph.Traverse.Dfs (X)
-    include Graph.Oper.P (X)
-    module Topo = Graph.Topological.Make_stable (X)
-
-    let filter_vertex g ~f =
-      fold_vertex (fun v g -> if f v then remove_vertex g v else g) g g
-
-    let add_edges g vs =
-      List.fold_left ~init:g ~f:(fun g (v, v') -> add_edge g v v') vs
-
-    let reverse g =
-      fold_edges (fun v v' g -> add_edge (remove_edge g v v') v' v) g g
-  end
 
   let contract_state g =
     G.fold_vertex
