@@ -9,13 +9,11 @@ module Term = struct
     | Nonterm _ -> 1
     | App (_, ts) -> 1 + List.sum (module Int) ~f:size ts
 
-  let rec n_holes = function
-    | Nonterm _ -> 1
-    | App (_, ts) -> List.sum (module Int) ~f:n_holes ts
-
   let rec non_terminals = function
     | Nonterm x -> [ x ]
     | App (_, ts) -> List.concat_map ~f:non_terminals ts
+
+  let n_holes t = non_terminals t |> List.length
 
   let rec to_string = function
     | Nonterm x -> x
@@ -32,7 +30,7 @@ module Term = struct
           if List.mem nt v ~equal then (
             let v' = v ^ Fresh.name fresh "%d" in
             holes := (v, v') :: !holes;
-            Nonterm v' )
+            App (v', []) )
           else Nonterm v
       | App (f, ts) -> App (f, List.map ts ~f:rename)
     in
@@ -87,7 +85,8 @@ let%expect_test "" =
       ("B", App ("f", [ Nonterm "A" ]));
     ]
   |> [%sexp_of: t] |> print_s;
-  [%expect {|
+  [%expect
+    {|
     ((A (App x ())) (A (App y ())) (B (App f ((App x ()))))
      (B (App f ((App y ()))))) |}]
 
@@ -130,7 +129,8 @@ let%expect_test "" =
       ("FIII", id "max");
     ]
   |> [%sexp_of: t] |> print_s;
-  [%expect {|
+  [%expect
+    {|
     ((I (App head ((Nonterm L)))) (I (App last ((Nonterm L))))
      (L (App take ((Nonterm I) (Nonterm L))))
      (L (App drop ((Nonterm I) (Nonterm L))))

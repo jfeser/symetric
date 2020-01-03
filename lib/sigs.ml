@@ -55,7 +55,7 @@ module type LANG = sig
 end
 
 module type CODE = sig
-  type 'a t
+  type 'a t [@@deriving sexp_of]
 
   type 'a set = Set
 

@@ -2,9 +2,9 @@ open! Core
 
 module Make (C : Sigs.CODE) = struct
   module Value = struct
-    type array_t = int32 array array
+    type array_t = int32 array array [@@deriving sexp]
 
-    type int_t = int32 array
+    type int_t = int32 array [@@deriving sexp]
 
     type t =
       | A of array_t C.t
@@ -12,6 +12,7 @@ module Make (C : Sigs.CODE) = struct
       | F_int of (int32 C.t -> int32 C.t)
       | F_bool of (int32 C.t -> bool C.t)
       | F_int2 of (int32 C.t -> int32 C.t -> int32 C.t)
+    [@@deriving sexp_of]
 
     type type_ = C.ctype
 
@@ -45,7 +46,7 @@ module Make (C : Sigs.CODE) = struct
     include Value
     include E
 
-    type value = Value.t
+    type value = Value.t [@@deriving sexp_of]
 
     type 'a code = 'a C.t
 
@@ -136,7 +137,13 @@ module Make (C : Sigs.CODE) = struct
                 if String.(x = sprintf "i%d" i) then Some v else None)
           with
           | Some v -> v
-          | None -> Map.find_exn ctx x )
+          | None -> (
+              match Map.find ctx x with
+              | Some v -> v
+              | None ->
+                  Error.create "Unbound name." (x, ctx)
+                    [%sexp_of: string * value Map.M(String).t]
+                  |> Error.raise ) )
       | App ("head", [ e ]) ->
           I
             ( eval ctx e |> to_array
@@ -214,6 +221,14 @@ module Make (C : Sigs.CODE) = struct
       | e ->
           Error.create "Unexpected expression." e [%sexp_of: _ Grammar.Term.t]
           |> Error.raise
+
+    let eval ctx expr =
+      try eval ctx expr
+      with exn ->
+        let open Error in
+        let err = of_exn exn in
+        tag_arg err "Evaluation failed" expr [%sexp_of: _ Grammar.Term.t]
+        |> raise
   end
 
   module Cache = struct

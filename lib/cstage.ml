@@ -70,6 +70,8 @@ module Code () : Sigs.CODE = struct
   include C
   include Genlet.Make (C)
 
+  let sexp_of_t _ = sexp_of_t
+
   let seq e e' =
     {
       ebody = e.ebody ^ e'.ebody;
