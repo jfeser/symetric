@@ -19,24 +19,38 @@ struct
   module Gr = Grammar
 
   module V = struct
-    type t = { cost : int; kind : [ `Lhs of string | `Rhs of Gr.Term.t ] }
+    type state = { cost : int; symbol : string }
     [@@deriving compare, hash, sexp]
+
+    type code = { cost : int; term : string Grammar.Term.t }
+    [@@deriving compare, hash, sexp]
+
+    type arg = int [@@deriving compare, hash, sexp]
+
+    type t = State of state | Code of code | Arg of arg
+    [@@deriving compare, hash, sexp]
+
+    let to_state = function State s -> s | _ -> failwith "Not a state"
+
+    let to_code = function Code s -> s | _ -> failwith "Not a code"
 
     let equal = [%compare.equal: t]
   end
 
   module G = struct
     module X = struct
+      open V
+
       let graph_attributes _ = []
 
       let default_vertex_attributes _ = []
 
-      let vertex_name V.{ cost; kind } =
-        match kind with
-        | `Lhs sym -> sprintf "\"%s : %d\"" sym cost
-        | `Rhs term -> sprintf "\"%s : %d\"" (Gr.Term.to_string term) cost
+      let vertex_name = function
+        | State v -> sprintf "\"%s : %d\"" v.symbol v.cost
+        | Code v -> sprintf "\"%s : %d\"" (Gr.Term.to_string v.term) v.cost
+        | Arg x -> sprintf "%d" x
 
-      let vertex_attributes _ = []
+      let vertex_attributes = function Arg _ -> [ `Shape `Circle ] | _ -> []
 
       let get_subgraph _ = None
 
@@ -85,185 +99,84 @@ struct
 
   let costs_t = S.Array.mk_type Int
 
-  let rec reconstruct g node output =
-    let fresh = Fresh.create () in
-    let args_t = S.Tuple.mk_type costs_t (L.type_of output) in
+  let rec n_cartesian_product = function
+    | [] -> [ [] ]
+    | h :: t ->
+        let rest = n_cartesian_product t in
+        List.concat
+          (List.map ~f:(fun i -> List.map ~f:(fun r -> i :: r) rest) h)
+
+  let to_contexts term args =
+    let term, holes = Gr.with_holes term in
+    let ctxs =
+      List.group_by (module String) (fun (n, _) -> n.V.symbol) args
+      |> List.map ~f:(fun (sym, vals) ->
+             let vals = List.map vals ~f:Tuple.T2.get2 in
+             let holes =
+               List.filter holes ~f:(fun (sym', _) -> String.(sym = sym'))
+               |> List.map ~f:(fun (_, x) -> x)
+             in
+             Combinat.Permutation.Of_list.to_list vals
+             |> List.map ~f:(fun vs -> List.zip_exn holes vs))
+      |> n_cartesian_product
+      |> List.map ~f:(fun ctxs ->
+             List.concat ctxs |> Map.of_alist_exn (module String))
+    in
+    (term, ctxs)
+
+  let rec reconstruct tbl g state target =
+    let args_t = L.type_of target in
     let func_t = S.Func (args_t, Unit) in
-    let func_name = sprintf "reconstruct_%s" sym in
+    let func_name = sprintf "reconstruct_%s_%d" state.V.symbol state.cost in
     Log.debug (fun m ->
         m "Building %s :: %s." func_name
           ([%sexp_of: S.ctype] func_t |> Sexp.to_string));
-    let body costs target =
-      Gr.rhs L.grammar sym
-      |> List.map ~f:(Gr.with_holes ~fresh L.grammar)
-      |> List.group_by (module Int) (fun (_, hs) -> List.length hs)
-      |> List.map ~f:(fun (n_holes, rhss) ->
-             let case = S.int n_holes in
-             let costs = List.init n_holes ~f:(fun i -> S.(costs.(int i))) in
-             let code : unit S.t =
-               let_many
-                 (fun costs ->
-                   List.map rhss ~f:(fun (term, holes) ->
-                       let hole_costs = List.zip_exn costs holes in
-                       let check ctx =
-                         let ectx = Map.map ctx ~f:(fun (v, _) -> v) in
-                         let v = L.eval ectx term in
-                         S.ite (L.eq v target)
-                           (seq_many
-                              ( S.print
-                                  ( [%sexp_of: Gr.Term.t] term
-                                  |> Sexp.to_string_hum )
-                              :: List.map hole_costs ~f:(fun (_, (sym, name)) ->
-                                     let target, costs =
-                                       Map.find_exn ctx name
-                                     in
-                                     reconstruct tbl sym costs target) ))
-                           S.unit
-                       in
-                       let check =
-                         List.fold_left hole_costs ~init:check
-                           ~f:(fun check (cost, (sym, name)) ->
-                             let check ctx =
-                               C.iter ~sym ~size:cost
-                                 ~f:(fun v ->
-                                   check (Map.add_exn ctx ~key:name ~data:v))
-                                 tbl
-                             in
-                             check)
-                       in
-                       check (Map.empty (module String)))
-                   |> of_list)
-                 costs
-             in
-             (case, code))
-      |> case (fun size -> S.(Array.length costs = size)) S.unit
-    in
-    let func =
-      S.func func_name func_t (fun tup ->
-          S.let_ (S.Tuple.fst tup) (fun costs ->
-              S.let_ (S.Tuple.snd tup) (fun target -> body costs target)))
-    in
-    S.apply func (S.Tuple.create costs (L.code output))
 
-  let rec reconstruct tbl sym costs output =
-    let fresh = Fresh.create () in
-    let args_t = S.Tuple.mk_type costs_t (L.type_of output) in
-    let func_t = S.Func (args_t, Unit) in
-    let func_name = sprintf "reconstruct_%s" sym in
-    Log.debug (fun m ->
-        m "Building %s :: %s." func_name
-          ([%sexp_of: S.ctype] func_t |> Sexp.to_string));
-    let body costs target =
-      Gr.rhs L.grammar sym
-      |> List.map ~f:(Gr.with_holes ~fresh L.grammar)
-      |> List.group_by (module Int) (fun (_, hs) -> List.length hs)
-      |> List.map ~f:(fun (n_holes, rhss) ->
-             let case = S.int n_holes in
-             let costs = List.init n_holes ~f:(fun i -> S.(costs.(int i))) in
-             let code : unit S.t =
-               let_many
-                 (fun costs ->
-                   List.map rhss ~f:(fun (term, holes) ->
-                       let hole_costs = List.zip_exn costs holes in
-                       let check ctx =
-                         let ectx = Map.map ctx ~f:(fun (v, _) -> v) in
-                         let v = L.eval ectx term in
-                         S.ite (L.eq v target)
-                           (seq_many
-                              ( S.print
-                                  ( [%sexp_of: Gr.Term.t] term
-                                  |> Sexp.to_string_hum )
-                              :: List.map hole_costs ~f:(fun (_, (sym, name)) ->
-                                     let target, costs =
-                                       Map.find_exn ctx name
-                                     in
-                                     reconstruct tbl sym costs target) ))
-                           S.unit
-                       in
-                       let check =
-                         List.fold_left hole_costs ~init:check
-                           ~f:(fun check (cost, (sym, name)) ->
-                             let check ctx =
-                               C.iter ~sym ~size:cost
-                                 ~f:(fun v ->
-                                   check (Map.add_exn ctx ~key:name ~data:v))
-                                 tbl
-                             in
-                             check)
-                       in
-                       check (Map.empty (module String)))
-                   |> of_list)
-                 costs
-             in
-             (case, code))
-      |> case (fun size -> S.(Array.length costs = size)) S.unit
-    in
-    let func =
-      S.func func_name func_t (fun tup ->
-          S.let_ (S.Tuple.fst tup) (fun costs ->
-              S.let_ (S.Tuple.snd tup) (fun target -> body costs target)))
-    in
-    S.apply func (S.Tuple.create costs (L.code output))
-
-  let put_all tbl ctx cost costs lhs rhs =
-    let open S in
-    let v = L.eval (Map.of_alist_exn (module String) ctx) rhs in
-    let costs =
-      Array.const costs_t (costs |> List.map ~f:int |> List.to_array)
-    in
-    let insert_code =
-      seq_many
-        [
-          debug_print
-            (sprintf "Inserting (%s -> %s) cost %d" lhs (Gr.Term.to_string rhs)
-               cost);
-          put ~sym:lhs ~size:cost ~sizes:costs tbl v;
-        ]
-    in
-    let out_sym, out_val = L.output in
-    if String.(out_sym = lhs) then
-      match L.(v = out_val) with
-      | Some eq ->
-          let recon_code =
-            seq_many
-              [
-                print "Starting reconstruction";
-                reconstruct tbl lhs costs out_val;
-                exit;
-              ]
-          in
-          ite eq recon_code insert_code
-      | None -> insert_code
-    else insert_code
-
-  let put_leaf_rule tbl cost (lhs, rhs) = [ put_all tbl [] cost [] lhs rhs ]
-
-  let put_rule tbl cost holes ((lhs, rhs) as rule) =
-    Combinat.Partition.fold
-      (cost - Gr.rule_size rule + List.length holes, List.length holes)
-      ~init:[]
-      ~f:(fun code costs ->
-        Log.debug (fun m ->
-            m "Enumerating (%s -> %s) at cost %d" lhs (Gr.Term.to_string rhs)
-              cost);
-        let loop =
-          let put_all ctx = put_all tbl ctx cost (to_list costs) lhs rhs in
-          List.foldi holes ~init:put_all ~f:(fun i put_all (sym, name) ->
-              let put_all ctx =
-                C.iter ~sym
-                  ~size:(S.int costs.{i})
-                  ~f:(fun (v, _) -> put_all ((name, v) :: ctx))
-                  tbl
-              in
-              put_all)
+    let recon_args target term args_node =
+      let check args =
+        let term, ctxs = to_contexts term args in
+        let found_target =
+          List.fold_left ctxs ~init:(S.bool false) ~f:(fun found ctx ->
+              S.(found || L.eq (L.eval ctx term) target))
         in
-        loop [] :: code)
+        S.ite found_target
+          (seq_many
+             ( S.print ([%sexp_of: string Gr.Term.t] term |> Sexp.to_string_hum)
+             :: List.map args ~f:(fun (n, v) -> reconstruct tbl g n v) ))
+          S.unit
+      in
+      let check =
+        G.succ g args_node
+        |> List.fold_left ~init:check ~f:(fun check node ->
+               let state = V.to_state node in
+               let check ctx =
+                 C.iter ~sym:state.V.symbol ~size:(S.int state.V.cost)
+                   ~f:(fun (v, _) -> check ((state, v) :: ctx))
+                   tbl
+               in
+               check)
+      in
+      check []
+    in
+
+    let recon_code target code_node =
+      let term = (V.to_code code_node).term in
+      G.succ g code_node |> List.map ~f:(recon_args target term) |> seq_many
+    in
+
+    let recon_state target =
+      G.succ g (State state) |> List.map ~f:(recon_code target) |> seq_many
+    in
+    let func =
+      S.func func_name func_t (fun target -> S.let_ target recon_state)
+    in
+    S.apply func (L.code target)
 
   let contract_state g =
     G.fold_vertex
       (fun v g ->
-        match v.kind with
-        | `Lhs _ ->
+        match v with
+        | State _ ->
             (* Add edges from this node to its grandchildren. *)
             G.succ g v
             |> List.concat_map ~f:(G.succ g)
@@ -271,32 +184,34 @@ struct
             |> G.add_edges g
         | _ -> g)
       g g
-    |> G.filter_vertex ~f:(fun v ->
-           match v.kind with `Rhs _ -> true | _ -> false)
+    |> G.filter_vertex ~f:(fun v -> match v with State _ -> false | _ -> true)
 
   let search_graph max_cost =
     (* Compute search graph. *)
+    let fresh = Fresh.create () in
     let g = ref G.empty in
+
+    Log.debug (fun m -> m "%s" ([%sexp_of: Gr.t] L.grammar |> Sexp.to_string));
     for cost = 0 to max_cost do
-      List.filter L.grammar ~f:(fun rule -> Gr.rule_size rule <= cost)
-      |> List.iter ~f:(fun ((lhs, rhs) as rule) ->
-             let lhs_v = V.{ cost; kind = `Lhs lhs } in
-             let rhs_v = V.{ cost; kind = `Rhs rhs } in
+      List.filter L.grammar ~f:(fun (_, rhs) -> Gr.Term.size rhs <= cost)
+      |> List.iter ~f:(fun (lhs, rhs) ->
+             let lhs_v = V.State { cost; symbol = lhs } in
+             let rhs_v = V.Code { cost; term = rhs } in
              g := G.add_edge !g lhs_v rhs_v;
 
-             let fresh = Fresh.create () in
-             let _, holes = Gr.with_holes ~fresh L.grammar rhs in
-             let n_holes = List.length holes in
-             if n_holes = 0 && Gr.rule_size rule = cost then ()
+             let n_holes = Gr.Term.n_holes rhs in
+             let size = Gr.Term.size rhs in
+             if n_holes = 0 && size = cost then ()
              else
                Combinat.Partition.iter
-                 ( cost - Gr.rule_size rule + List.length holes,
-                   List.length holes )
+                 (cost - size + n_holes, n_holes)
                  ~f:(fun costs ->
-                   List.iteri holes ~f:(fun i (sym, _) ->
+                   let arg = V.Arg (Fresh.int fresh) in
+                   List.iteri (Gr.Term.non_terminals rhs) ~f:(fun i sym ->
+                       g := G.add_edge !g rhs_v arg;
                        g :=
-                         G.add_edge !g rhs_v
-                           V.{ cost = costs.{i}; kind = `Lhs sym })))
+                         G.add_edge !g arg
+                           (V.State { cost = costs.{i}; symbol = sym }))))
     done;
 
     (* Prune nodes that the sinks don't depend on. *)
@@ -305,47 +220,84 @@ struct
     let out_sym, _ = L.output in
     let sinks =
       G.fold_vertex
-        (fun ({ kind; _ } as v) vs ->
-          match kind with
-          | `Lhs sym when String.(sym = out_sym) -> v :: vs
+        (fun v vs ->
+          match v with
+          | State { symbol; _ } when String.(symbol = out_sym) -> v :: vs
           | _ -> vs)
         g []
     in
     let sources =
-      G.fold_vertex
-        (fun ({ kind; cost } as v) vs ->
-          if
-            List.existsi L.inputs ~f:(fun i _ ->
-                Poly.(kind = `Rhs (Id (sprintf "i%d" i))) && cost = 1)
-          then v :: vs
-          else vs)
-        g []
+      List.mapi L.inputs ~f:(fun i _ ->
+          V.Code { term = App (sprintf "i%d" i, []); cost = 1 })
     in
 
-    let g = ref g in
-    G.iter_vertex
-      (fun v ->
-        let should_remove =
-          not
-            ( ( List.mem sinks v ~equal:V.equal
-              || List.exists sinks ~f:(fun v' -> G.mem_edge g_trans v' v) )
-            && ( List.mem sources v ~equal:V.equal
-               || List.exists sources ~f:(fun v' -> G.mem_edge g_trans v v') )
-            )
-        in
-        if should_remove then g := G.remove_vertex !g v)
-      !g;
-    !g
+    let should_keep v =
+      let open V in
+      ( List.mem sinks v ~equal
+      || List.exists sinks ~f:(fun v' -> G.mem_edge g_trans v' v) )
+      && ( List.mem sources v ~equal
+         || List.exists sources ~f:(fun v' -> G.mem_edge g_trans v v') )
+    in
 
-  let enumerate_rule tbl cost ((lhs, rhs) as rule) =
-    let fresh = Fresh.create () in
-    let rhs, holes = Gr.with_holes ~fresh L.grammar rhs in
-    let n_holes = List.length holes in
-    if n_holes = 0 && Gr.rule_size rule = cost then (
-      Log.debug (fun m ->
-          m "Enumerating (%s -> %s) at cost %d" lhs (Gr.Term.to_string rhs) cost);
-      put_leaf_rule tbl cost rule )
-    else put_rule tbl cost holes (lhs, rhs)
+    G.fold_vertex
+      (fun v g -> if should_keep v then g else G.remove_vertex g v)
+      g g
+
+  let fill_state tbl g state =
+    G.succ g (V.State state)
+    |> List.concat_map ~f:(fun code_node ->
+           let code = V.to_code code_node in
+
+           let fill args =
+             let term, ctxs = to_contexts code.V.term args in
+             List.map ctxs ~f:(fun ctx ->
+                 let v = L.eval ctx term in
+                 let insert_code =
+                   seq_many
+                     [
+                       debug_print
+                         (sprintf "Inserting (%s -> %s) cost %d" state.V.symbol
+                            (Gr.Term.to_string code.V.term)
+                            state.V.cost);
+                       put ~sym:state.V.symbol ~size:state.V.cost
+                         ~sizes:(S.Array.const costs_t [||])
+                         tbl v;
+                     ]
+                 in
+                 let out_sym, out_val = L.output in
+                 if String.(out_sym = state.V.symbol) then
+                   match L.(v = out_val) with
+                   | Some eq ->
+                       let recon_code =
+                         seq_many
+                           [
+                             S.print "Starting reconstruction";
+                             reconstruct tbl g state out_val;
+                             S.exit;
+                           ]
+                       in
+                       S.ite eq recon_code insert_code
+                   | None -> insert_code
+                 else insert_code)
+             |> seq_many
+           in
+
+           G.succ g code_node
+           |> List.map ~f:(fun arg_node ->
+                  let fill =
+                    G.succ g arg_node
+                    |> List.fold_left ~init:fill ~f:(fun fill node ->
+                           let state = V.to_state node in
+                           let fill ctx =
+                             C.iter ~sym:state.V.symbol
+                               ~size:(S.int state.V.cost)
+                               ~f:(fun (v, _) -> fill ((state, v) :: ctx))
+                               tbl
+                           in
+                           fill)
+                  in
+                  fill []))
+    |> seq_many
 
   let enumerate max_cost =
     let g = search_graph max_cost in
@@ -358,18 +310,8 @@ struct
         let loops =
           G.Topo.fold
             (fun v code ->
-              let lhs =
-                match v.kind with `Lhs x -> x | _ -> failwith "Unexpected rhs"
-              in
-              G.fold_succ
-                (fun v' loops ->
-                  let rhs =
-                    match v'.kind with
-                    | `Rhs x -> x
-                    | _ -> failwith "Unexpected lhs"
-                  in
-                  loops @ enumerate_rule tbl v.cost (lhs, rhs))
-                g v code)
+              let state = V.to_state v in
+              code @ [ fill_state tbl g state ])
             lhs_g []
         in
         seq_many loops)

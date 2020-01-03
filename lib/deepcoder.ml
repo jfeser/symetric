@@ -52,45 +52,46 @@ module Make (C : Sigs.CODE) = struct
     let grammar : Grammar.t =
       let open Grammar in
       let open Grammar.Term in
-      List.mapi inputs ~f:(fun i (sym, _) -> (sym, Id (sprintf "i%d" i)))
+      let nt x = Nonterm x in
+      let id x = App (x, []) in
+      List.mapi inputs ~f:(fun i (sym, _) -> (sym, id (sprintf "i%d" i)))
       @ [
-          ("I", App ("head", [ Id "L" ]));
-          ("I", App ("last", [ Id "L" ]));
-          ("L", App ("take", [ Id "I"; Id "L" ]));
-          ("L", App ("drop", [ Id "I"; Id "L" ]));
-          ("I", App ("access", [ Id "I"; Id "L" ]));
-          ("I", App ("minimum", [ Id "L" ]));
-          ("I", App ("maximum", [ Id "L" ]));
-          ("L", App ("reverse", [ Id "L" ]));
-          (* ("L", App ("sort", [ Id "L" ])); *)
-          ("I", App ("sum", [ Id "L" ]));
-          ("L", App ("map", [ Id "FII"; Id "L" ]));
-          (* ("L", App ("filter", [ Id "FIB"; Id "L" ])); *)
-          ("I", App ("count", [ Id "FIB"; Id "L" ]));
-          ("L", App ("zipwith", [ Id "FIII"; Id "L"; Id "L" ]));
-          (* ("L", App ("scanl1", [ Id "FIII"; Id "L" ])); *)
-          ("FII", Id "(+1)");
-          ("FII", Id "(-1)");
-          ("FII", Id "(*2)");
-          ("FII", Id "(/2)");
-          ("FII", Id "(*(-1))");
-          ("FII", Id "(**2)");
-          ("FII", Id "(*3)");
-          ("FII", Id "(/3)");
-          ("FII", Id "(*4)");
-          ("FII", Id "(/4)");
-          ("FIB", Id "(>0)");
-          ("FIB", Id "(<0)");
-          ("FIB", Id "(%2==0)");
-          ("FIB", Id "(%2==1)");
-          ("FIII", Id "(+)");
-          ("FIII", Id "(-)");
-          ("FIII", Id "(*)");
-          ("FIII", Id "min");
-          ("FIII", Id "max");
+          ("I", App ("head", [ nt "L" ]));
+          ("I", App ("last", [ nt "L" ]));
+          ("L", App ("take", [ nt "I"; nt "L" ]));
+          ("L", App ("drop", [ nt "I"; nt "L" ]));
+          ("I", App ("access", [ nt "I"; nt "L" ]));
+          ("I", App ("minimum", [ nt "L" ]));
+          ("I", App ("maximum", [ nt "L" ]));
+          ("L", App ("reverse", [ nt "L" ]));
+          (* ("L", App ("sort", [ nt "L" ])); *)
+          ("I", App ("sum", [ nt "L" ]));
+          ("L", App ("map", [ nt "FII"; nt "L" ]));
+          (* ("L", App ("filter", [ nt "FIB"; nt "L" ])); *)
+          ("I", App ("count", [ nt "FIB"; nt "L" ]));
+          ("L", App ("zipwith", [ nt "FIII"; nt "L"; nt "L" ]));
+          (* ("L", App ("scanl1", [ nt "FIII"; nt "L" ])); *)
+          ("FII", id "(+1)");
+          ("FII", id "(-1)");
+          ("FII", id "(*2)");
+          ("FII", id "(/2)");
+          ("FII", id "(*(-1))");
+          ("FII", id "(**2)");
+          ("FII", id "(*3)");
+          ("FII", id "(/3)");
+          ("FII", id "(*4)");
+          ("FII", id "(/4)");
+          ("FIB", id "(>0)");
+          ("FIB", id "(<0)");
+          ("FIB", id "(%2==0)");
+          ("FIB", id "(%2==1)");
+          ("FIII", id "(+)");
+          ("FIII", id "(-)");
+          ("FIII", id "(*)");
+          ("FIII", id "min");
+          ("FIII", id "max");
         ]
       |> inline "FII" |> inline "FIB" |> inline "FIII"
-      |> List.filter ~f:(fun (lhs, _) -> String.(lhs = "L" || lhs = "I"))
 
     open Value
 
@@ -110,26 +111,26 @@ module Make (C : Sigs.CODE) = struct
     let int_array = Array.mk_type Int
 
     let rec eval ctx = function
-      | Grammar.Term.Id "(+1)" -> F_int (fun x -> x + int 1)
-      | Id "(-1)" -> F_int (fun x -> x - int 1)
-      | Id "(*2)" -> F_int (fun x -> x * int 2)
-      | Id "(/2)" -> F_int (fun x -> x / int 2)
-      | Id "(*(-1))" -> F_int (fun x -> -x)
-      | Id "(**2)" -> F_int (fun x -> let_ x (fun x -> x * x))
-      | Id "(*3)" -> F_int (fun x -> x * int 3)
-      | Id "(/3)" -> F_int (fun x -> x / int 3)
-      | Id "(*4)" -> F_int (fun x -> x * int 4)
-      | Id "(/4)" -> F_int (fun x -> x / int 4)
-      | Id "(>0)" -> F_bool (fun x -> x > int 0)
-      | Id "(<0)" -> F_bool (fun x -> x < int 0)
-      | Id "(%2==0)" -> F_bool (fun x -> x mod int 2 = int 0)
-      | Id "(%2==1)" -> F_bool (fun x -> x mod int 2 = int 1)
-      | Id "(+)" -> F_int2 (fun x y -> x + y)
-      | Id "(-)" -> F_int2 (fun x y -> x - y)
-      | Id "(*)" -> F_int2 (fun x y -> x * y)
-      | Id "min" -> F_int2 (fun x y -> ite (x < y) x y)
-      | Id "max" -> F_int2 (fun x y -> ite (x > y) x y)
-      | Id x -> (
+      | Grammar.Term.App ("(+1)", []) -> F_int (fun x -> x + int 1)
+      | App ("(-1)", []) -> F_int (fun x -> x - int 1)
+      | App ("(*2)", []) -> F_int (fun x -> x * int 2)
+      | App ("(/2)", []) -> F_int (fun x -> x / int 2)
+      | App ("(*(-1))", []) -> F_int (fun x -> -x)
+      | App ("(**2)", []) -> F_int (fun x -> let_ x (fun x -> x * x))
+      | App ("(*3)", []) -> F_int (fun x -> x * int 3)
+      | App ("(/3)", []) -> F_int (fun x -> x / int 3)
+      | App ("(*4)", []) -> F_int (fun x -> x * int 4)
+      | App ("(/4)", []) -> F_int (fun x -> x / int 4)
+      | App ("(>0)", []) -> F_bool (fun x -> x > int 0)
+      | App ("(<0)", []) -> F_bool (fun x -> x < int 0)
+      | App ("(%2==0)", []) -> F_bool (fun x -> x mod int 2 = int 0)
+      | App ("(%2==1)", []) -> F_bool (fun x -> x mod int 2 = int 1)
+      | App ("(+)", []) -> F_int2 (fun x y -> x + y)
+      | App ("(-)", []) -> F_int2 (fun x y -> x - y)
+      | App ("(*)", []) -> F_int2 (fun x y -> x * y)
+      | App ("min", []) -> F_int2 (fun x y -> ite (x < y) x y)
+      | App ("max", []) -> F_int2 (fun x y -> ite (x > y) x y)
+      | App (x, []) -> (
           match
             List.find_mapi inputs ~f:(fun i (_, v) ->
                 if String.(x = sprintf "i%d" i) then Some v else None)
@@ -211,7 +212,7 @@ module Make (C : Sigs.CODE) = struct
                    (min (length a) (length a'))
                    (fun i -> f (get a i) (get a' i))))
       | e ->
-          Error.create "Unexpected expression." e [%sexp_of: Grammar.Term.t]
+          Error.create "Unexpected expression." e [%sexp_of: _ Grammar.Term.t]
           |> Error.raise
   end
 
