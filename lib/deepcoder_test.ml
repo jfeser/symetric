@@ -39,7 +39,7 @@ let%expect_test "" =
     #include <iostream>
     #include <set>
     #include <vector>
-    int reconstruct_L_1(std::vector<std::vector<int>> &x10);
+    int reconstruct_L_1(std::vector<std::vector<int>> &x12);
     int main();
     std::vector<int> x0(5);
     std::vector<std::vector<int>> x1(1);
@@ -49,10 +49,10 @@ let%expect_test "" =
     std::set<std::pair<std::vector<int>, std::vector<int>>> x6;
     std::vector<
         std::set<std::pair<std::vector<std::vector<int>>, std::vector<int>>>>
-        x7;
-    std::set<std::pair<std::vector<std::vector<int>>, std::vector<int>>> x9;
-    int x11;
-    std::vector<int> x12(0);
+        x8;
+    std::set<std::pair<std::vector<std::vector<int>>, std::vector<int>>> x10;
+    int x14;
+    std::vector<int> x15(0);
     int main() {
       // begin Array.init
       x4.clear();
@@ -61,15 +61,17 @@ let%expect_test "" =
         x4.push_back(x6);
       }
       // end Array.init
-
+      std::vector<std::set<std::pair<std::vector<int>, std::vector<int>>>> x7 = x4;
       // begin Array.init
-      x7.clear();
-      x7.reserve(100);
-      for (int x8 = 0; x8 < 100; x8++) {
-        x7.push_back(x9);
+      x8.clear();
+      x8.reserve(100);
+      for (int x9 = 0; x9 < 100; x9++) {
+        x8.push_back(x10);
       }
       // end Array.init
-
+      std::vector<
+          std::set<std::pair<std::vector<std::vector<int>>, std::vector<int>>>>
+          x11 = x8;
       // begin Array.const
 
       // begin Array.const
@@ -102,10 +104,10 @@ let%expect_test "" =
         x2[4] = 3;  // end Array.const
         x3[0] = x2; // end Array.const
         exit(0);
-        x11 = 0;
+        x14 = 0;
       } else {
 
-        x11 = 0;
+        x14 = 0;
       }
       std::cout << "Inserting (L -> i0) cost 1" << std::endl;
       // begin Array.const
@@ -120,8 +122,11 @@ let%expect_test "" =
 
       // begin Array.const
       // end Array.const
-      (x7[1]).insert(std::make_pair(x1, x12));
+      (x11[1]).insert(std::make_pair(x1, x15));
       return 0;
     }
-    int reconstruct_L_1(std::vector<std::vector<int>> &x10) { return 0; }
+    int reconstruct_L_1(std::vector<std::vector<int>> &x12) {
+      std::vector<std::vector<int>> x13 = x12;
+      return 0;
+    }
  |}]

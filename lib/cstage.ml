@@ -56,25 +56,7 @@ module Code () : Sigs.CODE = struct
     fresh : Fresh.t;
   }
 
-  module C = struct
-    type 'a t = expr
-
-    let sexp_of_t = sexp_of_expr
-
-    let is_well_scoped c =
-      (not c.eeffect) && List.for_all c.efree ~f:(fun (_, m) -> m ())
-
-    let let_ v b =
-      let x = b { v with ebody = "" } in
-      { x with ebody = v.ebody ^ x.ebody; efree = x.efree @ v.efree }
-  end
-
-  include C
-  include Genlet.Make (C)
-
-  let sexp_of_t _ = sexp_of_t
-
-  let free { efree; _ } = efree
+  type fmt_arg = C : expr -> fmt_arg | S : string -> fmt_arg
 
   let prog =
     let main =
@@ -89,12 +71,7 @@ module Code () : Sigs.CODE = struct
     in
     { funcs = [ main ]; cur_func = main; fresh = Fresh.create () }
 
-  let with_comment s e =
-    { e with ebody = sprintf "\n// begin %s\n%s// end %s\n" s e.ebody s }
-
-  let find_func n = List.find prog.funcs ~f:(fun f -> String.(f.fname = n))
-
-  type fmt_arg = C : 'a t -> fmt_arg | S : string -> fmt_arg
+  let fresh_name () = Fresh.name prog.fresh "x%d"
 
   let format fmt args =
     let fmt =
@@ -127,6 +104,43 @@ module Code () : Sigs.CODE = struct
         | _ -> false)
     in
     { ebody; ret; etype; efree; eeffect = has_effect || eeffect }
+
+  let fresh_local value =
+    let name = fresh_name () in
+    let type_ = value.etype in
+    eformat name type_ "$(type) $(var) = $(init);"
+      [ ("type", S (type_name type_)); ("var", S name); ("init", C value) ]
+
+  module C = struct
+    type 'a t = expr
+
+    let sexp_of_t = sexp_of_expr
+
+    let is_well_scoped c =
+      (not c.eeffect) && List.for_all c.efree ~f:(fun (_, m) -> m ())
+
+    let let_ v b =
+      let x = fresh_local v in
+      let y = b { x with ebody = "" } in
+      {
+        y with
+        ebody = x.ebody ^ y.ebody;
+        efree = x.efree @ y.efree;
+        eeffect = x.eeffect || y.eeffect;
+      }
+  end
+
+  include C
+  include Genlet.Make (C)
+
+  let sexp_of_t _ = sexp_of_t
+
+  let free { efree; _ } = efree
+
+  let with_comment s e =
+    { e with ebody = sprintf "\n// begin %s\n%s// end %s\n" s e.ebody s }
+
+  let find_func n = List.find prog.funcs ~f:(fun f -> String.(f.fname = n))
 
   let seq e e' =
     {
@@ -200,8 +214,6 @@ module Code () : Sigs.CODE = struct
     { ebody = ""; ret = vname; etype = vtype; efree = []; eeffect = false }
 
   let add_var_decl x = prog.cur_func.locals <- x :: prog.cur_func.locals
-
-  let fresh_name () = Fresh.name prog.fresh "x%d"
 
   let fresh_global ?init vtype =
     let vname = fresh_name () in

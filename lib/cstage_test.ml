@@ -20,23 +20,24 @@ let%expect_test "" =
     #include <vector>
     int main();
     std::vector<int> x0;
-    int x2;
+    int x4;
     int main() {
       // begin Array.init
       x0.clear();
       x0.reserve(10);
       for (int x1 = 0; x1 < 10; x1++) {
-        x0.push_back(x1);
+        int x2 = x1;
+        x0.push_back(x2);
       }
       // end Array.init
-
+      std::vector<int> x3 = x0;
       // begin Array.fold
-      x2 = 0;
-      for (int x3 = 0; x3 < ((int)((x0).size())); x3++) {
-        x2 = (x2 + (x0[x3]));
+      x4 = 0;
+      for (int x5 = 0; x5 < ((int)((x3).size())); x5++) {
+        x4 = (x4 + (x3[x5]));
       }
       // end Array.fold
-      return x2;
+      return x4;
     } |}];
   code |> Util.clang_build |> print_endline
 
@@ -91,7 +92,8 @@ let%expect_test "" =
       x1.clear();
       x1.reserve(10);
       for (int x2 = 0; x2 < 10; x2++) {
-        x1.push_back(x2);
+        int x3 = x2;
+        x1.push_back(x3);
       }
       // end Array.init
       return f(x1);
@@ -123,13 +125,14 @@ let%expect_test "" =
     #include <vector>
     int main();
     std::vector<int> x0;
-    std::vector<int> x2;
+    std::vector<int> x3;
     int main() {
       // begin Array.init
-      x2.clear();
-      x2.reserve(10);
-      for (int x3 = 0; x3 < 10; x3++) {
-        x2.push_back(x3);
+      x3.clear();
+      x3.reserve(10);
+      for (int x4 = 0; x4 < 10; x4++) {
+        int x5 = x4;
+        x3.push_back(x5);
       }
       // end Array.init
 
@@ -137,15 +140,17 @@ let%expect_test "" =
       x0.clear();
       x0.reserve(10);
       for (int x1 = 0; x1 < 10; x1++) {
-        x0.push_back(x1);
+        int x2 = x1;
+        x0.push_back(x2);
       }
       // end Array.init
 
       // begin Array.init
-      x2.clear();
-      x2.reserve(10);
-      for (int x3 = 0; x3 < 10; x3++) {
-        x2.push_back(x3);
+      x3.clear();
+      x3.reserve(10);
+      for (int x4 = 0; x4 < 10; x4++) {
+        int x5 = x4;
+        x3.push_back(x5);
       }
       // end Array.init
 
@@ -153,11 +158,12 @@ let%expect_test "" =
       x0.clear();
       x0.reserve(10);
       for (int x1 = 0; x1 < 10; x1++) {
-        x0.push_back(x1);
+        int x2 = x1;
+        x0.push_back(x2);
       }
       // end Array.init
-      return ((std::get<0>(std::make_pair(x2, x0))[5]) +
-              (std::get<0>(std::make_pair(x2, x0))[4]));
+      return ((std::get<0>(std::make_pair(x3, x0))[5]) +
+              (std::get<0>(std::make_pair(x3, x0))[4]));
     }
  |}];
   code |> Util.clang_build |> print_endline;
@@ -187,17 +193,20 @@ let%expect_test "" =
     #include <vector>
     int main();
     std::set<int> x0;
-    int x1;
+    int x2;
     int main() {
-      x0.insert(0);
-      x0.insert(1);
-      x0.insert(2);
+      std::set<int> x1 = x0;
+      x1.insert(0);
+      x1.insert(1);
+      x1.insert(2);
       // begin Set.fold
-      x1 = 0;
-      for (auto x2 = x0.begin(); x2 != x0.end(); ++x2) {
-        x1 = (x1 + *x2);
+      int x3 = x2;
+      x3 = 0;
+      for (auto x4 = x1.begin(); x4 != x1.end(); ++x4) {
+        x3 = (x3 + *x4);
       }
       // end Set.fold
+      int x5 = x3;
       return 0;
     }
  |}];
@@ -230,17 +239,21 @@ let%expect_test "" =
     #include <vector>
     int main();
     std::set<int> x0;
-    int x1;
+    int x2;
     int main() {
-      x0.insert(0);
-      x0.insert(1);
-      x0.insert(2);
+      std::set<int> x1 = x0;
+      x1.insert(0);
+      x1.insert(1);
+      x1.insert(2);
       // begin Set.fold
-      x1 = 0;
-      for (auto x2 = x0.begin(); x2 != x0.end(); ++x2) {
-        x1 = (((45 + 10) + x1) + *x2);
+      int x3 = x2;
+      x3 = 0;
+      int x5 = (45 + 10);
+      for (auto x4 = x1.begin(); x4 != x1.end(); ++x4) {
+        x3 = ((x5 + x3) + *x4);
       }
       // end Set.fold
+      int x6 = x3;
       return 0;
     }
  |}];
@@ -265,8 +278,8 @@ let%expect_test "" =
     #include <vector>
     int main();
     int main() {
-      return (std::get<0>(std::make_pair(0, 1)) +
-              std::get<0>(std::make_pair(0, 1)));
+      std::pair<int, int> x0 = std::make_pair(0, 1);
+      return (std::get<0>(x0) + std::get<0>(x0));
     }
  |}];
   code |> Util.clang_build |> print_endline
@@ -344,16 +357,17 @@ let%expect_test "" =
     #include <set>
     #include <vector>
     int main();
-    int x0;
+    int x1;
     int main() {
+      int x0 = 10;
       if (1) {
 
-        x0 = 0;
+        x1 = 0;
       } else {
 
-        x0 = (10 + 4);
+        x1 = (x0 + 4);
       }
-      return x0;
+      return x1;
     }
  |}];
   code |> Util.clang_build |> print_endline
@@ -399,28 +413,28 @@ let%expect_test "" =
     #include <vector>
     int main();
     std::vector<int> x0(3);
-    int x1;
-    int x3;
+    int x2;
+    int x4;
     int main() {
       // begin Array.const
       x0[0] = 0;
       x0[1] = 1;
       x0[2] = 2; // end Array.const
-
+      std::vector<int> x1 = x0;
       // begin Array.fold
-      x3 = 0;
-      for (int x4 = 0; x4 < ((int)((x0).size())); x4++) {
-        x3 = (x3 + (x0[x4]));
+      x4 = 0;
+      for (int x5 = 0; x5 < ((int)((x1).size())); x5++) {
+        x4 = (x4 + (x1[x5]));
       }
       // end Array.fold
 
       // begin Array.fold
-      x1 = 0;
-      for (int x2 = 0; x2 < ((int)((x0).size())); x2++) {
-        x1 = (x1 * (x0[x2]));
+      x2 = 0;
+      for (int x3 = 0; x3 < ((int)((x1).size())); x3++) {
+        x2 = (x2 * (x1[x3]));
       }
       // end Array.fold
-      return (x3 + x1);
+      return (x4 + x2);
     }
  |}];
   code |> Util.clang_build |> print_endline
@@ -503,28 +517,28 @@ let%expect_test "" =
     #include <vector>
     int main();
     std::vector<int> x0(3);
-    int x1;
-    int x3;
+    int x2;
+    int x4;
     int main() {
       // begin Array.const
       x0[0] = 0;
       x0[1] = 1;
       x0[2] = 2; // end Array.const
-
+      std::vector<int> x1 = x0;
       // begin Array.fold
-      x3 = 0;
-      for (int x4 = 0; x4 < ((int)((x0).size())); x4++) {
-        x3 = (x3 + (x0[x4]));
+      x4 = 0;
+      for (int x5 = 0; x5 < ((int)((x1).size())); x5++) {
+        x4 = (x4 + (x1[x5]));
       }
       // end Array.fold
 
       // begin Array.fold
-      x1 = 0;
-      for (int x2 = 0; x2 < ((int)((x0).size())); x2++) {
-        x1 = (x1 * (x0[x2]));
+      x2 = 0;
+      for (int x3 = 0; x3 < ((int)((x1).size())); x3++) {
+        x2 = (x2 * (x1[x3]));
       }
       // end Array.fold
-      return (x3 + x1);
+      return (x4 + x2);
     }
  |}];
   code |> Util.clang_build |> print_endline
@@ -549,34 +563,34 @@ let%expect_test "" =
     #include <vector>
     int main();
     std::vector<int> x0(3);
-    int x1;
-    std::vector<int> x3(3);
-    int x4;
+    int x2;
+    std::vector<int> x4(3);
+    int x6;
     int main() {
       // begin Array.const
       x0[0] = 0;
       x0[1] = 1;
       x0[2] = 2; // end Array.const
-
+      std::vector<int> x1 = x0;
       // begin Array.const
-      x3[0] = 0;
-      x3[1] = 1;
-      x3[2] = 2; // end Array.const
-
+      x4[0] = 0;
+      x4[1] = 1;
+      x4[2] = 2; // end Array.const
+      std::vector<int> x5 = x4;
       // begin Array.fold
-      x4 = 0;
-      for (int x5 = 0; x5 < ((int)((x3).size())); x5++) {
-        x4 = (x4 + (x3[x5]));
+      x6 = 0;
+      for (int x7 = 0; x7 < ((int)((x5).size())); x7++) {
+        x6 = (x6 + (x5[x7]));
       }
       // end Array.fold
 
       // begin Array.fold
-      x1 = 0;
-      for (int x2 = 0; x2 < ((int)((x0).size())); x2++) {
-        x1 = (x1 * (x0[x2]));
+      x2 = 0;
+      for (int x3 = 0; x3 < ((int)((x1).size())); x3++) {
+        x2 = (x2 * (x1[x3]));
       }
       // end Array.fold
-      return (x4 + x1);
+      return (x6 + x2);
     }
  |}];
   code |> Util.clang_build |> print_endline
@@ -662,28 +676,28 @@ let%expect_test "" =
     #include <vector>
     int main();
     std::vector<int> x0(3);
-    int x1;
-    int x3;
+    int x2;
+    int x4;
     int main() {
       // begin Array.const
       x0[0] = 0;
       x0[1] = 1;
       x0[2] = 2; // end Array.const
-
+      std::vector<int> x1 = x0;
       // begin Array.fold
-      x3 = 0;
-      for (int x4 = 0; x4 < ((int)((x0).size())); x4++) {
-        x3 = (x3 + (x0[x4]));
+      x4 = 0;
+      for (int x5 = 0; x5 < ((int)((x1).size())); x5++) {
+        x4 = (x4 + (x1[x5]));
       }
       // end Array.fold
 
       // begin Array.fold
-      x1 = 0;
-      for (int x2 = 0; x2 < ((int)((x0).size())); x2++) {
-        x1 = (x1 * (x0[x2]));
+      x2 = 0;
+      for (int x3 = 0; x3 < ((int)((x1).size())); x3++) {
+        x2 = (x2 * (x1[x3]));
       }
       // end Array.fold
-      return (x3 + x1);
+      return (x4 + x2);
     }
  |}];
   code |> Util.clang_build |> print_endline
