@@ -102,15 +102,22 @@ module Code () : Sigs.CODE = struct
           let pat = sprintf "$(%s)" k in
           match v with
           | S v -> String.substr_replace_all fmt ~pattern:pat ~with_:v
-          | C v ->
-              v.ebody ^ String.substr_replace_all fmt ~pattern:pat ~with_:v.ret)
+          | C v -> String.substr_replace_all fmt ~pattern:pat ~with_:v.ret)
     in
     ( if String.contains fmt '$' then
       Error.(create "Incomplete template." fmt [%sexp_of: string] |> raise) );
     fmt
 
-  let eformat ?(has_effect = false) ret etype fmt args =
-    let ebody = format fmt args in
+  let eformat ?(has_effect = false) ret_fmt etype body_fmt args =
+    let ebody =
+      let arg_bodies =
+        List.map args ~f:(fun (_, arg) ->
+            match arg with C v -> v.ebody | _ -> "")
+        |> String.concat ~sep:" "
+      in
+      arg_bodies ^ format body_fmt args
+    in
+    let ret = format ret_fmt args in
     let efree =
       List.concat_map args ~f:(function _, C { efree; _ } -> efree | _ -> [])
     in
@@ -196,23 +203,6 @@ module Code () : Sigs.CODE = struct
 
   let fresh_name () = Fresh.name prog.fresh "x%d"
 
-  let fresh_ref vtype init_fmt init_subst =
-    let vname = fresh_name () in
-    eformat vname vtype
-      ("auto &$(var) = " ^ init_fmt ^ ";")
-      ([ ("var", S vname) ] @ init_subst)
-
-  let fresh_local ?init vtype =
-    let vname = fresh_name () in
-    match init with
-    | Some (init_fmt, init_subst) ->
-        eformat vname vtype
-          ("$(type) $(var) = " ^ init_fmt ^ ";")
-          ([ ("type", S (type_name vtype)); ("var", S vname) ] @ init_subst)
-    | None ->
-        eformat vname vtype "$(type) $(var);"
-          [ ("type", S (type_name vtype)); ("var", S vname) ]
-
   let fresh_global ?init vtype =
     let vname = fresh_name () in
     add_var_decl { vname; vtype; init = None };
@@ -228,32 +218,19 @@ module Code () : Sigs.CODE = struct
     { ret = name; etype; efree = [ (name, m) ]; ebody = ""; eeffect = false }
 
   let unop fmt type_ x =
-    fresh_local type_ ~init:(sprintf fmt "$(arg)", [ ("arg", C x) ])
+    eformat (sprintf fmt "$(arg)") type_ "" [ ("arg", C x) ]
 
   let binop fmt type_ x x' =
-    fresh_local type_
-      ~init:(sprintf fmt "$(arg1)" "$(arg2)", [ ("arg1", C x); ("arg2", C x') ])
+    eformat
+      (sprintf fmt "$(arg1)" "$(arg2)")
+      type_ ""
+      [ ("arg1", C x); ("arg2", C x') ]
 
-  let int x =
-    {
-      etype = Int;
-      ret = sprintf "%d" x;
-      ebody = "";
-      efree = [];
-      eeffect = false;
-    }
+  let int x = eformat (sprintf "%d" x) Int "" []
 
-  let bool x =
-    {
-      etype = Bool;
-      ret = (if x then "1" else "0");
-      ebody = "";
-      efree = [];
-      eeffect = false;
-    }
+  let bool x = eformat (if x then "1" else "0") Bool "" []
 
-  let unit =
-    { etype = Unit; ret = "0"; ebody = ""; efree = []; eeffect = false }
+  let unit = eformat "0" Unit "" []
 
   let rec seq_many = function [] -> unit | x :: xs -> seq x (seq_many xs)
 
@@ -339,10 +316,9 @@ module Code () : Sigs.CODE = struct
   let apply f arg =
     match find_func f.ret with
     | Some func ->
-        let_ arg (fun arg ->
-            let _, ret_type = to_func_t func.ftype in
-            fresh_local ret_type
-              ~init:("$(f)($(arg))", [ ("f", S func.fname); ("arg", C arg) ]))
+        let _, ret_type = to_func_t func.ftype in
+        eformat "$(f)($(arg))" ret_type ""
+          [ ("f", S func.fname); ("arg", C arg) ]
     | None -> failwith (sprintf "No function named %s" f.ret)
 
   let assign x v =
@@ -386,7 +362,7 @@ for(int $(i) = $(lo); $(i) < $(hi); $(i)++) {
       let ( = ) a a' = binop "(%s == %s)" Bool a a'
     end
 
-    let length x = unop "(%s).size()" Int x
+    let length x = unop "((int)((%s).size()))" Int x
 
     let is_array_type = function Array _ -> () | _ -> assert false
 
@@ -438,7 +414,7 @@ for(int $(i) = $(lo); $(i) < $(hi); $(i)++) {
         [ ("a", C a); ("i", C i); ("x", C x) ]
 
     let get a x =
-      fresh_ref (elem_type a.etype) "($(a)[$(x)])" [ ("a", C a); ("x", C x) ]
+      eformat "($(a)[$(x)])" (elem_type a.etype) "" [ ("a", C a); ("x", C x) ]
 
     let map t arr ~f = init t (length arr) (fun i -> let_ (get arr i) f)
 
@@ -517,19 +493,10 @@ for(auto $(iter) = $(set).begin(); $(iter) != $(set).end(); ++$(iter)) {
 
     let create x y =
       let type_ = mk_type x.etype y.etype in
-      let var_ = fresh_local type_ in
-      let ebody =
-        format "$(var) = std::make_pair($(x), $(y));"
-          [ ("var", C var_); ("x", C x); ("y", C y) ]
-      in
-      { var_ with ebody }
+      eformat "std::make_pair($(x), $(y))" type_ "" [ ("x", C x); ("y", C y) ]
 
-    let fst t =
-      let type_ = fst_type t.etype in
-      fresh_ref type_ "std::get<0>($(t))" [ ("t", C t) ]
+    let fst t = eformat "std::get<0>($(t))" (fst_type t.etype) "" [ ("t", C t) ]
 
-    let snd t =
-      let type_ = snd_type t.etype in
-      fresh_ref type_ "std::get<1>($(t))" [ ("t", C t) ]
+    let snd t = eformat "std::get<1>($(t))" (snd_type t.etype) "" [ ("t", C t) ]
   end
 end
