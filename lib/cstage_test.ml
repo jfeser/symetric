@@ -251,41 +251,6 @@ let%expect_test "" =
   let open C in
   let code =
     let_
-      (Array.const (Array.mk_type Int) [| int 0; int 1; int 2 |])
-      (fun arr -> Array.fold arr ~init:(int 0) ~f:( + ))
-  in
-  let code = to_string code in
-  code |> Util.clang_format |> print_endline;
-  [%expect
-    {|
-    #include <iostream>
-    #include <set>
-    #include <vector>
-    int main();
-    std::vector<int> x0(3);
-    int x1;
-    int main() {
-      // begin Array.const
-      x0[0] = 0;
-      x0[1] = 1;
-      x0[2] = 2; // end Array.const
-
-      // begin Array.fold
-      x1 = 0;
-      for (int x2 = 0; x2 < ((int)((x0).size())); x2++) {
-        x1 = (x1 + (x0[x2]));
-      }
-      // end Array.fold
-      return x1;
-    }
- |}];
-  code |> Util.clang_build |> print_endline
-
-let%expect_test "" =
-  let module C = Code () in
-  let open C in
-  let code =
-    let_
       (Tuple.create (int 0) (int 1))
       (fun t ->
         let x = Tuple.fst t in
@@ -302,6 +267,423 @@ let%expect_test "" =
     int main() {
       return (std::get<0>(std::make_pair(0, 1)) +
               std::get<0>(std::make_pair(0, 1)));
+    }
+ |}];
+  code |> Util.clang_build |> print_endline
+
+let%expect_test "" =
+  let module C = Code () in
+  let open C in
+  let code = ite (bool true) (fun () -> int 0) (fun () -> int 1) in
+  let code = to_string code in
+  code |> Util.clang_format |> print_endline;
+  [%expect
+    {|
+    #include <iostream>
+    #include <set>
+    #include <vector>
+    int main();
+    int x0;
+    int main() {
+      if (1) {
+
+        x0 = 0;
+      } else {
+
+        x0 = 1;
+      }
+      return x0;
+    }
+ |}];
+  code |> Util.clang_build |> print_endline
+
+let%expect_test "" =
+  let module C = Code () in
+  let open C in
+  let code =
+    ite (bool true) (fun () -> seq (print "test") exit) (fun () -> unit)
+  in
+  let code = to_string code in
+  code |> Util.clang_format |> print_endline;
+  [%expect
+    {|
+    #include <iostream>
+    #include <set>
+    #include <vector>
+    int main();
+    int x0;
+    int main() {
+      if (1) {
+        std::cout << "test" << std::endl;
+        exit(0);
+        x0 = 0;
+      } else {
+
+        x0 = 0;
+      }
+      return x0;
+    }
+ |}];
+  code |> Util.clang_build |> print_endline
+
+let%expect_test "" =
+  let module C = Code () in
+  let open C in
+  let code =
+    ite (bool true)
+      (fun () -> int 0)
+      (fun () ->
+        let x = genlet (int 10) in
+        x + int 4)
+  in
+  let code = to_string code in
+  code |> Util.clang_format |> print_endline;
+  [%expect
+    {|
+    #include <iostream>
+    #include <set>
+    #include <vector>
+    int main();
+    int x0;
+    int main() {
+      if (1) {
+
+        x0 = 0;
+      } else {
+
+        x0 = (10 + 4);
+      }
+      return x0;
+    }
+ |}];
+  code |> Util.clang_build |> print_endline
+
+let%expect_test "" =
+  let module C = Code () in
+  let open C in
+  let code = for_ (int 0) (int 1) (int 10) (fun _ -> seq (print "test") exit) in
+  let code = to_string code in
+  code |> Util.clang_format |> print_endline;
+  [%expect
+    {|
+    #include <iostream>
+    #include <set>
+    #include <vector>
+    int main();
+    int main() {
+      for (int x0 = 0; x0 < 10; x0++) {
+        std::cout << "test" << std::endl;
+        exit(0);
+      }
+      return 0;
+    }
+ |}];
+  code |> Util.clang_build |> print_endline
+
+let%expect_test "" =
+  let module C = Code () in
+  let open C in
+  let code =
+    let_
+      (Array.const (Array.mk_type Int) [| int 0; int 1; int 2 |])
+      (fun arr ->
+        Array.fold arr ~init:(int 0) ~f:( + )
+        + Array.fold arr ~init:(int 0) ~f:( * ))
+  in
+  let code = to_string code in
+  code |> Util.clang_format |> print_endline;
+  [%expect
+    {|
+    #include <iostream>
+    #include <set>
+    #include <vector>
+    int main();
+    std::vector<int> x0(3);
+    int x1;
+    int x3;
+    int main() {
+      // begin Array.const
+      x0[0] = 0;
+      x0[1] = 1;
+      x0[2] = 2; // end Array.const
+
+      // begin Array.fold
+      x3 = 0;
+      for (int x4 = 0; x4 < ((int)((x0).size())); x4++) {
+        x3 = (x3 + (x0[x4]));
+      }
+      // end Array.fold
+
+      // begin Array.fold
+      x1 = 0;
+      for (int x2 = 0; x2 < ((int)((x0).size())); x2++) {
+        x1 = (x1 * (x0[x2]));
+      }
+      // end Array.fold
+      return (x3 + x1);
+    }
+ |}];
+  code |> Util.clang_build |> print_endline
+
+let%expect_test "" =
+  let module C = Code () in
+  let open C in
+  let code =
+    let arr = Array.const (Array.mk_type Int) [| int 0; int 1; int 2 |] in
+    Array.fold arr ~init:(int 0) ~f:( + )
+    + Array.fold arr ~init:(int 0) ~f:( * )
+  in
+  let code = to_string code in
+  code |> Util.clang_format |> print_endline;
+  [%expect
+    {|
+    #include <iostream>
+    #include <set>
+    #include <vector>
+    int main();
+    std::vector<int> x0(3);
+    int x1;
+    int x3;
+    int main() {
+      // begin Array.fold
+      x3 = 0;
+      // begin Array.const
+      x0[0] = 0;
+      x0[1] = 1;
+      x0[2] = 2; // end Array.const
+
+      for (int x4 = 0; x4 < ((int)((x0).size())); x4++) {
+
+        // begin Array.const
+        x0[0] = 0;
+        x0[1] = 1;
+        x0[2] = 2; // end Array.const
+        x3 = (x3 + (x0[x4]));
+      }
+      // end Array.fold
+
+      // begin Array.fold
+      x1 = 0;
+      // begin Array.const
+      x0[0] = 0;
+      x0[1] = 1;
+      x0[2] = 2; // end Array.const
+
+      for (int x2 = 0; x2 < ((int)((x0).size())); x2++) {
+
+        // begin Array.const
+        x0[0] = 0;
+        x0[1] = 1;
+        x0[2] = 2; // end Array.const
+        x1 = (x1 * (x0[x2]));
+      }
+      // end Array.fold
+      return (x3 + x1);
+    }
+ |}];
+  code |> Util.clang_build |> print_endline
+
+let%expect_test "" =
+  let module C = Code () in
+  let open C in
+  let code =
+    let_locus @@ fun () ->
+    let arr =
+      genlet @@ Array.const (Array.mk_type Int) [| int 0; int 1; int 2 |]
+    in
+    Array.fold arr ~init:(int 0) ~f:( + )
+    + Array.fold arr ~init:(int 0) ~f:( * )
+  in
+  let code = to_string code in
+  code |> Util.clang_format |> print_endline;
+  [%expect
+    {|
+    #include <iostream>
+    #include <set>
+    #include <vector>
+    int main();
+    std::vector<int> x0(3);
+    int x1;
+    int x3;
+    int main() {
+      // begin Array.const
+      x0[0] = 0;
+      x0[1] = 1;
+      x0[2] = 2; // end Array.const
+
+      // begin Array.fold
+      x3 = 0;
+      for (int x4 = 0; x4 < ((int)((x0).size())); x4++) {
+        x3 = (x3 + (x0[x4]));
+      }
+      // end Array.fold
+
+      // begin Array.fold
+      x1 = 0;
+      for (int x2 = 0; x2 < ((int)((x0).size())); x2++) {
+        x1 = (x1 * (x0[x2]));
+      }
+      // end Array.fold
+      return (x3 + x1);
+    }
+ |}];
+  code |> Util.clang_build |> print_endline
+
+let%expect_test "" =
+  let module C = Code () in
+  let open C in
+  let code =
+    let_locus @@ fun () ->
+    let arr () =
+      genlet @@ Array.const (Array.mk_type Int) [| int 0; int 1; int 2 |]
+    in
+    Array.fold (arr ()) ~init:(int 0) ~f:( + )
+    + Array.fold (arr ()) ~init:(int 0) ~f:( * )
+  in
+  let code = to_string code in
+  code |> Util.clang_format |> print_endline;
+  [%expect
+    {|
+    #include <iostream>
+    #include <set>
+    #include <vector>
+    int main();
+    std::vector<int> x0(3);
+    int x1;
+    std::vector<int> x3(3);
+    int x4;
+    int main() {
+      // begin Array.const
+      x0[0] = 0;
+      x0[1] = 1;
+      x0[2] = 2; // end Array.const
+
+      // begin Array.const
+      x3[0] = 0;
+      x3[1] = 1;
+      x3[2] = 2; // end Array.const
+
+      // begin Array.fold
+      x4 = 0;
+      for (int x5 = 0; x5 < ((int)((x3).size())); x5++) {
+        x4 = (x4 + (x3[x5]));
+      }
+      // end Array.fold
+
+      // begin Array.fold
+      x1 = 0;
+      for (int x2 = 0; x2 < ((int)((x0).size())); x2++) {
+        x1 = (x1 * (x0[x2]));
+      }
+      // end Array.fold
+      return (x4 + x1);
+    }
+ |}];
+  code |> Util.clang_build |> print_endline
+
+let%expect_test "" =
+  let module C = Code () in
+  let open C in
+  let code =
+    let arr =
+      genlet @@ Array.const (Array.mk_type Int) [| int 0; int 1; int 2 |]
+    in
+    let_locus @@ fun () ->
+    Array.fold arr ~init:(int 0) ~f:( + )
+    + Array.fold arr ~init:(int 0) ~f:( * )
+  in
+  let code = to_string code in
+  code |> Util.clang_format |> print_endline;
+  [%expect
+    {|
+    #include <iostream>
+    #include <set>
+    #include <vector>
+    int main();
+    std::vector<int> x0(3);
+    int x1;
+    int x3;
+    int main() {
+      // begin Array.fold
+      x3 = 0;
+      // begin Array.const
+      x0[0] = 0;
+      x0[1] = 1;
+      x0[2] = 2; // end Array.const
+
+      for (int x4 = 0; x4 < ((int)((x0).size())); x4++) {
+
+        // begin Array.const
+        x0[0] = 0;
+        x0[1] = 1;
+        x0[2] = 2; // end Array.const
+        x3 = (x3 + (x0[x4]));
+      }
+      // end Array.fold
+
+      // begin Array.fold
+      x1 = 0;
+      // begin Array.const
+      x0[0] = 0;
+      x0[1] = 1;
+      x0[2] = 2; // end Array.const
+
+      for (int x2 = 0; x2 < ((int)((x0).size())); x2++) {
+
+        // begin Array.const
+        x0[0] = 0;
+        x0[1] = 1;
+        x0[2] = 2; // end Array.const
+        x1 = (x1 * (x0[x2]));
+      }
+      // end Array.fold
+      return (x3 + x1);
+    }
+ |}];
+  code |> Util.clang_build |> print_endline
+
+let%expect_test "" =
+  let module C = Code () in
+  let open C in
+  let arr =
+    lazy (genlet @@ Array.const (Array.mk_type Int) [| int 0; int 1; int 2 |])
+  in
+  let code =
+    let_locus @@ fun () ->
+    Array.fold (Lazy.force arr) ~init:(int 0) ~f:( + )
+    + Array.fold (Lazy.force arr) ~init:(int 0) ~f:( * )
+  in
+  let code = to_string code in
+  code |> Util.clang_format |> print_endline;
+  [%expect
+    {|
+    #include <iostream>
+    #include <set>
+    #include <vector>
+    int main();
+    std::vector<int> x0(3);
+    int x1;
+    int x3;
+    int main() {
+      // begin Array.const
+      x0[0] = 0;
+      x0[1] = 1;
+      x0[2] = 2; // end Array.const
+
+      // begin Array.fold
+      x3 = 0;
+      for (int x4 = 0; x4 < ((int)((x0).size())); x4++) {
+        x3 = (x3 + (x0[x4]));
+      }
+      // end Array.fold
+
+      // begin Array.fold
+      x1 = 0;
+      for (int x2 = 0; x2 < ((int)((x0).size())); x2++) {
+        x1 = (x1 * (x0[x2]));
+      }
+      // end Array.fold
+      return (x3 + x1);
     }
  |}];
   code |> Util.clang_build |> print_endline

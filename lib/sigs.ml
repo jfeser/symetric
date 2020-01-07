@@ -31,15 +31,11 @@ module type CACHE = sig
 end
 
 module type LANG = sig
-  type value
+  include EXAMPLES
 
   type type_
 
   type 'a code
-
-  val inputs : (string * value) list
-
-  val output : string * value
 
   val ( = ) : value -> value -> bool code option
 
@@ -181,7 +177,9 @@ module type CODE = sig
   end
 
   (* Control flow *)
-  val ite : bool t -> 'a t -> 'a t -> 'a t
+  val for_ : int32 t -> int32 t -> int32 t -> (int32 t -> unit t) -> unit t
+
+  val ite : bool t -> (unit -> 'a t) -> (unit -> 'a t) -> 'a t
 
   val let_ : 'a t -> ('a t -> 'b t) -> 'b t
 

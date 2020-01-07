@@ -266,17 +266,6 @@ module Code () : Sigs.CODE = struct
 
   let max x y = binop "std::max(%s, %s)" Int x y
 
-  let ite cond then_ else_ =
-    let ret_var = fresh_global then_.etype in
-    eformat ret_var.ret ret_var.etype
-      "if ($(cond)) { $(ret) = $(then); } else { $(ret) = $(else); }"
-      [
-        ("ret", C ret_var);
-        ("cond", C cond);
-        ("then", C then_);
-        ("else", C else_);
-      ]
-
   let rec sseq = function [] -> unit | [ x ] -> x | x :: xs -> seq x (sseq xs)
 
   let print s =
@@ -317,13 +306,36 @@ module Code () : Sigs.CODE = struct
     match find_func f.ret with
     | Some func ->
         let _, ret_type = to_func_t func.ftype in
-        eformat "$(f)($(arg))" ret_type ""
+        eformat ~has_effect:true "$(f)($(arg))" ret_type ""
           [ ("f", S func.fname); ("arg", C arg) ]
     | None -> failwith (sprintf "No function named %s" f.ret)
 
   let assign x v =
     eformat ~has_effect:true "0" Unit {|$(v) = $(x);|}
       [ ("x", C x); ("v", C v) ]
+
+  let ite cond then_ else_ =
+    let_locus @@ fun () ->
+    let then_ = let_locus then_ in
+    let else_ = let_locus else_ in
+    let ret_var = fresh_global then_.etype in
+    eformat ret_var.ret ret_var.etype
+      {|
+if ($(cond)) {
+  $(then)
+  $(ret) = $(then_ret);
+} else {
+  $(else)
+  $(ret) = $(else_ret); }
+|}
+      [
+        ("ret", C ret_var);
+        ("cond", C cond);
+        ("then", S then_.ebody);
+        ("else", S else_.ebody);
+        ("then_ret", S then_.ret);
+        ("else_ret", S else_.ret);
+      ]
 
   let for_ lo step hi f =
     let_locus @@ fun () ->
@@ -370,17 +382,17 @@ for(int $(i) = $(lo); $(i) < $(hi); $(i)++) {
       is_array_type t;
       let a = Array.to_list a in
       let name = fresh_name () in
-      let assigns =
-        List.mapi a ~f:(fun i x ->
-            format {|$(name)[$(idx)] = $(val);|}
-              [ ("name", S name); ("idx", S (sprintf "%d" i)); ("val", C x) ])
-        |> String.concat ~sep:" "
-      in
       add_var_decl
         { vname = name; vtype = t; init = Some (int (List.length a)) };
+      let assigns =
+        List.mapi a ~f:(fun i x ->
+            eformat "0" Unit {|$(name)[$(idx)] = $(val);|}
+              [ ("name", S name); ("idx", S (sprintf "%d" i)); ("val", C x) ])
+        |> sseq
+      in
       {
+        assigns with
         ret = name;
-        ebody = assigns;
         etype = t;
         efree = List.concat_map a ~f:free;
         eeffect = false;

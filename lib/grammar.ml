@@ -17,6 +17,7 @@ module Term = struct
 
   let rec to_string = function
     | Nonterm x -> x
+    | App (f, []) -> f
     | App (f, xs) ->
         List.map xs ~f:to_string |> String.concat ~sep:", "
         |> sprintf "%s(%s)" f

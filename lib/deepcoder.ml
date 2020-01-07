@@ -129,8 +129,10 @@ module Make (C : Sigs.CODE) = struct
       | App ("(+)", []) -> F_int2 (fun x y -> x + y)
       | App ("(-)", []) -> F_int2 (fun x y -> x - y)
       | App ("(*)", []) -> F_int2 (fun x y -> x * y)
-      | App ("min", []) -> F_int2 (fun x y -> ite (x < y) x y)
-      | App ("max", []) -> F_int2 (fun x y -> ite (x > y) x y)
+      | App ("min", []) ->
+          F_int2 (fun x y -> ite (x < y) (fun () -> x) (fun () -> y))
+      | App ("max", []) ->
+          F_int2 (fun x y -> ite (x > y) (fun () -> x) (fun () -> y))
       | App (x, []) -> (
           match
             List.find_mapi inputs ~f:(fun i (_, v) ->
@@ -149,75 +151,79 @@ module Make (C : Sigs.CODE) = struct
             ( eval ctx e |> to_array
             |> map Value.int_type ~f:(fun a -> get a (int 0)) )
       | App ("last", [ e ]) ->
-          let a = eval ctx e |> to_array in
           I
-            (let_ a (fun a ->
-                 map Value.int_type a ~f:(fun a -> get a (length a - int 1))))
+            ( let_ (eval ctx e |> to_array) @@ fun a ->
+              map Value.int_type a ~f:(fun a -> get a (length a - int 1)) )
       | App ("take", [ n; e ]) ->
-          let a = eval ctx e |> to_array in
-          let n = eval ctx n |> to_int in
-          A (map2 Value.array_type a n ~f:(fun a n -> sub a (int 0) n))
+          A
+            ( let_ (eval ctx e |> to_array) @@ fun a ->
+              let_ (eval ctx n |> to_int) @@ fun n ->
+              map2 Value.array_type a n ~f:(fun a n -> sub a (int 0) n) )
       | App ("drop", [ n; e ]) ->
-          let a = eval ctx e |> to_array in
-          let n = eval ctx n |> to_int in
           A
-            (let_ a (fun a ->
-                 let_ n (fun n ->
-                     map2 Value.array_type a n ~f:(fun a n ->
-                         sub a n (length a - int 1)))))
+            ( let_ (eval ctx e |> to_array) @@ fun a ->
+              let_ (eval ctx n |> to_int) @@ fun n ->
+              map2 Value.array_type a n ~f:(fun a n ->
+                  sub a n (length a - int 1)) )
       | App ("access", [ n; e ]) ->
-          let a = eval ctx e |> to_array in
-          let n = eval ctx n |> to_int in
-          I (map2 Value.int_type a n ~f:(fun a n -> get a n))
+          I
+            ( let_ (eval ctx e |> to_array) @@ fun a ->
+              let_ (eval ctx n |> to_int) @@ fun n ->
+              map2 Value.int_type a n ~f:(fun a n -> get a n) )
       | App ("minimum", [ e ]) ->
-          let a = eval ctx e |> to_array in
           I
-            (map Value.int_type a ~f:(fun a ->
-                 fold
-                   ~init:(int Int32.(max_value |> to_int_exn))
-                   ~f:(fun acc x -> ite (x < acc) x acc)
-                   a))
+            ( let_ (eval ctx e |> to_array) @@ fun a ->
+              map Value.int_type a ~f:(fun a ->
+                  fold
+                    ~init:(int Int32.(max_value |> to_int_exn))
+                    ~f:(fun acc x ->
+                      ite (x < acc) (fun () -> x) (fun () -> acc))
+                    a) )
       | App ("maximum", [ e ]) ->
-          let a = eval ctx e |> to_array in
           I
-            (map Value.int_type a ~f:(fun a ->
-                 fold
-                   ~init:(int Int32.(min_value |> to_int_exn))
-                   ~f:(fun acc x -> ite (x > acc) x acc)
-                   a))
+            ( let_ (eval ctx e |> to_array) @@ fun a ->
+              map Value.int_type a ~f:(fun a ->
+                  fold
+                    ~init:(int Int32.(min_value |> to_int_exn))
+                    ~f:(fun acc x ->
+                      ite (x > acc) (fun () -> x) (fun () -> acc))
+                    a) )
       | App ("reverse", [ e ]) ->
-          let a = eval ctx e |> to_array in
           A
-            (map Value.array_type a ~f:(fun a ->
-                 let_ (length a) (fun l ->
-                     init int_array l (fun i -> get a (l - i - int 1)))))
+            ( let_ (eval ctx e |> to_array) @@ fun a ->
+              map Value.array_type a ~f:(fun a ->
+                  let_ (length a) (fun l ->
+                      init int_array l (fun i -> get a (l - i - int 1)))) )
       | App ("sum", [ e ]) ->
-          let a = eval ctx e |> to_array in
-          I (map Value.int_type a ~f:(fun a -> fold ~init:(int 0) ~f:( + ) a))
+          I
+            ( let_ (eval ctx e |> to_array) @@ fun a ->
+              map Value.int_type a ~f:(fun a -> fold ~init:(int 0) ~f:( + ) a)
+            )
       | App ("map", [ f; e ]) ->
-          let a = eval ctx e |> to_array in
           let f = eval ctx f |> to_int_f in
           A
-            (map Value.array_type a ~f:(fun a ->
-                 let_ a (fun a ->
-                     init int_array (length a) (fun i -> f (get a i)))))
+            ( let_ (eval ctx e |> to_array) @@ fun a ->
+              map Value.array_type a ~f:(fun a ->
+                  let_ a (fun a ->
+                      init int_array (length a) (fun i -> f (get a i)))) )
       | App ("count", [ f; e ]) ->
           let f = eval ctx f |> to_bool_f in
-          let a = eval ctx e |> to_array in
           I
-            (map Value.int_type a ~f:(fun a ->
-                 fold ~init:(int 0)
-                   ~f:(fun acc x -> ite (f x) (acc + int 1) acc)
-                   a))
+            ( let_ (eval ctx e |> to_array) @@ fun a ->
+              map Value.int_type a ~f:(fun a ->
+                  fold ~init:(int 0)
+                    ~f:(fun acc x ->
+                      ite (f x) (fun () -> acc + int 1) (fun () -> acc))
+                    a) )
       | App ("zipwith", [ f; e; e' ]) ->
           let f = eval ctx f |> to_int2_f in
-          let a = eval ctx e |> to_array in
-          let a' = eval ctx e' |> to_array in
           A
-            (map2 Value.array_type a a' ~f:(fun a a' ->
-                 init int_array
-                   (min (length a) (length a'))
-                   (fun i -> f (get a i) (get a' i))))
+            ( let_ (eval ctx e |> to_array) @@ fun a ->
+              let_ (eval ctx e' |> to_array) @@ fun a' ->
+              map2 Value.array_type a a' ~f:(fun a a' ->
+                  init int_array
+                    (min (length a) (length a'))
+                    (fun i -> f (get a i) (get a' i))) )
       | e ->
           Error.create "Unexpected expression." e [%sexp_of: _ Grammar.Term.t]
           |> Error.raise

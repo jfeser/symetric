@@ -106,6 +106,11 @@ let to_contexts term args =
   (new_term, ctxs)
 
 let%expect_test "" =
+  to_contexts (App ("x", [])) []
+  |> [%sexp_of: string Grammar.Term.t * int Map.M(String).t list] |> print_s;
+  [%expect {| ((App x ()) (())) |}]
+
+let%expect_test "" =
   to_contexts
     (App ("access", [ Nonterm "I"; Nonterm "L" ]))
     [ ({ cost = 1; symbol = "I" }, 0); ({ cost = 1; symbol = "L" }, 1) ]
@@ -153,7 +158,8 @@ struct
 
   let rec case pred default = function
     | [] -> default
-    | (v, k) :: bs -> S.ite (pred v) k (case pred default bs)
+    | (v, k) :: bs ->
+        S.ite (pred v) (fun () -> k) (fun () -> case pred default bs)
 
   let rec let_many f = function
     | [] -> f []
@@ -178,10 +184,11 @@ struct
               S.(found || L.eq (L.eval ctx term) target))
         in
         S.ite found_target
-          (S.seq_many
-             ( S.print ([%sexp_of: string Gr.Term.t] term |> Sexp.to_string_hum)
-             :: List.map args ~f:(fun (n, v) -> reconstruct tbl g n v) ))
-          S.unit
+          (fun () ->
+            S.seq_many
+              ( S.print ([%sexp_of: string Gr.Term.t] term |> Sexp.to_string_hum)
+              :: List.map args ~f:(fun (n, v) -> reconstruct tbl g n v) ))
+          (fun () -> S.unit)
       in
       let check =
         G.succ g args_node
@@ -293,59 +300,66 @@ struct
     if prune then prune_loop g else g
 
   let fill_state tbl g state =
+    Log.debug (fun m -> m "Generating code for %s:%d" state.V.symbol state.cost);
     G.succ g (V.State state)
     |> List.concat_map ~f:(fun code_node ->
            let code = V.to_code code_node in
 
+           let insert value =
+             S.seq_many
+               [
+                 debug_print
+                   (sprintf "Inserting (%s -> %s) cost %d" state.V.symbol
+                      (Gr.Term.to_string code.V.term)
+                      state.V.cost);
+                 put ~sym:state.V.symbol ~size:state.V.cost
+                   ~sizes:(S.Array.const costs_t [||])
+                   tbl value;
+               ]
+           in
+
            let fill args =
              let term, ctxs = to_contexts code.V.term args in
              List.map ctxs ~f:(fun ctx ->
-                 let v = L.eval ctx term in
-                 let insert_code =
-                   S.seq_many
-                     [
-                       debug_print
-                         (sprintf "Inserting (%s -> %s) cost %d" state.V.symbol
-                            (Gr.Term.to_string code.V.term)
-                            state.V.cost);
-                       put ~sym:state.V.symbol ~size:state.V.cost
-                         ~sizes:(S.Array.const costs_t [||])
-                         tbl v;
-                     ]
-                 in
+                 let value = L.eval ctx term in
                  let out_sym, out_val = L.output in
-                 if String.(out_sym = state.V.symbol) then
-                   match L.(v = out_val) with
-                   | Some eq ->
-                       let recon_code =
-                         S.seq_many
-                           [
-                             S.print "Starting reconstruction";
-                             reconstruct tbl g state out_val;
-                             S.exit;
-                           ]
-                       in
-                       S.ite eq recon_code insert_code
-                   | None -> insert_code
-                 else insert_code)
+                 let recon_code =
+                   match
+                     (String.(out_sym = state.V.symbol), L.(value = out_val))
+                   with
+                   | true, Some eq ->
+                       S.ite eq
+                         (fun () ->
+                           S.seq_many
+                             [
+                               S.print "Starting reconstruction";
+                               reconstruct tbl g state out_val;
+                               S.exit;
+                             ])
+                         (fun () -> S.unit)
+                   | _ -> S.unit
+                 in
+                 S.seq recon_code (insert value))
              |> S.seq_many
            in
 
-           G.succ g code_node
-           |> List.map ~f:(fun arg_node ->
-                  let fill =
-                    G.succ g arg_node
-                    |> List.fold_left ~init:fill ~f:(fun fill node ->
-                           let state = V.to_state node in
-                           let fill ctx =
-                             C.iter ~sym:state.V.symbol
-                               ~size:(S.int state.V.cost)
-                               ~f:(fun (v, _) -> fill ((state, v) :: ctx))
-                               tbl
-                           in
-                           fill)
-                  in
-                  fill []))
+           let args = G.succ g code_node in
+           if List.is_empty args then [ fill [] ]
+           else
+             List.map args ~f:(fun arg_node ->
+                 let fill =
+                   G.succ g arg_node
+                   |> List.fold_left ~init:fill ~f:(fun fill node ->
+                          let state = V.to_state node in
+                          let fill ctx =
+                            C.iter ~sym:state.V.symbol
+                              ~size:(S.int state.V.cost)
+                              ~f:(fun (v, _) -> fill ((state, v) :: ctx))
+                              tbl
+                          in
+                          fill)
+                 in
+                 fill []))
     |> S.seq_many
 
   let enumerate max_cost =
