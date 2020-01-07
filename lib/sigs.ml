@@ -165,6 +165,8 @@ module type CODE = sig
     val add : 'a set t -> 'a t -> unit t
 
     val iter : 'a set t -> ('a t -> unit t) -> unit t
+
+    val fold : 'a set t -> init:'b t -> f:('b t -> 'a t -> 'b t) -> 'b t
   end
 
   (* Tuples *)
@@ -184,6 +186,8 @@ module type CODE = sig
   val let_ : 'a t -> ('a t -> 'b t) -> 'b t
 
   val seq : unit t -> unit t -> unit t
+
+  val seq_many : unit t list -> unit t
 
   (* Functions *)
   val func : string -> ctype -> ('a t -> 'b t) -> ('a -> 'b) t

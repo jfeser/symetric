@@ -155,8 +155,6 @@ struct
     | [] -> default
     | (v, k) :: bs -> S.ite (pred v) k (case pred default bs)
 
-  let rec seq_many = function [] -> S.unit | x :: xs -> S.seq x (seq_many xs)
-
   let rec let_many f = function
     | [] -> f []
     | [ x ] -> S.let_ x (fun x -> f [ x ])
@@ -180,7 +178,7 @@ struct
               S.(found || L.eq (L.eval ctx term) target))
         in
         S.ite found_target
-          (seq_many
+          (S.seq_many
              ( S.print ([%sexp_of: string Gr.Term.t] term |> Sexp.to_string_hum)
              :: List.map args ~f:(fun (n, v) -> reconstruct tbl g n v) ))
           S.unit
@@ -201,11 +199,11 @@ struct
 
     let recon_code target code_node =
       let term = (V.to_code code_node).term in
-      G.succ g code_node |> List.map ~f:(recon_args target term) |> seq_many
+      G.succ g code_node |> List.map ~f:(recon_args target term) |> S.seq_many
     in
 
     let recon_state target =
-      G.succ g (State state) |> List.map ~f:(recon_code target) |> seq_many
+      G.succ g (State state) |> List.map ~f:(recon_code target) |> S.seq_many
     in
     let func =
       S.func func_name func_t (fun target -> S.let_ target recon_state)
@@ -304,7 +302,7 @@ struct
              List.map ctxs ~f:(fun ctx ->
                  let v = L.eval ctx term in
                  let insert_code =
-                   seq_many
+                   S.seq_many
                      [
                        debug_print
                          (sprintf "Inserting (%s -> %s) cost %d" state.V.symbol
@@ -320,7 +318,7 @@ struct
                    match L.(v = out_val) with
                    | Some eq ->
                        let recon_code =
-                         seq_many
+                         S.seq_many
                            [
                              S.print "Starting reconstruction";
                              reconstruct tbl g state out_val;
@@ -330,7 +328,7 @@ struct
                        S.ite eq recon_code insert_code
                    | None -> insert_code
                  else insert_code)
-             |> seq_many
+             |> S.seq_many
            in
 
            G.succ g code_node
@@ -348,7 +346,7 @@ struct
                            fill)
                   in
                   fill []))
-    |> seq_many
+    |> S.seq_many
 
   let enumerate max_cost =
     let g = search_graph max_cost in
@@ -365,5 +363,5 @@ struct
               code @ [ fill_state tbl g state ])
             lhs_g []
         in
-        seq_many loops)
+        S.seq_many loops)
 end

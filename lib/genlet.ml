@@ -52,10 +52,8 @@ struct
      one write almost immediately followed by one read.
      We use the following helpers to access our `communication channel'.
   *)
-  let from_option = function Some x -> x | None -> failwith "fromoption"
-
   let read_answer r =
-    let v = from_option !r in
+    let v = Option.value_exn !r in
     (* for safety *)
     r := None;
     v

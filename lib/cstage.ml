@@ -36,6 +36,7 @@ module Code () : Sigs.CODE = struct
     ret : string;
     etype : ctype;
     efree : (string * (mark[@opaque])) list;
+    eeffect : bool;
   }
   [@@deriving sexp]
 
@@ -60,7 +61,8 @@ module Code () : Sigs.CODE = struct
 
     let sexp_of_t = sexp_of_expr
 
-    let is_well_scoped c = List.for_all c.efree ~f:(fun (_, m) -> m ())
+    let is_well_scoped c =
+      (not c.eeffect) && List.for_all c.efree ~f:(fun (_, m) -> m ())
 
     let let_ v b =
       let x = b { v with ebody = "" } in
@@ -72,14 +74,6 @@ module Code () : Sigs.CODE = struct
 
   let sexp_of_t _ = sexp_of_t
 
-  let seq e e' =
-    {
-      ebody = e.ebody ^ e'.ebody;
-      etype = e'.etype;
-      ret = e'.ret;
-      efree = e.efree @ e'.efree;
-    }
-
   let free { efree; _ } = efree
 
   let prog =
@@ -89,7 +83,8 @@ module Code () : Sigs.CODE = struct
         ftype = Func (Unit, Unit);
         locals = [];
         args = [];
-        fbody = { ebody = ""; ret = "0"; etype = Unit; efree = [] };
+        fbody =
+          { ebody = ""; ret = "0"; etype = Unit; efree = []; eeffect = false };
       }
     in
     { funcs = [ main ]; cur_func = main; fresh = Fresh.create () }
@@ -114,12 +109,26 @@ module Code () : Sigs.CODE = struct
       Error.(create "Incomplete template." fmt [%sexp_of: string] |> raise) );
     fmt
 
-  let eformat ret etype fmt args =
+  let eformat ?(has_effect = false) ret etype fmt args =
     let ebody = format fmt args in
     let efree =
       List.concat_map args ~f:(function _, C { efree; _ } -> efree | _ -> [])
     in
-    { ebody; ret; etype; efree }
+    let eeffect =
+      List.exists args ~f:(function
+        | _, C { eeffect; _ } -> eeffect
+        | _ -> false)
+    in
+    { ebody; ret; etype; efree; eeffect = has_effect || eeffect }
+
+  let seq e e' =
+    {
+      ebody = e.ebody ^ e'.ebody;
+      etype = e'.etype;
+      ret = e'.ret;
+      efree = e.efree @ e'.efree;
+      eeffect = e.eeffect || e'.eeffect;
+    }
 
   let type_of e = e.etype
 
@@ -181,7 +190,7 @@ module Code () : Sigs.CODE = struct
     header ^ forward_decls ^ main_decls ^ funcs
 
   let expr_of_var { vname; vtype; _ } =
-    { ebody = ""; ret = vname; etype = vtype; efree = [] }
+    { ebody = ""; ret = vname; etype = vtype; efree = []; eeffect = false }
 
   let add_var_decl x = prog.cur_func.locals <- x :: prog.cur_func.locals
 
@@ -211,11 +220,12 @@ module Code () : Sigs.CODE = struct
     | Some init ->
         eformat vname vtype "$(var) = $(init);"
           [ ("init", S init); ("var", S vname) ]
-    | None -> { ret = vname; ebody = ""; etype = vtype; efree = [] }
+    | None ->
+        { ret = vname; ebody = ""; etype = vtype; efree = []; eeffect = false }
 
   let fresh_var etype m =
     let name = Fresh.name prog.fresh "x%d" in
-    { ret = name; etype; efree = [ (name, m) ]; ebody = "" }
+    { ret = name; etype; efree = [ (name, m) ]; ebody = ""; eeffect = false }
 
   let unop fmt type_ x =
     fresh_local type_ ~init:(sprintf fmt "$(arg)", [ ("arg", C x) ])
@@ -224,12 +234,28 @@ module Code () : Sigs.CODE = struct
     fresh_local type_
       ~init:(sprintf fmt "$(arg1)" "$(arg2)", [ ("arg1", C x); ("arg2", C x') ])
 
-  let int x = { etype = Int; ret = sprintf "%d" x; ebody = ""; efree = [] }
+  let int x =
+    {
+      etype = Int;
+      ret = sprintf "%d" x;
+      ebody = "";
+      efree = [];
+      eeffect = false;
+    }
 
   let bool x =
-    { etype = Bool; ret = (if x then "1" else "0"); ebody = ""; efree = [] }
+    {
+      etype = Bool;
+      ret = (if x then "1" else "0");
+      ebody = "";
+      efree = [];
+      eeffect = false;
+    }
 
-  let unit = { etype = Unit; ret = "0"; ebody = ""; efree = [] }
+  let unit =
+    { etype = Unit; ret = "0"; ebody = ""; efree = []; eeffect = false }
+
+  let rec seq_many = function [] -> unit | x :: xs -> seq x (seq_many xs)
 
   let ( ~- ) x = unop "(-%s)" Int x
 
@@ -265,22 +291,22 @@ module Code () : Sigs.CODE = struct
 
   let ite cond then_ else_ =
     let ret_var = fresh_global then_.etype in
-    let subst =
+    eformat ret_var.ret ret_var.etype
+      "if ($(cond)) { $(ret) = $(then); } else { $(ret) = $(else); }"
       [
         ("ret", C ret_var);
         ("cond", C cond);
         ("then", C then_);
         ("else", C else_);
       ]
-    in
-    eformat ret_var.ret ret_var.etype
-      "if ($(cond)) { $(ret) = $(then); } else { $(ret) = $(else); }" subst
 
   let rec sseq = function [] -> unit | [ x ] -> x | x :: xs -> seq x (sseq xs)
 
-  let print s = { unit with ebody = sprintf "std::cout << %S << std::endl;" s }
+  let print s =
+    eformat ~has_effect:true "0" Unit "std::cout << $(str) << std::endl;"
+      [ ("str", S (sprintf "%S" s)) ]
 
-  let exit = { unit with ebody = "exit(0);" }
+  let exit = eformat ~has_effect:true "0" Unit "exit(0);" []
 
   let to_func_t = function Func (t, t') -> (t, t') | _ -> assert false
 
@@ -288,7 +314,9 @@ module Code () : Sigs.CODE = struct
 
   let func name type_ f =
     let in_type, _ = to_func_t type_ in
-    let fval = { ret = name; ebody = ""; etype = type_; efree = [] } in
+    let fval =
+      { ret = name; ebody = ""; etype = type_; efree = []; eeffect = false }
+    in
     if Option.is_none (find_func name) then (
       let arg = { vname = fresh_name (); vtype = in_type; init = None } in
       let func =
@@ -317,7 +345,9 @@ module Code () : Sigs.CODE = struct
               ~init:("$(f)($(arg))", [ ("f", S func.fname); ("arg", C arg) ]))
     | None -> failwith (sprintf "No function named %s" f.ret)
 
-  let assign x v = eformat "0" Unit {|$(v) = $(x);|} [ ("x", C x); ("v", C v) ]
+  let assign x v =
+    eformat ~has_effect:true "0" Unit {|$(v) = $(x);|}
+      [ ("x", C x); ("v", C v) ]
 
   let for_ lo step hi f =
     let_locus @@ fun () ->
@@ -377,16 +407,20 @@ for(int $(i) = $(lo); $(i) < $(hi); $(i)++) {
         ebody = assigns;
         etype = t;
         efree = List.concat_map a ~f:free;
+        eeffect = false;
       }
       |> with_comment "Array.const"
 
-    let clear a = eformat "0" Unit "$(a).clear();" [ ("a", C a) ]
+    let clear a =
+      eformat ~has_effect:true "0" Unit "$(a).clear();" [ ("a", C a) ]
 
     let reserve a n =
-      eformat "0" Unit "$(a).reserve($(n));" [ ("a", C a); ("n", C n) ]
+      eformat ~has_effect:true "0" Unit "$(a).reserve($(n));"
+        [ ("a", C a); ("n", C n) ]
 
     let push_back a x =
-      eformat "0" Unit "$(a).push_back($(x));" [ ("a", C a); ("x", C x) ]
+      eformat ~has_effect:true "0" Unit "$(a).push_back($(x));"
+        [ ("a", C a); ("x", C x) ]
 
     let init t len f =
       let a = fresh_global t in
@@ -400,10 +434,8 @@ for(int $(i) = $(lo); $(i) < $(hi); $(i)++) {
       |> genlet |> with_comment "Array.init"
 
     let set a i x =
-      let ebody =
-        format "$(a)[$(i)] = $(x);" [ ("a", C a); ("i", C i); ("x", C x) ]
-      in
-      { unit with ebody }
+      eformat ~has_effect:true "0" Unit "$(a)[$(i)] = $(x);"
+        [ ("a", C a); ("i", C i); ("x", C x) ]
 
     let get a x =
       fresh_ref (elem_type a.etype) "($(a)[$(x)])" [ ("a", C a); ("x", C x) ]
@@ -416,15 +448,13 @@ for(int $(i) = $(lo); $(i) < $(hi); $(i)++) {
 
     let fold arr ~init ~f =
       let acc = fresh_global init.etype in
-      let_ arr (fun arr ->
-          let_ init (fun init ->
-              sseq
-                [
-                  assign init acc;
-                  for_ (int 0) (int 1) (length arr) (fun i ->
-                      assign (f acc (get arr i)) acc);
-                  acc;
-                ]))
+      sseq
+        [
+          assign init acc;
+          for_ (int 0) (int 1) (length arr) (fun i ->
+              assign (f acc (get arr i)) acc);
+          acc;
+        ]
       |> with_comment "Array.fold"
   end
 
@@ -440,41 +470,40 @@ for(int $(i) = $(lo); $(i) < $(hi); $(i)++) {
     let empty ctype =
       let set = fresh_name () in
       add_var_decl { vname = set; vtype = ctype; init = None };
-      { ret = set; ebody = ""; etype = ctype; efree = [] }
+      { ret = set; ebody = ""; etype = ctype; efree = []; eeffect = true }
 
     let iter a f =
-      let iter = fresh_name () in
-      let_ a (fun a ->
-          let f_app =
+      let iter_name = fresh_name () in
+      let_locus @@ fun () ->
+      let body =
+        with_stackmark (fun m ->
             let arg =
               {
-                ret = sprintf "*%s" iter;
+                ret = sprintf "*%s" iter_name;
                 ebody = "";
                 etype = elem_type a.etype;
-                efree = [];
+                efree = [ (iter_name, m) ];
+                eeffect = false;
               }
             in
-            f arg
-          in
-          let subst = [ ("name", C a); ("f_app", C f_app); ("iter", S iter) ] in
-          let ebody =
-            format
-              "for(auto $(iter) = $(name).begin(); $(iter) != $(name).end(); \
-               ++$(iter)) {"
-              subst
-            ^ f_app.ebody ^ "}"
-          in
-          { unit with ebody })
+            let_locus @@ fun () -> f arg)
+      in
+      eformat "0" Unit
+        {|
+for(auto $(iter) = $(set).begin(); $(iter) != $(set).end(); ++$(iter)) {
+        $(body)
+}
+|}
+        [ ("set", C a); ("iter", S iter_name); ("body", S body.ebody) ]
+
+    let fold a ~init ~f =
+      let_ (fresh_global init.etype) (fun acc ->
+          sseq [ assign init acc; iter a (fun x -> assign (f acc x) acc); acc ])
+      |> with_comment "Set.fold"
 
     let add a x =
-      let_ a (fun a ->
-          let_ x (fun x ->
-              {
-                unit with
-                ebody =
-                  format "$(name).insert($(val));"
-                    [ ("name", C a); ("val", C x) ];
-              }))
+      eformat ~has_effect:true "0" Unit "$(name).insert($(val));"
+        [ ("name", C a); ("val", C x) ]
   end
 
   module Tuple = struct
@@ -504,151 +533,3 @@ for(int $(i) = $(lo); $(i) < $(hi); $(i)++) {
       fresh_ref type_ "std::get<1>($(t))" [ ("t", C t) ]
   end
 end
-
-let%expect_test "" =
-  let module C = Code () in
-  let open C in
-  let open Array in
-  let code =
-    let_locus @@ fun () ->
-    let_
-      (init (mk_type Int) (int 10) (fun i -> i))
-      (fun a -> fold a ~init:(int 0) ~f:( + ))
-  in
-  to_string code |> Util.clang_format |> print_endline;
-  [%expect
-    {|
-    #include <iostream>
-    #include <set>
-    #include <vector>
-    int main();
-    std::vector<int> x0;
-    int x2;
-    int main() {
-      // begin Array.init
-      x0.clear();
-      x0.reserve(10);
-      for (int x1 = 0; x1 < 10; x1++) {
-        x0.push_back(x1);
-      }
-      // end Array.init
-
-      // begin Array.fold
-      x2 = 0;
-      int x3 = (x0).size();
-      for (int x4 = 0; x4 < x3; x4++) {
-        auto &x5 = (x0[x4]);
-        int x6 = (x2 + x5);
-        x2 = x6;
-      }
-      // end Array.fold
-      return x2;
-    } |}]
-
-let%expect_test "" =
-  let module C = Code () in
-  let open C in
-  let f = func "f" (Func (Int, Int)) (fun i -> i + int 1) in
-  let g = func "g" (Func (Int, Int)) (fun i -> i - int 1) in
-  apply f (apply g (int 0)) |> to_string |> Util.clang_format |> print_endline;
-  [%expect
-    {|
-    #include <iostream>
-    #include <set>
-    #include <vector>
-    int g(int &x2);
-    int f(int &x0);
-    int main();
-    int main() {
-      int x4 = g(0);
-      int x5 = f(x4);
-      return x5;
-    }
-    int f(int &x0) {
-      int x1 = (x0 + 1);
-      return x1;
-    }
-    int g(int &x2) {
-      int x3 = (x2 - 1);
-      return x3;
-    } |}]
-
-let%expect_test "" =
-  let module C = Code () in
-  let open C in
-  let int_array = Array.mk_type Int in
-  let f = func "f" (Func (int_array, Int)) (fun a -> a.(int 0)) in
-  apply f (Array.init int_array (int 10) (fun i -> i))
-  |> to_string |> Util.clang_format |> print_endline;
-  [%expect
-    {|
-    #include <iostream>
-    #include <set>
-    #include <vector>
-    int f(std::vector<int> &x0);
-    int main();
-    std::vector<int> x2;
-    int main() {
-      // begin Array.init
-      x2.clear();
-      x2.reserve(10);
-      for (int x3 = 0; x3 < 10; x3++) {
-        x2.push_back(x3);
-      }
-      // end Array.init
-      int x4 = f(x2);
-      return x4;
-    }
-    int f(std::vector<int> &x0) {
-      auto &x1 = (x0[0]);
-      return x1;
-    } |}]
-
-let%expect_test "" =
-  let module C = Code () in
-  let open C in
-  let int_array = Array.mk_type Int in
-  let f =
-    let x =
-      Tuple.create
-        (Array.init int_array (int 10) (fun i -> i))
-        (Array.init int_array (int 10) (fun i -> i))
-    in
-    let_locus @@ fun () ->
-    let y = genlet (Tuple.fst x) in
-    y.(int 5) + y.(int 4)
-  in
-  f |> to_string |> Util.clang_format |> print_endline;
-  [%expect
-    {|
-    #include <iostream>
-    #include <set>
-    #include <vector>
-    int main();
-    std::vector<int> x0;
-    std::vector<int> x2;
-    int main() {
-      // begin Array.init
-      x0.clear();
-      x0.reserve(10);
-      for (int x1 = 0; x1 < 10; x1++) {
-        x0.push_back(x1);
-      }
-      // end Array.init
-
-      // begin Array.init
-      x2.clear();
-      x2.reserve(10);
-      for (int x3 = 0; x3 < 10; x3++) {
-        x2.push_back(x3);
-      }
-      // end Array.init
-      std::pair<std::vector<int>, std::vector<int>> x4;
-      x4 = std::make_pair(x2, x0);
-      auto &x5 = std::get<0>(x4);
-      auto &x6 = (x5[4]);
-      auto &x7 = (x5[5]);
-      int x8 = (x7 + x6);
-      return x8;
-    }
- |}]

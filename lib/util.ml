@@ -8,6 +8,14 @@ let clang_format src =
   ignore (Unix.close_process (read, write));
   ret
 
+let clang_build ?(args = "-std=c++17 -c") src =
+  let read, write = Unix.open_process (sprintf "clang %s -x c++ -" args) in
+  Out_channel.output_string write src;
+  Out_channel.close write;
+  let ret = In_channel.input_all read in
+  ignore (Unix.close_process (read, write));
+  ret
+
 module Cont = struct
   module T = struct
     type ('a, 'r) t = { runCont : ('a -> 'r) -> 'r }
