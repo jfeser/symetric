@@ -39,7 +39,7 @@ let%expect_test "" =
     #include <iostream>
     #include <set>
     #include <vector>
-    int reconstruct_L_1(std::vector<std::vector<int>> &x13);
+    int reconstruct_L_1(const std::vector<std::vector<int>> &x13);
     int main();
     std::vector<int> x0(5);
     std::vector<std::vector<int>> x1(1);
@@ -55,8 +55,8 @@ let%expect_test "" =
     std::vector<
         std::set<std::pair<std::vector<std::vector<int>>, std::vector<int>>>>
         x11;
-    int x15;
-    std::vector<int> x16(0);
+    int x17;
+    std::vector<int> x18(0);
     int main() {
       // begin Array.init
       x4.clear();
@@ -105,20 +105,40 @@ let%expect_test "" =
         x2[3] = 2;
         x2[4] = 3;  // end Array.const
         x3[0] = x2; // end Array.const
+        reconstruct_L_1(x3);
+        int x16 = 0;
         exit(0);
+        x17 = 0;
+      } else {
+
+        x17 = 0;
+      }
+      std::cout << "Inserting (L -> i0) cost 1" << std::endl;
+      // begin Array.const
+      // end Array.const
+      (x11[1]).insert(std::make_pair(x12, x18));
+      return 0;
+    }
+    int reconstruct_L_1(const std::vector<std::vector<int>> &x13) {
+      int x15;
+      std::vector<std::vector<int>> x14 = x13;
+      // begin Array.const
+
+      // begin Array.const
+      x0[0] = 3;
+      x0[1] = 7;
+      x0[2] = 5;
+      x0[3] = 2;
+      x0[4] = 8;  // end Array.const
+      x1[0] = x0; // end Array.const
+
+      if ((0 || (x1 == x14))) {
+        std::cout << "(App i0 ())" << std::endl;
         x15 = 0;
       } else {
 
         x15 = 0;
       }
-      std::cout << "Inserting (L -> i0) cost 1" << std::endl;
-      // begin Array.const
-      // end Array.const
-      (x11[1]).insert(std::make_pair(x12, x16));
-      return 0;
-    }
-    int reconstruct_L_1(std::vector<std::vector<int>> &x13) {
-      std::vector<std::vector<int>> x14 = x13;
       return 0;
     }
  |}]

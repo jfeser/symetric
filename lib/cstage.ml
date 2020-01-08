@@ -171,7 +171,7 @@ module Code () : Sigs.CODE = struct
           format "$(type) $(name) ($(init));" (("init", C init) :: subst)
       | None -> format "$(type) $(name);" subst
     in
-    let arg_to_str v = sprintf "%s &%s" (type_name v.vtype) v.vname in
+    let arg_to_str v = sprintf "const %s &%s" (type_name v.vtype) v.vname in
     let func_to_decl_str f =
       let ret_type =
         match f.ftype with Func (_, t) -> t | _ -> assert false
@@ -328,8 +328,12 @@ module Code () : Sigs.CODE = struct
     match find_func f.ret with
     | Some func ->
         let _, ret_type = to_func_t func.ftype in
-        eformat ~has_effect:true "$(f)($(arg))" ret_type ""
-          [ ("f", S func.fname); ("arg", C arg) ]
+        if [%compare.equal: ctype] ret_type Unit then
+          eformat ~has_effect:true "0" ret_type "$(f)($(arg));"
+            [ ("f", S func.fname); ("arg", C arg) ]
+        else
+          eformat ~has_effect:true "$(f)($(arg))" ret_type ""
+            [ ("f", S func.fname); ("arg", C arg) ]
     | None -> failwith (sprintf "No function named %s" f.ret)
 
   let ite cond then_ else_ =

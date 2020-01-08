@@ -176,7 +176,7 @@ struct
         m "Building %s :: %s." func_name
           ([%sexp_of: S.ctype] func_t |> Sexp.to_string));
 
-    let recon_args target term args_node =
+    let recon_args target term args =
       let check args =
         let term, ctxs = to_contexts term args in
         let found_target =
@@ -191,22 +191,26 @@ struct
           (fun () -> S.unit)
       in
       let check =
-        G.succ g args_node
-        |> List.fold_left ~init:check ~f:(fun check node ->
-               let state = V.to_state node in
-               let check ctx =
-                 C.iter ~sym:state.V.symbol ~size:(S.int state.V.cost)
-                   ~f:(fun (v, _) -> check ((state, v) :: ctx))
-                   tbl
-               in
-               check)
+        List.fold_left args ~init:check ~f:(fun check node ->
+            let state = V.to_state node in
+            let check ctx =
+              C.iter ~sym:state.V.symbol ~size:(S.int state.V.cost)
+                ~f:(fun (v, _) -> check ((state, v) :: ctx))
+                tbl
+            in
+            check)
       in
       check []
     in
 
     let recon_code target code_node =
       let term = (V.to_code code_node).term in
-      G.succ g code_node |> List.map ~f:(recon_args target term) |> S.seq_many
+      let args = G.succ g code_node in
+      if List.is_empty args then recon_args target term []
+      else
+        List.map args ~f:(fun args_node ->
+            recon_args target term (G.succ g args_node))
+        |> S.seq_many
     in
 
     let recon_state target =
@@ -333,8 +337,8 @@ struct
                            S.seq_many
                              [
                                S.print "Starting reconstruction";
-                               reconstruct tbl g state out_val;
-                               S.exit;
+                               ( S.let_ (reconstruct tbl g state out_val)
+                               @@ fun _ -> S.exit );
                              ])
                          (fun () -> S.unit)
                    | _ -> S.unit

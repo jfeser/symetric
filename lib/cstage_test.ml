@@ -55,22 +55,15 @@ let%expect_test "" =
     #include <iostream>
     #include <set>
     #include <vector>
-    int g(int &x1);
-    int f(int &x0);
+    int g(const int &x1);
+    int f(const int &x0);
     int main();
     int main() { return f(g(0)); }
-    int f(int &x0) { return (x0 + 1); }
-    int g(int &x1) { return (x1 - 1); } |}];
+    int f(const int &x0) { return (x0 + 1); }
+    int g(const int &x1) { return (x1 - 1); } |}];
   code |> Util.clang_build |> print_endline;
   [%expect
-    {|
-    <stdin>:6:37: error: no matching function for call to 'g'
-    int main();int main() {    return f(g(0)); }
-                                        ^
-    <stdin>:4:5: note: candidate function not viable: expects an l-value for 1st argument
-    int g(int &x1);
-        ^
-    1 error generated. |}]
+    {| |}]
 
 let%expect_test "" =
   let module C = Code () in
@@ -85,7 +78,7 @@ let%expect_test "" =
     #include <iostream>
     #include <set>
     #include <vector>
-    int f(std::vector<int> &x0);
+    int f(const std::vector<int> &x0);
     int main();
     std::vector<int> x1;
     int main() {
@@ -99,7 +92,7 @@ let%expect_test "" =
       // end Array.init
       return f(x1);
     }
-    int f(std::vector<int> &x0) { return (x0[0]); } |}];
+    int f(const std::vector<int> &x0) { return (x0[0]); } |}];
   code |> Util.clang_build |> print_endline;
   [%expect {| |}]
 
