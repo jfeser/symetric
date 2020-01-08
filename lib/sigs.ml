@@ -57,17 +57,7 @@ module type CODE = sig
 
   type 'a set = Set
 
-  type ntype = { name : string; elem_type : ctype }
-
-  and ctype =
-    | Unit
-    | Int
-    | Bool
-    | Array of ntype
-    | Set of ntype
-    | Tuple of string * ctype * ctype
-    | Func of ctype * ctype
-  [@@deriving compare, sexp]
+  type ctype [@@deriving compare, sexp]
 
   val type_of : 'a t -> ctype
 
@@ -78,6 +68,13 @@ module type CODE = sig
   val genlet : 'a t -> 'a t
 
   val let_locus : (unit -> 'a t) -> 'a t
+
+  (* Primitive types *)
+  val unit_t : ctype
+
+  val int_t : ctype
+
+  val bool_t : ctype
 
   (* Values *)
   val unit : unit t
@@ -192,6 +189,8 @@ module type CODE = sig
   val seq_many : unit t list -> unit t
 
   (* Functions *)
+  val func_t : ctype -> ctype -> ctype
+
   val func : string -> ctype -> ('a t -> 'b t) -> ('a -> 'b) t
 
   val apply : ('a -> 'b) t -> 'a t -> 'b t

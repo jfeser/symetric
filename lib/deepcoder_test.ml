@@ -12,9 +12,9 @@ module Examples = struct
     [
       ( "L",
         Value.A
-          ( Array.const (Array.mk_type (Array.mk_type Int))
+          ( Array.const (Array.mk_type (Array.mk_type int_t))
           @@ [|
-               Array.const (Array.mk_type Int)
+               Array.const (Array.mk_type int_t)
                  [| int 3; int 7; int 5; int 2; int 8 |];
              |] ) );
     ]
@@ -22,9 +22,9 @@ module Examples = struct
   let output =
     ( "L",
       Value.A
-        ( Array.const (Array.mk_type (Array.mk_type Int))
+        ( Array.const (Array.mk_type (Array.mk_type int_t))
         @@ [|
-             Array.const (Array.mk_type Int)
+             Array.const (Array.mk_type int_t)
                [| int 3; int 2; int 5; int 2; int 3 |];
            |] ) )
 end

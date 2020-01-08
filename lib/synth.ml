@@ -166,11 +166,11 @@ struct
     | [ x ] -> S.let_ x (fun x -> f [ x ])
     | x :: xs -> S.let_ x (fun x -> let_many (fun xs -> f (x :: xs)) xs)
 
-  let costs_t = S.Array.mk_type Int
+  let costs_t = S.Array.mk_type S.int_t
 
   let rec reconstruct tbl g state target =
     let args_t = L.type_of target in
-    let func_t = S.Func (args_t, Unit) in
+    let func_t = S.func_t args_t S.unit_t in
     let func_name = sprintf "reconstruct_%s_%d" state.V.symbol state.cost in
     Log.debug (fun m ->
         m "Building %s :: %s." func_name

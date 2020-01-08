@@ -8,7 +8,7 @@ let%expect_test "" =
   let code =
     let_locus @@ fun () ->
     let_
-      (init (mk_type Int) (int 10) (fun i -> i))
+      (init (mk_type int_t) (int 10) (fun i -> i))
       (fun a -> fold a ~init:(int 0) ~f:( + ))
   in
   let code = to_string code in
@@ -45,8 +45,8 @@ let%expect_test "" =
 let%expect_test "" =
   let module C = Code () in
   let open C in
-  let f = func "f" (Func (Int, Int)) (fun i -> i + int 1) in
-  let g = func "g" (Func (Int, Int)) (fun i -> i - int 1) in
+  let f = func "f" (func_t int_t int_t) (fun i -> i + int 1) in
+  let g = func "g" (func_t int_t int_t) (fun i -> i - int 1) in
   let code = apply f (apply g (int 0)) in
   let code = to_string code in
   code |> Util.clang_format |> print_endline;
@@ -62,14 +62,13 @@ let%expect_test "" =
     int f(const int &x0) { return (x0 + 1); }
     int g(const int &x1) { return (x1 - 1); } |}];
   code |> Util.clang_build |> print_endline;
-  [%expect
-    {| |}]
+  [%expect {| |}]
 
 let%expect_test "" =
   let module C = Code () in
   let open C in
-  let int_array = Array.mk_type Int in
-  let f = func "f" (Func (int_array, Int)) (fun a -> a.(int 0)) in
+  let int_array = Array.mk_type int_t in
+  let f = func "f" (func_t int_array int_t) (fun a -> a.(int 0)) in
   let code = apply f (Array.init int_array (int 10) (fun i -> i)) in
   let code = to_string code in
   code |> Util.clang_format |> print_endline;
@@ -99,7 +98,7 @@ let%expect_test "" =
 let%expect_test "" =
   let module C = Code () in
   let open C in
-  let int_array = Array.mk_type Int in
+  let int_array = Array.mk_type int_t in
   let f =
     let x =
       Tuple.create
@@ -168,7 +167,7 @@ let%expect_test "" =
   let open C in
   let code =
     let_
-      (Set.empty (Set.mk_type Int))
+      (Set.empty (Set.mk_type int_t))
       (fun set ->
         seq_many
           [
@@ -211,7 +210,7 @@ let%expect_test "" =
   let open C in
   let code =
     let_
-      (Set.empty (Set.mk_type Int))
+      (Set.empty (Set.mk_type int_t))
       (fun set ->
         seq_many
           [
@@ -393,7 +392,7 @@ let%expect_test "" =
   let open C in
   let code =
     let_
-      (Array.const (Array.mk_type Int) [| int 0; int 1; int 2 |])
+      (Array.const (Array.mk_type int_t) [| int 0; int 1; int 2 |])
       (fun arr ->
         Array.fold arr ~init:(int 0) ~f:( + )
         + Array.fold arr ~init:(int 0) ~f:( * ))
@@ -439,7 +438,7 @@ let%expect_test "" =
   let module C = Code () in
   let open C in
   let code =
-    let arr = Array.const (Array.mk_type Int) [| int 0; int 1; int 2 |] in
+    let arr = Array.const (Array.mk_type int_t) [| int 0; int 1; int 2 |] in
     Array.fold arr ~init:(int 0) ~f:( + )
     + Array.fold arr ~init:(int 0) ~f:( * )
   in
@@ -499,7 +498,7 @@ let%expect_test "" =
   let code =
     let_locus @@ fun () ->
     let arr =
-      genlet @@ Array.const (Array.mk_type Int) [| int 0; int 1; int 2 |]
+      genlet @@ Array.const (Array.mk_type int_t) [| int 0; int 1; int 2 |]
     in
     Array.fold arr ~init:(int 0) ~f:( + )
     + Array.fold arr ~init:(int 0) ~f:( * )
@@ -547,7 +546,7 @@ let%expect_test "" =
   let code =
     let_locus @@ fun () ->
     let arr () =
-      genlet @@ Array.const (Array.mk_type Int) [| int 0; int 1; int 2 |]
+      genlet @@ Array.const (Array.mk_type int_t) [| int 0; int 1; int 2 |]
     in
     Array.fold (arr ()) ~init:(int 0) ~f:( + )
     + Array.fold (arr ()) ~init:(int 0) ~f:( * )
@@ -600,7 +599,7 @@ let%expect_test "" =
   let open C in
   let code =
     let arr =
-      genlet @@ Array.const (Array.mk_type Int) [| int 0; int 1; int 2 |]
+      genlet @@ Array.const (Array.mk_type int_t) [| int 0; int 1; int 2 |]
     in
     let_locus @@ fun () ->
     Array.fold arr ~init:(int 0) ~f:( + )
@@ -660,7 +659,7 @@ let%expect_test "" =
   let module C = Code () in
   let open C in
   let arr =
-    lazy (genlet @@ Array.const (Array.mk_type Int) [| int 0; int 1; int 2 |])
+    lazy (genlet @@ Array.const (Array.mk_type int_t) [| int 0; int 1; int 2 |])
   in
   let code =
     let_locus @@ fun () ->

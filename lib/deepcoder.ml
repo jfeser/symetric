@@ -43,9 +43,9 @@ module Make (C : Sigs.CODE) = struct
       | I x -> C.let_ x (fun v' -> f (I v'))
       | _ -> assert false
 
-    let int_type = C.Array.mk_type C.Int
+    let int_type = C.Array.mk_type C.int_t
 
-    let array_type = C.Array.mk_type (C.Array.mk_type C.Int)
+    let array_type = C.Array.mk_type (C.Array.mk_type C.int_t)
   end
 
   module Lang (E : Sigs.EXAMPLES with type value := Value.t) = struct
@@ -115,7 +115,7 @@ module Make (C : Sigs.CODE) = struct
     open C
     open Array
 
-    let int_array = Array.mk_type Int
+    let int_array = Array.mk_type int_t
 
     let rec eval ctx = function
       | Grammar.Term.App ("(+1)", []) -> F_int (fun x -> x + int 1)
@@ -267,7 +267,7 @@ module Make (C : Sigs.CODE) = struct
     open C
 
     let empty k =
-      let sizes_t = Array.mk_type Int in
+      let sizes_t = Array.mk_type int_t in
       let mk_type t = Array.mk_type @@ Set.mk_type (Tuple.mk_type t sizes_t) in
       let mk_empty t =
         Array.init t (int max_size) (fun _ -> Set.empty (Array.elem_type t))

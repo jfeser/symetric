@@ -248,6 +248,12 @@ module Code () : Sigs.CODE = struct
       type_ ""
       [ ("arg1", C x); ("arg2", C x') ]
 
+  let int_t = Int
+
+  let bool_t = Bool
+
+  let unit_t = Unit
+
   let int x = eformat (sprintf "%d" x) Int "" []
 
   let bool x = eformat (if x then "1" else "0") Bool "" []
@@ -297,6 +303,8 @@ module Code () : Sigs.CODE = struct
   let exit = eformat ~has_effect:true "0" Unit "exit(0);" []
 
   let to_func_t = function Func (t, t') -> (t, t') | _ -> assert false
+
+  let func_t arg_t ret_t = Func (arg_t, ret_t)
 
   let add_func f = prog.funcs <- f :: prog.funcs
 
