@@ -321,7 +321,7 @@ struct
            let fill args =
              let term, ctxs = to_contexts code.V.term args in
              List.map ctxs ~f:(fun ctx ->
-                 let value = L.eval ctx term in
+                 L.let_ (L.eval ctx term) @@ fun value ->
                  let out_sym, out_val = L.output in
                  let recon_code =
                    match

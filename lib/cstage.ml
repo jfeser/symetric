@@ -71,6 +71,8 @@ module Code () : Sigs.CODE = struct
     in
     { funcs = [ main ]; cur_func = main; fresh = Fresh.create () }
 
+  let add_var_decl x = prog.cur_func.locals <- x :: prog.cur_func.locals
+
   let fresh_name () = Fresh.name prog.fresh "x%d"
 
   let format fmt args =
@@ -110,6 +112,11 @@ module Code () : Sigs.CODE = struct
     let type_ = value.etype in
     eformat name type_ "$(type) $(var) = $(init);"
       [ ("type", S (type_name type_)); ("var", S name); ("init", C value) ]
+
+  let fresh_global type_ =
+    let name = fresh_name () in
+    add_var_decl { vname = name; vtype = type_; init = None };
+    eformat name type_ "" []
 
   module C = struct
     type 'a t = expr
@@ -213,17 +220,20 @@ module Code () : Sigs.CODE = struct
   let expr_of_var { vname; vtype; _ } =
     { ebody = ""; ret = vname; etype = vtype; efree = []; eeffect = false }
 
-  let add_var_decl x = prog.cur_func.locals <- x :: prog.cur_func.locals
+  let assign x ~to_:v =
+    eformat ~has_effect:true "0" Unit {|$(v) = $(x);|}
+      [ ("x", C x); ("v", C v) ]
 
-  let fresh_global ?init vtype =
-    let vname = fresh_name () in
-    add_var_decl { vname; vtype; init = None };
-    match init with
-    | Some init ->
-        eformat vname vtype "$(var) = $(init);"
-          [ ("init", S init); ("var", S vname) ]
-    | None ->
-        { ret = vname; ebody = ""; etype = vtype; efree = []; eeffect = false }
+  let let_global v b =
+    let g = fresh_global v.etype in
+    let x = seq (assign v ~to_:g) g in
+    let y = b { x with ebody = "" } in
+    {
+      y with
+      ebody = x.ebody ^ y.ebody;
+      efree = x.efree @ y.efree;
+      eeffect = x.eeffect || y.eeffect;
+    }
 
   let fresh_var etype m =
     let name = Fresh.name prog.fresh "x%d" in
@@ -321,10 +331,6 @@ module Code () : Sigs.CODE = struct
         eformat ~has_effect:true "$(f)($(arg))" ret_type ""
           [ ("f", S func.fname); ("arg", C arg) ]
     | None -> failwith (sprintf "No function named %s" f.ret)
-
-  let assign x v =
-    eformat ~has_effect:true "0" Unit {|$(v) = $(x);|}
-      [ ("x", C x); ("v", C v) ]
 
   let ite cond then_ else_ =
     let_locus @@ fun () ->
@@ -450,9 +456,10 @@ for(int $(i) = $(lo); $(i) < $(hi); $(i)++) {
       let acc = fresh_global init.etype in
       sseq
         [
-          assign init acc;
-          for_ (int 0) (int 1) (length arr) (fun i ->
-              assign (f acc (get arr i)) acc);
+          assign init ~to_:acc;
+          ( let_ (length arr) @@ fun len ->
+            for_ (int 0) (int 1) len (fun i ->
+                assign (f acc (get arr i)) ~to_:acc) );
           acc;
         ]
       |> with_comment "Array.fold"
@@ -498,7 +505,12 @@ for(auto $(iter) = $(set).begin(); $(iter) != $(set).end(); ++$(iter)) {
 
     let fold a ~init ~f =
       let_ (fresh_global init.etype) (fun acc ->
-          sseq [ assign init acc; iter a (fun x -> assign (f acc x) acc); acc ])
+          sseq
+            [
+              assign init ~to_:acc;
+              iter a (fun x -> assign (f acc x) ~to_:acc);
+              acc;
+            ])
       |> with_comment "Set.fold"
 
     let add a x =

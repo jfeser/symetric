@@ -37,6 +37,12 @@ module Make (C : Sigs.CODE) = struct
       | I x -> C.(Array.O.(x = cast y))
       | _ -> assert false
 
+    let let_ v f =
+      match v with
+      | A x -> C.let_ x (fun v' -> f (A v'))
+      | I x -> C.let_ x (fun v' -> f (I v'))
+      | _ -> assert false
+
     let int_type = C.Array.mk_type C.Int
 
     let array_type = C.Array.mk_type (C.Array.mk_type C.Int)
@@ -148,12 +154,21 @@ module Make (C : Sigs.CODE) = struct
                   |> Error.raise ) )
       | App ("head", [ e ]) ->
           I
-            ( eval ctx e |> to_array
-            |> map Value.int_type ~f:(fun a -> get a (int 0)) )
+            ( let_ (eval ctx e |> to_array) @@ fun a ->
+              map Value.int_type a ~f:(fun a ->
+                  ite
+                    (length a > int 0)
+                    (fun () -> get a (int 0))
+                    (fun () -> int 0)) )
       | App ("last", [ e ]) ->
           I
             ( let_ (eval ctx e |> to_array) @@ fun a ->
-              map Value.int_type a ~f:(fun a -> get a (length a - int 1)) )
+              map Value.int_type a ~f:(fun a ->
+                  let_ (length a) (fun l ->
+                      ite
+                        (l > int 0)
+                        (fun () -> get a (length a - int 1))
+                        (fun () -> int 0))) )
       | App ("take", [ n; e ]) ->
           A
             ( let_ (eval ctx e |> to_array) @@ fun a ->
@@ -265,8 +280,9 @@ module Make (C : Sigs.CODE) = struct
       Log.debug (fun m ->
           m "Array cache type: %s"
             (Sexp.to_string @@ [%sexp_of: ctype] a_cache_t));
-      let_ (mk_empty i_cache_t) (fun ti ->
-          let_ (mk_empty a_cache_t) (fun ta -> k { ints = ti; arrays = ta }))
+      let_global (mk_empty i_cache_t) (fun ti ->
+          let_global (mk_empty a_cache_t) (fun ta ->
+              k { ints = ti; arrays = ta }))
 
     let put ~sym:_ ~size ~sizes { ints = tbl_i; arrays = tbl_a; _ } v =
       let key = int size in

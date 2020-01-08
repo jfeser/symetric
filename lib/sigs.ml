@@ -43,6 +43,8 @@ module type LANG = sig
 
   val eq : value -> 'a code -> bool code
 
+  val let_ : value -> (value -> 'a code) -> 'a code
+
   val type_of : value -> type_
 
   val grammar : Grammar.t
@@ -182,6 +184,8 @@ module type CODE = sig
   val ite : bool t -> (unit -> 'a t) -> (unit -> 'a t) -> 'a t
 
   val let_ : 'a t -> ('a t -> 'b t) -> 'b t
+
+  val let_global : 'a t -> ('a t -> 'b t) -> 'b t
 
   val seq : unit t -> unit t -> unit t
 
