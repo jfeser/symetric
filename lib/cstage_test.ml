@@ -25,7 +25,7 @@ let%expect_test "" =
       // begin Array.init
       x0.clear();
       x0.reserve(10);
-      for (int x1 = 0; x1 < 10; x1++) {
+      for (int x1 = 0; x1 < 10; x1 += 1) {
         int x2 = x1;
         x0.push_back(x2);
       }
@@ -34,7 +34,7 @@ let%expect_test "" =
       // begin Array.fold
       x4 = 0;
       int x5 = ((int)((x3).size()));
-      for (int x6 = 0; x6 < x5; x6++) {
+      for (int x6 = 0; x6 < x5; x6 += 1) {
         x4 = (x4 + (x3[x6]));
       }
       // end Array.fold
@@ -84,7 +84,7 @@ let%expect_test "" =
       // begin Array.init
       x1.clear();
       x1.reserve(10);
-      for (int x2 = 0; x2 < 10; x2++) {
+      for (int x2 = 0; x2 < 10; x2 += 1) {
         int x3 = x2;
         x1.push_back(x3);
       }
@@ -123,7 +123,7 @@ let%expect_test "" =
       // begin Array.init
       x3.clear();
       x3.reserve(10);
-      for (int x4 = 0; x4 < 10; x4++) {
+      for (int x4 = 0; x4 < 10; x4 += 1) {
         int x5 = x4;
         x3.push_back(x5);
       }
@@ -132,7 +132,7 @@ let%expect_test "" =
       // begin Array.init
       x0.clear();
       x0.reserve(10);
-      for (int x1 = 0; x1 < 10; x1++) {
+      for (int x1 = 0; x1 < 10; x1 += 1) {
         int x2 = x1;
         x0.push_back(x2);
       }
@@ -141,7 +141,7 @@ let%expect_test "" =
       // begin Array.init
       x3.clear();
       x3.reserve(10);
-      for (int x4 = 0; x4 < 10; x4++) {
+      for (int x4 = 0; x4 < 10; x4 += 1) {
         int x5 = x4;
         x3.push_back(x5);
       }
@@ -150,7 +150,7 @@ let%expect_test "" =
       // begin Array.init
       x0.clear();
       x0.reserve(10);
-      for (int x1 = 0; x1 < 10; x1++) {
+      for (int x1 = 0; x1 < 10; x1 += 1) {
         int x2 = x1;
         x0.push_back(x2);
       }
@@ -378,7 +378,7 @@ let%expect_test "" =
     #include <vector>
     int main();
     int main() {
-      for (int x0 = 0; x0 < 10; x0++) {
+      for (int x0 = 0; x0 < 10; x0 += 1) {
         std::cout << "test" << std::endl;
         exit(0);
       }
@@ -417,7 +417,7 @@ let%expect_test "" =
       // begin Array.fold
       x5 = 0;
       int x6 = ((int)((x1).size()));
-      for (int x7 = 0; x7 < x6; x7++) {
+      for (int x7 = 0; x7 < x6; x7 += 1) {
         x5 = (x5 + (x1[x7]));
       }
       // end Array.fold
@@ -425,7 +425,7 @@ let%expect_test "" =
       // begin Array.fold
       x2 = 0;
       int x3 = ((int)((x1).size()));
-      for (int x4 = 0; x4 < x3; x4++) {
+      for (int x4 = 0; x4 < x3; x4 += 1) {
         x2 = (x2 * (x1[x4]));
       }
       // end Array.fold
@@ -461,7 +461,7 @@ let%expect_test "" =
       x0[1] = 1;
       x0[2] = 2; // end Array.const
       int x5 = ((int)((x0).size()));
-      for (int x6 = 0; x6 < x5; x6++) {
+      for (int x6 = 0; x6 < x5; x6 += 1) {
 
         // begin Array.const
         x0[0] = 0;
@@ -478,7 +478,7 @@ let%expect_test "" =
       x0[1] = 1;
       x0[2] = 2; // end Array.const
       int x2 = ((int)((x0).size()));
-      for (int x3 = 0; x3 < x2; x3++) {
+      for (int x3 = 0; x3 < x2; x3 += 1) {
 
         // begin Array.const
         x0[0] = 0;
@@ -523,7 +523,7 @@ let%expect_test "" =
       // begin Array.fold
       x5 = 0;
       int x6 = ((int)((x1).size()));
-      for (int x7 = 0; x7 < x6; x7++) {
+      for (int x7 = 0; x7 < x6; x7 += 1) {
         x5 = (x5 + (x1[x7]));
       }
       // end Array.fold
@@ -531,7 +531,7 @@ let%expect_test "" =
       // begin Array.fold
       x2 = 0;
       int x3 = ((int)((x1).size()));
-      for (int x4 = 0; x4 < x3; x4++) {
+      for (int x4 = 0; x4 < x3; x4 += 1) {
         x2 = (x2 * (x1[x4]));
       }
       // end Array.fold
@@ -577,7 +577,7 @@ let%expect_test "" =
       // begin Array.fold
       x7 = 0;
       int x8 = ((int)((x6).size()));
-      for (int x9 = 0; x9 < x8; x9++) {
+      for (int x9 = 0; x9 < x8; x9 += 1) {
         x7 = (x7 + (x6[x9]));
       }
       // end Array.fold
@@ -585,7 +585,7 @@ let%expect_test "" =
       // begin Array.fold
       x2 = 0;
       int x3 = ((int)((x1).size()));
-      for (int x4 = 0; x4 < x3; x4++) {
+      for (int x4 = 0; x4 < x3; x4 += 1) {
         x2 = (x2 * (x1[x4]));
       }
       // end Array.fold
@@ -624,7 +624,7 @@ let%expect_test "" =
       x0[1] = 1;
       x0[2] = 2; // end Array.const
       int x5 = ((int)((x0).size()));
-      for (int x6 = 0; x6 < x5; x6++) {
+      for (int x6 = 0; x6 < x5; x6 += 1) {
 
         // begin Array.const
         x0[0] = 0;
@@ -641,7 +641,7 @@ let%expect_test "" =
       x0[1] = 1;
       x0[2] = 2; // end Array.const
       int x2 = ((int)((x0).size()));
-      for (int x3 = 0; x3 < x2; x3++) {
+      for (int x3 = 0; x3 < x2; x3 += 1) {
 
         // begin Array.const
         x0[0] = 0;
@@ -686,7 +686,7 @@ let%expect_test "" =
       // begin Array.fold
       x5 = 0;
       int x6 = ((int)((x1).size()));
-      for (int x7 = 0; x7 < x6; x7++) {
+      for (int x7 = 0; x7 < x6; x7 += 1) {
         x5 = (x5 + (x1[x7]));
       }
       // end Array.fold
@@ -694,7 +694,7 @@ let%expect_test "" =
       // begin Array.fold
       x2 = 0;
       int x3 = ((int)((x1).size()));
-      for (int x4 = 0; x4 < x3; x4++) {
+      for (int x4 = 0; x4 < x3; x4 += 1) {
         x2 = (x2 * (x1[x4]));
       }
       // end Array.fold

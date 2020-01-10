@@ -7,7 +7,7 @@ let with_stackmark body =
   push_prompt p (fun () -> body (fun () -> is_prompt_set p))
 
 module Code () : Sigs.CODE = struct
-  type 'a set = Set
+  type 'a set
 
   type ntype = { name : string; elem_type : ctype }
 
@@ -377,7 +377,7 @@ if ($(cond)) {
     in
     eformat "0" Unit
       {|
-for(int $(i) = $(lo); $(i) < $(hi); $(i)++) {
+for(int $(i) = $(lo); $(i) < $(hi); $(i) += $(step)) {
       $(body)
 }
 |}

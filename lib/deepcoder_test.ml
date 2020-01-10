@@ -61,7 +61,7 @@ let%expect_test "" =
       // begin Array.init
       x4.clear();
       x4.reserve(100);
-      for (int x5 = 0; x5 < 100; x5++) {
+      for (int x5 = 0; x5 < 100; x5 += 1) {
         x4.push_back(x6);
       }
       // end Array.init
@@ -69,7 +69,7 @@ let%expect_test "" =
       // begin Array.init
       x8.clear();
       x8.reserve(100);
-      for (int x9 = 0; x9 < 100; x9++) {
+      for (int x9 = 0; x9 < 100; x9 += 1) {
         x8.push_back(x10);
       }
       // end Array.init
