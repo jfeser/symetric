@@ -55,7 +55,7 @@ end
 module type CODE = sig
   type 'a t [@@deriving sexp_of]
 
-  type 'a set = Set
+  type 'a set
 
   type ctype [@@deriving compare, sexp]
 
