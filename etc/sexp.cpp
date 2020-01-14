@@ -2,6 +2,14 @@
 
 #include <sstream>
 
+bool parse_char(istream &in, char c) {
+  if (in.peek() == c) {
+    in.get();
+    return true;
+  }
+  return false;
+}
+
 ostream &Atom::print(ostream &os) const {
   os << body;
   return os;
@@ -23,11 +31,15 @@ unique_ptr<Atom> Atom::load(istream &in) {
     case '(':
     case ')':
     case char_traits<char>::eof(): {
-      return make_unique<Atom>(buf.str());
+      if (buf.length() > 0) {
+        return make_unique<Atom>(buf);
+      } else {
+        return nullptr;
+      }
     }
 
     default: {
-      buf << in.get();
+      buf.push_back(in.get());
     }
     }
   }
@@ -47,13 +59,18 @@ ostream &List::print(ostream &os) const {
 unique_ptr<List> List::load(istream &in) {
   vector<unique_ptr<Sexp>> elems;
 
+  if (!parse_char(in, '(')) {
+    return nullptr;
+  }
   while (true) {
     unique_ptr<Sexp> s = Sexp::load(in);
-    if (s) {
-      elems.push_back(move(s));
-    } else {
+    if (!s) {
       break;
     }
+    elems.push_back(move(s));
+  }
+  if (!parse_char(in, ')')) {
+    return nullptr;
   }
 
   return make_unique<List>(elems);
@@ -61,23 +78,11 @@ unique_ptr<List> List::load(istream &in) {
 
 void List::accept(SexpVisitor &v) const { v.visit(*this); }
 
-bool parse_char(istream &in, char c) {
-  if (in.peek() == c) {
-    in.get();
-    return true;
-  } else {
-    return false;
-  }
-}
-
 unique_ptr<Sexp> Sexp::load(istream &in) {
-  if (!parse_char(in, '(')) {
-    unique_ptr<List> lout = List::load(in);
-    if (!parse_char(in, ')')) {
-      return nullptr;
-    }
+  unique_ptr<List> lout = List::load(in);
+  if (lout) {
     return lout;
-  } else {
-    return Atom::load(in);
   }
+
+  return Atom::load(in);
 }

@@ -6,7 +6,7 @@ BIN = test
 all: $(OBJ)
 
 %.o : %.cpp
-	$(CXX) $(CXXFLAGS) $(LDFLAGS) -c -o $@ $<
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(INCLUDE) -c -o $@ $<
 
 test: $(OBJ)
 	$(CXX) $(OBJ) -o test
