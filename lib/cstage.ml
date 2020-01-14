@@ -19,14 +19,18 @@ module Code () : Sigs.CODE = struct
     | Set of ntype
     | Tuple of string * ctype * ctype
     | Func of ctype * ctype
+    | String
+    | Sexp
   [@@deriving compare, sexp]
 
   let type_name = function
     | Unit -> "int"
     | Int -> "int"
     | Bool -> "int"
+    | String -> "std::string"
     | Tuple (n, _, _) -> n
     | Array { name; _ } | Set { name; _ } -> name
+    | Sexp -> "std::unique_ptr<sexp>"
     | _ -> failwith "Type cannot be constructed."
 
   type mark = unit -> bool
@@ -546,5 +550,30 @@ for(auto $(iter) = $(set).begin(); $(iter) != $(set).end(); ++$(iter)) {
     let fst t = eformat "std::get<0>($(t))" (fst_type t.etype) "" [ ("t", C t) ]
 
     let snd t = eformat "std::get<1>($(t))" (snd_type t.etype) "" [ ("t", C t) ]
+  end
+
+  module String = struct
+    let type_ = String
+
+    let const s = eformat "\"$(s)\"" type_ "" [ ("s", S (sprintf "%S" s)) ]
+
+    let print s =
+      eformat ~has_effect:true "0" unit_t "std::cout << $(str) << std::endl;"
+        [ ("str", C s) ]
+  end
+
+  module Sexp = struct
+    let type_ = Sexp
+
+    let is_atom x = eformat "is_atom($(x))" bool_t "" [ ("x", C x) ]
+
+    let is_list x = not (is_atom x)
+
+    let to_string x =
+      eformat "((atom*)$(x).get())->get_body()" String.type_ "" [ ("x", C x) ]
+
+    let to_array x =
+      eformat "((list*)$(x).get())->get_body()" (Array.mk_type type_) ""
+        [ ("x", C x) ]
   end
 end

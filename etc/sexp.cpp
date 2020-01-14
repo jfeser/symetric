@@ -88,3 +88,16 @@ unique_ptr<sexp> sexp::load(istream &in) {
 
   return atom::load(in);
 }
+
+bool is_atom(const sexp &s) {
+  class : public sexp_visitor {
+  public:
+    bool ret;
+    void visit(const atom &) { ret = true; }
+    void visit(const list &) { ret = false; }
+  } visitor;
+  s.accept(visitor);
+  return visitor.ret;
+}
+
+bool is_list(const sexp &s) { return !is_atom(s); }
