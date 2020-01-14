@@ -6,56 +6,54 @@
 #include <string>
 #include <vector>
 
-using namespace std;
+class atom;
+class list;
 
-class Atom;
-class List;
-
-class SexpVisitor {
+class sexp_visitor {
 public:
-  virtual void visit(const Atom& x) = 0;
-  virtual void visit(const List& x) = 0;
+  virtual void visit(const atom& x) = 0;
+  virtual void visit(const list& x) = 0;
 };
 
-class Sexp {
+class sexp {
 public:
-  virtual ~Sexp(){}
-  virtual void accept(SexpVisitor &v) const = 0;
-  virtual ostream& print(ostream& out) const = 0;
-  static unique_ptr<Sexp> load(istream &in);
-  friend ostream &operator<<(ostream &os, const Sexp &x) { return x.print(os); }
+  virtual ~sexp(){}
+  virtual void accept(sexp_visitor &v) const = 0;
+  virtual std::ostream& print(std::ostream& out) const = 0;
+  static std::unique_ptr<sexp> load(std::istream &in);
+  friend std::ostream &operator<<(std::ostream &os, const sexp &x) { return x.print(os); }
 };
 
-class Atom : public Sexp {
+class atom : public sexp {
 public:
-  Atom(string x) {
+  atom(std::string x) {
     body = x;
   }
-  void accept(SexpVisitor &v) const override;
-  ostream &print(ostream &out) const override;
-  static unique_ptr<Atom> load(istream &in);
-  const string& get_body() const {
+  void accept(sexp_visitor &v) const override;
+  std::ostream &print(std::ostream &out) const override;
+  static std::unique_ptr<atom> load(std::istream &in);
+  const std::string& get_body() const {
     return body;
   }
 
 private:
-  string body;
+  std::string body;
 };
 
-class List : public Sexp {
+class list : public sexp {
 public:
-  List(vector<unique_ptr<Sexp>> &x) {
+  list(std::vector<std::unique_ptr<sexp>> &x) {
     body = move(x);
   }
-  void accept(SexpVisitor &v) const override;
-  ostream &print(ostream &out) const override;
-  static unique_ptr<List> load(istream &in);
-  const vector<unique_ptr<Sexp>> &get_body() const {
+  void accept(sexp_visitor &v) const override;
+  std::ostream &print(std::ostream &out) const override;
+  static std::unique_ptr<list> load(std::istream &in);
+  const std::vector<std::unique_ptr<sexp>> &get_body() const {
     return body;
   }
 
 private:
-  vector<unique_ptr<Sexp>> body;
+  std::vector<std::unique_ptr<sexp>> body;
 };
 
 #endif

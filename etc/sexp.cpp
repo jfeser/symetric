@@ -2,6 +2,8 @@
 
 #include <sstream>
 
+using namespace std;
+
 bool parse_char(istream &in, char c) {
   if (in.peek() == c) {
     in.get();
@@ -10,12 +12,12 @@ bool parse_char(istream &in, char c) {
   return false;
 }
 
-ostream &Atom::print(ostream &os) const {
+ostream &atom::print(ostream &os) const {
   os << body;
   return os;
 }
 
-unique_ptr<Atom> Atom::load(istream &in) {
+unique_ptr<atom> atom::load(istream &in) {
   string buf;
   while (true) {
     char c = in.peek();
@@ -32,7 +34,7 @@ unique_ptr<Atom> Atom::load(istream &in) {
     case ')':
     case char_traits<char>::eof(): {
       if (buf.length() > 0) {
-        return make_unique<Atom>(buf);
+        return make_unique<atom>(buf);
       } else {
         return nullptr;
       }
@@ -45,9 +47,9 @@ unique_ptr<Atom> Atom::load(istream &in) {
   }
 }
 
-void Atom::accept(SexpVisitor &v) const { v.visit(*this); }
+void atom::accept(sexp_visitor &v) const { v.visit(*this); }
 
-ostream &List::print(ostream &os) const {
+ostream &list::print(ostream &os) const {
   os << "(";
   for (auto &elem : body) {
     os << elem << " ";
@@ -56,14 +58,14 @@ ostream &List::print(ostream &os) const {
   return os;
 }
 
-unique_ptr<List> List::load(istream &in) {
-  vector<unique_ptr<Sexp>> elems;
+unique_ptr<list> list::load(istream &in) {
+  vector<unique_ptr<sexp>> elems;
 
   if (!parse_char(in, '(')) {
     return nullptr;
   }
   while (true) {
-    unique_ptr<Sexp> s = Sexp::load(in);
+    unique_ptr<sexp> s = sexp::load(in);
     if (!s) {
       break;
     }
@@ -73,16 +75,16 @@ unique_ptr<List> List::load(istream &in) {
     return nullptr;
   }
 
-  return make_unique<List>(elems);
+  return make_unique<list>(elems);
 }
 
-void List::accept(SexpVisitor &v) const { v.visit(*this); }
+void list::accept(sexp_visitor &v) const { v.visit(*this); }
 
-unique_ptr<Sexp> Sexp::load(istream &in) {
-  unique_ptr<List> lout = List::load(in);
+unique_ptr<sexp> sexp::load(istream &in) {
+  unique_ptr<list> lout = list::load(in);
   if (lout) {
     return lout;
   }
 
-  return Atom::load(in);
+  return atom::load(in);
 }
