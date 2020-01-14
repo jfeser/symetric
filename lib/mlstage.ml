@@ -205,7 +205,9 @@ module Code : Sigs.CODE = struct
 
   let func _ _ f () = Func (fun x -> f (to_code x) |> to_value)
 
-  let func_t _ _ = ()
+  module Func = struct
+    let type_ _ _ = ()
+  end
 
   let apply f x () = (to_func f) (to_value x)
 end

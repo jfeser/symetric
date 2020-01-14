@@ -170,7 +170,7 @@ struct
 
   let rec reconstruct tbl g state target =
     let args_t = L.type_of target in
-    let func_t = S.func_t args_t S.unit_t in
+    let func_t = S.Func.type_ args_t S.unit_t in
     let func_name = sprintf "reconstruct_%s_%d" state.V.symbol state.cost in
     Log.debug (fun m ->
         m "Building %s :: %s." func_name

@@ -57,7 +57,7 @@ module type CODE = sig
 
   type 'a set
 
-  type ctype [@@deriving compare, sexp]
+  type ctype [@@deriving sexp_of]
 
   val type_of : 'a t -> ctype
 
@@ -117,6 +117,11 @@ module type CODE = sig
 
   val not : bool t -> bool t
 
+  (* Function operations *)
+  module Func : sig
+    val type_ : ctype -> ctype -> ctype
+  end
+
   (* Array operations *)
   module Array : sig
     val mk_type : ctype -> ctype
@@ -151,7 +156,6 @@ module type CODE = sig
       'c array t
   end
 
-  (* Set operations *)
   module Set : sig
     val mk_type : ctype -> ctype
 
@@ -189,8 +193,6 @@ module type CODE = sig
   val seq_many : unit t list -> unit t
 
   (* Functions *)
-  val func_t : ctype -> ctype -> ctype
-
   val func : string -> ctype -> ('a t -> 'b t) -> ('a -> 'b) t
 
   val apply : ('a -> 'b) t -> 'a t -> 'b t

@@ -6,43 +6,21 @@ let with_stackmark body =
   let p = new_prompt () in
   push_prompt p (fun () -> body (fun () -> is_prompt_set p))
 
-module Code () : Sigs.CODE = struct
+module Code () = struct
   type 'a set
-
-  type ntype = { name : string; elem_type : ctype }
-
-  and ctype =
-    | Unit
-    | Int
-    | Bool
-    | Array of ntype
-    | Set of ntype
-    | Tuple of string * ctype * ctype
-    | Func of ctype * ctype
-    | String
-    | Sexp
-  [@@deriving compare, sexp]
-
-  let type_name = function
-    | Unit -> "int"
-    | Int -> "int"
-    | Bool -> "int"
-    | String -> "std::string"
-    | Tuple (n, _, _) -> n
-    | Array { name; _ } | Set { name; _ } -> name
-    | Sexp -> "std::unique_ptr<sexp>"
-    | _ -> failwith "Type cannot be constructed."
 
   type mark = unit -> bool
 
-  type expr = {
+  type ctype = Univ_map.t [@@deriving sexp_of]
+
+  and expr = {
     ebody : string;
     ret : string;
     etype : ctype;
     efree : (string * (mark[@opaque])) list;
     eeffect : bool;
   }
-  [@@deriving sexp]
+  [@@deriving sexp_of]
 
   type var_decl = { vname : string; vtype : ctype; init : expr option }
 
@@ -62,22 +40,21 @@ module Code () : Sigs.CODE = struct
 
   type fmt_arg = C : expr -> fmt_arg | S : string -> fmt_arg
 
-  let prog =
-    let main =
-      {
-        fname = "main";
-        ftype = Func (Unit, Unit);
-        locals = [];
-        args = [];
-        fbody =
-          { ebody = ""; ret = "0"; etype = Unit; efree = []; eeffect = false };
-      }
-    in
-    { funcs = [ main ]; cur_func = main; fresh = Fresh.create () }
+  module Type = struct
+    let name_k = Univ_map.Key.create ~name:"name" [%sexp_of: string]
 
-  let add_var_decl x = prog.cur_func.locals <- x :: prog.cur_func.locals
+    let of_sexp_k = Univ_map.Key.create ~name:"of_sexp" [%sexp_of: _]
 
-  let fresh_name () = Fresh.name prog.fresh "x%d"
+    let name t = Univ_map.find_exn t name_k
+
+    let of_sexp t = Univ_map.find_exn t of_sexp_k
+
+    let create ~name ~of_sexp =
+      Univ_map.(
+        of_alist_exn Packed.[ T (name_k, name); T (of_sexp_k, of_sexp) ])
+
+    let add_exn t ~key ~data = Univ_map.add_exn t key data
+  end
 
   let format fmt args =
     let fmt =
@@ -111,11 +88,58 @@ module Code () : Sigs.CODE = struct
     in
     { ebody; ret; etype; efree; eeffect = has_effect || eeffect }
 
+  module Sexp = struct
+    let type_ = Type.create ~name:"unique_ptr<sexp>" ~of_sexp:Fun.id
+  end
+
+  let rec int_t () =
+    Type.create ~name:"int" ~of_sexp:(fun x ->
+        eformat "std::stoi(((list*)$(x).get())->get_body())" (int_t ()) ""
+          [ ("x", C x) ])
+
+  let int_t = int_t ()
+
+  let bool_t = int_t
+
+  let is_unit = Univ_map.Key.create ~name:"is_unit" [%sexp_of: unit]
+
+  let unit_t = Univ_map.add_exn int_t is_unit ()
+
+  module Func = struct
+    let arg_t = Univ_map.Key.create ~name:"arg_t" [%sexp_of: ctype]
+
+    let ret_t = Univ_map.Key.create ~name:"ret_t" [%sexp_of: ctype]
+
+    let type_ t1 t2 =
+      Univ_map.(of_alist_exn Packed.[ T (arg_t, t1); T (ret_t, t2) ])
+
+    let arg_t t = Univ_map.find_exn t arg_t
+
+    let ret_t t = Univ_map.find_exn t ret_t
+  end
+
+  let prog =
+    let main =
+      {
+        fname = "main";
+        ftype = Func.type_ unit_t unit_t;
+        locals = [];
+        args = [];
+        fbody =
+          { ebody = ""; ret = "0"; etype = unit_t; efree = []; eeffect = false };
+      }
+    in
+    { funcs = [ main ]; cur_func = main; fresh = Fresh.create () }
+
+  let add_var_decl x = prog.cur_func.locals <- x :: prog.cur_func.locals
+
+  let fresh_name () = Fresh.name prog.fresh "x%d"
+
   let fresh_local value =
     let name = fresh_name () in
     let type_ = value.etype in
     eformat name type_ "$(type) $(var) = $(init);"
-      [ ("type", S (type_name type_)); ("var", S name); ("init", C value) ]
+      [ ("type", S (Type.name type_)); ("var", S name); ("init", C value) ]
 
   let fresh_global type_ =
     let name = fresh_name () in
@@ -169,36 +193,31 @@ module Code () : Sigs.CODE = struct
   let to_string e =
     let expr_to_str e = e.ebody in
     let var_decl_to_str v =
-      let subst = [ ("type", S (type_name v.vtype)); ("name", S v.vname) ] in
+      let subst = [ ("type", S (Type.name v.vtype)); ("name", S v.vname) ] in
       match v.init with
       | Some init ->
           format "$(type) $(name) ($(init));" (("init", C init) :: subst)
       | None -> format "$(type) $(name);" subst
     in
-    let arg_to_str v = sprintf "const %s &%s" (type_name v.vtype) v.vname in
+    let arg_to_str v = sprintf "const %s &%s" (Type.name v.vtype) v.vname in
     let func_to_decl_str f =
-      let ret_type =
-        match f.ftype with Func (_, t) -> t | _ -> assert false
-      in
       let args_str = List.map f.args ~f:arg_to_str |> String.concat ~sep:"," in
-      sprintf "%s %s(%s);" (type_name ret_type) f.fname args_str
+      sprintf "%s %s(%s);" (Type.name (Func.ret_t f.ftype)) f.fname args_str
     in
     let func_to_def_str f =
-      let ret_type =
-        match f.ftype with Func (_, t) -> t | _ -> assert false
-      in
       let locals_str =
         List.rev f.locals
         |> List.map ~f:var_decl_to_str
         |> String.concat ~sep:" "
       in
       let args_str = List.map f.args ~f:arg_to_str |> String.concat ~sep:"," in
+      let ret_t_name = Type.name (Func.ret_t f.ftype) in
       if String.(f.fname = "main") then
-        sprintf "%s %s(%s) { %s return %s; }" (type_name ret_type) f.fname
-          args_str (expr_to_str f.fbody) f.fbody.ret
+        sprintf "%s %s(%s) { %s return %s; }" ret_t_name f.fname args_str
+          (expr_to_str f.fbody) f.fbody.ret
       else
-        sprintf "%s %s(%s) { %s %s return %s; }" (type_name ret_type) f.fname
-          args_str locals_str (expr_to_str f.fbody) f.fbody.ret
+        sprintf "%s %s(%s) { %s %s return %s; }" ret_t_name f.fname args_str
+          locals_str (expr_to_str f.fbody) f.fbody.ret
     in
     prog.cur_func.fbody <-
       { e with ebody = prog.cur_func.fbody.ebody ^ e.ebody };
@@ -225,7 +244,7 @@ module Code () : Sigs.CODE = struct
     { ebody = ""; ret = vname; etype = vtype; efree = []; eeffect = false }
 
   let assign x ~to_:v =
-    eformat ~has_effect:true "0" Unit {|$(v) = $(x);|}
+    eformat ~has_effect:true "0" unit_t {|$(v) = $(x);|}
       [ ("x", C x); ("v", C v) ]
 
   let let_global v b =
@@ -252,73 +271,64 @@ module Code () : Sigs.CODE = struct
       type_ ""
       [ ("arg1", C x); ("arg2", C x') ]
 
-  let int_t = Int
+  let int x = eformat (sprintf "%d" x) int_t "" []
 
-  let bool_t = Bool
+  let bool x = eformat (if x then "1" else "0") bool_t "" []
 
-  let unit_t = Unit
-
-  let int x = eformat (sprintf "%d" x) Int "" []
-
-  let bool x = eformat (if x then "1" else "0") Bool "" []
-
-  let unit = eformat "0" Unit "" []
+  let unit = eformat "0" unit_t "" []
 
   let rec seq_many = function [] -> unit | x :: xs -> seq x (seq_many xs)
 
-  let ( ~- ) x = unop "(-%s)" Int x
+  let ( ~- ) x = unop "(-%s)" int_t x
 
-  let ( + ) x y = binop "(%s + %s)" Int x y
+  let ( + ) x y = binop "(%s + %s)" int_t x y
 
-  let ( - ) x y = binop "(%s - %s)" Int x y
+  let ( - ) x y = binop "(%s - %s)" int_t x y
 
-  let ( * ) x y = binop "(%s * %s)" Int x y
+  let ( * ) x y = binop "(%s * %s)" int_t x y
 
-  let ( / ) x y = binop "(%s / %s)" Int x y
+  let ( / ) x y = binop "(%s / %s)" int_t x y
 
-  let ( mod ) x y = binop "(%s %% %s)" Int x y
+  let ( mod ) x y = binop "(%s %% %s)" int_t x y
 
-  let ( = ) x y = binop "(%s == %s)" Bool x y
+  let ( = ) x y = binop "(%s == %s)" bool_t x y
 
-  let ( > ) x y = binop "(%s > %s)" Bool x y
+  let ( > ) x y = binop "(%s > %s)" bool_t x y
 
-  let ( < ) x y = binop "(%s < %s)" Bool x y
+  let ( < ) x y = binop "(%s < %s)" bool_t x y
 
-  let ( <= ) x y = binop "(%s <= %s)" Bool x y
+  let ( <= ) x y = binop "(%s <= %s)" bool_t x y
 
-  let ( >= ) x y = binop "(%s >= %s)" Bool x y
+  let ( >= ) x y = binop "(%s >= %s)" bool_t x y
 
-  let ( && ) x y = binop "(%s && %s)" Bool x y
+  let ( && ) x y = binop "(%s && %s)" bool_t x y
 
-  let ( || ) x y = binop "(%s || %s)" Bool x y
+  let ( || ) x y = binop "(%s || %s)" bool_t x y
 
-  let not x = unop "(!%s)" Bool x
+  let not x = unop "(!%s)" bool_t x
 
-  let min x y = binop "std::min(%s, %s)" Int x y
+  let min x y = binop "std::min(%s, %s)" int_t x y
 
-  let max x y = binop "std::max(%s, %s)" Int x y
+  let max x y = binop "std::max(%s, %s)" int_t x y
 
   let rec sseq = function [] -> unit | [ x ] -> x | x :: xs -> seq x (sseq xs)
 
   let print s =
-    eformat ~has_effect:true "0" Unit "std::cout << $(str) << std::endl;"
+    eformat ~has_effect:true "0" unit_t "std::cout << $(str) << std::endl;"
       [ ("str", S (sprintf "%S" s)) ]
 
-  let exit = eformat ~has_effect:true "0" Unit "exit(0);" []
-
-  let to_func_t = function Func (t, t') -> (t, t') | _ -> assert false
-
-  let func_t arg_t ret_t = Func (arg_t, ret_t)
+  let exit = eformat ~has_effect:true "0" unit_t "exit(0);" []
 
   let add_func f = prog.funcs <- f :: prog.funcs
 
   let func name type_ f =
-    let in_type, _ = to_func_t type_ in
     let fval =
       { ret = name; ebody = ""; etype = type_; efree = []; eeffect = false }
     in
     if Option.is_none (find_func name) then (
-      let arg = { vname = fresh_name (); vtype = in_type; init = None } in
+      let arg =
+        { vname = fresh_name (); vtype = Func.arg_t type_; init = None }
+      in
       let func =
         {
           fname = name;
@@ -339,8 +349,8 @@ module Code () : Sigs.CODE = struct
   let apply f arg =
     match find_func f.ret with
     | Some func ->
-        let _, ret_type = to_func_t func.ftype in
-        if [%compare.equal: ctype] ret_type Unit then
+        let ret_type = Func.ret_t func.ftype in
+        if Univ_map.mem ret_type is_unit then
           eformat ~has_effect:true "0" ret_type "$(f)($(arg));"
             [ ("f", S func.fname); ("arg", C arg) ]
         else
@@ -375,11 +385,11 @@ if ($(cond)) {
     let_locus @@ fun () ->
     let i, body =
       with_stackmark (fun m ->
-          let i = fresh_var Int m in
+          let i = fresh_var int_t m in
           let body = let_locus @@ fun () -> f i in
           (i, body))
     in
-    eformat "0" Unit
+    eformat "0" unit_t
       {|
 for(int $(i) = $(lo); $(i) < $(hi); $(i) += $(step)) {
       $(body)
@@ -394,33 +404,24 @@ for(int $(i) = $(lo); $(i) < $(hi); $(i) += $(step)) {
       ]
 
   module Array = struct
-    let mk_type e =
-      let name = sprintf "std::vector<%s >" (type_name e) in
-      Array { name; elem_type = e }
+    let elem_t = Univ_map.Key.create ~name:"elem_t" [%sexp_of: ctype]
 
-    let elem_type = function
-      | Array { elem_type; _ } -> elem_type
-      | t ->
-          Error.create "Expected an array type." t [%sexp_of: ctype]
-          |> Error.raise
+    let elem_type t = Univ_map.find_exn t elem_t
 
     module O = struct
-      let ( = ) a a' = binop "(%s == %s)" Bool a a'
+      let ( = ) a a' = binop "(%s == %s)" bool_t a a'
     end
 
-    let length x = unop "((int)((%s).size()))" Int x
-
-    let is_array_type = function Array _ -> () | _ -> assert false
+    let length x = unop "((int)((%s).size()))" int_t x
 
     let const t a =
-      is_array_type t;
       let a = Array.to_list a in
       let name = fresh_name () in
       add_var_decl
         { vname = name; vtype = t; init = Some (int (List.length a)) };
       let assigns =
         List.mapi a ~f:(fun i x ->
-            eformat "0" Unit {|$(name)[$(idx)] = $(val);|}
+            eformat "0" unit_t {|$(name)[$(idx)] = $(val);|}
               [ ("name", S name); ("idx", S (sprintf "%d" i)); ("val", C x) ])
         |> sseq
       in
@@ -434,14 +435,14 @@ for(int $(i) = $(lo); $(i) < $(hi); $(i) += $(step)) {
       |> with_comment "Array.const"
 
     let clear a =
-      eformat ~has_effect:true "0" Unit "$(a).clear();" [ ("a", C a) ]
+      eformat ~has_effect:true "0" unit_t "$(a).clear();" [ ("a", C a) ]
 
     let reserve a n =
-      eformat ~has_effect:true "0" Unit "$(a).reserve($(n));"
+      eformat ~has_effect:true "0" unit_t "$(a).reserve($(n));"
         [ ("a", C a); ("n", C n) ]
 
     let push_back a x =
-      eformat ~has_effect:true "0" Unit "$(a).push_back($(x));"
+      eformat ~has_effect:true "0" unit_t "$(a).push_back($(x));"
         [ ("a", C a); ("x", C x) ]
 
     let init t len f =
@@ -456,7 +457,7 @@ for(int $(i) = $(lo); $(i) < $(hi); $(i) += $(step)) {
       |> genlet |> with_comment "Array.init"
 
     let set a i x =
-      eformat ~has_effect:true "0" Unit "$(a)[$(i)] = $(x);"
+      eformat ~has_effect:true "0" unit_t "$(a)[$(i)] = $(x);"
         [ ("a", C a); ("i", C i); ("x", C x) ]
 
     let get a x =
@@ -479,16 +480,36 @@ for(int $(i) = $(lo); $(i) < $(hi); $(i) += $(step)) {
           acc;
         ]
       |> with_comment "Array.fold"
+
+    let iter arr ~f =
+      sseq
+        [
+          ( let_ (length arr) @@ fun len ->
+            for_ (int 0) (int 1) len (fun i -> f (get arr i)) );
+        ]
+      |> with_comment "Array.iter"
+
+    let rec mk_type e =
+      let of_sexp_f x =
+        let sexp_l =
+          eformat "((list*)$(x).get())->get_body()" (mk_type e) ""
+            [ ("x", C x) ]
+        in
+        init (mk_type e)
+          (eformat "($(x)).size()" int_t "" [ ("x", C sexp_l) ])
+          (Type.of_sexp e)
+      in
+
+      Type.create
+        ~name:(sprintf "std::vector<%s >" (Type.name e))
+        ~of_sexp:of_sexp_f
+      |> Type.add_exn ~key:elem_t ~data:e
   end
 
   module Set = struct
-    let mk_type e =
-      let name = sprintf "std::set<%s >" (type_name e) in
-      Set { name; elem_type = e }
+    let elem_t = Univ_map.Key.create ~name:"elem_t" [%sexp_of: ctype]
 
-    let elem_type = function
-      | Set { elem_type; _ } -> elem_type
-      | _ -> assert false
+    let elem_type t = Univ_map.find_exn t elem_t
 
     let empty ctype =
       let set = fresh_name () in
@@ -511,7 +532,7 @@ for(int $(i) = $(lo); $(i) < $(hi); $(i) += $(step)) {
             in
             let_locus @@ fun () -> f arg)
       in
-      eformat "0" Unit
+      eformat "0" unit_t
         {|
 for(auto $(iter) = $(set).begin(); $(iter) != $(set).end(); ++$(iter)) {
         $(body)
@@ -530,22 +551,49 @@ for(auto $(iter) = $(set).begin(); $(iter) != $(set).end(); ++$(iter)) {
       |> with_comment "Set.fold"
 
     let add a x =
-      eformat ~has_effect:true "0" Unit "$(name).insert($(val));"
+      eformat ~has_effect:true "0" unit_t "$(name).insert($(val));"
         [ ("name", C a); ("val", C x) ]
+
+    let rec mk_type e =
+      let of_sexp x =
+        let_ (empty (mk_type e)) @@ fun s ->
+        let_ (Type.of_sexp (Array.mk_type e) x) @@ fun a ->
+        Array.iter a ~f:(fun v -> add s (Type.of_sexp e v))
+      in
+      Type.create ~name:(sprintf "std::set<%s >" (Type.name e)) ~of_sexp
+      |> Type.add_exn ~key:elem_t ~data:e
   end
 
   module Tuple = struct
-    let mk_type x y =
-      let name = sprintf "std::pair<%s,%s >" (type_name x) (type_name y) in
-      Tuple (name, x, y)
+    let fst_t = Univ_map.Key.create ~name:"fst_t" [%sexp_of: ctype]
 
-    let fst_type = function Tuple (_, x, _) -> x | _ -> assert false
+    let snd_t = Univ_map.Key.create ~name:"snd_t" [%sexp_of: ctype]
 
-    let snd_type = function Tuple (_, _, x) -> x | _ -> assert false
+    let rec mk_type x y =
+      let of_sexp x =
+        let fst =
+          eformat "(((list*)($(x)).get())->get_body())[0]" Sexp.type_ ""
+            [ ("x", C x) ]
+        in
+        let snd =
+          eformat "(((list*)($(x)).get())->get_body())[0]" Sexp.type_ ""
+            [ ("x", C x) ]
+        in
+        create fst snd
+      in
+      Type.create
+        ~name:(sprintf "std::pair<%s,%s >" (Type.name x) (Type.name y))
+        ~of_sexp
+      |> Type.add_exn ~key:fst_t ~data:x
+      |> Type.add_exn ~key:snd_t ~data:y
 
-    let create x y =
+    and create x y =
       let type_ = mk_type x.etype y.etype in
       eformat "std::make_pair($(x), $(y))" type_ "" [ ("x", C x); ("y", C y) ]
+
+    let fst_type t = Univ_map.find_exn t fst_t
+
+    let snd_type t = Univ_map.find_exn t snd_t
 
     let fst t = eformat "std::get<0>($(t))" (fst_type t.etype) "" [ ("t", C t) ]
 
@@ -553,27 +601,18 @@ for(auto $(iter) = $(set).begin(); $(iter) != $(set).end(); ++$(iter)) {
   end
 
   module String = struct
-    let type_ = String
+    let rec type_ () =
+      let of_sexp x =
+        eformat "((atom*)$(x).get())->get_body()" (type_ ()) "" [ ("x", C x) ]
+      in
+      Type.create ~name:"std::string" ~of_sexp
+
+    let type_ = type_ ()
 
     let const s = eformat "\"$(s)\"" type_ "" [ ("s", S (sprintf "%S" s)) ]
 
     let print s =
       eformat ~has_effect:true "0" unit_t "std::cout << $(str) << std::endl;"
         [ ("str", C s) ]
-  end
-
-  module Sexp = struct
-    let type_ = Sexp
-
-    let is_atom x = eformat "is_atom($(x))" bool_t "" [ ("x", C x) ]
-
-    let is_list x = not (is_atom x)
-
-    let to_string x =
-      eformat "((atom*)$(x).get())->get_body()" String.type_ "" [ ("x", C x) ]
-
-    let to_array x =
-      eformat "((list*)$(x).get())->get_body()" (Array.mk_type type_) ""
-        [ ("x", C x) ]
   end
 end

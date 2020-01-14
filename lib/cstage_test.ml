@@ -45,8 +45,8 @@ let%expect_test "" =
 let%expect_test "" =
   let module C = Code () in
   let open C in
-  let f = func "f" (func_t int_t int_t) (fun i -> i + int 1) in
-  let g = func "g" (func_t int_t int_t) (fun i -> i - int 1) in
+  let f = func "f" (Func.type_ int_t int_t) (fun i -> i + int 1) in
+  let g = func "g" (Func.type_ int_t int_t) (fun i -> i - int 1) in
   let code = apply f (apply g (int 0)) in
   let code = to_string code in
   code |> Util.clang_format |> print_endline;
@@ -68,7 +68,7 @@ let%expect_test "" =
   let module C = Code () in
   let open C in
   let int_array = Array.mk_type int_t in
-  let f = func "f" (func_t int_array int_t) (fun a -> a.(int 0)) in
+  let f = func "f" (Func.type_ int_array int_t) (fun a -> a.(int 0)) in
   let code = apply f (Array.init int_array (int 10) (fun i -> i)) in
   let code = to_string code in
   code |> Util.clang_format |> print_endline;
