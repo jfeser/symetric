@@ -57,6 +57,8 @@ module type CODE = sig
 
   type 'a set
 
+  type sexp
+
   type ctype [@@deriving sexp_of]
 
   val type_of : 'a t -> ctype
@@ -79,43 +81,55 @@ module type CODE = sig
   (* Values *)
   val unit : unit t
 
-  val int : int -> int32 t
-
-  val bool : bool -> bool t
-
   (* Integer operations *)
-  val ( ~- ) : int32 t -> int32 t
+  module Int : sig
+    val type_ : ctype
 
-  val ( + ) : int32 t -> int32 t -> int32 t
+    val int : int -> int32 t
 
-  val ( - ) : int32 t -> int32 t -> int32 t
+    val ( ~- ) : int32 t -> int32 t
 
-  val ( * ) : int32 t -> int32 t -> int32 t
+    val ( + ) : int32 t -> int32 t -> int32 t
 
-  val ( / ) : int32 t -> int32 t -> int32 t
+    val ( - ) : int32 t -> int32 t -> int32 t
 
-  val ( mod ) : int32 t -> int32 t -> int32 t
+    val ( * ) : int32 t -> int32 t -> int32 t
 
-  val ( > ) : int32 t -> int32 t -> bool t
+    val ( / ) : int32 t -> int32 t -> int32 t
 
-  val ( < ) : int32 t -> int32 t -> bool t
+    val ( mod ) : int32 t -> int32 t -> int32 t
 
-  val ( >= ) : int32 t -> int32 t -> bool t
+    val ( > ) : int32 t -> int32 t -> bool t
 
-  val ( <= ) : int32 t -> int32 t -> bool t
+    val ( < ) : int32 t -> int32 t -> bool t
 
-  val ( = ) : int32 t -> int32 t -> bool t
+    val ( >= ) : int32 t -> int32 t -> bool t
 
-  val min : int32 t -> int32 t -> int32 t
+    val ( <= ) : int32 t -> int32 t -> bool t
 
-  val max : int32 t -> int32 t -> int32 t
+    val ( = ) : int32 t -> int32 t -> bool t
+
+    val min : int32 t -> int32 t -> int32 t
+
+    val max : int32 t -> int32 t -> int32 t
+
+    val of_sexp : sexp t -> int32 t
+  end
 
   (* Boolean operations *)
-  val ( && ) : bool t -> bool t -> bool t
+  module Bool : sig
+    val type_ : ctype
 
-  val ( || ) : bool t -> bool t -> bool t
+    val bool : bool -> bool t
 
-  val not : bool t -> bool t
+    val ( && ) : bool t -> bool t -> bool t
+
+    val ( || ) : bool t -> bool t -> bool t
+
+    val not : bool t -> bool t
+
+    val of_sexp : sexp t -> bool t
+  end
 
   (* Function operations *)
   module Func : sig
@@ -142,6 +156,8 @@ module type CODE = sig
 
     val fold : 'a array t -> init:'b t -> f:('b t -> 'a t -> 'b t) -> 'b t
 
+    val iter : 'a array t -> f:('a t -> unit t) -> unit t
+
     val sub : 'a array t -> int32 t -> int32 t -> 'a array t
 
     val init : ctype -> int32 t -> (int32 t -> 'a t) -> 'a array t
@@ -154,6 +170,8 @@ module type CODE = sig
       'b array t ->
       f:('a t -> 'b t -> 'c t) ->
       'c array t
+
+    val of_sexp : ctype -> sexp t -> ('a t -> sexp t) -> 'a array t
   end
 
   module Set : sig
@@ -166,6 +184,8 @@ module type CODE = sig
     val iter : 'a set t -> ('a t -> unit t) -> unit t
 
     val fold : 'a set t -> init:'b t -> f:('b t -> 'a t -> 'b t) -> 'b t
+
+    val of_sexp : ctype -> sexp t -> ('a t -> sexp t) -> 'a set t
   end
 
   (* Tuples *)
@@ -177,6 +197,26 @@ module type CODE = sig
     val fst : ('a * 'b) t -> 'a t
 
     val snd : ('a * 'b) t -> 'b t
+
+    val of_sexp : sexp t -> ('a t -> sexp t) -> ('b t -> sexp t) -> ('a * 'b) t
+  end
+
+  module String : sig
+    val type_ : ctype
+
+    val const : string -> string t
+
+    val input : string t
+
+    val print : string t -> unit t
+
+    val of_sexp : sexp t -> string t
+  end
+
+  module Sexp : sig
+    val type_ : ctype
+
+    val input : sexp t
   end
 
   (* Control flow *)

@@ -117,7 +117,9 @@ module Make (C : Sigs.CODE) = struct
 
     let int_array = Array.mk_type int_t
 
-    let rec eval ctx = function
+    let rec eval ctx =
+      let open Int in
+      function
       | Grammar.Term.App ("(+1)", []) -> F_int (fun x -> x + int 1)
       | App ("(-1)", []) -> F_int (fun x -> x - int 1)
       | App ("(*2)", []) -> F_int (fun x -> x * int 2)
@@ -142,7 +144,7 @@ module Make (C : Sigs.CODE) = struct
       | App (x, []) -> (
           match
             List.find_mapi inputs ~f:(fun i (_, v) ->
-                if String.(x = sprintf "i%d" i) then Some v else None)
+                if Core.String.(x = sprintf "i%d" i) then Some v else None)
           with
           | Some v -> v
           | None -> (
@@ -150,7 +152,7 @@ module Make (C : Sigs.CODE) = struct
               | Some v -> v
               | None ->
                   Error.create "Unbound name." (x, ctx)
-                    [%sexp_of: string * value Map.M(String).t]
+                    [%sexp_of: string * value Map.M(Core.String).t]
                   |> Error.raise ) )
       | App ("head", [ e ]) ->
           I
@@ -270,22 +272,22 @@ module Make (C : Sigs.CODE) = struct
       let sizes_t = Array.mk_type int_t in
       let mk_type t = Array.mk_type @@ Set.mk_type (Tuple.mk_type t sizes_t) in
       let mk_empty t =
-        Array.init t (int max_size) (fun _ -> Set.empty (Array.elem_type t))
+        Array.init t (Int.int max_size) (fun _ -> Set.empty (Array.elem_type t))
       in
       let i_cache_t = mk_type Value.int_type in
       let a_cache_t = mk_type Value.array_type in
       Log.debug (fun m ->
           m "Array type: %s"
-            (Sexp.to_string @@ [%sexp_of: ctype] Value.array_type));
+            (Core.Sexp.to_string @@ [%sexp_of: ctype] Value.array_type));
       Log.debug (fun m ->
           m "Array cache type: %s"
-            (Sexp.to_string @@ [%sexp_of: ctype] a_cache_t));
+            (Core.Sexp.to_string @@ [%sexp_of: ctype] a_cache_t));
       let_global (mk_empty i_cache_t) (fun ti ->
           let_global (mk_empty a_cache_t) (fun ta ->
               k { ints = ti; arrays = ta }))
 
     let put ~sym:_ ~size ~sizes { ints = tbl_i; arrays = tbl_a; _ } v =
-      let key = int size in
+      let key = Int.int size in
       let add tbl v = Set.add tbl.(key) (Tuple.create v sizes) in
       match v with
       | Value.I v -> add tbl_i v

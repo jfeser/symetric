@@ -12,12 +12,16 @@ module Code : Sigs.CODE = struct
       | Tuple of (t * t)
       | Set of t Set.Poly.t ref
       | Func of ((t -> t)[@compare.ignore])
+      | Sexp of Sexp.t
+      | String of string
     [@@deriving compare, sexp_of]
   end
 
   open Value
 
   type 'a set
+
+  type sexp
 
   type 'a t = (unit -> Value.t[@opaque]) [@@deriving sexp_of]
 
@@ -31,13 +35,15 @@ module Code : Sigs.CODE = struct
 
   let let_locus f = f ()
 
-  let to_string _ = failwith "Undefined"
-
   let to_int x = match x () with Int x -> x | _ -> assert false
 
   let to_bool x = match x () with Bool x -> x | _ -> assert false
 
   let to_unit x = match x () with Unit -> () | _ -> assert false
+
+  let to_sexp x = match x () with Sexp x -> x | _ -> assert false
+
+  let to_string x = match x () with String x -> x | _ -> assert false
 
   let to_value x = x ()
 
@@ -55,47 +61,82 @@ module Code : Sigs.CODE = struct
 
   let unit () = Unit
 
-  let int x () = Int x
+  module Sexp = struct
+    let type_ = ()
 
-  let bool x () = Bool x
+    let input () = Sexp (Sexp.input_sexp In_channel.stdin)
+  end
 
-  let ( ~- ) x () = Int (-to_int x)
+  module Int = struct
+    let type_ = int_t
 
-  let int_binop f x x' () = Int (f (to_int x) (to_int x'))
+    let int x () = Int x
 
-  let ( + ) = int_binop ( + )
+    let ( ~- ) x () = Int (-to_int x)
 
-  let ( - ) = int_binop ( - )
+    let int_binop f x x' () = Int (f (to_int x) (to_int x'))
 
-  let ( * ) = int_binop ( * )
+    let ( + ) = int_binop ( + )
 
-  let ( / ) = int_binop ( / )
+    let ( - ) = int_binop ( - )
 
-  let ( mod ) = int_binop ( mod )
+    let ( * ) = int_binop ( * )
 
-  let min = int_binop Int.min
+    let ( / ) = int_binop ( / )
 
-  let max = int_binop Int.max
+    let ( mod ) = int_binop ( mod )
 
-  let cmp_binop f x x' () = Bool (f (to_int x) (to_int x'))
+    let min = int_binop Int.min
 
-  let ( > ) = cmp_binop ( > )
+    let max = int_binop Int.max
 
-  let ( >= ) = cmp_binop ( >= )
+    let cmp_binop f x x' () = Bool (f (to_int x) (to_int x'))
 
-  let ( < ) = cmp_binop ( < )
+    let ( > ) = cmp_binop ( > )
 
-  let ( <= ) = cmp_binop ( <= )
+    let ( >= ) = cmp_binop ( >= )
 
-  let ( = ) = cmp_binop ( = )
+    let ( < ) = cmp_binop ( < )
 
-  let bool_binop f x x' () = Bool (f (to_bool x) (to_bool x'))
+    let ( <= ) = cmp_binop ( <= )
 
-  let ( && ) = bool_binop ( && )
+    let ( = ) = cmp_binop ( = )
 
-  let ( || ) = bool_binop ( || )
+    let of_sexp x () = Int ([%of_sexp: int] (to_sexp x))
+  end
 
-  let not x () = Bool (not (to_bool x))
+  module Bool = struct
+    let type_ = bool_t
+
+    let bool x () = Bool x
+
+    let bool_binop f x x' () = Bool (f (to_bool x) (to_bool x'))
+
+    let ( && ) = bool_binop ( && )
+
+    let ( || ) = bool_binop ( || )
+
+    let not x () = Bool (not (to_bool x))
+
+    let of_sexp x () = Bool ([%of_sexp: bool] (to_sexp x))
+  end
+
+  module String = struct
+    let type_ = ()
+
+    let of_sexp x () =
+      match to_sexp x with
+      | Atom s -> String s
+      | _ -> failwith "Expected an atom."
+
+    let print s () =
+      print_endline (to_string s);
+      Unit
+
+    let input () = String (In_channel.input_all In_channel.stdin)
+
+    let const s () = String s
+  end
 
   module Array = struct
     let mk_type _ = ()
@@ -124,11 +165,15 @@ module Code : Sigs.CODE = struct
       |> Array.fold ~init ~f:(fun acc x -> f acc (fun () -> x))
       |> to_value
 
+    let iter a ~f () =
+      to_array a |> Array.iter ~f:(fun x -> f (fun () -> x) |> to_unit);
+      Unit
+
     let sub a i i' () =
       Array (to_array a |> Array.(sub ~pos:(to_int i) ~len:(to_int i')))
 
     let init _ i f () =
-      Array (Array.init (to_int i) ~f:(fun i -> f (int i) |> to_value))
+      Array (Array.init (to_int i) ~f:(fun i -> f Int.(int i) |> to_value))
 
     let map _ a ~f () =
       Array (Array.map (to_array a) ~f:(fun x -> f (to_code x) |> to_value))
@@ -137,6 +182,15 @@ module Code : Sigs.CODE = struct
       Array
         (Array.map2_exn (to_array a) (to_array a') ~f:(fun x x' ->
              f (to_code x) (to_code x') |> to_value))
+
+    let of_sexp _ x elem_of_sexp () =
+      match to_sexp x with
+      | List ls ->
+          Array
+            ( List.map ls ~f:(fun s ->
+                  elem_of_sexp (fun () -> Sexp s) |> to_value)
+            |> Array.of_list )
+      | _ -> failwith "Expected a list."
   end
 
   module Set = struct
@@ -157,6 +211,15 @@ module Code : Sigs.CODE = struct
 
     let fold s ~init ~f () =
       Set.fold !(to_set s) ~init ~f:(fun acc x -> f acc (to_code x)) |> to_value
+
+    let of_sexp _ x elem_of_sexp () =
+      match to_sexp x with
+      | List ls ->
+          Set
+            ( List.map ls ~f:(fun s ->
+                  elem_of_sexp (fun () -> Sexp s) |> to_value)
+            |> Set.Poly.of_list |> ref )
+      | _ -> failwith "Expected a list."
   end
 
   module Tuple = struct
@@ -173,6 +236,14 @@ module Code : Sigs.CODE = struct
     let snd x () =
       let _, x = to_tuple x in
       x
+
+    let of_sexp x t1_of_sexp t2_of_sexp () =
+      match to_sexp x with
+      | List [ t1; t2 ] ->
+          Tuple
+            ( t1_of_sexp (fun () -> Sexp t1) |> to_value,
+              t2_of_sexp (fun () -> Sexp t2) |> to_value )
+      | _ -> failwith "Expected a list."
   end
 
   let for_ l s h f () =
@@ -180,10 +251,10 @@ module Code : Sigs.CODE = struct
     let step = to_int s in
     let hi = to_int h in
     let rec loop i =
-      if Int.(i >= hi) then Unit
+      if Core.Int.(i >= hi) then Unit
       else (
-        to_unit (f (int i));
-        loop Int.(i + step) )
+        to_unit (f Int.(int i));
+        loop Core.Int.(i + step) )
     in
     loop lo
 

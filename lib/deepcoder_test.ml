@@ -15,7 +15,7 @@ module Examples = struct
           ( Array.const (Array.mk_type (Array.mk_type int_t))
           @@ [|
                Array.const (Array.mk_type int_t)
-                 [| int 3; int 7; int 5; int 2; int 8 |];
+                 Int.[| int 3; int 7; int 5; int 2; int 8 |];
              |] ) );
     ]
 
@@ -25,7 +25,7 @@ module Examples = struct
         ( Array.const (Array.mk_type (Array.mk_type int_t))
         @@ [|
              Array.const (Array.mk_type int_t)
-               [| int 3; int 2; int 5; int 2; int 3 |];
+               Int.[| int 3; int 2; int 5; int 2; int 3 |];
            |] ) )
 end
 
@@ -39,105 +39,105 @@ let%expect_test "" =
     #include <iostream>
     #include <set>
     #include <vector>
-    int reconstruct_L_1(const std::vector<std::vector<int>> &x13);
+    int reconstruct_L_1(const std::vector<std::vector<int>> &x15);
     int main();
-    std::vector<int> x0(5);
-    std::vector<std::vector<int>> x1(1);
     std::vector<int> x2(5);
     std::vector<std::vector<int>> x3(1);
-    std::vector<std::set<std::pair<std::vector<int>, std::vector<int>>>> x4;
-    std::set<std::pair<std::vector<int>, std::vector<int>>> x6;
-    std::vector<std::set<std::pair<std::vector<int>, std::vector<int>>>> x7;
+    std::vector<int> x4(5);
+    std::vector<std::vector<int>> x5(1);
+    std::vector<std::set<std::pair<std::vector<int>, std::vector<int>>>> x6;
+    std::set<std::pair<std::vector<int>, std::vector<int>>> x8;
+    std::vector<std::set<std::pair<std::vector<int>, std::vector<int>>>> x9;
     std::vector<
         std::set<std::pair<std::vector<std::vector<int>>, std::vector<int>>>>
-        x8;
-    std::set<std::pair<std::vector<std::vector<int>>, std::vector<int>>> x10;
+        x10;
+    std::set<std::pair<std::vector<std::vector<int>>, std::vector<int>>> x12;
     std::vector<
         std::set<std::pair<std::vector<std::vector<int>>, std::vector<int>>>>
-        x11;
-    int x17;
-    std::vector<int> x18(0);
+        x13;
+    int x19;
+    std::vector<int> x20(0);
     int main() {
       // begin Array.init
-      x4.clear();
-      x4.reserve(100);
-      for (int x5 = 0; x5 < 100; x5 += 1) {
-        x4.push_back(x6);
+      x6.clear();
+      x6.reserve(100);
+      for (int x7 = 0; x7 < 100; x7 += 1) {
+        x6.push_back(x8);
       }
       // end Array.init
-      x7 = x4;
+      x9 = x6;
       // begin Array.init
-      x8.clear();
-      x8.reserve(100);
-      for (int x9 = 0; x9 < 100; x9 += 1) {
-        x8.push_back(x10);
+      x10.clear();
+      x10.reserve(100);
+      for (int x11 = 0; x11 < 100; x11 += 1) {
+        x10.push_back(x12);
       }
       // end Array.init
-      x11 = x8;
-      // begin Array.const
-
-      // begin Array.const
-      x0[0] = 3;
-      x0[1] = 7;
-      x0[2] = 5;
-      x0[3] = 2;
-      x0[4] = 8;  // end Array.const
-      x1[0] = x0; // end Array.const
-      std::vector<std::vector<int>> x12 = x1;
+      x13 = x10;
       // begin Array.const
 
       // begin Array.const
       x2[0] = 3;
-      x2[1] = 2;
+      x2[1] = 7;
       x2[2] = 5;
       x2[3] = 2;
-      x2[4] = 3;  // end Array.const
+      x2[4] = 8;  // end Array.const
       x3[0] = x2; // end Array.const
+      std::vector<std::vector<int>> x14 = x3;
+      // begin Array.const
 
-      if ((x12 == x3)) {
+      // begin Array.const
+      x4[0] = 3;
+      x4[1] = 2;
+      x4[2] = 5;
+      x4[3] = 2;
+      x4[4] = 3;  // end Array.const
+      x5[0] = x4; // end Array.const
+
+      if ((x14 == x5)) {
         std::cout << "Starting reconstruction" << std::endl;
         // begin Array.const
 
         // begin Array.const
-        x2[0] = 3;
-        x2[1] = 2;
-        x2[2] = 5;
-        x2[3] = 2;
-        x2[4] = 3;  // end Array.const
-        x3[0] = x2; // end Array.const
-        reconstruct_L_1(x3);
-        int x16 = 0;
+        x4[0] = 3;
+        x4[1] = 2;
+        x4[2] = 5;
+        x4[3] = 2;
+        x4[4] = 3;  // end Array.const
+        x5[0] = x4; // end Array.const
+        reconstruct_L_1(x5);
+        int x18 = 0;
         exit(0);
-        x17 = 0;
+        x19 = 0;
       } else {
 
-        x17 = 0;
+        x19 = 0;
       }
       std::cout << "Inserting (L -> i0) cost 1" << std::endl;
       // begin Array.const
       // end Array.const
-      (x11[1]).insert(std::make_pair(x12, x18));
+      (x13[1]).insert(std::make_pair(x14, x20));
       return 0;
     }
-    int reconstruct_L_1(const std::vector<std::vector<int>> &x13) {
-      int x15;
-      std::vector<std::vector<int>> x14 = x13;
+    int reconstruct_L_1(const std::vector<std::vector<int>> &x15) {
+      int x17;
+      std::vector<std::vector<int>> x16 = x15;
       // begin Array.const
 
       // begin Array.const
-      x0[0] = 3;
-      x0[1] = 7;
-      x0[2] = 5;
-      x0[3] = 2;
-      x0[4] = 8;  // end Array.const
-      x1[0] = x0; // end Array.const
+      x2[0] = 3;
+      x2[1] = 7;
+      x2[2] = 5;
+      x2[3] = 2;
+      x2[4] = 8;  // end Array.const
+      x3[0] = x2; // end Array.const
 
-      if ((0 || (x1 == x14))) {
+      if ((0 || (x3 == x16))) {
         std::cout << "(App i0 ())" << std::endl;
-        x15 = 0;
+        x17 = 0;
       } else {
 
-        x15 = 0;
+        x17 = 0;
       }
       return 0;
     }

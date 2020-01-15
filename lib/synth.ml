@@ -144,6 +144,7 @@ module Make
     (L : Sigs.LANG with type 'a code = 'a S.t and type type_ = S.ctype)
     (C : Sigs.CACHE with type value = L.value and type 'a code = 'a S.t) =
 struct
+  open S.Int
   open C
   module Gr = Grammar
 
@@ -180,8 +181,8 @@ struct
       let check args =
         let term, ctxs = to_contexts term args in
         let found_target =
-          List.fold_left ctxs ~init:(S.bool false) ~f:(fun found ctx ->
-              S.(found || L.eq (L.eval ctx term) target))
+          List.fold_left ctxs ~init:(S.Bool.bool false) ~f:(fun found ctx ->
+              S.Bool.(found || L.eq (L.eval ctx term) target))
         in
         S.ite found_target
           (fun () ->
@@ -194,7 +195,7 @@ struct
         List.fold_left args ~init:check ~f:(fun check node ->
             let state = V.to_state node in
             let check ctx =
-              C.iter ~sym:state.V.symbol ~size:(S.int state.V.cost)
+              C.iter ~sym:state.V.symbol ~size:(int state.V.cost)
                 ~f:(fun (v, _) -> check ((state, v) :: ctx))
                 tbl
             in
@@ -242,7 +243,7 @@ struct
 
     Log.debug (fun m -> m "%s" ([%sexp_of: Gr.t] L.grammar |> Sexp.to_string));
     for cost = 0 to max_cost do
-      List.filter L.grammar ~f:(fun (_, rhs) -> Gr.Term.size rhs <= cost)
+      List.filter L.grammar ~f:(fun (_, rhs) -> Int.(Gr.Term.size rhs <= cost))
       |> List.iter ~f:(fun (lhs, rhs) ->
              let lhs_v = V.State { cost; symbol = lhs } in
              let rhs_v = V.Code { cost; term = rhs } in
@@ -251,7 +252,7 @@ struct
              let n_holes = Gr.Term.n_holes rhs in
              let size = Gr.Term.size rhs in
              Combinat.Partition.iter
-               (cost - size + n_holes, n_holes)
+               Int.(cost - size + n_holes, n_holes)
                ~f:(fun costs ->
                  let arg = V.Arg { id = Fresh.int fresh; n_args = n_holes } in
                  Gr.Term.non_terminals rhs
@@ -285,7 +286,7 @@ struct
       || List.exists sinks ~f:(fun v' -> G.mem_edge g_trans v' v) )
       && ( List.mem sources v ~equal
          || List.exists sources ~f:(fun v' -> G.mem_edge g_trans v v') )
-      && match v with Arg x -> x.n_args = G.out_degree g v | _ -> true
+      && match v with Arg x -> Int.(x.n_args = G.out_degree g v) | _ -> true
     in
 
     let rec prune_loop g =
@@ -296,8 +297,8 @@ struct
             if should_keep g g_trans v then g else G.remove_vertex g v)
           g g
       in
-      if G.nb_vertex g > G.nb_vertex g' || G.nb_edges g > G.nb_edges g' then
-        prune_loop g'
+      if Int.(G.nb_vertex g > G.nb_vertex g' || G.nb_edges g > G.nb_edges g')
+      then prune_loop g'
       else g'
     in
 
@@ -356,8 +357,7 @@ struct
                    |> List.fold_left ~init:fill ~f:(fun fill node ->
                           let state = V.to_state node in
                           let fill ctx =
-                            C.iter ~sym:state.V.symbol
-                              ~size:(S.int state.V.cost)
+                            C.iter ~sym:state.V.symbol ~size:(int state.V.cost)
                               ~f:(fun (v, _) -> fill ((state, v) :: ctx))
                               tbl
                           in

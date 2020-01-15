@@ -6,8 +6,10 @@ let with_stackmark body =
   let p = new_prompt () in
   push_prompt p (fun () -> body (fun () -> is_prompt_set p))
 
-module Code () = struct
+module Code () : Sigs.CODE = struct
   type 'a set
+
+  type sexp
 
   type mark = unit -> bool
 
@@ -43,15 +45,9 @@ module Code () = struct
   module Type = struct
     let name_k = Univ_map.Key.create ~name:"name" [%sexp_of: string]
 
-    let of_sexp_k = Univ_map.Key.create ~name:"of_sexp" [%sexp_of: _]
-
     let name t = Univ_map.find_exn t name_k
 
-    let of_sexp t = Univ_map.find_exn t of_sexp_k
-
-    let create ~name ~of_sexp =
-      Univ_map.(
-        of_alist_exn Packed.[ T (name_k, name); T (of_sexp_k, of_sexp) ])
+    let create ~name = Univ_map.(of_alist_exn Packed.[ T (name_k, name) ])
 
     let add_exn t ~key ~data = Univ_map.add_exn t key data
   end
@@ -88,22 +84,34 @@ module Code () = struct
     in
     { ebody; ret; etype; efree; eeffect = has_effect || eeffect }
 
-  module Sexp = struct
-    let type_ = Type.create ~name:"unique_ptr<sexp>" ~of_sexp:Fun.id
-  end
-
-  let rec int_t () =
-    Type.create ~name:"int" ~of_sexp:(fun x ->
-        eformat "std::stoi(((list*)$(x).get())->get_body())" (int_t ()) ""
-          [ ("x", C x) ])
-
-  let int_t = int_t ()
-
-  let bool_t = int_t
-
   let is_unit = Univ_map.Key.create ~name:"is_unit" [%sexp_of: unit]
 
-  let unit_t = Univ_map.add_exn int_t is_unit ()
+  let unit_t = Type.create ~name:"int" |> Type.add_exn ~key:is_unit ~data:()
+
+  module Sexp = struct
+    let type_ = Type.create ~name:"std::unique_ptr<sexp>"
+
+    module List = struct
+      let get x i = eformat "($(x))[$(i)]" type_ "" [ ("x", C x); ("i", C i) ]
+
+      let length x =
+        eformat "($(x)).size()" (Type.create ~name:"int") "" [ ("x", C x) ]
+
+      let type_ = Type.create ~name:"std::vector<std::unique_ptr<sexp>>"
+    end
+
+    module Atom = struct
+      let type_ = Type.create ~name:"std::string"
+    end
+
+    let input = eformat ~has_effect:true "sexp::load(std::cin)" type_ "" []
+
+    let to_list x =
+      eformat "((list*)$(x).get())->get_body()" List.type_ "" [ ("x", C x) ]
+
+    let to_atom x =
+      eformat "((atom*)$(x).get())->get_body()" Atom.type_ "" [ ("x", C x) ]
+  end
 
   module Func = struct
     let arg_t = Univ_map.Key.create ~name:"arg_t" [%sexp_of: ctype]
@@ -271,45 +279,65 @@ module Code () = struct
       type_ ""
       [ ("arg1", C x); ("arg2", C x') ]
 
-  let int x = eformat (sprintf "%d" x) int_t "" []
+  let int_t = Type.create ~name:"int"
 
-  let bool x = eformat (if x then "1" else "0") bool_t "" []
+  let bool_t = int_t
 
   let unit = eformat "0" unit_t "" []
 
   let rec seq_many = function [] -> unit | x :: xs -> seq x (seq_many xs)
 
-  let ( ~- ) x = unop "(-%s)" int_t x
+  module Int = struct
+    let type_ = int_t
 
-  let ( + ) x y = binop "(%s + %s)" int_t x y
+    let int x = eformat (sprintf "%d" x) int_t "" []
 
-  let ( - ) x y = binop "(%s - %s)" int_t x y
+    let ( ~- ) x = unop "(-%s)" int_t x
 
-  let ( * ) x y = binop "(%s * %s)" int_t x y
+    let ( + ) x y = binop "(%s + %s)" int_t x y
 
-  let ( / ) x y = binop "(%s / %s)" int_t x y
+    let ( - ) x y = binop "(%s - %s)" int_t x y
 
-  let ( mod ) x y = binop "(%s %% %s)" int_t x y
+    let ( * ) x y = binop "(%s * %s)" int_t x y
 
-  let ( = ) x y = binop "(%s == %s)" bool_t x y
+    let ( / ) x y = binop "(%s / %s)" int_t x y
 
-  let ( > ) x y = binop "(%s > %s)" bool_t x y
+    let ( mod ) x y = binop "(%s %% %s)" int_t x y
 
-  let ( < ) x y = binop "(%s < %s)" bool_t x y
+    let ( = ) x y = binop "(%s == %s)" bool_t x y
 
-  let ( <= ) x y = binop "(%s <= %s)" bool_t x y
+    let ( > ) x y = binop "(%s > %s)" bool_t x y
 
-  let ( >= ) x y = binop "(%s >= %s)" bool_t x y
+    let ( < ) x y = binop "(%s < %s)" bool_t x y
 
-  let ( && ) x y = binop "(%s && %s)" bool_t x y
+    let ( <= ) x y = binop "(%s <= %s)" bool_t x y
 
-  let ( || ) x y = binop "(%s || %s)" bool_t x y
+    let ( >= ) x y = binop "(%s >= %s)" bool_t x y
 
-  let not x = unop "(!%s)" bool_t x
+    let min x y = binop "std::min(%s, %s)" int_t x y
 
-  let min x y = binop "std::min(%s, %s)" int_t x y
+    let max x y = binop "std::max(%s, %s)" int_t x y
 
-  let max x y = binop "std::max(%s, %s)" int_t x y
+    let of_sexp x =
+      eformat "std::stoi(((atom*)$(x).get())->get_body())" int_t ""
+        [ ("x", C x) ]
+  end
+
+  open Int
+
+  module Bool = struct
+    let type_ = bool_t
+
+    let bool x = eformat (if x then "1" else "0") bool_t "" []
+
+    let ( && ) x y = binop "(%s && %s)" bool_t x y
+
+    let ( || ) x y = binop "(%s || %s)" bool_t x y
+
+    let not x = unop "(!%s)" bool_t x
+
+    let of_sexp = Int.of_sexp
+  end
 
   let rec sseq = function [] -> unit | [ x ] -> x | x :: xs -> seq x (sseq xs)
 
@@ -406,6 +434,10 @@ for(int $(i) = $(lo); $(i) < $(hi); $(i) += $(step)) {
   module Array = struct
     let elem_t = Univ_map.Key.create ~name:"elem_t" [%sexp_of: ctype]
 
+    let mk_type e =
+      Type.create ~name:(sprintf "std::vector<%s >" (Type.name e))
+      |> Type.add_exn ~key:elem_t ~data:e
+
     let elem_type t = Univ_map.find_exn t elem_t
 
     module O = struct
@@ -418,7 +450,7 @@ for(int $(i) = $(lo); $(i) < $(hi); $(i) += $(step)) {
       let a = Array.to_list a in
       let name = fresh_name () in
       add_var_decl
-        { vname = name; vtype = t; init = Some (int (List.length a)) };
+        { vname = name; vtype = t; init = Some (Int.int (List.length a)) };
       let assigns =
         List.mapi a ~f:(fun i x ->
             eformat "0" unit_t {|$(name)[$(idx)] = $(val);|}
@@ -467,7 +499,9 @@ for(int $(i) = $(lo); $(i) < $(hi); $(i) += $(step)) {
 
     let map2 t a1 a2 ~f = init t (length a1) (fun i -> f (get a1 i) (get a2 i))
 
-    let sub a s l = init a.etype (max (int 0) (l - s)) (fun i -> get a (s + i))
+    let sub a s l =
+      let open Int in
+      init a.etype (max (int 0) (l - s)) (fun i -> get a (s + i))
 
     let fold arr ~init ~f =
       let acc = fresh_global init.etype in
@@ -489,21 +523,8 @@ for(int $(i) = $(lo); $(i) < $(hi); $(i) += $(step)) {
         ]
       |> with_comment "Array.iter"
 
-    let rec mk_type e =
-      let of_sexp_f x =
-        let sexp_l =
-          eformat "((list*)$(x).get())->get_body()" (mk_type e) ""
-            [ ("x", C x) ]
-        in
-        init (mk_type e)
-          (eformat "($(x)).size()" int_t "" [ ("x", C sexp_l) ])
-          (Type.of_sexp e)
-      in
-
-      Type.create
-        ~name:(sprintf "std::vector<%s >" (Type.name e))
-        ~of_sexp:of_sexp_f
-      |> Type.add_exn ~key:elem_t ~data:e
+    let of_sexp t x elem_of_sexp =
+      init t (Sexp.List.length @@ Sexp.to_list x) elem_of_sexp
   end
 
   module Set = struct
@@ -554,14 +575,15 @@ for(auto $(iter) = $(set).begin(); $(iter) != $(set).end(); ++$(iter)) {
       eformat ~has_effect:true "0" unit_t "$(name).insert($(val));"
         [ ("name", C a); ("val", C x) ]
 
-    let rec mk_type e =
-      let of_sexp x =
-        let_ (empty (mk_type e)) @@ fun s ->
-        let_ (Type.of_sexp (Array.mk_type e) x) @@ fun a ->
-        Array.iter a ~f:(fun v -> add s (Type.of_sexp e v))
-      in
-      Type.create ~name:(sprintf "std::set<%s >" (Type.name e)) ~of_sexp
+    let mk_type e =
+      Type.create ~name:(sprintf "std::set<%s >" (Type.name e))
       |> Type.add_exn ~key:elem_t ~data:e
+
+    let of_sexp type_ sexp elem_of_sexp =
+      let_ (empty type_) @@ fun set ->
+      let_ (Sexp.to_list sexp) @@ fun sexp ->
+      for_ (int 0) (int 1) (Sexp.List.length sexp) (fun i ->
+          add set (elem_of_sexp (Sexp.List.get sexp i)))
   end
 
   module Tuple = struct
@@ -569,27 +591,21 @@ for(auto $(iter) = $(set).begin(); $(iter) != $(set).end(); ++$(iter)) {
 
     let snd_t = Univ_map.Key.create ~name:"snd_t" [%sexp_of: ctype]
 
-    let rec mk_type x y =
-      let of_sexp x =
-        let fst =
-          eformat "(((list*)($(x)).get())->get_body())[0]" Sexp.type_ ""
-            [ ("x", C x) ]
-        in
-        let snd =
-          eformat "(((list*)($(x)).get())->get_body())[0]" Sexp.type_ ""
-            [ ("x", C x) ]
-        in
-        create fst snd
-      in
+    let mk_type x y =
       Type.create
         ~name:(sprintf "std::pair<%s,%s >" (Type.name x) (Type.name y))
-        ~of_sexp
       |> Type.add_exn ~key:fst_t ~data:x
       |> Type.add_exn ~key:snd_t ~data:y
 
-    and create x y =
+    let create x y =
       let type_ = mk_type x.etype y.etype in
       eformat "std::make_pair($(x), $(y))" type_ "" [ ("x", C x); ("y", C y) ]
+
+    let of_sexp x t1_of_sexp t2_of_sexp =
+      let_ (Sexp.to_list x) @@ fun x ->
+      create
+        (t1_of_sexp @@ Sexp.List.get x (int 0))
+        (t2_of_sexp @@ Sexp.List.get x (int 1))
 
     let fst_type t = Univ_map.find_exn t fst_t
 
@@ -601,18 +617,26 @@ for(auto $(iter) = $(set).begin(); $(iter) != $(set).end(); ++$(iter)) {
   end
 
   module String = struct
-    let rec type_ () =
-      let of_sexp x =
-        eformat "((atom*)$(x).get())->get_body()" (type_ ()) "" [ ("x", C x) ]
-      in
-      Type.create ~name:"std::string" ~of_sexp
+    let type_ = Type.create ~name:"std::string"
 
-    let type_ = type_ ()
+    let of_sexp = Sexp.to_atom
 
     let const s = eformat "\"$(s)\"" type_ "" [ ("s", S (sprintf "%S" s)) ]
 
     let print s =
       eformat ~has_effect:true "0" unit_t "std::cout << $(str) << std::endl;"
         [ ("str", C s) ]
+
+    let input =
+      eformat ~has_effect:true "$(var)" type_
+        {|
+std::string $(var);
+char $(buf)[4096];
+while (std::cin.read($(buf), sizeof($(buf)))) {
+  $(var).append($(buf), sizeof($(buf)));
+}
+$(var).append($(buf), std::cin.gcount());
+|}
+        [ ("var", S (fresh_name ())); ("buf", S (fresh_name ())) ]
   end
 end
