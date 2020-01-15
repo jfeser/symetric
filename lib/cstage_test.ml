@@ -19,6 +19,8 @@ let%expect_test "" =
     #include <iostream>
     #include <set>
     #include <vector>
+
+    #include "sexp.hpp"
     int main();
     std::vector<int> x2;
     int x6;
@@ -57,6 +59,8 @@ let%expect_test "" =
     #include <iostream>
     #include <set>
     #include <vector>
+
+    #include "sexp.hpp"
     int g(const int &x3);
     int f(const int &x2);
     int main();
@@ -80,6 +84,8 @@ let%expect_test "" =
     #include <iostream>
     #include <set>
     #include <vector>
+
+    #include "sexp.hpp"
     int f(const std::vector<int> &x2);
     int main();
     std::vector<int> x3;
@@ -120,6 +126,8 @@ let%expect_test "" =
     #include <iostream>
     #include <set>
     #include <vector>
+
+    #include "sexp.hpp"
     int main();
     std::vector<int> x2;
     std::vector<int> x5;
@@ -189,6 +197,8 @@ let%expect_test "" =
     #include <iostream>
     #include <set>
     #include <vector>
+
+    #include "sexp.hpp"
     int main();
     std::set<int> x2;
     int x4;
@@ -236,6 +246,8 @@ let%expect_test "" =
     #include <iostream>
     #include <set>
     #include <vector>
+
+    #include "sexp.hpp"
     int main();
     std::set<int> x2;
     int x4;
@@ -276,6 +288,8 @@ let%expect_test "" =
     #include <iostream>
     #include <set>
     #include <vector>
+
+    #include "sexp.hpp"
     int main();
     int main() {
       std::pair<int, int> x2 = std::make_pair(0, 1);
@@ -297,6 +311,8 @@ let%expect_test "" =
     #include <iostream>
     #include <set>
     #include <vector>
+
+    #include "sexp.hpp"
     int main();
     int x2;
     int main() {
@@ -326,6 +342,8 @@ let%expect_test "" =
     #include <iostream>
     #include <set>
     #include <vector>
+
+    #include "sexp.hpp"
     int main();
     int x2;
     int main() {
@@ -361,6 +379,8 @@ let%expect_test "" =
     #include <iostream>
     #include <set>
     #include <vector>
+
+    #include "sexp.hpp"
     int main();
     int x3;
     int main() {
@@ -389,6 +409,8 @@ let%expect_test "" =
     #include <iostream>
     #include <set>
     #include <vector>
+
+    #include "sexp.hpp"
     int main();
     int main() {
       for (int x2 = 0; x2 < 10; x2 += 1) {
@@ -418,6 +440,8 @@ let%expect_test "" =
     #include <iostream>
     #include <set>
     #include <vector>
+
+    #include "sexp.hpp"
     int main();
     std::vector<int> x2(3);
     int x4;
@@ -464,6 +488,8 @@ let%expect_test "" =
     #include <iostream>
     #include <set>
     #include <vector>
+
+    #include "sexp.hpp"
     int main();
     std::vector<int> x2(3);
     int x3;
@@ -526,6 +552,8 @@ let%expect_test "" =
     #include <iostream>
     #include <set>
     #include <vector>
+
+    #include "sexp.hpp"
     int main();
     std::vector<int> x2(3);
     int x4;
@@ -575,6 +603,8 @@ let%expect_test "" =
     #include <iostream>
     #include <set>
     #include <vector>
+
+    #include "sexp.hpp"
     int main();
     std::vector<int> x2(3);
     int x4;
@@ -630,6 +660,8 @@ let%expect_test "" =
     #include <iostream>
     #include <set>
     #include <vector>
+
+    #include "sexp.hpp"
     int main();
     std::vector<int> x2(3);
     int x3;
@@ -692,6 +724,8 @@ let%expect_test "" =
     #include <iostream>
     #include <set>
     #include <vector>
+
+    #include "sexp.hpp"
     int main();
     std::vector<int> x2(3);
     int x4;
@@ -721,3 +755,47 @@ let%expect_test "" =
     }
  |}];
   code |> Util.clang_build |> print_endline
+
+let%expect_test "" =
+  let module C = Code () in
+  let open C in
+  let code =
+    let_ Sexp.input @@ fun sexp ->
+    let_ (Array.of_sexp (Array.mk_type String.type_) sexp String.of_sexp)
+    @@ fun arr -> Array.iter arr ~f:(fun str -> String.print str)
+  in
+  let code = to_string code in
+  code |> Util.clang_format |> print_endline;
+  [%expect {|
+    #include <iostream>
+    #include <set>
+    #include <vector>
+
+    #include "sexp.hpp"
+    int main();
+    std::vector<std::string> x4;
+    int main() {
+      const std::unique_ptr<sexp> &x2 = sexp::load(std::cin);
+      const std::vector<std::unique_ptr<sexp>> &x3 = ((list *)x2.get())->get_body();
+      // begin Array.init
+      x4.clear();
+      x4.reserve((int)((x3).size()));
+      for (int x5 = 0; x5 < (int)((x3).size()); x5 += 1) {
+        x4.push_back(((atom *)(x3)[x5].get())->get_body());
+      }
+      // end Array.init
+      std::vector<std::string> x6 = x4;
+      // begin Array.iter
+      int x7 = ((int)((x6).size()));
+      for (int x8 = 0; x8 < x7; x8 += 1) {
+        std::cout << (x6[x8]) << std::endl;
+      }
+      // end Array.iter
+      return 0;
+    } |}];
+  let out = Util.clang_exec ~input:"(one two three)" code in
+  out#exe_output |> print_endline;
+  [%expect {|
+    one
+    two
+    three |}]

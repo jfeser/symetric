@@ -39,6 +39,8 @@ let%expect_test "" =
     #include <iostream>
     #include <set>
     #include <vector>
+
+    #include "sexp.hpp"
     int reconstruct_L_1(const std::vector<std::vector<int>> &x15);
     int main();
     std::vector<int> x2(5);

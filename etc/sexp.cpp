@@ -17,8 +17,7 @@ ostream &atom::print(ostream &os) const {
   return os;
 }
 
-unique_ptr<atom> atom::load(istream &in) {
-  string buf;
+void slurp_white(istream &in) {
   while (true) {
     char c = in.peek();
     switch (c) {
@@ -29,7 +28,22 @@ unique_ptr<atom> atom::load(istream &in) {
       in.get();
       continue;
     }
+    default:
+      return;
+    }
+  }
+}
 
+unique_ptr<atom> atom::load(istream & in) {
+  string buf;
+  slurp_white(in);
+  while (true) {
+    char c = in.peek();
+    switch (c) {
+    case ' ':
+    case '\n':
+    case '\r':
+    case '\t':
     case '(':
     case ')':
     case char_traits<char>::eof(): {
@@ -47,9 +61,9 @@ unique_ptr<atom> atom::load(istream &in) {
   }
 }
 
-void atom::accept(sexp_visitor &v) const { v.visit(*this); }
+void atom::accept(sexp_visitor & v) const { v.visit(*this); }
 
-ostream &list::print(ostream &os) const {
+ostream &list::print(ostream & os) const {
   os << "(";
   for (auto &elem : body) {
     os << elem << " ";
@@ -58,7 +72,7 @@ ostream &list::print(ostream &os) const {
   return os;
 }
 
-unique_ptr<list> list::load(istream &in) {
+unique_ptr<list> list::load(istream & in) {
   vector<unique_ptr<sexp>> elems;
 
   if (!parse_char(in, '(')) {
@@ -78,9 +92,9 @@ unique_ptr<list> list::load(istream &in) {
   return make_unique<list>(elems);
 }
 
-void list::accept(sexp_visitor &v) const { v.visit(*this); }
+void list::accept(sexp_visitor & v) const { v.visit(*this); }
 
-unique_ptr<sexp> sexp::load(istream &in) {
+unique_ptr<sexp> sexp::load(istream & in) {
   unique_ptr<list> lout = list::load(in);
   if (lout) {
     return lout;

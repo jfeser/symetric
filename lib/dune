@@ -5,3 +5,9 @@
  (preprocess (pps ppx_sexp_conv ppx_compare ppx_hash ppx_expect ppx_assert))
  (inline_tests (modes byte)))
 
+(copy_files ../etc/{*.cpp,*.hpp})
+
+(alias
+ (name runtest)
+ (deps (glob_files *.cpp) (glob_files *.hpp)))
+

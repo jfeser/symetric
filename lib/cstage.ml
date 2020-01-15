@@ -72,12 +72,10 @@ module Code () : Sigs.CODE = struct
         |> String.concat ~sep:" "
       in
       arg_bodies ^ format body_fmt args
-    in
-    let ret = format ret_fmt args in
-    let efree =
+    and ret = format ret_fmt args
+    and efree =
       List.concat_map args ~f:(function _, C { efree; _ } -> efree | _ -> [])
-    in
-    let eeffect =
+    and eeffect =
       List.exists args ~f:(function
         | _, C { eeffect; _ } -> eeffect
         | _ -> false)
@@ -89,15 +87,16 @@ module Code () : Sigs.CODE = struct
   let unit_t = Type.create ~name:"int" |> Type.add_exn ~key:is_unit ~data:()
 
   module Sexp = struct
-    let type_ = Type.create ~name:"std::unique_ptr<sexp>"
+    let type_ = Type.create ~name:"const std::unique_ptr<sexp>&"
 
     module List = struct
       let get x i = eformat "($(x))[$(i)]" type_ "" [ ("x", C x); ("i", C i) ]
 
       let length x =
-        eformat "($(x)).size()" (Type.create ~name:"int") "" [ ("x", C x) ]
+        eformat "(int)(($(x)).size())" (Type.create ~name:"int") ""
+          [ ("x", C x) ]
 
-      let type_ = Type.create ~name:"std::vector<std::unique_ptr<sexp>>"
+      let type_ = Type.create ~name:"const std::vector<std::unique_ptr<sexp>>&"
     end
 
     module Atom = struct
@@ -199,27 +198,26 @@ module Code () : Sigs.CODE = struct
   let cast x = x
 
   let to_string e =
-    let expr_to_str e = e.ebody in
-    let var_decl_to_str v =
+    let expr_to_str e = e.ebody
+    and var_decl_to_str v =
       let subst = [ ("type", S (Type.name v.vtype)); ("name", S v.vname) ] in
       match v.init with
       | Some init ->
           format "$(type) $(name) ($(init));" (("init", C init) :: subst)
       | None -> format "$(type) $(name);" subst
     in
+
     let arg_to_str v = sprintf "const %s &%s" (Type.name v.vtype) v.vname in
     let func_to_decl_str f =
       let args_str = List.map f.args ~f:arg_to_str |> String.concat ~sep:"," in
       sprintf "%s %s(%s);" (Type.name (Func.ret_t f.ftype)) f.fname args_str
-    in
-    let func_to_def_str f =
+    and func_to_def_str f =
       let locals_str =
         List.rev f.locals
         |> List.map ~f:var_decl_to_str
         |> String.concat ~sep:" "
-      in
-      let args_str = List.map f.args ~f:arg_to_str |> String.concat ~sep:"," in
-      let ret_t_name = Type.name (Func.ret_t f.ftype) in
+      and args_str = List.map f.args ~f:arg_to_str |> String.concat ~sep:","
+      and ret_t_name = Type.name (Func.ret_t f.ftype) in
       if String.(f.fname = "main") then
         sprintf "%s %s(%s) { %s return %s; }" ret_t_name f.fname args_str
           (expr_to_str f.fbody) f.fbody.ret
@@ -227,21 +225,28 @@ module Code () : Sigs.CODE = struct
         sprintf "%s %s(%s) { %s %s return %s; }" ret_t_name f.fname args_str
           locals_str (expr_to_str f.fbody) f.fbody.ret
     in
+
     prog.cur_func.fbody <-
       { e with ebody = prog.cur_func.fbody.ebody ^ e.ebody };
-    let header = "#include <vector>\n#include <set>\n#include <iostream>\n" in
-    let forward_decls =
+
+    let header =
+      {|
+#include <vector>
+#include <set>
+#include <iostream>
+
+#include "sexp.hpp"
+|}
+    and forward_decls =
       List.map prog.funcs ~f:func_to_decl_str |> String.concat ~sep:"\n"
-    in
-    let main_decls =
+    and main_decls =
       find_func "main"
       |> Option.map ~f:(fun func ->
              List.rev func.locals
              |> List.map ~f:var_decl_to_str
              |> String.concat ~sep:" ")
       |> Option.value ~default:""
-    in
-    let funcs =
+    and funcs =
       List.rev prog.funcs
       |> List.map ~f:func_to_def_str
       |> String.concat ~sep:"\n"
@@ -524,7 +529,8 @@ for(int $(i) = $(lo); $(i) < $(hi); $(i) += $(step)) {
       |> with_comment "Array.iter"
 
     let of_sexp t x elem_of_sexp =
-      init t (Sexp.List.length @@ Sexp.to_list x) elem_of_sexp
+      let_ (Sexp.to_list x) @@ fun l ->
+      init t (Sexp.List.length l) (fun i -> elem_of_sexp (Sexp.List.get l i))
   end
 
   module Set = struct

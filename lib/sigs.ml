@@ -171,7 +171,7 @@ module type CODE = sig
       f:('a t -> 'b t -> 'c t) ->
       'c array t
 
-    val of_sexp : ctype -> sexp t -> ('a t -> sexp t) -> 'a array t
+    val of_sexp : ctype -> sexp t -> (sexp t -> 'a t) -> 'a array t
   end
 
   module Set : sig
@@ -185,7 +185,7 @@ module type CODE = sig
 
     val fold : 'a set t -> init:'b t -> f:('b t -> 'a t -> 'b t) -> 'b t
 
-    val of_sexp : ctype -> sexp t -> ('a t -> sexp t) -> 'a set t
+    val of_sexp : ctype -> sexp t -> (sexp t -> 'a t) -> 'a set t
   end
 
   (* Tuples *)
@@ -198,7 +198,7 @@ module type CODE = sig
 
     val snd : ('a * 'b) t -> 'b t
 
-    val of_sexp : sexp t -> ('a t -> sexp t) -> ('b t -> sexp t) -> ('a * 'b) t
+    val of_sexp : sexp t -> (sexp t -> 'a t) -> (sexp t -> 'b t) -> ('a * 'b) t
   end
 
   module String : sig

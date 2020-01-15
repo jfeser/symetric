@@ -9,12 +9,43 @@ let clang_format src =
   ret
 
 let clang_build ?(args = "-std=c++17 -c") src =
-  let read, write = Unix.open_process (sprintf "clang %s -x c++ -" args) in
+  let read, write = Unix.open_process (sprintf "clang++ %s -x c++ -" args) in
   Out_channel.output_string write src;
   Out_channel.close write;
   let ret = In_channel.input_all read in
   ignore (Unix.close_process (read, write));
   ret
+
+let clang_exec ?(args = "-Wall -Wextra -std=c++17") ?input src =
+  let main = "main.cpp" in
+  Out_channel.with_file main ~f:(fun ch -> Out_channel.output_string ch src);
+
+  let exe = Filename.temp_file "test" ".exe" in
+  let compiler_output =
+    let read, write =
+      Unix.open_process (sprintf "clang++ %s sexp.cpp %s -o %s" args main exe)
+    in
+    Out_channel.output_string write src;
+    Out_channel.close write;
+    let out = In_channel.input_all read in
+    ignore (Unix.close_process (read, write));
+    out
+  in
+
+  let exe_output =
+    let read, write = Unix.open_process exe in
+    Option.iter input ~f:(Out_channel.output_string write);
+    Out_channel.close write;
+    let out = In_channel.input_all read in
+    ignore (Unix.close_process (read, write));
+    out
+  in
+
+  object
+    method compiler_output = compiler_output
+
+    method exe_output = exe_output
+  end
 
 module Cont = struct
   module T = struct
