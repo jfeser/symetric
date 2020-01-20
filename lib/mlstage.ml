@@ -19,10 +19,6 @@ module Code : Sigs.CODE = struct
 
   open Value
 
-  type 'a set
-
-  type sexp
-
   type 'a t = (unit -> Value.t[@opaque]) [@@deriving sexp_of]
 
   type ctype = unit [@@deriving compare, sexp]
@@ -65,6 +61,20 @@ module Code : Sigs.CODE = struct
     let type_ = ()
 
     let input () = Sexp (Sexp.input_sexp In_channel.stdin)
+
+    module List = struct
+      let get s i () =
+        match to_sexp s with
+        | List l -> Sexp (List.nth_exn l (to_int i))
+        | _ -> failwith "Expected a list"
+
+      let length s () =
+        match to_sexp s with
+        | List l -> Int (List.length l)
+        | _ -> failwith "Expected a list"
+    end
+
+    let to_list = Fun.id
   end
 
   module Int = struct
@@ -123,6 +133,11 @@ module Code : Sigs.CODE = struct
 
   module String = struct
     let type_ = ()
+
+    module O = struct
+      let ( = ) x y () =
+        Bool ([%compare.equal: Value.t] (to_value x) (to_value y))
+    end
 
     let of_sexp x () =
       match to_sexp x with

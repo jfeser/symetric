@@ -84,8 +84,8 @@ let to_contexts term args =
   let ctxs =
     List.group_by (module String) (fun (n, _) -> n.V.symbol) args
     |> List.map ~f:(fun (sym, vals) ->
-           let vals = List.map vals ~f:Tuple.T2.get2 in
-           let holes =
+           let vals = List.map vals ~f:Tuple.T2.get2
+           and holes =
              List.filter holes ~f:(fun (sym', _) -> String.(sym = sym'))
              |> List.map ~f:(fun (_, x) -> x)
            in
@@ -140,9 +140,10 @@ let%expect_test "" =
      (((I0 0) (I1 1) (J2 2)) ((I0 1) (I1 0) (J2 2)))) |}]
 
 module Make
+    (Sketch : Sigs.SKETCH)
     (S : Sigs.CODE)
     (L : Sigs.LANG with type 'a code = 'a S.t and type type_ = S.ctype)
-    (C : Sigs.CACHE with type value = L.value and type 'a code = 'a S.t) =
+    (C : Sigs.CACHE with type value = L.Value.t and type 'a code = 'a S.t) =
 struct
   open S.Int
   open C
@@ -170,9 +171,9 @@ struct
   let costs_t = S.Array.mk_type S.int_t
 
   let rec reconstruct tbl g state target =
-    let args_t = L.type_of target in
-    let func_t = S.Func.type_ args_t S.unit_t in
-    let func_name = sprintf "reconstruct_%s_%d" state.V.symbol state.cost in
+    let args_t = L.Value.type_of target in
+    let func_t = S.Func.type_ args_t S.unit_t
+    and func_name = sprintf "reconstruct_%s_%d" state.V.symbol state.cost in
     Log.debug (fun m ->
         m "Building %s :: %s." func_name
           ([%sexp_of: S.ctype] func_t |> Sexp.to_string));
@@ -182,7 +183,7 @@ struct
         let term, ctxs = to_contexts term args in
         let found_target =
           List.fold_left ctxs ~init:(S.Bool.bool false) ~f:(fun found ctx ->
-              S.Bool.(found || L.eq (L.eval ctx term) target))
+              S.Bool.(found || L.Value.eq (L.eval ctx term) target))
         in
         S.ite found_target
           (fun () ->
@@ -205,8 +206,7 @@ struct
     in
 
     let recon_code target code_node =
-      let term = (V.to_code code_node).term in
-      let args = G.succ g code_node in
+      let term = (V.to_code code_node).term and args = G.succ g code_node in
       if List.is_empty args then recon_args target term []
       else
         List.map args ~f:(fun args_node ->
@@ -220,7 +220,7 @@ struct
     let func =
       S.func func_name func_t (fun target -> S.let_ target recon_state)
     in
-    S.apply func (L.code target)
+    S.apply func (L.Value.code target)
 
   let contract_state g =
     G.fold_vertex
@@ -238,19 +238,17 @@ struct
 
   let search_graph ?(prune = true) max_cost =
     (* Compute search graph. *)
-    let fresh = Fresh.create () in
-    let g = ref G.empty in
+    let fresh = Fresh.create () and g = ref G.empty in
 
     Log.debug (fun m -> m "%s" ([%sexp_of: Gr.t] L.grammar |> Sexp.to_string));
     for cost = 0 to max_cost do
       List.filter L.grammar ~f:(fun (_, rhs) -> Int.(Gr.Term.size rhs <= cost))
       |> List.iter ~f:(fun (lhs, rhs) ->
-             let lhs_v = V.State { cost; symbol = lhs } in
-             let rhs_v = V.Code { cost; term = rhs } in
+             let lhs_v = V.State { cost; symbol = lhs }
+             and rhs_v = V.Code { cost; term = rhs } in
              g := G.add_edge !g lhs_v rhs_v;
 
-             let n_holes = Gr.Term.n_holes rhs in
-             let size = Gr.Term.size rhs in
+             let n_holes = Gr.Term.n_holes rhs and size = Gr.Term.size rhs in
              Combinat.Partition.iter
                Int.(cost - size + n_holes, n_holes)
                ~f:(fun costs ->
@@ -265,16 +263,14 @@ struct
     let g = !g in
 
     let sinks =
-      let out_sym, _ = L.output in
       G.fold_vertex
         (fun v vs ->
           match v with
-          | State { symbol; _ } when String.(symbol = out_sym) -> v :: vs
+          | State { symbol; _ } when String.(symbol = Sketch.output) -> v :: vs
           | _ -> vs)
         g []
-    in
-    let sources =
-      List.mapi L.inputs ~f:(fun i _ ->
+    and sources =
+      List.mapi Sketch.inputs ~f:(fun i _ ->
           V.Code { term = App (sprintf "i%d" i, []); cost = 1 })
     in
 
@@ -304,66 +300,99 @@ struct
 
     if prune then prune_loop g else g
 
+  let is_inputs_loaded = ref false
+
+  let load_inputs tbl =
+    is_inputs_loaded := true;
+    let open S in
+    let_ (Sexp.to_list Sexp.input) @@ fun sexp_inputs ->
+    for_ (int 0) (int 1) (Sexp.List.length sexp_inputs) (fun i ->
+        let_ (Sexp.List.get sexp_inputs i |> Sexp.to_list)
+        @@ fun sexp_sym_val ->
+        let_ (Sexp.List.get sexp_sym_val (int 0) |> String.of_sexp)
+        @@ fun sym ->
+        L.Value.let_ (Sexp.List.get sexp_sym_val (int 1) |> L.Value.of_sexp)
+        @@ fun value ->
+        List.map (Gr.non_terminals L.grammar) ~f:(fun sym' ->
+            ite
+              String.(O.(const sym' = sym))
+              (fun () ->
+                put ~sym:sym' ~size:1
+                  ~sizes:(S.Array.const costs_t [||])
+                  tbl value)
+              (fun () -> unit))
+        |> seq_many)
+
+  let output () =
+    let open S in
+    let output =
+      lazy
+        ( if not !is_inputs_loaded then
+            failwith "Inputs must be loaded before output.";
+          genlet (Sexp.input |> L.Value.of_sexp) )
+    in
+    Lazy.force output
+
+  let fill_code tbl g state code_node =
+    let code = V.to_code code_node in
+    let term = code.V.term
+    and symbol = state.V.symbol
+    and cost = state.V.cost in
+
+    let insert value =
+      S.seq_many
+        [
+          debug_print
+            (sprintf "Inserting (%s -> %s) cost %d" symbol
+               (Gr.Term.to_string term) cost);
+          put ~sym:symbol ~size:cost
+            ~sizes:(S.Array.const costs_t [||])
+            tbl value;
+        ]
+    in
+    let fill args =
+      let term, ctxs = to_contexts term args in
+      List.map ctxs ~f:(fun ctx ->
+          L.Value.let_ (L.eval ctx term) @@ fun value ->
+          let recon_code =
+            match L.Value.(value = output ()) with
+            | Some eq when String.(Sketch.output = symbol) ->
+                S.ite eq
+                  (fun () ->
+                    S.seq_many
+                      [
+                        S.print "Starting reconstruction";
+                        ( S.let_ (reconstruct tbl g state (output ()))
+                        @@ fun _ -> S.exit );
+                      ])
+                  (fun () -> S.unit)
+            | _ -> S.unit
+          in
+          S.seq recon_code (insert value))
+      |> S.seq_many
+    in
+
+    let args = G.succ g code_node in
+    if List.is_empty args then [ fill [] ]
+    else
+      List.map args ~f:(fun arg_node ->
+          let fill =
+            G.succ g arg_node
+            |> List.fold_left ~init:fill ~f:(fun fill node ->
+                   let state = V.to_state node in
+                   let fill ctx =
+                     C.iter ~sym:symbol ~size:(int cost)
+                       ~f:(fun (v, _) -> fill ((state, v) :: ctx))
+                       tbl
+                   in
+                   fill)
+          in
+          fill [])
+
   let fill_state tbl g state =
     Log.debug (fun m -> m "Generating code for %s:%d" state.V.symbol state.cost);
     G.succ g (V.State state)
-    |> List.concat_map ~f:(fun code_node ->
-           let code = V.to_code code_node in
-
-           let insert value =
-             S.seq_many
-               [
-                 debug_print
-                   (sprintf "Inserting (%s -> %s) cost %d" state.V.symbol
-                      (Gr.Term.to_string code.V.term)
-                      state.V.cost);
-                 put ~sym:state.V.symbol ~size:state.V.cost
-                   ~sizes:(S.Array.const costs_t [||])
-                   tbl value;
-               ]
-           in
-
-           let fill args =
-             let term, ctxs = to_contexts code.V.term args in
-             List.map ctxs ~f:(fun ctx ->
-                 L.let_ (L.eval ctx term) @@ fun value ->
-                 let out_sym, out_val = L.output in
-                 let recon_code =
-                   match
-                     (String.(out_sym = state.V.symbol), L.(value = out_val))
-                   with
-                   | true, Some eq ->
-                       S.ite eq
-                         (fun () ->
-                           S.seq_many
-                             [
-                               S.print "Starting reconstruction";
-                               ( S.let_ (reconstruct tbl g state out_val)
-                               @@ fun _ -> S.exit );
-                             ])
-                         (fun () -> S.unit)
-                   | _ -> S.unit
-                 in
-                 S.seq recon_code (insert value))
-             |> S.seq_many
-           in
-
-           let args = G.succ g code_node in
-           if List.is_empty args then [ fill [] ]
-           else
-             List.map args ~f:(fun arg_node ->
-                 let fill =
-                   G.succ g arg_node
-                   |> List.fold_left ~init:fill ~f:(fun fill node ->
-                          let state = V.to_state node in
-                          let fill ctx =
-                            C.iter ~sym:state.V.symbol ~size:(int state.V.cost)
-                              ~f:(fun (v, _) -> fill ((state, v) :: ctx))
-                              tbl
-                          in
-                          fill)
-                 in
-                 fill []))
+    |> List.concat_map ~f:(fill_code tbl g state)
     |> S.seq_many
 
   let enumerate max_cost =

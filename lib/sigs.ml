@@ -1,11 +1,24 @@
 open! Core
 
+type 'a set
+
+type sexp
+
 module type EXAMPLES = sig
   type value
 
   val inputs : (string * value) list
 
   val output : string * value
+end
+
+module type SKETCH = sig
+  (* TODO *)
+  (* val body : Grammar.t *)
+
+  val inputs : Grammar.nonterm list
+
+  val output : Grammar.nonterm
 end
 
 module type CACHE = sig
@@ -31,33 +44,33 @@ module type CACHE = sig
 end
 
 module type LANG = sig
-  include EXAMPLES
-
   type type_
 
   type 'a code
 
-  val ( = ) : value -> value -> bool code option
+  module Value : sig
+    type t
 
-  val code : value -> 'a code
+    val ( = ) : t -> t -> bool code option
 
-  val eq : value -> 'a code -> bool code
+    val eq : t -> 'a code -> bool code
 
-  val let_ : value -> (value -> 'a code) -> 'a code
+    val code : t -> 'a code
 
-  val type_of : value -> type_
+    val let_ : t -> (t -> 'a code) -> 'a code
+
+    val type_of : t -> type_
+
+    val of_sexp : sexp code -> t
+  end
 
   val grammar : Grammar.t
 
-  val eval : value Map.M(String).t -> _ Grammar.Term.t -> value
+  val eval : Value.t Map.M(String).t -> _ Grammar.Term.t -> Value.t
 end
 
 module type CODE = sig
   type 'a t [@@deriving sexp_of]
-
-  type 'a set
-
-  type sexp
 
   type ctype [@@deriving sexp_of]
 
@@ -204,6 +217,10 @@ module type CODE = sig
   module String : sig
     val type_ : ctype
 
+    module O : sig
+      val ( = ) : string t -> string t -> bool t
+    end
+
     val const : string -> string t
 
     val input : string t
@@ -217,6 +234,14 @@ module type CODE = sig
     val type_ : ctype
 
     val input : sexp t
+
+    val to_list : sexp t -> sexp list t
+
+    module List : sig
+      val get : sexp list t -> int32 t -> sexp t
+
+      val length : sexp list t -> int32 t
+    end
   end
 
   (* Control flow *)

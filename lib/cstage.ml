@@ -7,10 +7,6 @@ let with_stackmark body =
   push_prompt p (fun () -> body (fun () -> is_prompt_set p))
 
 module Code () : Sigs.CODE = struct
-  type 'a set
-
-  type sexp
-
   type mark = unit -> bool
 
   type ctype = Univ_map.t [@@deriving sexp_of]
@@ -626,6 +622,11 @@ for(auto $(iter) = $(set).begin(); $(iter) != $(set).end(); ++$(iter)) {
     let type_ = Type.create ~name:"std::string"
 
     let of_sexp = Sexp.to_atom
+
+    module O = struct
+      let ( = ) s s' =
+        eformat "($(s)) == ($(s'))" bool_t "" [ ("s", C s); ("s'", C s') ]
+    end
 
     let const s = eformat "\"$(s)\"" type_ "" [ ("s", S (sprintf "%S" s)) ]
 

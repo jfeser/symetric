@@ -1,15 +1,17 @@
 CXX = clang++
-CXXFLAGS = -Wall -Wextra -std=c++17 -g
+CXXFLAGS = -Wall -Wextra -std=c++17 -g -fsanitize=address \
+					 -fsanitize=undefined -fno-omit-frame-pointer
+LDFLAGS = -fsanitize=address -fsanitize=undefined
 OBJ = sexp.o sexp_test.o
 BIN = test
 
 all: $(OBJ)
 
 %.o : %.cpp
-	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(INCLUDE) -c -o $@ $<
+	$(CXX) $(CXXFLAGS) $(INCLUDE) -c -o $@ $<
 
 test: $(OBJ)
-	$(CXX) $(OBJ) -o test
+	$(CXX) $(LDFLAGS) $(OBJ) -o test
 
 clean:
 	rm -rf test $(OBJ)

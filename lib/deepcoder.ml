@@ -260,8 +260,8 @@ module Make (C : Sigs.CODE) = struct
     type 'a code = 'a C.t
 
     type t = {
-      ints : (Value.int_t * int32 array) C.set array code;
-      arrays : (Value.array_t * int32 array) C.set array code;
+      ints : (Value.int_t * int32 array) Sigs.set array code;
+      arrays : (Value.array_t * int32 array) Sigs.set array code;
     }
 
     let max_size = 100

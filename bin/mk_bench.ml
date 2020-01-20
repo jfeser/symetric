@@ -13,20 +13,20 @@ let main () =
       [
         ( "L",
           Value.A
-            ( Array.const (Array.mk_type (Array.mk_type Int))
+            ( Array.const (Array.mk_type (Array.mk_type int_t))
             @@ [|
-                 Array.const (Array.mk_type Int)
-                   [| int 3; int 7; int 5; int 2; int 8 |];
+                 Array.const (Array.mk_type int_t)
+                   Int.[| int 3; int 7; int 5; int 2; int 8 |];
                |] ) );
       ]
 
     let output =
       ( "L",
         Value.A
-          ( Array.const (Array.mk_type (Array.mk_type Int))
+          ( Array.const (Array.mk_type (Array.mk_type int_t))
           @@ [|
-               Array.const (Array.mk_type Int)
-                 [| int 3; int 2; int 5; int 2; int 3 |];
+               Array.const (Array.mk_type int_t)
+                 Int.[| int 3; int 2; int 5; int 2; int 3 |];
              |] ) )
   end in
   let module DeepSynth =

@@ -8,7 +8,7 @@ let clang_format src =
   ignore (Unix.close_process (read, write));
   ret
 
-let clang_build ?(args = "-std=c++17 -c") src =
+let clang_build ?(args = "-std=c++17 -Wall -Wextra -c") src =
   let read, write = Unix.open_process (sprintf "clang++ %s -x c++ -" args) in
   Out_channel.output_string write src;
   Out_channel.close write;
@@ -16,7 +16,9 @@ let clang_build ?(args = "-std=c++17 -c") src =
   ignore (Unix.close_process (read, write));
   ret
 
-let clang_exec ?(args = "-Wall -Wextra -std=c++17") ?input src =
+let clang_exec
+    ?(args = "-Wall -Wextra -fsanitize=undefined -fsanitize=address -std=c++17")
+    ?input src =
   let main = "main.cpp" in
   Out_channel.with_file main ~f:(fun ch -> Out_channel.output_string ch src);
 

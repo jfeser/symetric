@@ -218,7 +218,12 @@ let%expect_test "" =
       return 0;
     }
  |}];
-  code |> Util.clang_build |> print_endline
+  code |> Util.clang_build |> print_endline;
+  [%expect {|
+    <stdin>:14:5: warning: unused variable 'x7' [-Wunused-variable]
+    int x7 = x5; return 0; }
+        ^
+    1 warning generated. |}]
 
 let%expect_test "" =
   let module C = Code () in
@@ -268,7 +273,12 @@ let%expect_test "" =
       return 0;
     }
  |}];
-  code |> Util.clang_build |> print_endline
+  code |> Util.clang_build |> print_endline;
+  [%expect {|
+    <stdin>:14:5: warning: unused variable 'x8' [-Wunused-variable]
+    int x8 = x5; return 0; }
+        ^
+    1 warning generated. |}]
 
 let%expect_test "" =
   let module C = Code () in
