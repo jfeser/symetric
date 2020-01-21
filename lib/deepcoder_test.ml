@@ -29,11 +29,16 @@ module Examples = struct
            |] ) )
 end
 
-module DeepSynth =
-  Synth.Make (Code) (Deepcoder.Lang (Examples)) (Deepcoder.Cache)
+module Sketch = struct
+  let inputs = [ "L" ]
+
+  let output = "L"
+end
+
+module DeepSynth = Synth.Make (Sketch) (Code) (Deepcoder.Lang) (Deepcoder.Cache)
 
 let%expect_test "" =
-  DeepSynth.enumerate 1 |> Code.to_string |> Util.clang_format |> print_endline;
+  DeepSynth.enumerate 2 |> Code.to_string |> Util.clang_format |> print_endline;
   [%expect
     {|
     #include <iostream>

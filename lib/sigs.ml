@@ -44,12 +44,12 @@ module type CACHE = sig
 end
 
 module type LANG = sig
-  type type_
-
   type 'a code
 
   module Value : sig
     type t
+
+    type type_
 
     val ( = ) : t -> t -> bool code option
 
@@ -61,7 +61,11 @@ module type LANG = sig
 
     val type_of : t -> type_
 
-    val of_sexp : sexp code -> t
+    val of_sexp : Grammar.nonterm -> sexp code -> t
+
+    type mapper = { f : 'a. 'a code -> 'a code }
+
+    val map : f:mapper -> t -> t
   end
 
   val grammar : Grammar.t

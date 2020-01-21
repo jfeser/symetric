@@ -15,7 +15,7 @@ let rec enum_simple n =
   else if n = 1 then [ Zero; One ]
   else
     List.map (enum_simple (n - 1)) ~f:(fun e -> Neg e)
-    @ ( Combinat.Partition.to_list (n - 1, 2)
+    @ ( Combinat.Partition.(to_list @@ create ~n:(n - 1) ~parts:2)
       |> List.concat_map ~f:(fun a ->
              let e_l = enum_simple a.{0} in
              let e_r = enum_simple a.{1} in
@@ -29,7 +29,7 @@ let enum_simple_distinct n =
     else if n = 1 then [ Zero; One ]
     else
       List.map (enum_simple (n - 1)) ~f:(fun e -> Neg e)
-      @ ( Combinat.Partition.to_list (n - 1, 2)
+      @ ( Combinat.Partition.(to_list @@ create ~n:(n - 1) ~parts:2)
         |> List.concat_map ~f:(fun a ->
                let e_l = enum_simple a.{0} in
                let e_r = enum_simple a.{1} in
@@ -61,7 +61,7 @@ let enum_cache n =
     else if n = 1 then [ Zero; One ]
     else
       List.map (enum_cache_a (n - 1)) ~f:(fun e -> Neg e)
-      @ ( Combinat.Partition.to_list (n - 1, 2)
+      @ ( Combinat.Partition.(to_list @@ create ~n:(n - 1) ~parts:2)
         |> List.concat_map ~f:(fun a ->
                let e_l = enum_cache_a a.{0} in
                let e_r = enum_cache_a a.{1} in
@@ -99,7 +99,7 @@ let enum_value_cache n =
                true ))
     else
       List.map (enum_cache_a (n - 1)) ~f:neg
-      @ ( Combinat.Partition.to_list (n - 1, 2)
+      @ ( Combinat.Partition.(to_list @@ create ~n:(n - 1) ~parts:2)
         |> List.concat_map ~f:(fun a ->
                let e_l = enum_cache_a a.{0} in
                let e_r = enum_cache_a a.{1} in
@@ -154,7 +154,7 @@ let enum_custom_heap n =
     else if n = 1 then [ zero; one ]
     else
       List.map (enum_cache_a (n - 1)) ~f:neg
-      @ ( Combinat.Partition.to_list (n - 1, 2)
+      @ ( Combinat.Partition.(to_list @@ create ~n:(n - 1) ~parts:2)
         |> List.concat_map ~f:(fun a ->
                let e_l = enum_cache_a a.{0} in
                let e_r = enum_cache_a a.{1} in

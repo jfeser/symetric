@@ -16,6 +16,14 @@ module Make (C : Sigs.CODE) = struct
 
     type type_ = C.ctype
 
+    type mapper = { f : 'a. 'a C.t -> 'a C.t }
+
+    let map ~f v =
+      match v with
+      | A x -> A (f.f x)
+      | I x -> I (f.f x)
+      | _ -> failwith "Not a code value."
+
     let ( = ) v v' =
       match (v, v') with
       | A a, A a' -> Some C.Array.O.(a = a')
@@ -46,11 +54,27 @@ module Make (C : Sigs.CODE) = struct
     let int_type = C.Array.mk_type C.int_t
 
     let array_type = C.Array.mk_type (C.Array.mk_type C.int_t)
+
+    let of_sexp symbol s =
+      let array_of_sexp examples =
+        let open C in
+        let open Array in
+        of_sexp
+          (mk_type (mk_type int_t))
+          examples
+          (fun array -> of_sexp (mk_type int_t) array Int.of_sexp)
+      in
+      let int_of_sexp examples =
+        let open C in
+        let open Array in
+        of_sexp (mk_type int_t) examples Int.of_sexp
+      in
+
+      if String.(symbol = "A") then A (array_of_sexp s) else I (int_of_sexp s)
   end
 
-  module Lang (E : Sigs.EXAMPLES with type value := Value.t) = struct
-    include Value
-    include E
+  module Lang = struct
+    module Value = Value
 
     type value = Value.t [@@deriving sexp_of]
 
@@ -61,43 +85,42 @@ module Make (C : Sigs.CODE) = struct
       let open Grammar.Term in
       let nt x = Nonterm x in
       let id x = App (x, []) in
-      List.mapi inputs ~f:(fun i (sym, _) -> (sym, id (sprintf "i%d" i)))
-      @ [
-          ("I", App ("head", [ nt "L" ]));
-          ("I", App ("last", [ nt "L" ]));
-          ("L", App ("take", [ nt "I"; nt "L" ]));
-          ("L", App ("drop", [ nt "I"; nt "L" ]));
-          ("I", App ("access", [ nt "I"; nt "L" ]));
-          ("I", App ("minimum", [ nt "L" ]));
-          ("I", App ("maximum", [ nt "L" ]));
-          ("L", App ("reverse", [ nt "L" ]));
-          (* ("L", App ("sort", [ nt "L" ])); *)
-          ("I", App ("sum", [ nt "L" ]));
-          ("L", App ("map", [ nt "FII"; nt "L" ]));
-          (* ("L", App ("filter", [ nt "FIB"; nt "L" ])); *)
-          ("I", App ("count", [ nt "FIB"; nt "L" ]));
-          ("L", App ("zipwith", [ nt "FIII"; nt "L"; nt "L" ]));
-          (* ("L", App ("scanl1", [ nt "FIII"; nt "L" ])); *)
-          ("FII", id "(+1)");
-          ("FII", id "(-1)");
-          ("FII", id "(*2)");
-          ("FII", id "(/2)");
-          ("FII", id "(*(-1))");
-          ("FII", id "(**2)");
-          ("FII", id "(*3)");
-          ("FII", id "(/3)");
-          ("FII", id "(*4)");
-          ("FII", id "(/4)");
-          ("FIB", id "(>0)");
-          ("FIB", id "(<0)");
-          ("FIB", id "(%2==0)");
-          ("FIB", id "(%2==1)");
-          ("FIII", id "(+)");
-          ("FIII", id "(-)");
-          ("FIII", id "(*)");
-          ("FIII", id "min");
-          ("FIII", id "max");
-        ]
+      [
+        ("I", App ("head", [ nt "L" ]));
+        ("I", App ("last", [ nt "L" ]));
+        ("L", App ("take", [ nt "I"; nt "L" ]));
+        ("L", App ("drop", [ nt "I"; nt "L" ]));
+        ("I", App ("access", [ nt "I"; nt "L" ]));
+        ("I", App ("minimum", [ nt "L" ]));
+        ("I", App ("maximum", [ nt "L" ]));
+        ("L", App ("reverse", [ nt "L" ]));
+        (* ("L", App ("sort", [ nt "L" ])); *)
+        ("I", App ("sum", [ nt "L" ]));
+        ("L", App ("map", [ nt "FII"; nt "L" ]));
+        (* ("L", App ("filter", [ nt "FIB"; nt "L" ])); *)
+        ("I", App ("count", [ nt "FIB"; nt "L" ]));
+        ("L", App ("zipwith", [ nt "FIII"; nt "L"; nt "L" ]));
+        (* ("L", App ("scanl1", [ nt "FIII"; nt "L" ])); *)
+        ("FII", id "(+1)");
+        ("FII", id "(-1)");
+        ("FII", id "(*2)");
+        ("FII", id "(/2)");
+        ("FII", id "(*(-1))");
+        ("FII", id "(**2)");
+        ("FII", id "(*3)");
+        ("FII", id "(/3)");
+        ("FII", id "(*4)");
+        ("FII", id "(/4)");
+        ("FIB", id "(>0)");
+        ("FIB", id "(<0)");
+        ("FIB", id "(%2==0)");
+        ("FIB", id "(%2==1)");
+        ("FIII", id "(+)");
+        ("FIII", id "(-)");
+        ("FIII", id "(*)");
+        ("FIII", id "min");
+        ("FIII", id "max");
+      ]
       |> inline "FII" |> inline "FIB" |> inline "FIII"
 
     open Value
@@ -142,18 +165,12 @@ module Make (C : Sigs.CODE) = struct
       | App ("max", []) ->
           F_int2 (fun x y -> ite (x > y) (fun () -> x) (fun () -> y))
       | App (x, []) -> (
-          match
-            List.find_mapi inputs ~f:(fun i (_, v) ->
-                if Core.String.(x = sprintf "i%d" i) then Some v else None)
-          with
+          match Map.find ctx x with
           | Some v -> v
-          | None -> (
-              match Map.find ctx x with
-              | Some v -> v
-              | None ->
-                  Error.create "Unbound name." (x, ctx)
-                    [%sexp_of: string * value Map.M(Core.String).t]
-                  |> Error.raise ) )
+          | None ->
+              Error.create "Unbound name." (x, ctx)
+                [%sexp_of: string * value Map.M(Core.String).t]
+              |> Error.raise )
       | App ("head", [ e ]) ->
           I
             ( let_ (eval ctx e |> to_array) @@ fun a ->

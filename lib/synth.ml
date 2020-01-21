@@ -89,7 +89,7 @@ let to_contexts term args =
              List.filter holes ~f:(fun (sym', _) -> String.(sym = sym'))
              |> List.map ~f:(fun (_, x) -> x)
            in
-           Combinat.Permutation.Of_list.to_list vals
+           Combinat.Permutation.Of_list.(to_list (create vals))
            |> List.map ~f:(fun vs -> List.zip_exn holes vs))
     |> n_cartesian_product
     |> List.map ~f:(fun ctxs ->
@@ -142,7 +142,7 @@ let%expect_test "" =
 module Make
     (Sketch : Sigs.SKETCH)
     (S : Sigs.CODE)
-    (L : Sigs.LANG with type 'a code = 'a S.t and type type_ = S.ctype)
+    (L : Sigs.LANG with type 'a code = 'a S.t and type Value.type_ = S.ctype)
     (C : Sigs.CACHE with type value = L.Value.t and type 'a code = 'a S.t) =
 struct
   open S.Int
@@ -249,16 +249,17 @@ struct
              g := G.add_edge !g lhs_v rhs_v;
 
              let n_holes = Gr.Term.n_holes rhs and size = Gr.Term.size rhs in
-             Combinat.Partition.iter
-               Int.(cost - size + n_holes, n_holes)
-               ~f:(fun costs ->
-                 let arg = V.Arg { id = Fresh.int fresh; n_args = n_holes } in
-                 Gr.Term.non_terminals rhs
-                 |> List.iteri ~f:(fun i sym ->
-                        g := G.add_edge !g rhs_v arg;
-                        g :=
-                          G.add_edge !g arg
-                            (V.State { cost = costs.{i}; symbol = sym }))))
+             Combinat.Partition.(
+               iter
+                 Int.(create ~n:(cost - size + n_holes) ~parts:n_holes)
+                 ~f:(fun costs ->
+                   let arg = V.Arg { id = Fresh.int fresh; n_args = n_holes } in
+                   Gr.Term.non_terminals rhs
+                   |> List.iteri ~f:(fun i sym ->
+                          g := G.add_edge !g rhs_v arg;
+                          g :=
+                            G.add_edge !g arg
+                              (V.State { cost = costs.{i}; symbol = sym })))))
     done;
     let g = !g in
 
@@ -270,8 +271,7 @@ struct
           | _ -> vs)
         g []
     and sources =
-      List.mapi Sketch.inputs ~f:(fun i _ ->
-          V.Code { term = App (sprintf "i%d" i, []); cost = 1 })
+      List.map Sketch.inputs ~f:(fun sym -> V.State { symbol = sym; cost = 1 })
     in
 
     (* Prune nodes that the sinks don't depend on and nodes that can't reach a
@@ -300,36 +300,20 @@ struct
 
     if prune then prune_loop g else g
 
-  let is_inputs_loaded = ref false
-
   let load_inputs tbl =
-    is_inputs_loaded := true;
     let open S in
-    let_ (Sexp.to_list Sexp.input) @@ fun sexp_inputs ->
-    for_ (int 0) (int 1) (Sexp.List.length sexp_inputs) (fun i ->
-        let_ (Sexp.List.get sexp_inputs i |> Sexp.to_list)
-        @@ fun sexp_sym_val ->
-        let_ (Sexp.List.get sexp_sym_val (int 0) |> String.of_sexp)
-        @@ fun sym ->
-        L.Value.let_ (Sexp.List.get sexp_sym_val (int 1) |> L.Value.of_sexp)
-        @@ fun value ->
-        List.map (Gr.non_terminals L.grammar) ~f:(fun sym' ->
-            ite
-              String.(O.(const sym' = sym))
-              (fun () ->
-                put ~sym:sym' ~size:1
-                  ~sizes:(S.Array.const costs_t [||])
-                  tbl value)
-              (fun () -> unit))
-        |> seq_many)
+    List.map Sketch.inputs ~f:(fun sym ->
+        put ~sym ~size:1 ~sizes:(Array.const costs_t [||]) tbl
+        @@ (Sexp.input |> L.Value.of_sexp sym))
+    |> seq_many
 
   let output () =
     let open S in
     let output =
       lazy
-        ( if not !is_inputs_loaded then
-            failwith "Inputs must be loaded before output.";
-          genlet (Sexp.input |> L.Value.of_sexp) )
+        ( Sexp.input
+        |> L.Value.of_sexp Sketch.output
+        |> L.Value.map ~f:{ f = genlet } )
     in
     Lazy.force output
 
@@ -401,14 +385,21 @@ struct
     (* Generate a graph that only contains the state nodes. *)
     let lhs_g = contract_state g |> G.reverse in
 
+    let loops tbl =
+      G.Topo.fold
+        (fun v code ->
+          let state = V.to_state v in
+          code @ [ fill_state tbl g state ])
+        lhs_g []
+    in
+
+    let open S in
     C.empty (fun tbl ->
-        (* Fold over the state nodes, generating code to fill them. *)
-        let loops =
-          G.Topo.fold
-            (fun v code ->
-              let state = V.to_state v in
-              code @ [ fill_state tbl g state ])
-            lhs_g []
-        in
-        S.seq_many loops)
+        seq_many
+          [
+            (* Load the inputs into the cache. *)
+            load_inputs tbl;
+            (* Fold over the state nodes, generating code to fill them. *)
+            (let_locus @@ fun () -> seq_many (loops tbl));
+          ])
 end
