@@ -28,9 +28,8 @@ module Make (C : Sigs.CODE) = struct
       match (v, v') with
       | A a, A a' -> Some C.Array.O.(a = a')
       | I x, I x' -> Some C.Array.O.(x = x')
-      | F_int _, F_int _ | F_bool _, F_bool _ | F_int2 _, F_int2 _ ->
-          failwith "Cannot compare"
-      | _ -> None
+      | A _, I _ | I _, A _ -> None
+      | _ -> failwith "Cannot compare"
 
     let type_of = function
       | A x -> C.type_of x
@@ -70,7 +69,7 @@ module Make (C : Sigs.CODE) = struct
         of_sexp (mk_type int_t) examples Int.of_sexp
       in
 
-      if String.(symbol = "A") then A (array_of_sexp s) else I (int_of_sexp s)
+      if String.(symbol = "L") then A (array_of_sexp s) else I (int_of_sexp s)
   end
 
   module Lang = struct

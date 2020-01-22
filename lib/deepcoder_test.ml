@@ -38,6 +38,8 @@ end
 module DeepSynth = Synth.Make (Sketch) (Code) (Deepcoder.Lang) (Deepcoder.Cache)
 
 let%expect_test "" =
+  Log.setup_log ();
+  Genlet.Log.set_level (Some Debug);
   DeepSynth.enumerate 2 |> Code.to_string |> Util.clang_format |> print_endline;
   [%expect
     {|

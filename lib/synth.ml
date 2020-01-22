@@ -2,6 +2,12 @@ open! Core
 module Fresh = Utils.Fresh
 open Utils.Collections
 
+module Log = Utils.Make_log (struct
+  let src = Logs.Src.create "staged-synth.synth"
+end)
+
+let () = Log.set_level None
+
 let for_all a f =
   let rec loop i =
     if i >= Bigarray.Array1.dim a then true else f a.{i} && loop (i + 1)
@@ -174,9 +180,6 @@ struct
     let args_t = L.Value.type_of target in
     let func_t = S.Func.type_ args_t S.unit_t
     and func_name = sprintf "reconstruct_%s_%d" state.V.symbol state.cost in
-    Log.debug (fun m ->
-        m "Building %s :: %s." func_name
-          ([%sexp_of: S.ctype] func_t |> Sexp.to_string));
 
     let recon_args target term args =
       let check args =
@@ -218,7 +221,11 @@ struct
       G.succ g (State state) |> List.map ~f:(recon_code target) |> S.seq_many
     in
     let func =
-      S.func func_name func_t (fun target -> S.let_ target recon_state)
+      S.func func_name func_t (fun target ->
+          Log.debug (fun m ->
+              m "Building %s :: %s." func_name
+                ([%sexp_of: S.ctype] func_t |> Sexp.to_string));
+          S.let_ target recon_state)
     in
     S.apply func (L.Value.code target)
 
@@ -240,7 +247,6 @@ struct
     (* Compute search graph. *)
     let fresh = Fresh.create () and g = ref G.empty in
 
-    Log.debug (fun m -> m "%s" ([%sexp_of: Gr.t] L.grammar |> Sexp.to_string));
     for cost = 0 to max_cost do
       List.filter L.grammar ~f:(fun (_, rhs) -> Int.(Gr.Term.size rhs <= cost))
       |> List.iter ~f:(fun (lhs, rhs) ->
@@ -334,25 +340,36 @@ struct
             tbl value;
         ]
     in
+
+    let reconstruct value =
+      (* Don't try to reconstruct a value that isn't of the same kind as the
+         expected output. *)
+      if String.(Sketch.output <> symbol) then (
+        Log.debug (fun m ->
+            m "Skipping reconstruction: (%s <> %s)" Sketch.output symbol);
+        S.unit )
+      else
+        match L.Value.(value = output ()) with
+        | Some eq ->
+            S.ite eq
+              (fun () ->
+                S.seq_many
+                  [
+                    debug_print "Starting reconstruction";
+                    reconstruct tbl g state (output ());
+                    S.exit;
+                  ])
+              (fun () -> S.unit)
+        | None ->
+            Log.debug (fun m -> m "Skipping reconstruction: no equality");
+            S.unit
+    in
+
     let fill args =
       let term, ctxs = to_contexts term args in
       List.map ctxs ~f:(fun ctx ->
           L.Value.let_ (L.eval ctx term) @@ fun value ->
-          let recon_code =
-            match L.Value.(value = output ()) with
-            | Some eq when String.(Sketch.output = symbol) ->
-                S.ite eq
-                  (fun () ->
-                    S.seq_many
-                      [
-                        S.print "Starting reconstruction";
-                        ( S.let_ (reconstruct tbl g state (output ()))
-                        @@ fun _ -> S.exit );
-                      ])
-                  (fun () -> S.unit)
-            | _ -> S.unit
-          in
-          S.seq recon_code (insert value))
+          S.seq (reconstruct value) (insert value))
       |> S.seq_many
     in
 

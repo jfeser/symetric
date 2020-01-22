@@ -1,5 +1,11 @@
 open! Core
 
+module Log = Utils.Make_log (struct
+  let src = Logs.Src.create "staged-synth.genlet"
+end)
+
+let () = Log.set_level None
+
 (* Generic let-insertion: genlet code inserts a let expression to bind 'code' as
    high as possible -- as high in the scope as still safe (creating no scope
    extrusion).
