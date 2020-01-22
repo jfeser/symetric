@@ -99,7 +99,7 @@ module Code () : Sigs.CODE = struct
       let type_ = Type.create ~name:"std::string"
     end
 
-    let input = eformat ~has_effect:true "sexp::load(std::cin)" type_ "" []
+    let input = eformat ~has_effect:false "sexp::load(std::cin)" type_ "" []
 
     let to_list x =
       eformat "((list*)$(x).get())->get_body()" List.type_ "" [ ("x", C x) ]
@@ -152,7 +152,7 @@ module Code () : Sigs.CODE = struct
   module C = struct
     type 'a t = expr
 
-    let sexp_of_t = sexp_of_expr
+    let to_string e = [%sexp_of: expr] e |> Core.Sexp.to_string_hum
 
     let is_well_scoped c =
       (not c.eeffect) && List.for_all c.efree ~f:(fun (_, m) -> m ())
@@ -171,7 +171,7 @@ module Code () : Sigs.CODE = struct
   include C
   include Genlet.Make (C)
 
-  let sexp_of_t _ = sexp_of_t
+  let sexp_of_t _ = [%sexp_of: expr]
 
   let free { efree; _ } = efree
 
@@ -389,8 +389,8 @@ module Code () : Sigs.CODE = struct
 
   let ite cond then_ else_ =
     let_locus @@ fun () ->
-    let then_ = let_locus then_ in
-    let else_ = let_locus else_ in
+    let then_ = then_ () in
+    let else_ = else_ () in
     let ret_var = fresh_global then_.etype in
     eformat ret_var.ret ret_var.etype
       {|
@@ -487,7 +487,7 @@ for(int $(i) = $(lo); $(i) < $(hi); $(i) += $(step)) {
           for_ (int 0) (int 1) len (fun i -> push_back a (genlet (f i)));
           a;
         ]
-      |> genlet |> with_comment "Array.init"
+      |> with_comment "Array.init"
 
     let set a i x =
       eformat ~has_effect:true "0" unit_t "$(a)[$(i)] = $(x);"

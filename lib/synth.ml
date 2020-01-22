@@ -313,15 +313,9 @@ struct
         @@ (Sexp.input |> L.Value.of_sexp sym))
     |> seq_many
 
-  let output () =
-    let open S in
-    let output =
-      lazy
-        ( Sexp.input
-        |> L.Value.of_sexp Sketch.output
-        |> L.Value.map ~f:{ f = genlet } )
-    in
-    Lazy.force output
+  let output, bind_output =
+    Util.nonlocal_let L.Value.let_ (fun () ->
+        S.Sexp.input |> L.Value.of_sexp Sketch.output)
 
   let fill_code tbl g state code_node =
     let code = V.to_code code_node in
@@ -417,6 +411,6 @@ struct
             (* Load the inputs into the cache. *)
             load_inputs tbl;
             (* Fold over the state nodes, generating code to fill them. *)
-            (let_locus @@ fun () -> seq_many (loops tbl));
+            (bind_output @@ fun () -> seq_many (loops tbl));
           ])
 end

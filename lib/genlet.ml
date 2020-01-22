@@ -13,7 +13,7 @@ let () = Log.set_level None
 module Make (C : sig
   type 'a t
 
-  val sexp_of_t : 'a t -> Sexp.t
+  val to_string : 'a t -> string
 
   (* Check if a piece of code contains free variables that cannot
      be bound. We try to incorporate the received piece of code
@@ -47,8 +47,13 @@ struct
     if is_prompt_set p then shift0 p (fun k -> Req (c, k)) else (c, false)
 
   let genlet c =
-    Log.debug (fun m -> m "Genlet %s" (Sexp.to_string @@ [%sexp_of: C.t] c));
-    fst @@ send_req c
+    let orig_c = c in
+    let code, success = send_req c in
+    Log.debug (fun m ->
+        m "Generating let %s for: %s"
+          (if success then "succeeded" else "failed")
+          (C.to_string orig_c));
+    code
 
   (* We often use mutable variables as `communication channel', to appease
      the type-checker. The variable stores the `option' value --
@@ -82,8 +87,7 @@ struct
             | c, false ->
                 let ret = C.let_ c (fun t -> loop (k (t, true))) in
                 Log.debug (fun m ->
-                    m "Let insertion generated %s"
-                      (Sexp.to_string ([%sexp_of: C.t] ret)));
+                    m "Let insertion generated %s" (C.to_string ret));
                 ret
             (* .<let t = .~c in .~(loop (k (.<t>.,true)))>. *)
             | x -> loop (k x) (* c is a variable, inserted higher *) )

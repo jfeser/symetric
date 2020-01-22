@@ -791,14 +791,15 @@ let%expect_test "" =
       x4.clear();
       x4.reserve((int)((x3).size()));
       for (int x5 = 0; x5 < (int)((x3).size()); x5 += 1) {
-        x4.push_back(((atom *)(x3)[x5].get())->get_body());
+        std::string x6 = ((atom *)(x3)[x5].get())->get_body();
+        x4.push_back(x6);
       }
       // end Array.init
-      std::vector<std::string> x6 = x4;
+      std::vector<std::string> x7 = x4;
       // begin Array.iter
-      int x7 = ((int)((x6).size()));
-      for (int x8 = 0; x8 < x7; x8 += 1) {
-        std::cout << (x6[x8]) << std::endl;
+      int x8 = ((int)((x7).size()));
+      for (int x9 = 0; x9 < x8; x9 += 1) {
+        std::cout << (x7[x9]) << std::endl;
       }
       // end Array.iter
       return 0;
