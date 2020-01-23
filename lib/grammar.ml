@@ -2,8 +2,13 @@ open! Core
 open Utils
 
 module Term = struct
-  type 'a t = Nonterm of 'a | App of string * 'a t list
-  [@@deriving compare, hash, sexp]
+  module T = struct
+    type t = Nonterm of string | App of string * t list
+    [@@deriving compare, hash, sexp]
+  end
+
+  include T
+  include Comparator.Make (T)
 
   let rec size = function
     | Nonterm _ -> 1
@@ -37,11 +42,20 @@ module Term = struct
     in
     let t' = rename t in
     (t', !holes)
+
+  let rec map ?(nonterm = fun x -> Nonterm x) ?(app = fun n ts -> App (n, ts)) t
+      =
+    (* print_endline (to_string t); *)
+    match t with
+    | Nonterm t -> nonterm t
+    | App (n, ts) ->
+        let ts = List.map ts ~f:(map ~nonterm ~app) in
+        app n ts
 end
 
 type nonterm = string [@@deriving compare, sexp]
 
-type t = (nonterm * nonterm Term.t) list [@@deriving compare, sexp]
+type t = (nonterm * Term.t) list [@@deriving compare, sexp]
 
 let rhs g s =
   List.filter_map g ~f:(fun (s', t) -> if String.(s = s') then Some t else None)
@@ -73,88 +87,103 @@ let inline sym g =
   List.concat_map g ~f:(fun (lhs, rhs) ->
       subst_all rhs |> List.map ~f:(fun rhs' -> (lhs, rhs')))
 
-let%expect_test "" =
-  inline "A" [ ("A", App ("x", [])); ("B", App ("f", [ Nonterm "A" ])) ]
-  |> [%sexp_of: t] |> print_s;
-  [%expect {| ((A (App x ())) (B (App f ((App x ()))))) |}]
-
-let%expect_test "" =
-  inline "A"
-    [
-      ("A", App ("x", []));
-      ("A", App ("y", []));
-      ("B", App ("f", [ Nonterm "A" ]));
-    ]
-  |> [%sexp_of: t] |> print_s;
-  [%expect
-    {|
-    ((A (App x ())) (A (App y ())) (B (App f ((App x ()))))
-     (B (App f ((App y ()))))) |}]
-
-let%expect_test "" =
-  let nt x = Term.Nonterm x in
-  let id x = Term.App (x, []) in
-
-  inline "FII"
-    [
-      ("I", App ("head", [ nt "L" ]));
-      ("I", App ("last", [ nt "L" ]));
-      ("L", App ("take", [ nt "I"; nt "L" ]));
-      ("L", App ("drop", [ nt "I"; nt "L" ]));
-      ("I", App ("access", [ nt "I"; nt "L" ]));
-      ("I", App ("minimum", [ nt "L" ]));
-      ("I", App ("maximum", [ nt "L" ]));
-      ("L", App ("reverse", [ nt "L" ]));
-      ("I", App ("sum", [ nt "L" ]));
-      ("L", App ("map", [ nt "FII"; nt "L" ]));
-      ("I", App ("count", [ nt "FIB"; nt "L" ]));
-      ("L", App ("zipwith", [ nt "FIII"; nt "L"; nt "L" ]));
-      ("FII", id "(+1)");
-      ("FII", id "(-1)");
-      ("FII", id "(*2)");
-      ("FII", id "(/2)");
-      ("FII", id "(*(-1))");
-      ("FII", id "(**2)");
-      ("FII", id "(*3)");
-      ("FII", id "(/3)");
-      ("FII", id "(*4)");
-      ("FII", id "(/4)");
-      ("FIB", id "(>0)");
-      ("FIB", id "(<0)");
-      ("FIB", id "(%2==0)");
-      ("FIB", id "(%2==1)");
-      ("FIII", id "(+)");
-      ("FIII", id "(-)");
-      ("FIII", id "(*)");
-      ("FIII", id "min");
-      ("FIII", id "max");
-    ]
-  |> [%sexp_of: t] |> print_s;
-  [%expect
-    {|
-    ((I (App head ((Nonterm L)))) (I (App last ((Nonterm L))))
-     (L (App take ((Nonterm I) (Nonterm L))))
-     (L (App drop ((Nonterm I) (Nonterm L))))
-     (I (App access ((Nonterm I) (Nonterm L)))) (I (App minimum ((Nonterm L))))
-     (I (App maximum ((Nonterm L)))) (L (App reverse ((Nonterm L))))
-     (I (App sum ((Nonterm L)))) (L (App map ((App "(+1)" ()) (Nonterm L))))
-     (L (App map ((App "(-1)" ()) (Nonterm L))))
-     (L (App map ((App "(*2)" ()) (Nonterm L))))
-     (L (App map ((App "(/2)" ()) (Nonterm L))))
-     (L (App map ((App "(*(-1))" ()) (Nonterm L))))
-     (L (App map ((App "(**2)" ()) (Nonterm L))))
-     (L (App map ((App "(*3)" ()) (Nonterm L))))
-     (L (App map ((App "(/3)" ()) (Nonterm L))))
-     (L (App map ((App "(*4)" ()) (Nonterm L))))
-     (L (App map ((App "(/4)" ()) (Nonterm L))))
-     (I (App count ((Nonterm FIB) (Nonterm L))))
-     (L (App zipwith ((Nonterm FIII) (Nonterm L) (Nonterm L))))
-     (FII (App "(+1)" ())) (FII (App "(-1)" ())) (FII (App "(*2)" ()))
-     (FII (App "(/2)" ())) (FII (App "(*(-1))" ())) (FII (App "(**2)" ()))
-     (FII (App "(*3)" ())) (FII (App "(/3)" ())) (FII (App "(*4)" ()))
-     (FII (App "(/4)" ())) (FIB (App "(>0)" ())) (FIB (App "(<0)" ()))
-     (FIB (App "(%2==0)" ())) (FIB (App "(%2==1)" ())) (FIII (App "(+)" ()))
-     (FIII (App "(-)" ())) (FIII (App "(*)" ())) (FIII (App min ()))
-     (FIII (App max ()))) |}]
-
 let with_holes ?fresh = Term.with_holes ?fresh ~equal:[%compare.equal: nonterm]
+
+let productions g sym =
+  List.filter g ~f:(fun (sym', _) -> [%compare.equal: nonterm] sym sym')
+  |> List.map ~f:(fun (_, prod) -> prod)
+
+let weighted_random ?(state = Random.State.default) l =
+  if List.length l <= 0 then failwith "Selecting from an empty list";
+  let x =
+    Random.State.float state 1.0
+    *. List.sum (module Float) l ~f:(fun (w, _) -> w)
+  in
+  let rec loop x = function
+    | [] -> failwith "BUG: Weight did not decrease enough"
+    | (w, e) :: ws ->
+        let x = x -. w in
+        if Float.(x <= 0.0) then e else loop x ws
+  in
+  loop x l
+
+(* See: https://eli.thegreenplace.net/2010/01/28/generating-random-sentences-from-a-context-free-grammar *)
+let sample ?(state = Random.State.default) ?(factor = 0.01) symbol g =
+  let rec sample pcount sym =
+    let random_prod =
+      productions g sym
+      |> List.map ~f:(fun p ->
+             let w =
+               Map.find pcount p
+               |> Option.map ~f:(fun c -> factor *. float c)
+               |> Option.value ~default:1.0
+             in
+             (w, p))
+      |> weighted_random ~state
+    in
+    let pcount =
+      Map.update pcount random_prod ~f:(function Some c -> c + 1 | None -> 1)
+    in
+    Term.map random_prod ~nonterm:(sample pcount)
+  in
+  sample (Map.empty (module Term)) symbol
+
+let sample_seq ?state ?factor symbol g =
+  Sequence.unfold ~init:() ~f:(fun () ->
+      Some (sample ?state ?factor symbol g, ()))
+
+(* let shuffle ?(state = Random.State.default) a =
+ *   let n = Array.length a in
+ *   for i = 0 to n - 2 do
+ *     let j = Random.State.int_incl state i (n - 1) in
+ *     Array.swap a i j
+ *   done
+ * 
+ * let shuffle_list ?(state = Random.State.default) l =
+ *   let a = Array.of_list l in
+ *   shuffle ~state a;
+ *   Array.to_list a *)
+
+(* let rec sample ?(state = Random.State.default) g symbol n =
+ *   if n <= 0 then None
+ *   else
+ *     productions g symbol |> shuffle_list ~state
+ *     |> List.find_map ~f:(fun body ->
+ *            let exception Failed in
+ *            let size =
+ *              Term.size body - (Term.non_terminals body |> List.length)
+ *            in
+ *            try
+ *              Term.map body ~nonterm:(fun sym ->
+ *                  match sample ~state g sym (n - size) with
+ *                  | Some t -> t
+ *                  | None -> raise Failed)
+ *              |> Option.some
+ *            with Failed -> None) *)
+
+(* let sum init n ~f =
+ *   let rec loop acc k = if k > n then acc else loop (f k) (k + 1) in
+ *   loop init
+ * 
+ * module Conv = struct
+ *   let ( * ) g1 g2 =
+ *     fun n -> sum 0 n ~f:(fun k -> g1 k * g2 (n - k) )
+ * end
+ * 
+ * let sample g n =
+ *   let r = non_terminals g |> List.length in
+ * 
+ *   (\* Fill the lookup table. *\)
+ *   let a = Array.create ~len:r 0 in
+ *   set (0, a) 1.0;
+ * 
+ *   for t = 1 to n do
+ *     for s = t downto 0 do
+ *       let rec loop i d =
+ *         if i < r then
+ *           for ai = s - d downto 0 do
+ *             a.(i - 1) <- ai;
+ *             loop (i + 1) (d + ai)
+ *           done
+ *         else
+ *           (a.(i - 1) <- s - d; compute (t, a)) *)
