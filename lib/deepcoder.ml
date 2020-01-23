@@ -258,7 +258,7 @@ module Make (C : Sigs.CODE) = struct
                     (min (length a) (length a'))
                     (fun i -> f (get a i) (get a' i))) )
       | e ->
-          Error.create "Unexpected expression." e [%sexp_of: _ Grammar.Term.t]
+          Error.create "Unexpected expression." e [%sexp_of: Grammar.Term.t]
           |> Error.raise
 
     let eval ctx expr =
@@ -266,8 +266,7 @@ module Make (C : Sigs.CODE) = struct
       with exn ->
         let open Error in
         let err = of_exn exn in
-        tag_arg err "Evaluation failed" expr [%sexp_of: _ Grammar.Term.t]
-        |> raise
+        tag_arg err "Evaluation failed" expr [%sexp_of: Grammar.Term.t] |> raise
   end
 
   module Cache = struct

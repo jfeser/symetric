@@ -19,7 +19,7 @@ let to_list a = List.init (Bigarray.Array1.dim a) ~f:(fun i -> a.{i})
 module V = struct
   type state = { cost : int; symbol : string } [@@deriving compare, hash, sexp]
 
-  type code = { cost : int; term : string Grammar.Term.t }
+  type code = { cost : int; term : Grammar.Term.t }
   [@@deriving compare, hash, sexp]
 
   type arg = { id : int; n_args : int } [@@deriving compare, hash, sexp]
@@ -105,7 +105,7 @@ let to_contexts term args =
   List.iter ctxs ~f:(fun ctx ->
       [%test_result: int]
         ~message:
-          ( [%sexp_of: string Grammar.Term.t * (V.state * _) list] (term, args)
+          ( [%sexp_of: Grammar.Term.t * (V.state * _) list] (term, args)
           |> Sexp.to_string_hum )
         ~expect:(Grammar.Term.non_terminals term |> List.length)
         (Map.length ctx));
@@ -113,21 +113,21 @@ let to_contexts term args =
 
 let%expect_test "" =
   to_contexts (App ("x", [])) []
-  |> [%sexp_of: string Grammar.Term.t * int Map.M(String).t list] |> print_s;
+  |> [%sexp_of: Grammar.Term.t * int Map.M(String).t list] |> print_s;
   [%expect {| ((App x ()) (())) |}]
 
 let%expect_test "" =
   to_contexts
     (App ("access", [ Nonterm "I"; Nonterm "L" ]))
     [ ({ cost = 1; symbol = "I" }, 0); ({ cost = 1; symbol = "L" }, 1) ]
-  |> [%sexp_of: string Grammar.Term.t * int Map.M(String).t list] |> print_s;
+  |> [%sexp_of: Grammar.Term.t * int Map.M(String).t list] |> print_s;
   [%expect {| ((App access ((App I0 ()) (App L1 ()))) (((I0 0) (L1 1)))) |}]
 
 let%expect_test "" =
   to_contexts
     (App ("sum", [ Nonterm "I"; Nonterm "I" ]))
     [ ({ cost = 1; symbol = "I" }, 0); ({ cost = 1; symbol = "I" }, 1) ]
-  |> [%sexp_of: string Grammar.Term.t * int Map.M(String).t list] |> print_s;
+  |> [%sexp_of: Grammar.Term.t * int Map.M(String).t list] |> print_s;
   [%expect
     {| ((App sum ((App I0 ()) (App I1 ()))) (((I0 0) (I1 1)) ((I0 1) (I1 0)))) |}]
 
@@ -139,7 +139,7 @@ let%expect_test "" =
       ({ cost = 1; symbol = "I" }, 1);
       ({ cost = 1; symbol = "J" }, 2);
     ]
-  |> [%sexp_of: string Grammar.Term.t * int Map.M(String).t list] |> print_s;
+  |> [%sexp_of: Grammar.Term.t * int Map.M(String).t list] |> print_s;
   [%expect
     {|
     ((App sum3 ((App I0 ()) (App I1 ()) (App J2 ())))
@@ -191,7 +191,7 @@ struct
         S.ite found_target
           (fun () ->
             S.seq_many
-              ( S.print ([%sexp_of: string Gr.Term.t] term |> Sexp.to_string_hum)
+              ( S.print ([%sexp_of: Gr.Term.t] term |> Sexp.to_string_hum)
               :: List.map args ~f:(fun (n, v) -> reconstruct tbl g n v) ))
           (fun () -> S.unit)
       in
