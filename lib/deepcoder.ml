@@ -18,6 +18,24 @@ module Make (C : Sigs.CODE) = struct
 
     type mapper = { f : 'a. 'a C.t -> 'a C.t }
 
+    let random ?(state = Random.State.default) sym n =
+      let random_int () =
+        let x = Random.State.int_incl state 0 10 in
+        C.(Int.int x)
+      in
+      let random_array () =
+        let length = Random.State.int_incl state 0 8 in
+        let arr = Array.init length ~f:(fun _ -> random_int ()) in
+        C.(Array.const (Array.mk_type int_t) arr)
+      in
+      let random_examples elem elem_t () =
+        C.Array.const (C.Array.mk_type elem_t)
+          (Array.init n ~f:(fun _ -> elem ()))
+      in
+      if String.(sym = "L") then
+        A (random_examples random_array C.(Array.mk_type int_t) ())
+      else I (random_examples random_int C.(int_t) ())
+
     let map ~f v =
       match v with
       | A x -> A (f.f x)
@@ -70,6 +88,23 @@ module Make (C : Sigs.CODE) = struct
       in
 
       if String.(symbol = "L") then A (array_of_sexp s) else I (int_of_sexp s)
+
+    let sexp_of v =
+      let array_to_sexp examples =
+        let open C in
+        let open Array in
+        sexp_of examples (fun array -> sexp_of array Int.sexp_of)
+      in
+      let int_to_sexp examples =
+        let open C in
+        let open Array in
+        sexp_of examples Int.sexp_of
+      in
+
+      match v with
+      | A x -> array_to_sexp x
+      | I x -> int_to_sexp x
+      | _ -> failwith "unexpected value"
   end
 
   module Lang = struct

@@ -322,6 +322,9 @@ module Code () : Sigs.CODE = struct
     let of_sexp x =
       eformat "std::stoi(((atom*)$(x).get())->get_body())" int_t ""
         [ ("x", C x) ]
+
+    let sexp_of x =
+      eformat "atom(std::to_string($(x)))" Sexp.type_ "" [ ("x", C x) ]
   end
 
   open Int
@@ -338,6 +341,8 @@ module Code () : Sigs.CODE = struct
     let not x = unop "(!%s)" bool_t x
 
     let of_sexp = Int.of_sexp
+
+    let sexp_of = Int.sexp_of
   end
 
   let rec sseq = function [] -> unit | [ x ] -> x | x :: xs -> seq x (sseq xs)
@@ -527,6 +532,8 @@ for(int $(i) = $(lo); $(i) < $(hi); $(i) += $(step)) {
     let of_sexp t x elem_of_sexp =
       let_ (Sexp.to_list x) @@ fun l ->
       init t (Sexp.List.length l) (fun i -> elem_of_sexp (Sexp.List.get l i))
+
+    let sexp_of _ _ = failwith "unimplemented"
   end
 
   module Set = struct
@@ -586,6 +593,8 @@ for(auto $(iter) = $(set).begin(); $(iter) != $(set).end(); ++$(iter)) {
       let_ (Sexp.to_list sexp) @@ fun sexp ->
       for_ (int 0) (int 1) (Sexp.List.length sexp) (fun i ->
           add set (elem_of_sexp (Sexp.List.get sexp i)))
+
+    let sexp_of _ _ = failwith "unimplemented"
   end
 
   module Tuple = struct
@@ -616,6 +625,8 @@ for(auto $(iter) = $(set).begin(); $(iter) != $(set).end(); ++$(iter)) {
     let fst t = eformat "std::get<0>($(t))" (fst_type t.etype) "" [ ("t", C t) ]
 
     let snd t = eformat "std::get<1>($(t))" (snd_type t.etype) "" [ ("t", C t) ]
+
+    let sexp_of _ _ _ = failwith "unimplemented"
   end
 
   module String = struct
@@ -645,5 +656,7 @@ while (std::cin.read($(buf), sizeof($(buf)))) {
 $(var).append($(buf), std::cin.gcount());
 |}
         [ ("var", S (fresh_name ())); ("buf", S (fresh_name ())) ]
+
+    let sexp_of _ = failwith "unimplemented"
   end
 end

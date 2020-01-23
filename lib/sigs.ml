@@ -63,6 +63,8 @@ module type LANG = sig
 
     val of_sexp : Grammar.nonterm -> sexp code -> t
 
+    val sexp_of : t -> sexp code
+
     type mapper = { f : 'a. 'a code -> 'a code }
 
     val map : f:mapper -> t -> t
@@ -131,6 +133,8 @@ module type CODE = sig
     val max : int32 t -> int32 t -> int32 t
 
     val of_sexp : sexp t -> int32 t
+
+    val sexp_of : int32 t -> sexp t
   end
 
   (* Boolean operations *)
@@ -146,6 +150,8 @@ module type CODE = sig
     val not : bool t -> bool t
 
     val of_sexp : sexp t -> bool t
+
+    val sexp_of : bool t -> sexp t
   end
 
   (* Function operations *)
@@ -189,6 +195,8 @@ module type CODE = sig
       'c array t
 
     val of_sexp : ctype -> sexp t -> (sexp t -> 'a t) -> 'a array t
+
+    val sexp_of : 'a array t -> ('a t -> sexp t) -> sexp t
   end
 
   module Set : sig
@@ -203,6 +211,8 @@ module type CODE = sig
     val fold : 'a set t -> init:'b t -> f:('b t -> 'a t -> 'b t) -> 'b t
 
     val of_sexp : ctype -> sexp t -> (sexp t -> 'a t) -> 'a set t
+
+    val sexp_of : 'a set t -> ('a t -> sexp t) -> sexp t
   end
 
   (* Tuples *)
@@ -216,6 +226,8 @@ module type CODE = sig
     val snd : ('a * 'b) t -> 'b t
 
     val of_sexp : sexp t -> (sexp t -> 'a t) -> (sexp t -> 'b t) -> ('a * 'b) t
+
+    val sexp_of : ('a * 'b) t -> ('a t -> sexp t) -> ('b t -> sexp t) -> sexp t
   end
 
   module String : sig
@@ -232,6 +244,8 @@ module type CODE = sig
     val print : string t -> unit t
 
     val of_sexp : sexp t -> string t
+
+    val sexp_of : string t -> sexp t
   end
 
   module Sexp : sig

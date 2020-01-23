@@ -39,11 +39,13 @@ module Code : Sigs.CODE = struct
 
   let to_sexp x = match x () with Sexp x -> x | _ -> assert false
 
-  let to_string x = match x () with String x -> x | _ -> assert false
+  let to_str x = match x () with String x -> x | _ -> assert false
 
   let to_value x = x ()
 
   let to_code x () = x
+
+  let to_string x = to_value x |> [%sexp_of: Value.t] |> Sexp.to_string_hum
 
   let unit_t = ()
 
@@ -113,6 +115,8 @@ module Code : Sigs.CODE = struct
     let ( = ) = cmp_binop ( = )
 
     let of_sexp x () = Int ([%of_sexp: int] (to_sexp x))
+
+    let sexp_of x () = Sexp ([%sexp_of: int] (to_int x))
   end
 
   module Bool = struct
@@ -129,6 +133,8 @@ module Code : Sigs.CODE = struct
     let not x () = Bool (not (to_bool x))
 
     let of_sexp x () = Bool ([%of_sexp: bool] (to_sexp x))
+
+    let sexp_of x () = Sexp ([%sexp_of: bool] (to_bool x))
   end
 
   module String = struct
@@ -144,8 +150,10 @@ module Code : Sigs.CODE = struct
       | Atom s -> String s
       | _ -> failwith "Expected an atom."
 
+    let sexp_of x () = Sexp ([%sexp_of: string] (to_str x))
+
     let print s () =
-      print_endline (to_string s);
+      print_endline (to_str s);
       Unit
 
     let input () = String (In_channel.input_all In_channel.stdin)
@@ -206,6 +214,13 @@ module Code : Sigs.CODE = struct
                   elem_of_sexp (fun () -> Sexp s) |> to_value)
             |> Array.of_list )
       | _ -> failwith "Expected a list."
+
+    let sexp_of x sexp_of_elem () =
+      Sexp
+        (Core.Sexp.List
+           ( to_array x
+           |> Array.map ~f:(fun e -> sexp_of_elem (to_code e) |> to_sexp)
+           |> Array.to_list ))
   end
 
   module Set = struct
@@ -235,6 +250,12 @@ module Code : Sigs.CODE = struct
                   elem_of_sexp (fun () -> Sexp s) |> to_value)
             |> Set.Poly.of_list |> ref )
       | _ -> failwith "Expected a list."
+
+    let sexp_of x sexp_of_elem () =
+      Sexp
+        (Core.Sexp.List
+           ( to_set x |> ( ! ) |> Set.Poly.to_list
+           |> List.map ~f:(fun e -> sexp_of_elem (to_code e) |> to_sexp) ))
   end
 
   module Tuple = struct
@@ -259,6 +280,15 @@ module Code : Sigs.CODE = struct
             ( t1_of_sexp (fun () -> Sexp t1) |> to_value,
               t2_of_sexp (fun () -> Sexp t2) |> to_value )
       | _ -> failwith "Expected a list."
+
+    let sexp_of x sexp_of_t1 sexp_of_t2 () =
+      let t1, t2 = to_tuple x in
+      Sexp
+        (Core.Sexp.List
+           [
+             sexp_of_t1 (to_code t1) |> to_sexp;
+             sexp_of_t2 (to_code t2) |> to_sexp;
+           ])
   end
 
   let for_ l s h f () =
