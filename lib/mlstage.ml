@@ -62,7 +62,7 @@ module Code : Sigs.CODE = struct
   module Sexp = struct
     let type_ = ()
 
-    let input () = Sexp (Sexp.input_sexp In_channel.stdin)
+    let input () () = Sexp (Sexp.input_sexp In_channel.stdin)
 
     module List = struct
       let get s i () =

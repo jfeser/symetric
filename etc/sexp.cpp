@@ -66,7 +66,7 @@ void atom::accept(sexp_visitor & v) const { v.visit(*this); }
 ostream &list::print(ostream & os) const {
   os << "(";
   for (auto &elem : body) {
-    os << elem << " ";
+    os << *elem << " ";
   }
   os << ")";
   return os;
@@ -75,6 +75,7 @@ ostream &list::print(ostream & os) const {
 unique_ptr<list> list::load(istream & in) {
   vector<unique_ptr<sexp>> elems;
 
+  slurp_white(in);
   if (!parse_char(in, '(')) {
     return nullptr;
   }
@@ -99,8 +100,12 @@ unique_ptr<sexp> sexp::load(istream & in) {
   if (lout) {
     return lout;
   }
+  unique_ptr<atom> aout = atom::load(in);
+  if (aout) {
+    return aout;
+  }
 
-  return atom::load(in);
+  return nullptr;
 }
 
 bool is_atom(const sexp &s) {

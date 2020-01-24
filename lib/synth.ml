@@ -111,40 +111,6 @@ let to_contexts term args =
         (Map.length ctx));
   (new_term, ctxs)
 
-let%expect_test "" =
-  to_contexts (App ("x", [])) []
-  |> [%sexp_of: Grammar.Term.t * int Map.M(String).t list] |> print_s;
-  [%expect {| ((App x ()) (())) |}]
-
-let%expect_test "" =
-  to_contexts
-    (App ("access", [ Nonterm "I"; Nonterm "L" ]))
-    [ ({ cost = 1; symbol = "I" }, 0); ({ cost = 1; symbol = "L" }, 1) ]
-  |> [%sexp_of: Grammar.Term.t * int Map.M(String).t list] |> print_s;
-  [%expect {| ((App access ((App I0 ()) (App L1 ()))) (((I0 0) (L1 1)))) |}]
-
-let%expect_test "" =
-  to_contexts
-    (App ("sum", [ Nonterm "I"; Nonterm "I" ]))
-    [ ({ cost = 1; symbol = "I" }, 0); ({ cost = 1; symbol = "I" }, 1) ]
-  |> [%sexp_of: Grammar.Term.t * int Map.M(String).t list] |> print_s;
-  [%expect
-    {| ((App sum ((App I0 ()) (App I1 ()))) (((I0 0) (I1 1)) ((I0 1) (I1 0)))) |}]
-
-let%expect_test "" =
-  to_contexts
-    (App ("sum3", [ Nonterm "I"; Nonterm "I"; Nonterm "J" ]))
-    [
-      ({ cost = 1; symbol = "I" }, 0);
-      ({ cost = 1; symbol = "I" }, 1);
-      ({ cost = 1; symbol = "J" }, 2);
-    ]
-  |> [%sexp_of: Grammar.Term.t * int Map.M(String).t list] |> print_s;
-  [%expect
-    {|
-    ((App sum3 ((App I0 ()) (App I1 ()) (App J2 ())))
-     (((I0 0) (I1 1) (J2 2)) ((I0 1) (I1 0) (J2 2)))) |}]
-
 module Make
     (Sketch : Sigs.SKETCH)
     (S : Sigs.CODE)
@@ -155,7 +121,7 @@ struct
   open C
   module Gr = Grammar
 
-  let debug = true
+  let debug = false
 
   let debug_print msg = if debug then S.print msg else S.unit
 
@@ -310,12 +276,12 @@ struct
     let open S in
     List.map Sketch.inputs ~f:(fun sym ->
         put ~sym ~size:1 ~sizes:(Array.const costs_t [||]) tbl
-        @@ (Sexp.input |> L.Value.of_sexp sym))
+        @@ (Sexp.input () |> L.Value.of_sexp sym))
     |> seq_many
 
   let output, bind_output =
     Util.nonlocal_let L.Value.let_ (fun () ->
-        S.Sexp.input |> L.Value.of_sexp Sketch.output)
+        S.Sexp.input () |> L.Value.of_sexp Sketch.output)
 
   let fill_code tbl g state code_node =
     let code = V.to_code code_node in
@@ -362,6 +328,13 @@ struct
     let fill args =
       let term, ctxs = to_contexts term args in
       List.map ctxs ~f:(fun ctx ->
+          Log.debug (fun m ->
+              m "%a Eval(%a, %a)" Sexp.pp
+                ([%sexp_of: (V.state * L.Value.t) list] args)
+                Sexp.pp
+                ([%sexp_of: L.Value.t Map.M(String).t] ctx)
+                Sexp.pp
+                ([%sexp_of: Grammar.Term.t] term));
           L.Value.let_ (L.eval ctx term) @@ fun value ->
           S.seq (reconstruct value) (insert value))
       |> S.seq_many
@@ -375,6 +348,8 @@ struct
             G.succ g arg_node
             |> List.fold_left ~init:fill ~f:(fun fill node ->
                    let state = V.to_state node in
+                   let symbol = state.symbol in
+                   let cost = state.cost in
                    let fill ctx =
                      C.iter ~sym:symbol ~size:(int cost)
                        ~f:(fun (v, _) -> fill ((state, v) :: ctx))

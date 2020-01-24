@@ -1,6 +1,6 @@
 CXX = clang++
-CXXFLAGS = -Wall -Wextra -std=c++17 -g -fsanitize=address \
-					 -fsanitize=undefined -fno-omit-frame-pointer
+CXXFLAGS = -Wall -Wextra -std=c++17 -g # -fsanitize=address \
+					 # -fsanitize=undefined -fno-omit-frame-pointer
 LDFLAGS = -fsanitize=address -fsanitize=undefined
 OBJ = sexp.o sexp_test.o
 BIN = test

@@ -47,7 +47,7 @@ module type LANG = sig
   type 'a code
 
   module Value : sig
-    type t
+    type t [@@deriving sexp_of]
 
     type type_
 
@@ -251,7 +251,7 @@ module type CODE = sig
   module Sexp : sig
     val type_ : ctype
 
-    val input : sexp t
+    val input : unit -> sexp t
 
     val to_list : sexp t -> sexp list t
 

@@ -237,7 +237,11 @@ module Make (C : Sigs.CODE) = struct
           I
             ( let_ (eval ctx e |> to_array) @@ fun a ->
               let_ (eval ctx n |> to_int) @@ fun n ->
-              map2 Value.int_type a n ~f:(fun a n -> get a n) )
+              map2 Value.int_type a n ~f:(fun a n ->
+                  ite
+                    Bool.(n >= int 0 && n < length a)
+                    (fun () -> get a n)
+                    (fun () -> int 0)) )
       | App ("minimum", [ e ]) ->
           I
             ( let_ (eval ctx e |> to_array) @@ fun a ->

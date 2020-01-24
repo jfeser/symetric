@@ -3,6 +3,7 @@ open! Core_bench
 open Staged_synth
 
 let main () =
+  Synth.Log.set_level (Some Debug);
   let module Code = Cstage.Code () in
   let module Deepcoder = Deepcoder.Make (Code) in
   let module Sketch = struct

@@ -219,7 +219,8 @@ let%expect_test "" =
     }
  |}];
   code |> Util.clang_build |> print_endline;
-  [%expect {|
+  [%expect
+    {|
     <stdin>:14:5: warning: unused variable 'x7' [-Wunused-variable]
     int x7 = x5; return 0; }
         ^
@@ -274,7 +275,8 @@ let%expect_test "" =
     }
  |}];
   code |> Util.clang_build |> print_endline;
-  [%expect {|
+  [%expect
+    {|
     <stdin>:14:5: warning: unused variable 'x8' [-Wunused-variable]
     int x8 = x5; return 0; }
         ^
@@ -770,13 +772,14 @@ let%expect_test "" =
   let module C = Code () in
   let open C in
   let code =
-    let_ Sexp.input @@ fun sexp ->
+    let_ (Sexp.input ()) @@ fun sexp ->
     let_ (Array.of_sexp (Array.mk_type String.type_) sexp String.of_sexp)
     @@ fun arr -> Array.iter arr ~f:(fun str -> String.print str)
   in
   let code = to_string code in
   code |> Util.clang_format |> print_endline;
-  [%expect {|
+  [%expect
+    {|
     #include <iostream>
     #include <set>
     #include <vector>

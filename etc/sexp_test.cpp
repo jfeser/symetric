@@ -33,3 +33,13 @@ BOOST_AUTO_TEST_CASE(test_list) {
 
   x->accept(visitor);
 }
+
+BOOST_AUTO_TEST_CASE(test_two_load) {
+  auto in = stringstream("((2 5 9) (8 1 6 2 2 2 5 4) (5 5 1 0 5 0 7) (0 10 1 7 3) (5 4 1 10))\n((1 0 1) (1 0 0 0 0 0 0 1) (0 0 0 0 0 0 0) (0 1 0 1 0) (1 0 0 1))");
+  unique_ptr<sexp> s1 = sexp::load(in);
+  BOOST_TEST(s1);
+  unique_ptr<sexp> s2 = sexp::load(in);
+  BOOST_TEST(s2);
+
+  std::cout << *s1 << std::endl << *s2 << std::endl;
+}

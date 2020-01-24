@@ -82,32 +82,6 @@ module Code () : Sigs.CODE = struct
 
   let unit_t = Type.create ~name:"int" |> Type.add_exn ~key:is_unit ~data:()
 
-  module Sexp = struct
-    let type_ = Type.create ~name:"const std::unique_ptr<sexp>&"
-
-    module List = struct
-      let get x i = eformat "($(x))[$(i)]" type_ "" [ ("x", C x); ("i", C i) ]
-
-      let length x =
-        eformat "(int)(($(x)).size())" (Type.create ~name:"int") ""
-          [ ("x", C x) ]
-
-      let type_ = Type.create ~name:"const std::vector<std::unique_ptr<sexp>>&"
-    end
-
-    module Atom = struct
-      let type_ = Type.create ~name:"std::string"
-    end
-
-    let input = eformat ~has_effect:false "sexp::load(std::cin)" type_ "" []
-
-    let to_list x =
-      eformat "((list*)$(x).get())->get_body()" List.type_ "" [ ("x", C x) ]
-
-    let to_atom x =
-      eformat "((atom*)$(x).get())->get_body()" Atom.type_ "" [ ("x", C x) ]
-  end
-
   module Func = struct
     let arg_t = Univ_map.Key.create ~name:"arg_t" [%sexp_of: ctype]
 
@@ -148,6 +122,35 @@ module Code () : Sigs.CODE = struct
     let name = fresh_name () in
     add_var_decl { vname = name; vtype = type_; init = None };
     eformat name type_ "" []
+
+  module Sexp = struct
+    let type_ = Type.create ~name:"const std::unique_ptr<sexp>&"
+
+    module List = struct
+      let get x i = eformat "($(x))[$(i)]" type_ "" [ ("x", C x); ("i", C i) ]
+
+      let length x =
+        eformat "(int)(($(x)).size())" (Type.create ~name:"int") ""
+          [ ("x", C x) ]
+
+      let type_ = Type.create ~name:"const std::vector<std::unique_ptr<sexp>>&"
+    end
+
+    module Atom = struct
+      let type_ = Type.create ~name:"std::string"
+    end
+
+    let input () =
+      eformat ~has_effect:false "$(name)" type_
+        "std::unique_ptr<sexp> $(name) = sexp::load(std::cin);"
+        [ ("name", S (fresh_name ())) ]
+
+    let to_list x =
+      eformat "((list*)$(x).get())->get_body()" List.type_ "" [ ("x", C x) ]
+
+    let to_atom x =
+      eformat "((atom*)$(x).get())->get_body()" Atom.type_ "" [ ("x", C x) ]
+  end
 
   module C = struct
     type 'a t = expr
@@ -505,9 +508,15 @@ for(int $(i) = $(lo); $(i) < $(hi); $(i) += $(step)) {
 
     let map2 t a1 a2 ~f = init t (length a1) (fun i -> f (get a1 i) (get a2 i))
 
-    let sub a s l =
+    let sub a start len =
       let open Int in
-      init a.etype (max (int 0) (l - s)) (fun i -> get a (s + i))
+      let_ (length a) @@ fun n ->
+      let inbounds x = x |> max (int 0) |> min (n - int 1) in
+      let_ (start + len) @@ fun end_ ->
+      let_ (inbounds start) @@ fun start ->
+      let_ (inbounds end_) @@ fun end_ ->
+      let_ (end_ - start + int 1) @@ fun len ->
+      init a.etype len (fun i -> get a (start + i))
 
     let fold arr ~init ~f =
       let acc = fresh_global init.etype in
