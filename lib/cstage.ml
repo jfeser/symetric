@@ -511,7 +511,7 @@ for(int $(i) = $(lo); $(i) < $(hi); $(i) += $(step)) {
     let sub a start len =
       let open Int in
       let_ (length a) @@ fun n ->
-      let inbounds x = x |> max (int 0) |> min (n - int 1) in
+      let inbounds x = x |> min (n - int 1) |> max (int 0) in
       let_ (start + len) @@ fun end_ ->
       let_ (inbounds start) @@ fun start ->
       let_ (inbounds end_) @@ fun end_ ->
