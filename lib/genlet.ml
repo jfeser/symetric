@@ -96,4 +96,8 @@ struct
     @@ fun () ->
     r := Some (body ());
     Done
+
+  let with_stackmark body =
+    let p = new_prompt () in
+    push_prompt p (fun () -> body (fun () -> is_prompt_set p))
 end
