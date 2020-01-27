@@ -125,6 +125,8 @@ struct
 
   let debug_print msg = if debug then S.print msg else S.unit
 
+  let cache = C.empty ()
+
   let rec of_list = function
     | [] -> S.unit
     | [ l ] -> l
@@ -142,9 +144,11 @@ struct
 
   let costs_t = S.Array.mk_type S.Int.type_
 
-  let rec reconstruct tbl g state target =
-    let args_t = L.Value.type_of target in
-    let func_t = S.Func.mk_type args_t S.unit_t
+  let rec reconstruct g state target =
+    let func_t =
+      let cache = cache.value () |> C.code_of in
+      let args_t = S.Tuple.mk_type (L.Value.type_of target) (S.type_of cache) in
+      S.Func.mk_type args_t S.unit_t
     and func_name = sprintf "reconstruct_%s_%d" state.V.symbol state.cost in
 
     let recon_args target term args =
@@ -158,7 +162,7 @@ struct
           (fun () ->
             S.sseq
               ( S.print ([%sexp_of: Gr.Term.t] term |> Sexp.to_string_hum)
-              :: List.map args ~f:(fun (n, v) -> reconstruct tbl g n v) ))
+              :: List.map args ~f:(fun (n, v) -> reconstruct g n v) ))
           (fun () -> S.unit)
       in
       let check =
@@ -167,7 +171,7 @@ struct
             let check ctx =
               C.iter ~sym:state.V.symbol ~size:(int state.V.cost)
                 ~f:(fun (v, _) -> check ((state, v) :: ctx))
-                tbl
+                (cache.value ())
             in
             check)
       in
@@ -272,18 +276,18 @@ struct
 
     if prune then prune_loop g else g
 
-  let load_inputs tbl =
+  let load_inputs () =
     let open S in
     List.map Sketch.inputs ~f:(fun sym ->
-        put ~sym ~size:1 ~sizes:(Array.const costs_t [||]) tbl
+        put ~sym ~size:1 ~sizes:(Array.const costs_t [||]) (cache.value ())
         @@ (Sexp.input () |> L.Value.of_sexp sym))
     |> sseq
 
-  let output, bind_output =
-    Util.nonlocal_let L.Value.let_ (fun () ->
+  let output =
+    Nonlocal_let.let_ L.Value.let_ (fun () ->
         S.Sexp.input () |> L.Value.of_sexp Sketch.output)
 
-  let fill_code tbl g state code_node =
+  let fill_code g state code_node =
     let code = V.to_code code_node in
     let term = code.V.term
     and symbol = state.V.symbol
@@ -297,7 +301,7 @@ struct
                (Gr.Term.to_string term) cost);
           put ~sym:symbol ~size:cost
             ~sizes:(S.Array.const costs_t [||])
-            tbl value;
+            (cache.value ()) value;
         ]
     in
 
@@ -309,14 +313,14 @@ struct
             m "Skipping reconstruction: (%s <> %s)" Sketch.output symbol);
         S.unit )
       else
-        match L.Value.(value = output ()) with
+        match L.Value.(value = output.value ()) with
         | Some eq ->
             S.ite eq
               (fun () ->
                 S.sseq
                   [
                     debug_print "Starting reconstruction";
-                    reconstruct tbl g state (output ());
+                    reconstruct g state (output.value ());
                     S.exit;
                   ])
               (fun () -> S.unit)
@@ -346,17 +350,15 @@ struct
                    let fill ctx =
                      C.iter ~sym:symbol ~size:(int cost)
                        ~f:(fun (v, _) -> fill ((state, v) :: ctx))
-                       tbl
+                       (cache.value ())
                    in
                    fill)
           in
           fill [])
 
-  let fill_state tbl g state =
+  let fill_state g state =
     Log.debug (fun m -> m "Generating code for %s:%d" state.V.symbol state.cost);
-    G.succ g (V.State state)
-    |> List.concat_map ~f:(fill_code tbl g state)
-    |> S.sseq
+    G.succ g (V.State state) |> List.concat_map ~f:(fill_code g state) |> S.sseq
 
   let enumerate max_cost =
     let g = search_graph max_cost in
@@ -364,21 +366,21 @@ struct
     (* Generate a graph that only contains the state nodes. *)
     let lhs_g = contract_state g |> G.reverse in
 
-    let loops tbl =
+    let loops () =
       G.Topo.fold
         (fun v code ->
           let state = V.to_state v in
-          code @ [ fill_state tbl g state ])
+          code @ [ fill_state g state ])
         lhs_g []
     in
 
     let open S in
-    C.empty (fun tbl ->
-        sseq
-          [
-            (* Load the inputs into the cache. *)
-            load_inputs tbl;
-            (* Fold over the state nodes, generating code to fill them. *)
-            (bind_output @@ fun () -> sseq (loops tbl));
-          ])
+    cache.bind @@ fun () ->
+    sseq
+      [
+        (* Load the inputs into the cache. *)
+        load_inputs ();
+        (* Fold over the state nodes, generating code to fill them. *)
+        (output.bind @@ fun () -> sseq (loops ()));
+      ]
 end

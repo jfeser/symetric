@@ -97,13 +97,3 @@ module OneShot = struct
 
   let ( let* ) x f = bind x ~f
 end
-
-let nonlocal_let let_ value =
-  let open Delimcc in
-  let p = new_prompt () in
-  let get =
-    let ret = lazy (shift0 p (fun k -> let_ (value ()) k)) in
-    fun () -> Lazy.force ret
-  in
-  let bind = push_prompt p in
-  (get, bind)

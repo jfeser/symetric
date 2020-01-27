@@ -28,7 +28,13 @@ module type CACHE = sig
 
   type 'a code
 
-  val empty : (t -> 'a code) -> 'a code
+  type cache
+
+  val code_of : t -> cache code
+
+  val of_code : cache code -> t
+
+  val empty : unit -> (t, 'a code) Nonlocal_let.t
 
   val put :
     sym:string -> size:int -> sizes:int32 array code -> t -> value -> unit code

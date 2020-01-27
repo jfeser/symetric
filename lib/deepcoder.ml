@@ -315,6 +315,10 @@ module Make (C : Sigs.CODE) = struct
 
     type 'a code = 'a C.t
 
+    type cache =
+      (Value.int_t * int32 array) Sigs.set array
+      * (Value.array_t * int32 array) Sigs.set array
+
     type t = {
       ints : (Value.int_t * int32 array) Sigs.set array code;
       arrays : (Value.array_t * int32 array) Sigs.set array code;
@@ -324,8 +328,8 @@ module Make (C : Sigs.CODE) = struct
 
     open C
 
-    let empty k =
-      let int_t = C.Int.type_ in
+    let empty () =
+      let int_t = Int.type_ in
       let sizes_t = Array.mk_type int_t in
       let mk_type t = Array.mk_type @@ Set.mk_type (Tuple.mk_type t sizes_t) in
       let mk_empty t =
@@ -339,9 +343,15 @@ module Make (C : Sigs.CODE) = struct
       Log.debug (fun m ->
           m "Array cache type: %s"
             (Core.Sexp.to_string @@ [%sexp_of: ctype] a_cache_t));
-      let_global (mk_empty i_cache_t) (fun ti ->
-          let_global (mk_empty a_cache_t) (fun ta ->
-              k { ints = ti; arrays = ta }))
+
+      let i_cache = Nonlocal_let.let_ let_ (fun () -> mk_empty i_cache_t) in
+      let a_cache = Nonlocal_let.let_ let_ (fun () -> mk_empty a_cache_t) in
+      Nonlocal_let.
+        {
+          value =
+            (fun () -> { ints = i_cache.value (); arrays = a_cache.value () });
+          bind = (fun f -> i_cache.bind (fun () -> a_cache.bind f));
+        }
 
     let put ~sym:_ ~size ~sizes { ints = tbl_i; arrays = tbl_a; _ } v =
       let key = Int.int size in
@@ -360,5 +370,9 @@ module Make (C : Sigs.CODE) = struct
       | _ -> assert false
 
     let print_size _ = failwith "print_size"
+
+    let code_of { ints; arrays } = C.Tuple.create ints arrays
+
+    let of_code t = { ints = C.Tuple.fst t; arrays = C.Tuple.snd t }
   end
 end
