@@ -19,6 +19,7 @@ module Make (C : Sigs.CODE) = struct
     type mapper = { f : 'a. 'a C.t -> 'a C.t }
 
     let random ?(state = Random.State.default) sym n =
+      let int_t = C.Int.type_ in
       let random_int () =
         let x = Random.State.int_incl state 0 10 in
         C.(Int.int x)
@@ -34,7 +35,7 @@ module Make (C : Sigs.CODE) = struct
       in
       if String.(sym = "L") then
         A (random_examples random_array C.(Array.mk_type int_t) ())
-      else I (random_examples random_int C.(int_t) ())
+      else I (random_examples random_int int_t ())
 
     let map ~f v =
       match v with
@@ -68,11 +69,12 @@ module Make (C : Sigs.CODE) = struct
       | I x -> C.let_ x (fun v' -> f (I v'))
       | _ -> assert false
 
-    let int_type = C.Array.mk_type C.int_t
+    let int_type = C.Array.mk_type C.Int.type_
 
-    let array_type = C.Array.mk_type (C.Array.mk_type C.int_t)
+    let array_type = C.Array.mk_type (C.Array.mk_type C.Int.type_)
 
     let of_sexp symbol s =
+      let int_t = C.Int.type_ in
       let array_of_sexp examples =
         let open C in
         let open Array in
@@ -172,7 +174,7 @@ module Make (C : Sigs.CODE) = struct
     open C
     open Array
 
-    let int_array = Array.mk_type int_t
+    let int_array = Array.mk_type Int.type_
 
     let rec eval ctx =
       let open Int in
@@ -323,6 +325,7 @@ module Make (C : Sigs.CODE) = struct
     open C
 
     let empty k =
+      let int_t = C.Int.type_ in
       let sizes_t = Array.mk_type int_t in
       let mk_type t = Array.mk_type @@ Set.mk_type (Tuple.mk_type t sizes_t) in
       let mk_empty t =

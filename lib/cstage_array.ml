@@ -101,7 +101,7 @@ module Array (C : Cstage_core.S) = struct
       [
         clear a;
         reserve a len;
-        for_ (int 0) (int 1) len (fun i -> push_back a (genlet (f i)));
+        for_ (Int.int 0) (Int.int 1) len (fun i -> push_back a (genlet (f i)));
         a;
       ]
     |> with_comment "Array.init"
@@ -133,7 +133,7 @@ module Array (C : Cstage_core.S) = struct
       [
         assign init ~to_:acc;
         ( let_ (length arr) @@ fun len ->
-          for_ (int 0) (int 1) len (fun i ->
+          for_ (Int.int 0) (Int.int 1) len (fun i ->
               assign (f acc (get arr i)) ~to_:acc) );
         acc;
       ]
@@ -143,7 +143,7 @@ module Array (C : Cstage_core.S) = struct
     sseq
       [
         ( let_ (length arr) @@ fun len ->
-          for_ (int 0) (int 1) len (fun i -> f (get arr i)) );
+          for_ (Int.int 0) (Int.int 1) len (fun i -> f (get arr i)) );
       ]
     |> with_comment "Array.iter"
 

@@ -2,20 +2,14 @@ open! Core
 module Seq = Sequence
 
 module Code () : Sigs.CODE = struct
-  let sexp_of_t _ = [%sexp_of: expr]
+  module C = Cstage_core.Make ()
 
-  let type_of e = e.etype
+  type 'a t = C.expr [@@deriving sexp_of]
 
-  let cast x = x
-
-  let let_global v b =
-    let g = fresh_global v.etype in
-    let x = seq (assign v ~to_:g) g in
-    let y = b { x with ebody = "" } in
-    {
-      y with
-      ebody = x.ebody ^ y.ebody;
-      efree = x.efree @ y.efree;
-      eeffect = x.eeffect || y.eeffect;
-    }
+  include C
+  module Int = Cstage_int.Int (C)
+  module Array = Cstage_array.Array (C)
+  module Set = Cstage_set.Set (C)
+  module String = Cstage_string.String (C)
+  module Tuple = Cstage_tuple.Tuple (C)
 end

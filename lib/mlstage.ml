@@ -309,7 +309,7 @@ module Code : Sigs.CODE = struct
     to_unit x;
     to_value y
 
-  let seq_many = List.fold_left ~init:unit ~f:seq
+  let sseq = List.fold_left ~init:unit ~f:seq
 
   let exit () = raise Exit
 
@@ -319,11 +319,11 @@ module Code : Sigs.CODE = struct
 
   let to_func x = match to_value x with Func x -> x | _ -> assert false
 
-  let func _ _ f () = Func (fun x -> f (to_code x) |> to_value)
-
   module Func = struct
-    let type_ _ _ = ()
-  end
+    let mk_type _ _ = ()
 
-  let apply f x () = (to_func f) (to_value x)
+    let func _ _ f () = Func (fun x -> f (to_code x) |> to_value)
+
+    let apply f x () = (to_func f) (to_value x)
+  end
 end

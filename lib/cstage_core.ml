@@ -3,7 +3,7 @@ open! Core
 module type S = sig
   type mark = unit -> bool
 
-  type ctype = Univ_map.t [@@deriving sexp]
+  type ctype = Univ_map.t [@@deriving sexp_of]
 
   and expr = {
     ebody : string;
@@ -29,6 +29,10 @@ module type S = sig
     fresh : Fresh.t;
   }
 
+  val type_of : expr -> ctype
+
+  val cast : expr -> expr
+
   module Type : sig
     val name : ctype -> string
 
@@ -50,26 +54,26 @@ module type S = sig
   val unit_t : ctype
 
   module Func : sig
-    val type_ : ctype -> ctype -> ctype
+    val mk_type : ctype -> ctype -> ctype
 
     val arg_t : ctype -> ctype
 
     val ret_t : ctype -> ctype
+
+    val func : string -> ctype -> (expr -> expr) -> expr
+
+    (* val of_name : string -> func_decl option *)
+
+    val apply : expr -> expr -> expr
   end
 
   val add_var_decl : var_decl -> unit
-
-  val add_func : func_decl -> unit
-
-  val find_func : string -> func_decl option
 
   val fresh_name : unit -> string
 
   val expr_of_var : var_decl -> expr
 
   val unit : expr
-
-  val func : string -> ctype -> (expr -> expr) -> expr
 
   val to_string : expr -> string
 
@@ -124,10 +128,14 @@ module type S = sig
     val sexp_of : expr -> expr
   end
 
-  (* val fresh_var : ctype -> mark -> expr
-   * val fresh_local : expr -> expr
-   * val fresh_global : ctype -> expr *)
+  val fresh_var : ctype -> mark -> expr
+
+  (* val fresh_local : expr -> expr *)
+  val fresh_global : ctype -> expr
+
   val let_ : expr -> (expr -> expr) -> expr
+
+  val let_global : expr -> (expr -> expr) -> expr
 
   val genlet : expr -> expr
 
@@ -152,7 +160,7 @@ module type S = sig
   val with_comment : string -> expr -> expr
 end
 
-module Make () = struct
+module Make () : S = struct
   type mark = unit -> bool
 
   type ctype = Univ_map.t [@@deriving sexp_of]
@@ -183,6 +191,10 @@ module Make () = struct
   }
 
   type fmt_arg = C : expr -> fmt_arg | S : string -> fmt_arg
+
+  let type_of e = e.etype
+
+  let cast = Fun.id
 
   module Type = struct
     let name_k = Univ_map.Key.create ~name:"name" [%sexp_of: string]
@@ -262,6 +274,8 @@ module Make () = struct
   let unit = eformat "0" unit_t "" []
 
   module Func = struct
+    let mk_type = func_t
+
     let arg_t t = Univ_map.find_exn t arg_t
 
     let ret_t t = Univ_map.find_exn t ret_t
@@ -512,6 +526,17 @@ for(int $(i) = $(lo); $(i) < $(hi); $(i) += $(step)) {
   let assign x ~to_:v =
     eformat ~has_effect:true "0" unit_t {|$(v) = $(x);|}
       [ ("x", C x); ("v", C v) ]
+
+  let let_global v b =
+    let g = fresh_global v.etype in
+    let x = seq (assign v ~to_:g) g in
+    let y = b { x with ebody = "" } in
+    {
+      y with
+      ebody = x.ebody ^ y.ebody;
+      efree = x.efree @ y.efree;
+      eeffect = x.eeffect || y.eeffect;
+    }
 
   let print s =
     eformat ~has_effect:true "0" unit_t "std::cout << $(str) << std::endl;"

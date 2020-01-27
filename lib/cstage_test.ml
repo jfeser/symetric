@@ -6,6 +6,7 @@ let%expect_test "" =
   let open C in
   let open Array in
   let open Int in
+  let int_t = C.Int.type_ in
   let code =
     let_locus @@ fun () ->
     let_
@@ -49,8 +50,10 @@ let%expect_test "" =
   let module C = Code () in
   let open C in
   let open Int in
-  let f = func "f" (Func.type_ int_t int_t) (fun i -> i + int 1) in
-  let g = func "g" (Func.type_ int_t int_t) (fun i -> i - int 1) in
+  let int_t = C.Int.type_ in
+  let open Func in
+  let f = func "f" (mk_type int_t int_t) (fun i -> i + int 1) in
+  let g = func "g" (mk_type int_t int_t) (fun i -> i - int 1) in
   let code = apply f (apply g (int 0)) in
   let code = to_string code in
   code |> Util.clang_format |> print_endline;
@@ -74,8 +77,10 @@ let%expect_test "" =
   let module C = Code () in
   let open C in
   let open Int in
+  let open Func in
+  let int_t = C.Int.type_ in
   let int_array = Array.mk_type int_t in
-  let f = func "f" (Func.type_ int_array int_t) (fun a -> a.(int 0)) in
+  let f = func "f" (mk_type int_array int_t) (fun a -> a.(int 0)) in
   let code = apply f (Array.init int_array (int 10) (fun i -> i)) in
   let code = to_string code in
   code |> Util.clang_format |> print_endline;
@@ -108,7 +113,7 @@ let%expect_test "" =
   let module C = Code () in
   let open C in
   let open Int in
-  let int_array = Array.mk_type int_t in
+  let int_array = Array.mk_type Int.type_ in
   let f =
     let x =
       Tuple.create
@@ -180,9 +185,9 @@ let%expect_test "" =
   let open Int in
   let code =
     let_
-      (Set.empty (Set.mk_type int_t))
+      (Set.empty (Set.mk_type Int.type_))
       (fun set ->
-        seq_many
+        sseq
           [
             Set.add set (int 0);
             Set.add set (int 1);
@@ -232,9 +237,9 @@ let%expect_test "" =
   let open Int in
   let code =
     let_
-      (Set.empty (Set.mk_type int_t))
+      (Set.empty (Set.mk_type Int.type_))
       (fun set ->
-        seq_many
+        sseq
           [
             Set.add set (int 0);
             Set.add set (int 1);
@@ -440,7 +445,7 @@ let%expect_test "" =
   let open Int in
   let code =
     let_
-      (Array.const (Array.mk_type int_t) [| int 0; int 1; int 2 |])
+      (Array.const (Array.mk_type Int.type_) [| int 0; int 1; int 2 |])
       (fun arr ->
         Array.fold arr ~init:(int 0) ~f:( + )
         + Array.fold arr ~init:(int 0) ~f:( * ))
@@ -489,7 +494,7 @@ let%expect_test "" =
   let open C in
   let open Int in
   let code =
-    let arr = Array.const (Array.mk_type int_t) [| int 0; int 1; int 2 |] in
+    let arr = Array.const (Array.mk_type Int.type_) [| int 0; int 1; int 2 |] in
     Array.fold arr ~init:(int 0) ~f:( + )
     + Array.fold arr ~init:(int 0) ~f:( * )
   in
@@ -552,7 +557,7 @@ let%expect_test "" =
   let code =
     let_locus @@ fun () ->
     let arr =
-      genlet @@ Array.const (Array.mk_type int_t) [| int 0; int 1; int 2 |]
+      genlet @@ Array.const (Array.mk_type Int.type_) [| int 0; int 1; int 2 |]
     in
     Array.fold arr ~init:(int 0) ~f:( + )
     + Array.fold arr ~init:(int 0) ~f:( * )
@@ -603,7 +608,7 @@ let%expect_test "" =
   let code =
     let_locus @@ fun () ->
     let arr () =
-      genlet @@ Array.const (Array.mk_type int_t) [| int 0; int 1; int 2 |]
+      genlet @@ Array.const (Array.mk_type Int.type_) [| int 0; int 1; int 2 |]
     in
     Array.fold (arr ()) ~init:(int 0) ~f:( + )
     + Array.fold (arr ()) ~init:(int 0) ~f:( * )
@@ -659,7 +664,7 @@ let%expect_test "" =
   let open Int in
   let code =
     let arr =
-      genlet @@ Array.const (Array.mk_type int_t) [| int 0; int 1; int 2 |]
+      genlet @@ Array.const (Array.mk_type Int.type_) [| int 0; int 1; int 2 |]
     in
     let_locus @@ fun () ->
     Array.fold arr ~init:(int 0) ~f:( + )
@@ -722,7 +727,8 @@ let%expect_test "" =
   let open C in
   let open Int in
   let arr =
-    lazy (genlet @@ Array.const (Array.mk_type int_t) [| int 0; int 1; int 2 |])
+    lazy
+      (genlet @@ Array.const (Array.mk_type Int.type_) [| int 0; int 1; int 2 |])
   in
   let code =
     let_locus @@ fun () ->
@@ -786,23 +792,24 @@ let%expect_test "" =
 
     #include "sexp.hpp"
     int main();
-    std::vector<std::string> x4;
+    std::vector<std::string> x5;
     int main() {
-      const std::unique_ptr<sexp> &x2 = sexp::load(std::cin);
-      const std::vector<std::unique_ptr<sexp>> &x3 = ((list *)x2.get())->get_body();
+      std::unique_ptr<sexp> x2 = sexp::load(std::cin);
+      const std::unique_ptr<sexp> &x3 = x2;
+      const std::vector<std::unique_ptr<sexp>> &x4 = ((list *)x3.get())->get_body();
       // begin Array.init
-      x4.clear();
-      x4.reserve((int)((x3).size()));
-      for (int x5 = 0; x5 < (int)((x3).size()); x5 += 1) {
-        std::string x6 = ((atom *)(x3)[x5].get())->get_body();
-        x4.push_back(x6);
+      x5.clear();
+      x5.reserve((int)((x4).size()));
+      for (int x6 = 0; x6 < (int)((x4).size()); x6 += 1) {
+        std::string x7 = ((atom *)(x4)[x6].get())->get_body();
+        x5.push_back(x7);
       }
       // end Array.init
-      std::vector<std::string> x7 = x4;
+      std::vector<std::string> x8 = x5;
       // begin Array.iter
-      int x8 = ((int)((x7).size()));
-      for (int x9 = 0; x9 < x8; x9 += 1) {
-        std::cout << (x7[x9]) << std::endl;
+      int x9 = ((int)((x8).size()));
+      for (int x10 = 0; x10 < x9; x10 += 1) {
+        std::cout << (x8[x10]) << std::endl;
       }
       // end Array.iter
       return 0;

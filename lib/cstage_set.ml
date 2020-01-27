@@ -1,6 +1,7 @@
 open! Core
 
 module Set (C : Cstage_core.S) = struct
+  module Int = Cstage_int.Int (C)
   open C
 
   let elem_t = Univ_map.Key.create ~name:"elem_t" [%sexp_of: ctype]
@@ -57,7 +58,7 @@ for(auto $(iter) = $(set).begin(); $(iter) != $(set).end(); ++$(iter)) {
   let of_sexp type_ sexp elem_of_sexp =
     let_ (empty type_) @@ fun set ->
     let_ (Sexp.to_list sexp) @@ fun sexp ->
-    for_ (int 0) (int 1) (Sexp.List.length sexp) (fun i ->
+    for_ (Int.int 0) (Int.int 1) (Sexp.List.length sexp) (fun i ->
         add set (elem_of_sexp (Sexp.List.get sexp i)))
 
   let sexp_of _ _ = failwith "unimplemented"

@@ -140,11 +140,11 @@ struct
     | [ x ] -> S.let_ x (fun x -> f [ x ])
     | x :: xs -> S.let_ x (fun x -> let_many (fun xs -> f (x :: xs)) xs)
 
-  let costs_t = S.Array.mk_type S.int_t
+  let costs_t = S.Array.mk_type S.Int.type_
 
   let rec reconstruct tbl g state target =
     let args_t = L.Value.type_of target in
-    let func_t = S.Func.type_ args_t S.unit_t
+    let func_t = S.Func.mk_type args_t S.unit_t
     and func_name = sprintf "reconstruct_%s_%d" state.V.symbol state.cost in
 
     let recon_args target term args =
@@ -156,7 +156,7 @@ struct
         in
         S.ite found_target
           (fun () ->
-            S.seq_many
+            S.sseq
               ( S.print ([%sexp_of: Gr.Term.t] term |> Sexp.to_string_hum)
               :: List.map args ~f:(fun (n, v) -> reconstruct tbl g n v) ))
           (fun () -> S.unit)
@@ -180,20 +180,20 @@ struct
       else
         List.map args ~f:(fun args_node ->
             recon_args target term (G.succ g args_node))
-        |> S.seq_many
+        |> S.sseq
     in
 
     let recon_state target =
-      G.succ g (State state) |> List.map ~f:(recon_code target) |> S.seq_many
+      G.succ g (State state) |> List.map ~f:(recon_code target) |> S.sseq
     in
     let func =
-      S.func func_name func_t (fun target ->
+      S.Func.func func_name func_t (fun target ->
           Log.debug (fun m ->
               m "Building %s :: %s." func_name
                 ([%sexp_of: S.ctype] func_t |> Sexp.to_string));
           S.let_ target recon_state)
     in
-    S.apply func (L.Value.code target)
+    S.Func.apply func (L.Value.code target)
 
   let contract_state g =
     G.fold_vertex
@@ -277,7 +277,7 @@ struct
     List.map Sketch.inputs ~f:(fun sym ->
         put ~sym ~size:1 ~sizes:(Array.const costs_t [||]) tbl
         @@ (Sexp.input () |> L.Value.of_sexp sym))
-    |> seq_many
+    |> sseq
 
   let output, bind_output =
     Util.nonlocal_let L.Value.let_ (fun () ->
@@ -290,7 +290,7 @@ struct
     and cost = state.V.cost in
 
     let insert value =
-      S.seq_many
+      S.sseq
         [
           debug_print
             (sprintf "Inserting (%s -> %s) cost %d" symbol
@@ -313,7 +313,7 @@ struct
         | Some eq ->
             S.ite eq
               (fun () ->
-                S.seq_many
+                S.sseq
                   [
                     debug_print "Starting reconstruction";
                     reconstruct tbl g state (output ());
@@ -337,7 +337,7 @@ struct
                 ([%sexp_of: Grammar.Term.t] term));
           L.Value.let_ (L.eval ctx term) @@ fun value ->
           S.seq (reconstruct value) (insert value))
-      |> S.seq_many
+      |> S.sseq
     in
 
     let args = G.succ g code_node in
@@ -363,7 +363,7 @@ struct
     Log.debug (fun m -> m "Generating code for %s:%d" state.V.symbol state.cost);
     G.succ g (V.State state)
     |> List.concat_map ~f:(fill_code tbl g state)
-    |> S.seq_many
+    |> S.sseq
 
   let enumerate max_cost =
     let g = search_graph max_cost in
@@ -381,11 +381,11 @@ struct
 
     let open S in
     C.empty (fun tbl ->
-        seq_many
+        sseq
           [
             (* Load the inputs into the cache. *)
             load_inputs tbl;
             (* Fold over the state nodes, generating code to fill them. *)
-            (bind_output @@ fun () -> seq_many (loops tbl));
+            (bind_output @@ fun () -> sseq (loops tbl));
           ])
 end

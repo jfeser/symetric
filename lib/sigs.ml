@@ -90,14 +90,9 @@ module type CODE = sig
 
   val let_locus : (unit -> 'a t) -> 'a t
 
-  (* Primitive types *)
+  (* Unit *)
   val unit_t : ctype
 
-  val int_t : ctype
-
-  val bool_t : ctype
-
-  (* Values *)
   val unit : unit t
 
   (* Integer operations *)
@@ -156,7 +151,11 @@ module type CODE = sig
 
   (* Function operations *)
   module Func : sig
-    val type_ : ctype -> ctype -> ctype
+    val mk_type : ctype -> ctype -> ctype
+
+    val apply : ('a -> 'b) t -> 'a t -> 'b t
+
+    val func : string -> ctype -> ('a t -> 'b t) -> ('a -> 'b) t
   end
 
   (* Array operations *)
@@ -273,12 +272,7 @@ module type CODE = sig
 
   val seq : unit t -> unit t -> unit t
 
-  val seq_many : unit t list -> unit t
-
-  (* Functions *)
-  val func : string -> ctype -> ('a t -> 'b t) -> ('a -> 'b) t
-
-  val apply : ('a -> 'b) t -> 'a t -> 'b t
+  val sseq : unit t list -> unit t
 
   (* Utility *)
   val print : string -> unit t
