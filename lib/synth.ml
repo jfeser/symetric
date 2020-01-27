@@ -328,13 +328,6 @@ struct
     let fill args =
       let term, ctxs = to_contexts term args in
       List.map ctxs ~f:(fun ctx ->
-          Log.debug (fun m ->
-              m "%a Eval(%a, %a)" Sexp.pp
-                ([%sexp_of: (V.state * L.Value.t) list] args)
-                Sexp.pp
-                ([%sexp_of: L.Value.t Map.M(String).t] ctx)
-                Sexp.pp
-                ([%sexp_of: Grammar.Term.t] term));
           L.Value.let_ (L.eval ctx term) @@ fun value ->
           S.seq (reconstruct value) (insert value))
       |> S.sseq

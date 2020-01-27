@@ -130,7 +130,8 @@ module type S = sig
 
   val fresh_var : ctype -> mark -> expr
 
-  (* val fresh_local : expr -> expr *)
+  val fresh_decl : ?init:expr -> ctype -> expr
+
   val fresh_global : ctype -> expr
 
   val let_ : expr -> (expr -> expr) -> expr
@@ -328,7 +329,7 @@ module Make () : S = struct
       | None -> format "$(type) $(name);" subst
     in
 
-    let arg_to_str v = sprintf "const %s &%s" (Type.name v.vtype) v.vname in
+    let arg_to_str v = sprintf "%s %s" (Type.name v.vtype) v.vname in
     let func_to_decl_str f =
       let args_str = List.map f.args ~f:arg_to_str |> String.concat ~sep:"," in
       sprintf "%s %s(%s);" (Type.name (Func.ret_t f.ftype)) f.fname args_str
@@ -435,11 +436,24 @@ module Make () : S = struct
     let name = Fresh.name prog.fresh "x%d" in
     { ret = name; etype; efree = [ (name, m) ]; ebody = ""; eeffect = false }
 
+  let assign x ~to_:v =
+    eformat ~has_effect:true "0" unit_t {|$(v) = $(x);|}
+      [ ("x", C x); ("v", C v) ]
+
+  let fresh_decl ?init type_ =
+    let name = fresh_name () in
+    let ctx = [ ("type", S (Type.name type_)); ("var", S name) ] in
+    match init with
+    | Some v ->
+        eformat name type_ "$(type) $(var) ($(init));" (("init", C v) :: ctx)
+    | None -> eformat name type_ "$(type) $(var);" ctx
+
   let fresh_local value =
     let name = fresh_name () in
-    let type_ = value.etype in
-    eformat name type_ "$(type) $(var) = $(init);"
-      [ ("type", S (Type.name type_)); ("var", S name); ("init", C value) ]
+    eformat name value.etype "$(type) $(var) = $(init);"
+      [
+        ("init", C value); ("type", S (Type.name value.etype)); ("var", S name);
+      ]
 
   let fresh_global type_ =
     let name = fresh_name () in
@@ -471,9 +485,9 @@ module Make () : S = struct
     let_locus @@ fun () ->
     let then_ = then_ () in
     let else_ = else_ () in
-    let ret_var = fresh_global then_.etype in
-    eformat ret_var.ret ret_var.etype
-      {|
+    let_ (fresh_decl then_.etype) (fun ret ->
+        eformat ret.ret ret.etype
+          {|
 if ($(cond)) {
   $(then)
   $(ret) = $(then_ret);
@@ -481,14 +495,14 @@ if ($(cond)) {
   $(else)
   $(ret) = $(else_ret); }
 |}
-      [
-        ("ret", C ret_var);
-        ("cond", C cond);
-        ("then", S then_.ebody);
-        ("else", S else_.ebody);
-        ("then_ret", S then_.ret);
-        ("else_ret", S else_.ret);
-      ]
+          [
+            ("ret", C ret);
+            ("cond", C cond);
+            ("then", S then_.ebody);
+            ("else", S else_.ebody);
+            ("then_ret", S then_.ret);
+            ("else_ret", S else_.ret);
+          ])
 
   let for_ lo step hi f =
     let_locus @@ fun () ->
@@ -522,10 +536,6 @@ for(int $(i) = $(lo); $(i) < $(hi); $(i) += $(step)) {
     }
 
   let rec sseq = function [] -> unit | [ x ] -> x | x :: xs -> seq x (sseq xs)
-
-  let assign x ~to_:v =
-    eformat ~has_effect:true "0" unit_t {|$(v) = $(x);|}
-      [ ("x", C x); ("v", C v) ]
 
   let let_global v b =
     let g = fresh_global v.etype in

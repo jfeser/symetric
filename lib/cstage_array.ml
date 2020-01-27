@@ -53,10 +53,15 @@ module Array (C : Cstage_core.S) = struct
   let elem_t = Univ_map.Key.create ~name:"elem_t" [%sexp_of: ctype]
 
   let mk_type e =
-    Type.create ~name:(sprintf "std::vector<%s >" (Type.name e))
+    Type.create ~name:(sprintf "std::vector<%s>" (Type.name e))
     |> Type.add_exn ~key:elem_t ~data:e
 
   let elem_type t = Univ_map.find_exn t elem_t
+
+  let to_ref_t t =
+    let e = elem_type t in
+    Type.create ~name:(sprintf "std::vector<%s>&" (Type.name e))
+    |> Type.add_exn ~key:elem_t ~data:e
 
   module O = struct
     let ( = ) a a' = binop "(%s == %s)" Bool.type_ a a'
@@ -66,22 +71,17 @@ module Array (C : Cstage_core.S) = struct
 
   let const t a =
     let a = Array.to_list a in
-    let name = fresh_name () in
-    add_var_decl
-      { vname = name; vtype = t; init = Some (Int.int (List.length a)) };
-    let assigns =
-      List.mapi a ~f:(fun i x ->
-          eformat "0" unit_t {|$(name)[$(idx)] = $(val);|}
-            [ ("name", S name); ("idx", S (sprintf "%d" i)); ("val", C x) ])
-      |> sseq
-    in
-    {
-      assigns with
-      ret = name;
-      etype = t;
-      efree = List.concat_map a ~f:(fun e -> e.efree);
-      eeffect = false;
-    }
+    let_
+      { (fresh_decl ~init:(Int.int (List.length a)) t) with etype = to_ref_t t }
+      (fun arr ->
+        sseq
+          [
+            List.mapi a ~f:(fun i x ->
+                eformat "0" unit_t {|$(arr)[$(idx)] = $(val);|}
+                  [ ("arr", C arr); ("idx", C (Int.int i)); ("val", C x) ])
+            |> sseq;
+            arr;
+          ])
     |> with_comment "Array.const"
 
   let clear a =
@@ -96,14 +96,15 @@ module Array (C : Cstage_core.S) = struct
       [ ("a", C a); ("x", C x) ]
 
   let init t len f =
-    let a = fresh_global t in
-    sseq
-      [
-        clear a;
-        reserve a len;
-        for_ (Int.int 0) (Int.int 1) len (fun i -> push_back a (genlet (f i)));
-        a;
-      ]
+    let_
+      { (fresh_decl ~init:len t) with etype = to_ref_t t }
+      (fun a ->
+        sseq
+          [
+            for_ (Int.int 0) (Int.int 1) len (fun i ->
+                push_back a (genlet (f i)));
+            a;
+          ])
     |> with_comment "Array.init"
 
   let set a i x =
@@ -128,15 +129,17 @@ module Array (C : Cstage_core.S) = struct
     init a.etype len (fun i -> get a (start + i))
 
   let fold arr ~init ~f =
-    let acc = fresh_global init.etype in
-    sseq
-      [
-        assign init ~to_:acc;
-        ( let_ (length arr) @@ fun len ->
-          for_ (Int.int 0) (Int.int 1) len (fun i ->
-              assign (f acc (get arr i)) ~to_:acc) );
-        acc;
-      ]
+    let_
+      (fresh_decl (type_of init))
+      (fun acc ->
+        sseq
+          [
+            assign init ~to_:acc;
+            ( let_ (length arr) @@ fun len ->
+              for_ (Int.int 0) (Int.int 1) len (fun i ->
+                  assign (f acc (get arr i)) ~to_:acc) );
+            acc;
+          ])
     |> with_comment "Array.fold"
 
   let iter arr ~f =
@@ -152,4 +155,24 @@ module Array (C : Cstage_core.S) = struct
     init t (Sexp.List.length l) (fun i -> elem_of_sexp (Sexp.List.get l i))
 
   let sexp_of _ _ = failwith "unimplemented"
+end
+
+module ImmutableArray (C : Cstage_core.S) = struct
+  module A = Array (C)
+
+  let const = A.const
+
+  let init = A.init
+
+  let get = A.get
+
+  let map = A.map
+
+  let map2 = A.map2
+
+  let sub = A.sub
+
+  let fold = A.fold
+
+  let iter = A.iter
 end
