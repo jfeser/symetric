@@ -144,15 +144,12 @@ struct
 
   let costs_t = S.Array.mk_type S.Int.type_
 
-  let rec reconstruct g state target =
-    let func_t =
-      let cache = cache.value () |> C.code_of in
-      let args_t = S.Tuple.mk_type (L.Value.type_of target) (S.type_of cache) in
-      S.Func.mk_type args_t S.unit_t
-    and func_name = sprintf "reconstruct_%s_%d" state.V.symbol state.cost in
+  module Reconstruct = struct
+    type ctx = { graph : G.t; cache : cache code }
 
-    let recon_args target term args =
-      let check args =
+    let rec of_args ({ cache; _ } as ctx) target term args =
+      let cache = C.of_code cache in
+      let check_one args =
         let term, ctxs = to_contexts term args in
         let found_target =
           List.fold_left ctxs ~init:(S.Bool.bool false) ~f:(fun found ctx ->
@@ -162,42 +159,48 @@ struct
           (fun () ->
             S.sseq
               ( S.print ([%sexp_of: Gr.Term.t] term |> Sexp.to_string_hum)
-              :: List.map args ~f:(fun (n, v) -> reconstruct g n v) ))
+              :: List.map args ~f:(fun (n, v) -> reconstruct ctx v n) ))
           (fun () -> S.unit)
       in
-      let check =
-        List.fold_left args ~init:check ~f:(fun check node ->
+      let check_all =
+        List.fold_left args ~init:check_one ~f:(fun check node ->
             let state = V.to_state node in
-            let check ctx =
-              C.iter ~sym:state.V.symbol ~size:(int state.V.cost)
+            let sym = state.V.symbol and size = int state.V.cost in
+            fun ctx ->
+              C.iter ~sym ~size
                 ~f:(fun (v, _) -> check ((state, v) :: ctx))
-                (cache.value ())
-            in
-            check)
+                cache)
       in
-      check []
-    in
+      check_all []
 
-    let recon_code target code_node =
+    (** Reconstruct a target assuming that it was produced by a particular code
+      node. *)
+    and of_code ({ graph = g; _ } as ctx) target code_node =
       let term = (V.to_code code_node).term and args = G.succ g code_node in
-      if List.is_empty args then recon_args target term []
+      if List.is_empty args then of_args ctx target term []
       else
-        List.map args ~f:(fun args_node ->
-            recon_args target term (G.succ g args_node))
+        List.map args ~f:(fun n -> of_args ctx target term (G.succ g n))
         |> S.sseq
-    in
 
-    let recon_state target =
-      G.succ g (State state) |> List.map ~f:(recon_code target) |> S.sseq
-    in
-    let func =
-      S.Func.func func_name func_t (fun target ->
-          Log.debug (fun m ->
-              m "Building %s :: %s." func_name
-                ([%sexp_of: S.ctype] func_t |> Sexp.to_string));
-          S.let_ target recon_state)
-    in
-    S.Func.apply func (L.Value.code target)
+    and of_state ({ graph = g; _ } as ctx) state target =
+      G.succ g (State state) |> List.map ~f:(of_code ctx target) |> S.sseq
+
+    and reconstruct { graph = g; cache } target state =
+      let open S in
+      let func =
+        let func_t =
+          let args_t = Tuple.mk_type (type_of cache) (L.Value.type_of target) in
+          Func.mk_type args_t unit_t
+        and func_name = sprintf "reconstruct_%s_%d" state.V.symbol state.cost in
+
+        Func.func func_name func_t (fun args ->
+            let_ (Tuple.fst args) @@ fun cache ->
+            let_ (Tuple.snd args) @@ fun target ->
+            Log.debug (fun m -> m "Building %s." func_name);
+            of_state { graph = g; cache } state target)
+      in
+      Func.apply func (Tuple.create cache (L.Value.code target))
+  end
 
   let contract_state g =
     G.fold_vertex
@@ -320,7 +323,9 @@ struct
                 S.sseq
                   [
                     debug_print "Starting reconstruction";
-                    reconstruct g state (output.value ());
+                    Reconstruct.reconstruct
+                      { graph = g; cache = cache.value () |> C.code_of }
+                      (output.value ()) state;
                     S.exit;
                   ])
               (fun () -> S.unit)
