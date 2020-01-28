@@ -60,7 +60,7 @@ module Array (C : Cstage_core.S) = struct
 
   let to_ref_t t =
     let e = elem_type t in
-    Type.create ~name:(sprintf "std::vector<%s>&" (Type.name e))
+    Type.create ~name:(sprintf "std::vector<%s>" (Type.name e))
     |> Type.add_exn ~key:elem_t ~data:e
 
   module O = struct
@@ -95,18 +95,6 @@ module Array (C : Cstage_core.S) = struct
     eformat ~has_effect:true "0" unit_t "$(a).push_back($(x));"
       [ ("a", C a); ("x", C x) ]
 
-  let init t len f =
-    let_
-      { (fresh_decl ~init:len t) with etype = to_ref_t t }
-      (fun a ->
-        sseq
-          [
-            for_ (Int.int 0) (Int.int 1) len (fun i ->
-                push_back a (genlet (f i)));
-            a;
-          ])
-    |> with_comment "Array.init"
-
   let set a i x =
     eformat ~has_effect:true "0" unit_t "$(a)[$(i)] = $(x);"
       [ ("a", C a); ("i", C i); ("x", C x) ]
@@ -114,32 +102,41 @@ module Array (C : Cstage_core.S) = struct
   let get a x =
     eformat "($(a)[$(x)])" (elem_type a.etype) "" [ ("a", C a); ("x", C x) ]
 
+  let init t len f =
+    let_
+      { (fresh_decl ~init:len t) with etype = to_ref_t t }
+      (fun a ->
+        sseq
+          [
+            for_ (Int.int 0) (Int.int 1) len (fun i -> set a i (genlet (f i)));
+            a;
+          ])
+    |> with_comment "Array.init"
+
   let map t arr ~f = init t (length arr) (fun i -> let_ (get arr i) f)
 
-  let map2 t a1 a2 ~f = init t (length a1) (fun i -> f (get a1 i) (get a2 i))
+  let map2 t a1 a2 ~f =
+    let_ (Int.min (length a1) (length a2)) @@ fun n ->
+    init t n (fun i -> f (get a1 i) (get a2 i))
 
   let sub a start len =
     let open Int in
     let_ (length a) @@ fun n ->
-    let inbounds x = x |> min (n - int 1) |> max (int 0) in
     let_ (start + len) @@ fun end_ ->
-    let_ (inbounds start) @@ fun start ->
-    let_ (inbounds end_) @@ fun end_ ->
-    let_ (end_ - start + int 1) @@ fun len ->
+    let_ (start |> min (n - int 1) |> max (int 0)) @@ fun start ->
+    let_ (end_ |> min n |> max start) @@ fun end_ ->
+    let_ (end_ - start) @@ fun len ->
     init a.etype len (fun i -> get a (start + i))
 
   let fold arr ~init ~f =
-    let_
-      (fresh_decl (type_of init))
-      (fun acc ->
-        sseq
-          [
-            assign init ~to_:acc;
-            ( let_ (length arr) @@ fun len ->
-              for_ (Int.int 0) (Int.int 1) len (fun i ->
-                  assign (f acc (get arr i)) ~to_:acc) );
-            acc;
-          ])
+    ( let_ (fresh_decl (type_of init) ~init) @@ fun acc ->
+      sseq
+        [
+          ( let_ (length arr) @@ fun len ->
+            for_ (Int.int 0) (Int.int 1) len (fun i ->
+                assign (f acc (get arr i)) ~to_:acc) );
+          acc;
+        ] )
     |> with_comment "Array.fold"
 
   let iter arr ~f =
