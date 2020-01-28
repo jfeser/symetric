@@ -49,10 +49,11 @@ struct
   let genlet c =
     let orig_c = c in
     let code, success = send_req c in
-    Log.debug (fun m ->
-        m "Generating let %s for: %s"
-          (if success then "succeeded" else "failed")
-          (C.to_string orig_c));
+    if not success then
+      Log.debug (fun m ->
+          m "Generating let %s for: %s"
+            (if success then "succeeded" else "failed")
+            (C.to_string orig_c));
     code
 
   (* We often use mutable variables as `communication channel', to appease
