@@ -7,7 +7,7 @@ import sys
 def main(sketch, bdir):
     os.system('mkdir -p %s' % bdir)
     for i in range(100):
-        os.system('dune exec ../bin/bench.exe -- -min 8 -max 10 -no-identity -seed %d %s > %s/bench%d.sexp' % (i, sketch, bdir, i))
+        os.system('dune exec ../bin/bench.exe -- -min 10 -max 10 -no-identity -seed %d %s > %s/bench%d.sexp' % (i, sketch, bdir, i))
     os.system('dune exec ../bin/synth.exe -- %s > %s/synth.cpp' % (sketch, bdir))
     os.system('cp -f ../etc/sexp.cpp ../etc/sexp.hpp Makefile %s/' % bdir)
 

@@ -1,5 +1,4 @@
 TIME=time
-CXX=clang++
 CXXFLAGS = -Wall -Wextra -std=c++17 -g
 OUTPUTS := $(patsubst %.sexp,%.time,$(wildcard %.sexp))
 
