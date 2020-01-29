@@ -9,3 +9,6 @@ synth:
 	$(TIME) ./synth < $< > $*.json
 
 run: $(addsuffix .time, $(basename $(wildcard *.sexp)))
+
+clean:
+	rm -rf *.time *.json synth
