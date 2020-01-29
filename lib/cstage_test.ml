@@ -673,7 +673,8 @@ let%expect_test "" =
       return (x10 + x6);
     }
  |}];
-  code |> Util.clang_build |> print_endline
+  code |> Util.clang_build |> print_endline;
+  [%expect {| |}]
 
 let%expect_test "" =
   let module C = Code () in
@@ -870,7 +871,8 @@ let%expect_test "" =
       return (x10 + x6);
     }
  |}];
-  code |> Util.clang_build |> print_endline
+  code |> Util.clang_build |> print_endline;
+  [%expect {| |}]
 
 let%expect_test "" =
   let module C = Code () in

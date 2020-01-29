@@ -97,3 +97,11 @@ module OneShot = struct
 
   let ( let* ) x f = bind x ~f
 end
+
+let input_sketch ch =
+  let inputs, output = Sexp.input_sexp ch |> [%of_sexp: string list * string] in
+  ( module struct
+    let inputs = inputs
+
+    let output = output
+  end : Sigs.SKETCH )

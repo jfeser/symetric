@@ -1,6 +1,6 @@
 open! Core
 
-module Code : Sigs.CODE = struct
+module Code = struct
   exception Exit
 
   module Value = struct

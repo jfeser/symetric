@@ -43,7 +43,7 @@ end
 module Int (C : Cstage_core.S) = struct
   open C
 
-  let type_ = Type.create ~name:"int"
+  let type_ = Type.create ~name:"int32_t"
 
   let int x = eformat (sprintf "%d" x) type_ "" []
 
@@ -78,4 +78,16 @@ module Int (C : Cstage_core.S) = struct
 
   let sexp_of x =
     eformat "atom(std::to_string($(x)))" Sexp.type_ "" [ ("x", C x) ]
+end
+
+module Int16 (C : Cstage_core.S) = struct
+  include Int (C)
+
+  let type_ = C.Type.create ~name:"int16_t"
+end
+
+module Int8 (C : Cstage_core.S) = struct
+  include Int (C)
+
+  let type_ = C.Type.create ~name:"int8_t"
 end

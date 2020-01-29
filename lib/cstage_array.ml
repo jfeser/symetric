@@ -19,12 +19,6 @@ module type S = sig
 
   val const : ctype -> expr array -> 'a
 
-  val clear : expr -> expr
-
-  val reserve : expr -> expr -> expr
-
-  val push_back : expr -> expr -> expr
-
   val init : 'a -> expr -> ('b -> 'c) -> 'd
 
   val set : expr -> expr -> expr -> expr
@@ -50,6 +44,8 @@ module Array (C : Cstage_core.S) = struct
   module Int = Cstage_int.Int (C)
   open C
 
+  let no_effect e = { e with eeffect = false }
+
   let elem_t = Univ_map.Key.create ~name:"elem_t" [%sexp_of: ctype]
 
   let mk_type e =
@@ -58,42 +54,11 @@ module Array (C : Cstage_core.S) = struct
 
   let elem_type t = Univ_map.find_exn t elem_t
 
-  let to_ref_t t =
-    let e = elem_type t in
-    Type.create ~name:(sprintf "std::vector<%s>" (Type.name e))
-    |> Type.add_exn ~key:elem_t ~data:e
-
   module O = struct
     let ( = ) a a' = binop "(%s == %s)" Bool.type_ a a'
   end
 
   let length x = unop "((int)((%s).size()))" Int.type_ x
-
-  let const t a =
-    let a = Array.to_list a in
-    let_
-      { (fresh_decl ~init:(Int.int (List.length a)) t) with etype = to_ref_t t }
-      (fun arr ->
-        sseq
-          [
-            List.mapi a ~f:(fun i x ->
-                eformat "0" unit_t {|$(arr)[$(idx)] = $(val);|}
-                  [ ("arr", C arr); ("idx", C (Int.int i)); ("val", C x) ])
-            |> sseq;
-            arr;
-          ])
-    |> with_comment "Array.const"
-
-  let clear a =
-    eformat ~has_effect:true "0" unit_t "$(a).clear();" [ ("a", C a) ]
-
-  let reserve a n =
-    eformat ~has_effect:true "0" unit_t "$(a).reserve($(n));"
-      [ ("a", C a); ("n", C n) ]
-
-  let push_back a x =
-    eformat ~has_effect:true "0" unit_t "$(a).push_back($(x));"
-      [ ("a", C a); ("x", C x) ]
 
   let set a i x =
     eformat ~has_effect:true "0" unit_t "$(a)[$(i)] = $(x);"
@@ -102,16 +67,19 @@ module Array (C : Cstage_core.S) = struct
   let get a x =
     eformat "($(a)[$(x)])" (elem_type a.etype) "" [ ("a", C a); ("x", C x) ]
 
+  let const t a =
+    let a = Array.to_list a in
+    ( let_ (fresh_decl ~init:(Int.int (List.length a)) t) @@ fun arr ->
+      sseq [ List.mapi a ~f:(fun i -> set arr (Int.int i)) |> sseq; arr ] )
+    |> no_effect |> with_comment "Array.const"
+
   let init t len f =
-    let_
-      { (fresh_decl ~init:len t) with etype = to_ref_t t }
-      (fun a ->
-        sseq
-          [
-            for_ (Int.int 0) (Int.int 1) len (fun i -> set a i (genlet (f i)));
-            a;
-          ])
-    |> with_comment "Array.init"
+    ( let_ (fresh_decl ~init:len t) @@ fun a ->
+      sseq
+        [
+          for_ (Int.int 0) (Int.int 1) len (fun i -> set a i (genlet (f i))); a;
+        ] )
+    |> no_effect |> with_comment "Array.init"
 
   let map t arr ~f = init t (length arr) (fun i -> let_ (get arr i) f)
 

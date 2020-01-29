@@ -2,12 +2,20 @@
  (name mk_bench)
  (modes byte)
  (modules mk_bench)
- (libraries core core_bench combinat staged_synth)
- (preprocess (pps ppx_sexp_conv ppx_compare ppx_hash ppx_let)))
+ (libraries core staged_synth)
+ (preprocess (pps ppx_let)))
 
 (executable
- (name test)
+ (name bench)
  (modes byte)
- (modules test)
- (libraries core core_bench combinat staged_synth)
- (preprocess (pps ppx_sexp_conv ppx_compare ppx_hash ppx_let)))
+ (modules bench)
+ (libraries core staged_synth)
+ (preprocess (pps ppx_compare ppx_let)))
+
+(executable
+ (name synth)
+ (modes byte)
+ (modules synth)
+ (libraries core staged_synth)
+ (preprocess (pps ppx_let)))
+

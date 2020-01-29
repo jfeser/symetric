@@ -74,6 +74,8 @@ module type LANG = sig
     type mapper = { f : 'a. 'a code -> 'a code }
 
     val map : f:mapper -> t -> t
+
+    val random : ?state:Random.State.t -> Grammar.nonterm -> int -> t
   end
 
   val grammar : Grammar.t
