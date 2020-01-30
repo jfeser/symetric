@@ -162,6 +162,8 @@ module Code = struct
   end
 
   module Array = struct
+    type 'a array = Array_t
+
     let mk_type _ = ()
 
     let elem_type _ = ()

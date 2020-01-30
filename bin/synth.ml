@@ -1,9 +1,10 @@
 open! Core
 open Staged_synth
 
-module Code = Cstage.Code ()
+module Core = Cstage_core.Make ()
 
-module Deepcoder = Deepcoder.Make (Code)
+module Code = Cstage.Code (Core)
+module Deepcoder = Deepcoder.Make (Cstage_array.Array (Core)) (Code)
 
 let main ~depth ~dump_graph ~sketch =
   let module Sketch = ( val In_channel.with_file sketch ~f:Util.input_sketch

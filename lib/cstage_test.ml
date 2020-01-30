@@ -2,7 +2,8 @@ open! Core
 open! Cstage
 
 let%expect_test "" =
-  let module C = Code () in
+  let module Core = Cstage_core.Make () in
+  let module C = Cstage.Code (Core) in
   let open C in
   let open Array in
   let open Int in
@@ -46,7 +47,8 @@ let%expect_test "" =
   code |> Util.clang_build |> print_endline
 
 let%expect_test "" =
-  let module C = Code () in
+  let module Core = Cstage_core.Make () in
+  let module C = Cstage.Code (Core) in
   let open C in
   let open Int in
   let int_t = C.Int.type_ in
@@ -73,7 +75,8 @@ let%expect_test "" =
   [%expect {| |}]
 
 let%expect_test "" =
-  let module C = Code () in
+  let module Core = Cstage_core.Make () in
+  let module C = Cstage.Code (Core) in
   let open C in
   let open Int in
   let open Func in
@@ -108,7 +111,8 @@ let%expect_test "" =
   [%expect {| |}]
 
 let%expect_test "" =
-  let module C = Code () in
+  let module Core = Cstage_core.Make () in
+  let module C = Cstage.Code (Core) in
   let open C in
   let open Int in
   let int_array = Array.mk_type Int.type_ in
@@ -173,7 +177,8 @@ let%expect_test "" =
     }
  |}];
   code |> Util.clang_build |> print_endline;
-  [%expect {|
+  [%expect
+    {|
     <stdin>:23:20: error: redefinition of 'x6'
       std::vector<int> x6 (10);  std::vector<int> x7 = x6;
                        ^
@@ -201,7 +206,8 @@ let%expect_test "" =
     4 errors generated. |}]
 
 let%expect_test "" =
-  let module C = Code () in
+  let module Core = Cstage_core.Make () in
+  let module C = Cstage.Code (Core) in
   let open C in
   let open Int in
   let code =
@@ -253,7 +259,8 @@ let%expect_test "" =
     1 warning generated. |}]
 
 let%expect_test "" =
-  let module C = Code () in
+  let module Core = Cstage_core.Make () in
+  let module C = Cstage.Code (Core) in
   let open C in
   let open Int in
   let code =
@@ -309,7 +316,8 @@ let%expect_test "" =
     1 warning generated. |}]
 
 let%expect_test "" =
-  let module C = Code () in
+  let module Core = Cstage_core.Make () in
+  let module C = Cstage.Code (Core) in
   let open C in
   let open Int in
   let code =
@@ -337,7 +345,8 @@ let%expect_test "" =
   code |> Util.clang_build |> print_endline
 
 let%expect_test "" =
-  let module C = Code () in
+  let module Core = Cstage_core.Make () in
+  let module C = Cstage.Code (Core) in
   let open C in
   let open Int in
   let open Bool in
@@ -366,7 +375,8 @@ let%expect_test "" =
     }
  |}];
   code |> Util.clang_build |> print_endline;
-  [%expect {|
+  [%expect
+    {|
     <stdin>:7:44: warning: variable 'x2' is uninitialized when used here [-Wuninitialized]
     int main();int main() {  int x2;  int x3 = x2;
                                                ^~
@@ -377,7 +387,8 @@ let%expect_test "" =
     1 warning generated. |}]
 
 let%expect_test "" =
-  let module C = Code () in
+  let module Core = Cstage_core.Make () in
+  let module C = Cstage.Code (Core) in
   let open C in
   let open Bool in
   let code =
@@ -408,7 +419,8 @@ let%expect_test "" =
     }
  |}];
   code |> Util.clang_build |> print_endline;
-  [%expect {|
+  [%expect
+    {|
     <stdin>:7:44: warning: variable 'x2' is uninitialized when used here [-Wuninitialized]
     int main();int main() {  int x2;  int x3 = x2;
                                                ^~
@@ -419,7 +431,8 @@ let%expect_test "" =
     1 warning generated. |}]
 
 let%expect_test "" =
-  let module C = Code () in
+  let module Core = Cstage_core.Make () in
+  let module C = Cstage.Code (Core) in
   let open C in
   let open Int in
   let open Bool in
@@ -455,7 +468,8 @@ let%expect_test "" =
     }
  |}];
   code |> Util.clang_build |> print_endline;
-  [%expect {|
+  [%expect
+    {|
     <stdin>:7:58: warning: variable 'x3' is uninitialized when used here [-Wuninitialized]
     int main();int main() {   int x2 = 10; int x3;  int x4 = x3;
                                                              ^~
@@ -466,7 +480,8 @@ let%expect_test "" =
     1 warning generated. |}]
 
 let%expect_test "" =
-  let module C = Code () in
+  let module Core = Cstage_core.Make () in
+  let module C = Cstage.Code (Core) in
   let open C in
   let open Int in
   let code = for_ (int 0) (int 1) (int 10) (fun _ -> seq (print "test") exit) in
@@ -491,7 +506,8 @@ let%expect_test "" =
   code |> Util.clang_build |> print_endline
 
 let%expect_test "" =
-  let module C = Code () in
+  let module Core = Cstage_core.Make () in
+  let module C = Cstage.Code (Core) in
   let open C in
   let open Int in
   let code =
@@ -542,7 +558,8 @@ let%expect_test "" =
   code |> Util.clang_build |> print_endline
 
 let%expect_test "" =
-  let module C = Code () in
+  let module Core = Cstage_core.Make () in
+  let module C = Cstage.Code (Core) in
   let open C in
   let open Int in
   let code =
@@ -608,7 +625,8 @@ let%expect_test "" =
     }
  |}];
   code |> Util.clang_build |> print_endline;
-  [%expect {|
+  [%expect
+    {|
     <stdin>:24:20: error: redefinition of 'x2'
       std::vector<int> x2 (3);  std::vector<int> x3 = x2;  x3[0] = 0;  x3[1] = 1;  x3[2] = 2;// end Array.const
                        ^
@@ -624,7 +642,8 @@ let%expect_test "" =
     2 errors generated. |}]
 
 let%expect_test "" =
-  let module C = Code () in
+  let module Core = Cstage_core.Make () in
+  let module C = Cstage.Code (Core) in
   let open C in
   let open Int in
   let code =
@@ -677,7 +696,8 @@ let%expect_test "" =
   [%expect {| |}]
 
 let%expect_test "" =
-  let module C = Code () in
+  let module Core = Cstage_core.Make () in
+  let module C = Cstage.Code (Core) in
   let open C in
   let open Int in
   let code =
@@ -736,7 +756,8 @@ let%expect_test "" =
   code |> Util.clang_build |> print_endline
 
 let%expect_test "" =
-  let module C = Code () in
+  let module Core = Cstage_core.Make () in
+  let module C = Cstage.Code (Core) in
   let open C in
   let open Int in
   let code =
@@ -805,7 +826,8 @@ let%expect_test "" =
     }
  |}];
   code |> Util.clang_build |> print_endline;
-  [%expect {|
+  [%expect
+    {|
     <stdin>:24:20: error: redefinition of 'x2'
       std::vector<int> x2 (3);  std::vector<int> x3 = x2;  x3[0] = 0;  x3[1] = 1;  x3[2] = 2;// end Array.const
                        ^
@@ -821,7 +843,8 @@ let%expect_test "" =
     2 errors generated. |}]
 
 let%expect_test "" =
-  let module C = Code () in
+  let module Core = Cstage_core.Make () in
+  let module C = Cstage.Code (Core) in
   let open C in
   let open Int in
   let arr =
@@ -875,7 +898,8 @@ let%expect_test "" =
   [%expect {| |}]
 
 let%expect_test "" =
-  let module C = Code () in
+  let module Core = Cstage_core.Make () in
+  let module C = Cstage.Code (Core) in
   let open C in
   let code =
     let_ (Sexp.input ()) @@ fun sexp ->

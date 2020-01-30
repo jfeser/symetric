@@ -43,7 +43,17 @@ let main ~seed ~sketch ~min ~max ~examples ~no_identity =
     | Some s -> Random.State.make [| s |]
     | None -> Random.State.make_self_init ()
   in
-  let module Deepcoder = Deepcoder.Make (Mlstage.Code) in
+  let module Deepcoder =
+    Deepcoder.Make
+      (struct
+        type 'a t = 'a Mlstage.Code.t
+
+        type ctype = Mlstage.Code.ctype
+
+        include Mlstage.Code.Array
+      end)
+      (Mlstage.Code)
+  in
   let module Bench = Bench (Deepcoder.Lang) in
   Bench.generate_bench ~state { min; max; examples; sketch }
   |> Sequence.filter ~f:(fun sexps ->

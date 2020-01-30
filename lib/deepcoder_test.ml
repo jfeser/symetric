@@ -1,8 +1,10 @@
 open! Core
 
 let%expect_test "" =
-  let module Code = Cstage.Code () in
-  let module Deepcoder = Deepcoder.Make (Code) in
+  let module Core = Cstage_core.Make () in
+  let module Code = Cstage.Code (Core) in
+  let module Array = Cstage_array.Array (Core) in
+  let module Deepcoder = Deepcoder.Make (Array) (Code) in
   let module Sketch = struct
     let inputs = [ "L" ]
 
@@ -209,7 +211,14 @@ let%expect_test "" =
 
 let%expect_test "" =
   let module Code = Mlstage.Code in
-  let module Deepcoder = Deepcoder.Make (Code) in
+  let module Array = struct
+    include Code.Array
+
+    type 'a t = 'a Code.t
+
+    type ctype = Code.ctype
+  end in
+  let module Deepcoder = Deepcoder.Make (Array) (Code) in
   let g = ("L", Grammar.Term.App ("input", [])) :: Deepcoder.Lang.grammar in
   let state = Random.State.make [||] in
   Grammar.sample_seq ~state "L" g
@@ -234,7 +243,8 @@ let%expect_test "" =
          printf "Term: %s\nInput: %s\nOutput: %s\n\n"
            (Grammar.Term.to_string term)
            input output);
-  [%expect {|
+  [%expect
+    {|
     Term: map((/4), map((/2), zipwith(max, reverse(input), input)))
     Input: (Sexp ((2 5 9) (8 1 6 2 2 2 5 4) (5 5 1 0 5 0 7) (0 10 1 7 3) (5 4 1 10)))
     Output: (Sexp ((1 0 1) (1 0 0 0 0 0 0 1) (0 0 0 0 0 0 0) (0 1 0 1 0) (1 0 0 1)))

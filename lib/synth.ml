@@ -167,9 +167,7 @@ struct
             let state = V.to_state node in
             let sym = state.V.symbol and size = int state.V.cost in
             fun ctx ->
-              C.iter ~sym ~size
-                ~f:(fun (v, _) -> check ((state, v) :: ctx))
-                cache)
+              C.iter ~sym ~size ~f:(fun v -> check ((state, v) :: ctx)) cache)
       in
       check_all []
 
@@ -282,7 +280,7 @@ struct
   let load_inputs () =
     let open S in
     List.map Sketch.inputs ~f:(fun sym ->
-        put ~sym ~size:1 ~sizes:(Array.const costs_t [||]) (cache.value ())
+        put ~sym ~size:1 (cache.value ())
         @@ (Sexp.input () |> L.Value.of_sexp sym))
     |> sseq
 
@@ -302,9 +300,7 @@ struct
           debug_print
             (sprintf "Inserting (%s -> %s) cost %d" symbol
                (Gr.Term.to_string term) cost);
-          put ~sym:symbol ~size:cost
-            ~sizes:(S.Array.const costs_t [||])
-            (cache.value ()) value;
+          put ~sym:symbol ~size:cost (cache.value ()) value;
         ]
     in
 
@@ -354,7 +350,7 @@ struct
                    let cost = state.cost in
                    let fill ctx =
                      C.iter ~sym:symbol ~size:(int cost)
-                       ~f:(fun (v, _) -> fill ((state, v) :: ctx))
+                       ~f:(fun v -> fill ((state, v) :: ctx))
                        (cache.value ())
                    in
                    fill)

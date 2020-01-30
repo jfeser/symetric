@@ -29,6 +29,8 @@ module type S = sig
     fresh : Fresh.t;
   }
 
+  type 'a t = expr [@@deriving sexp_of]
+
   val type_of : expr -> ctype
 
   val cast : expr -> expr
@@ -190,6 +192,8 @@ module Make () : S = struct
     mutable cur_func : func_decl;
     fresh : Fresh.t;
   }
+
+  type 'a t = expr [@@deriving sexp_of]
 
   type fmt_arg = C : expr -> fmt_arg | S : string -> fmt_arg
 

@@ -1,11 +1,8 @@
 open! Core
 module Seq = Sequence
 
-module Code () : Sigs.CODE = struct
-  module C = Cstage_core.Make ()
-
-  type 'a t = C.expr [@@deriving sexp_of]
-
+module Code (C : Cstage_core.S) :
+  Sigs.CODE with type 'a t = 'a C.t and type ctype = C.ctype = struct
   include C
   module Int = Cstage_int.Int (C)
   module Array = Cstage_array.Array (C)

@@ -1,10 +1,13 @@
 open! Core
 
-module Make (C : Sigs.CODE) = struct
+module Make
+    (A : Sigs.ARRAY)
+    (C : Sigs.CODE with type 'a t = 'a A.t and type ctype = A.ctype) =
+struct
   module Value = struct
-    type array_t = int32 array array [@@deriving sexp]
+    type array_t = int32 A.array C.Array.array
 
-    type int_t = int32 array [@@deriving sexp]
+    type int_t = int32 C.Array.array
 
     type t =
       | A of array_t C.t
@@ -12,7 +15,6 @@ module Make (C : Sigs.CODE) = struct
       | F_int of (int32 C.t -> int32 C.t)
       | F_bool of (int32 C.t -> bool C.t)
       | F_int2 of (int32 C.t -> int32 C.t -> int32 C.t)
-    [@@deriving sexp_of]
 
     type type_ = C.ctype
 
@@ -22,19 +24,18 @@ module Make (C : Sigs.CODE) = struct
       let int_t = C.Int.type_ in
       let random_int () =
         let x = Random.State.int_incl state 0 10 in
-        C.(Int.int x)
+        C.Int.int x
       in
       let random_array () =
         let length = Random.State.int_incl state 0 8 in
         let arr = Array.init length ~f:(fun _ -> random_int ()) in
-        C.(Array.const (Array.mk_type int_t) arr)
+        A.const (A.mk_type int_t) arr
       in
       let random_examples elem elem_t () =
-        C.Array.const (C.Array.mk_type elem_t)
-          (Array.init n ~f:(fun _ -> elem ()))
+        C.Array.const (A.mk_type elem_t) (Array.init n ~f:(fun _ -> elem ()))
       in
       if String.(sym = "L") then
-        A (random_examples random_array C.(Array.mk_type int_t) ())
+        A (random_examples random_array (A.mk_type int_t) ())
       else I (random_examples random_int int_t ())
 
     let map ~f v =
@@ -59,8 +60,8 @@ module Make (C : Sigs.CODE) = struct
 
     let eq (type a) (x : t) (y : a C.t) =
       match x with
-      | A x -> C.(Array.O.(x = cast y))
-      | I x -> C.(Array.O.(x = cast y))
+      | A x -> C.Array.O.(x = C.cast y)
+      | I x -> C.Array.O.(x = C.cast y)
       | _ -> assert false
 
     let let_ v f =
@@ -69,39 +70,31 @@ module Make (C : Sigs.CODE) = struct
       | I x -> C.let_ x (fun v' -> f (I v'))
       | _ -> assert false
 
-    let int_type = C.Array.mk_type C.Int.type_
+    let int_type = A.mk_type C.Int.type_
 
-    let array_type = C.Array.mk_type (C.Array.mk_type C.Int.type_)
+    let array_type = A.mk_type (A.mk_type C.Int.type_)
 
     let of_sexp symbol s =
       let int_t = C.Int.type_ in
       let array_of_sexp examples =
-        let open C in
-        let open Array in
-        of_sexp
+        let open A in
+        C.Array.of_sexp
           (mk_type (mk_type int_t))
           examples
-          (fun array -> of_sexp (mk_type int_t) array Int.of_sexp)
+          (fun array -> of_sexp (mk_type int_t) array C.Int.of_sexp)
       in
       let int_of_sexp examples =
-        let open C in
-        let open Array in
-        of_sexp (mk_type int_t) examples Int.of_sexp
+        let open A in
+        C.Array.of_sexp (mk_type int_t) examples C.Int.of_sexp
       in
 
       if String.(symbol = "L") then A (array_of_sexp s) else I (int_of_sexp s)
 
     let sexp_of v =
       let array_to_sexp examples =
-        let open C in
-        let open Array in
-        sexp_of examples (fun array -> sexp_of array Int.sexp_of)
+        C.Array.sexp_of examples (fun array -> A.sexp_of array C.Int.sexp_of)
       in
-      let int_to_sexp examples =
-        let open C in
-        let open Array in
-        sexp_of examples Int.sexp_of
-      in
+      let int_to_sexp examples = C.Array.sexp_of examples C.Int.sexp_of in
 
       match v with
       | A x -> array_to_sexp x
@@ -112,7 +105,7 @@ module Make (C : Sigs.CODE) = struct
   module Lang = struct
     module Value = Value
 
-    type value = Value.t [@@deriving sexp_of]
+    type value = Value.t
 
     type 'a code = 'a C.t
 
@@ -172,9 +165,9 @@ module Make (C : Sigs.CODE) = struct
     let to_int2_f = function F_int2 x -> x | _ -> assert false
 
     open C
-    open Array
+    open A
 
-    let int_array = Array.mk_type Int.type_
+    let int_array = A.mk_type Int.type_
 
     let rec eval ctx =
       let open Int in
@@ -205,12 +198,12 @@ module Make (C : Sigs.CODE) = struct
           | Some v -> v
           | None ->
               Error.create "Unbound name." (x, ctx)
-                [%sexp_of: string * value Map.M(Core.String).t]
+                [%sexp_of: string * (value[@opaque]) Map.M(Core.String).t]
               |> Error.raise )
       | App ("head", [ e ]) ->
           I
             ( let_ (eval ctx e |> to_array) @@ fun a ->
-              map Value.int_type a ~f:(fun a ->
+              C.Array.map Value.int_type a ~f:(fun a ->
                   ite
                     (length a > int 0)
                     (fun () -> get a (int 0))
@@ -218,7 +211,7 @@ module Make (C : Sigs.CODE) = struct
       | App ("last", [ e ]) ->
           I
             ( let_ (eval ctx e |> to_array) @@ fun a ->
-              map Value.int_type a ~f:(fun a ->
+              C.Array.map Value.int_type a ~f:(fun a ->
                   let_ (length a) (fun l ->
                       ite
                         (l > int 0)
@@ -228,18 +221,19 @@ module Make (C : Sigs.CODE) = struct
           A
             ( let_ (eval ctx e |> to_array) @@ fun a ->
               let_ (eval ctx n |> to_int) @@ fun n ->
-              map2 Value.array_type a n ~f:(fun a n -> sub a (int 0) n) )
+              C.Array.map2 Value.array_type a n ~f:(fun a n -> sub a (int 0) n)
+            )
       | App ("drop", [ n; e ]) ->
           A
             ( let_ (eval ctx e |> to_array) @@ fun a ->
               let_ (eval ctx n |> to_int) @@ fun n ->
-              map2 Value.array_type a n ~f:(fun a n ->
+              C.Array.map2 Value.array_type a n ~f:(fun a n ->
                   sub a n (length a - int 1)) )
       | App ("access", [ n; e ]) ->
           I
             ( let_ (eval ctx e |> to_array) @@ fun a ->
               let_ (eval ctx n |> to_int) @@ fun n ->
-              map2 Value.int_type a n ~f:(fun a n ->
+              C.Array.map2 Value.int_type a n ~f:(fun a n ->
                   ite
                     Bool.(n >= int 0 && n < length a)
                     (fun () -> get a n)
@@ -247,7 +241,7 @@ module Make (C : Sigs.CODE) = struct
       | App ("minimum", [ e ]) ->
           I
             ( let_ (eval ctx e |> to_array) @@ fun a ->
-              map Value.int_type a ~f:(fun a ->
+              C.Array.map Value.int_type a ~f:(fun a ->
                   fold
                     ~init:(int Int32.(max_value |> to_int_exn))
                     ~f:(fun acc x ->
@@ -256,7 +250,7 @@ module Make (C : Sigs.CODE) = struct
       | App ("maximum", [ e ]) ->
           I
             ( let_ (eval ctx e |> to_array) @@ fun a ->
-              map Value.int_type a ~f:(fun a ->
+              C.Array.map Value.int_type a ~f:(fun a ->
                   fold
                     ~init:(int Int32.(min_value |> to_int_exn))
                     ~f:(fun acc x ->
@@ -265,26 +259,26 @@ module Make (C : Sigs.CODE) = struct
       | App ("reverse", [ e ]) ->
           A
             ( let_ (eval ctx e |> to_array) @@ fun a ->
-              map Value.array_type a ~f:(fun a ->
+              C.Array.map Value.array_type a ~f:(fun a ->
                   let_ (length a) (fun l ->
                       init int_array l (fun i -> get a (l - i - int 1)))) )
       | App ("sum", [ e ]) ->
           I
             ( let_ (eval ctx e |> to_array) @@ fun a ->
-              map Value.int_type a ~f:(fun a -> fold ~init:(int 0) ~f:( + ) a)
-            )
+              C.Array.map Value.int_type a ~f:(fun a ->
+                  fold ~init:(int 0) ~f:( + ) a) )
       | App ("map", [ f; e ]) ->
           let f = eval ctx f |> to_int_f in
           A
             ( let_ (eval ctx e |> to_array) @@ fun a ->
-              map Value.array_type a ~f:(fun a ->
+              C.Array.map Value.array_type a ~f:(fun a ->
                   let_ a (fun a ->
                       init int_array (length a) (fun i -> f (get a i)))) )
       | App ("count", [ f; e ]) ->
           let f = eval ctx f |> to_bool_f in
           I
             ( let_ (eval ctx e |> to_array) @@ fun a ->
-              map Value.int_type a ~f:(fun a ->
+              C.Array.map Value.int_type a ~f:(fun a ->
                   fold ~init:(int 0)
                     ~f:(fun acc x ->
                       ite (f x) (fun () -> acc + int 1) (fun () -> acc))
@@ -294,7 +288,7 @@ module Make (C : Sigs.CODE) = struct
           A
             ( let_ (eval ctx e |> to_array) @@ fun a ->
               let_ (eval ctx e' |> to_array) @@ fun a' ->
-              map2 Value.array_type a a' ~f:(fun a a' ->
+              C.Array.map2 Value.array_type a a' ~f:(fun a a' ->
                   init int_array
                     (min (length a) (length a'))
                     (fun i -> f (get a i) (get a' i))) )
@@ -316,12 +310,11 @@ module Make (C : Sigs.CODE) = struct
     type 'a code = 'a C.t
 
     type cache =
-      (Value.int_t * int32 array) Sigs.set array
-      * (Value.array_t * int32 array) Sigs.set array
+      Value.int_t Sigs.set C.Array.array * Value.array_t Sigs.set C.Array.array
 
     type t = {
-      ints : (Value.int_t * int32 array) Sigs.set array code;
-      arrays : (Value.array_t * int32 array) Sigs.set array code;
+      ints : Value.int_t Sigs.set C.Array.array code;
+      arrays : Value.array_t Sigs.set C.Array.array code;
     }
 
     let max_size = 100
@@ -329,21 +322,12 @@ module Make (C : Sigs.CODE) = struct
     open C
 
     let empty () =
-      let int_t = Int.type_ in
-      let sizes_t = Array.mk_type int_t in
-      let mk_type t = Array.mk_type @@ Set.mk_type (Tuple.mk_type t sizes_t) in
+      let mk_type t = Array.mk_type @@ Set.mk_type t in
       let mk_empty t =
         Array.init t (Int.int max_size) (fun _ -> Set.empty (Array.elem_type t))
       in
       let i_cache_t = mk_type Value.int_type in
       let a_cache_t = mk_type Value.array_type in
-      Log.debug (fun m ->
-          m "Array type: %s"
-            (Core.Sexp.to_string @@ [%sexp_of: ctype] Value.array_type));
-      Log.debug (fun m ->
-          m "Array cache type: %s"
-            (Core.Sexp.to_string @@ [%sexp_of: ctype] a_cache_t));
-
       let i_cache = Nonlocal_let.let_ let_ (fun () -> mk_empty i_cache_t) in
       let a_cache = Nonlocal_let.let_ let_ (fun () -> mk_empty a_cache_t) in
       Nonlocal_let.
@@ -353,9 +337,9 @@ module Make (C : Sigs.CODE) = struct
           bind = (fun f -> i_cache.bind (fun () -> a_cache.bind f));
         }
 
-    let put ~sym:_ ~size ~sizes { ints = tbl_i; arrays = tbl_a; _ } v =
+    let put ~sym:_ ~size { ints = tbl_i; arrays = tbl_a; _ } v =
       let key = Int.int size in
-      let add tbl v = Set.add tbl.(key) (Tuple.create v sizes) in
+      let add tbl = Set.add tbl.(key) in
       match v with
       | Value.I v -> add tbl_i v
       | A v -> add tbl_a v
@@ -363,10 +347,8 @@ module Make (C : Sigs.CODE) = struct
 
     let iter ~sym ~size:key ~f { ints = tbl_i; arrays = tbl_a; _ } =
       match sym with
-      | "I" ->
-          Set.iter tbl_i.(key) (fun v -> f (Value.I (Tuple.fst v), Tuple.snd v))
-      | "L" ->
-          Set.iter tbl_a.(key) (fun v -> f (Value.A (Tuple.fst v), Tuple.snd v))
+      | "I" -> Set.iter tbl_i.(key) (fun v -> f (Value.I v))
+      | "L" -> Set.iter tbl_a.(key) (fun v -> f (Value.A v))
       | _ -> assert false
 
     let print_size _ = failwith "print_size"
