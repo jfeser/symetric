@@ -1,15 +1,15 @@
 open! Core
 
 module type Base = sig
-  type ctype
+  type typ
 
   type expr
 
   val length : expr -> expr
 
-  val const : ctype -> expr array -> expr
+  val const : typ -> expr array -> expr
 
-  val init : ctype -> expr -> (expr -> expr) -> expr
+  val init : typ -> expr -> (expr -> expr) -> expr
 
   val set : expr -> expr -> expr -> expr
 
@@ -17,13 +17,13 @@ module type Base = sig
 end
 
 module type Derived = sig
-  type ctype
+  type typ
 
   type expr
 
-  val map : ctype -> expr -> f:(expr -> expr) -> expr
+  val map : typ -> expr -> f:(expr -> expr) -> expr
 
-  val map2 : ctype -> expr -> expr -> f:(expr -> expr -> expr) -> expr
+  val map2 : typ -> expr -> expr -> f:(expr -> expr -> expr) -> expr
 
   val sub : expr -> expr -> expr -> expr
 
@@ -31,23 +31,23 @@ module type Derived = sig
 
   val iter : expr -> f:(expr -> expr) -> expr
 
-  val of_sexp : ctype -> expr -> (expr -> expr) -> expr
+  val of_sexp : typ -> expr -> (expr -> expr) -> expr
 
   val sexp_of : expr -> (expr -> expr) -> expr
 end
 
 module type S = sig
-  type ctype
+  type typ
 
   type expr
 
-  include Base with type ctype := ctype and type expr := expr
+  include Base with type typ := typ and type expr := expr
 
-  include Derived with type ctype := ctype and type expr := expr
+  include Derived with type typ := typ and type expr := expr
 
-  val mk_type : ctype -> ctype
+  val mk_type : typ -> typ
 
-  val elem_type : ctype -> ctype
+  val elem_type : typ -> typ
 
   module O : sig
     val ( = ) : expr -> expr -> expr
@@ -56,8 +56,8 @@ end
 
 module Derived
     (C : Cstage_core.S)
-    (B : Base with type expr = C.expr and type ctype = C.ctype) :
-  Derived with type ctype := C.ctype and type expr := C.expr = struct
+    (B : Base with type expr = C.expr and type typ = C.typ) :
+  Derived with type typ := C.typ and type expr := C.expr = struct
   module Int = Cstage_int.Int (C)
   open C
   open B
@@ -111,11 +111,13 @@ module Array (C : Cstage_core.S) = struct
 
   type 'a t = 'a C.t
 
-  type ctype = C.ctype
+  type typ = C.typ
+
+  type 'a ctype = 'a C.ctype
 
   let no_effect e = { e with eeffect = false }
 
-  let elem_t = Univ_map.Key.create ~name:"elem_t" [%sexp_of: ctype]
+  let elem_t = Univ_map.Key.create ~name:"elem_t" [%sexp_of: typ]
 
   let mk_type e =
     Type.create ~name:(sprintf "std::vector<%s>" (Type.name e))
@@ -124,15 +126,14 @@ module Array (C : Cstage_core.S) = struct
   let elem_type t =
     match Univ_map.find t elem_t with
     | Some et -> et
-    | None ->
-        Error.create "Not an array type." t [%sexp_of: ctype] |> Error.raise
+    | None -> Error.create "Not an array type." t [%sexp_of: typ] |> Error.raise
 
   module O = struct
     let ( = ) a a' = binop "(%s == %s)" Bool.type_ a a'
   end
 
   module Base = struct
-    type ctype = C.ctype
+    type typ = C.typ
 
     type expr = C.expr
 
@@ -161,7 +162,7 @@ module Array (C : Cstage_core.S) = struct
       |> no_effect |> with_comment "Array.init"
   end
 
-  include (Base : Base with type ctype := C.ctype and type expr := C.expr)
+  include (Base : Base with type typ := C.typ and type expr := C.expr)
 
   include Derived (C) (Base)
 end
@@ -196,11 +197,11 @@ end
  * 
  *   type 'a t = 'a C.t
  * 
- *   type ctype = C.ctype
+ *   type typ = C.typ
  * 
  *   let no_effect e = { e with eeffect = false }
  * 
- *   let elem_t = Univ_map.Key.create ~name:"elem_t" [%sexp_of: ctype]
+ *   let elem_t = Univ_map.Key.create ~name:"elem_t" [%sexp_of: typ]
  * 
  *   let mk_type e =
  *     Type.create
@@ -214,7 +215,7 @@ end
  *   end
  * 
  *   module Base = struct
- *     type ctype = C.ctype
+ *     type typ = C.typ
  * 
  *     type expr = C.expr
  * 
@@ -243,7 +244,7 @@ end
  *       |> no_effect |> with_comment "Array.init"
  *   end
  * 
- *   include (Base : Base with type ctype := C.ctype and type expr := C.expr)
+ *   include (Base : Base with type typ := C.typ and type expr := C.expr)
  * 
  *   include Derived (C) (Base)
  * end *)

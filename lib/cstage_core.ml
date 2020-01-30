@@ -3,21 +3,21 @@ open! Core
 module type S = sig
   type mark = unit -> bool
 
-  type ctype = Univ_map.t [@@deriving sexp_of]
+  type typ = Univ_map.t [@@deriving sexp_of]
 
   and expr = {
     ebody : string;
     ret : string;
-    etype : ctype;
+    etype : typ;
     efree : (string * mark) list;
     eeffect : bool;
   }
 
-  type var_decl = { vname : string; vtype : ctype; init : expr option }
+  type var_decl = { vname : string; vtype : typ; init : expr option }
 
   type func_decl = {
     fname : string;
-    ftype : ctype;
+    ftype : typ;
     mutable locals : var_decl list;
     mutable args : var_decl list;
     mutable fbody : expr;
@@ -31,16 +31,18 @@ module type S = sig
 
   type 'a t = expr [@@deriving sexp_of]
 
-  val type_of : expr -> ctype
+  type 'a ctype = typ [@@deriving sexp_of]
+
+  val type_of : expr -> typ
 
   val cast : expr -> expr
 
   module Type : sig
-    val name : ctype -> string
+    val name : typ -> string
 
-    val create : name:string -> ctype
+    val create : name:string -> typ
 
-    val add_exn : ctype -> key:'a Type_equal.Id.t -> data:'a -> ctype
+    val add_exn : typ -> key:'a Type_equal.Id.t -> data:'a -> typ
   end
 
   type fmt_arg = C : expr -> fmt_arg | S : string -> fmt_arg
@@ -48,21 +50,21 @@ module type S = sig
   val eformat :
     ?has_effect:bool ->
     string ->
-    ctype ->
+    typ ->
     string ->
     (string * fmt_arg) list ->
     expr
 
-  val unit_t : ctype
+  val unit_t : typ
 
   module Func : sig
-    val mk_type : ctype -> ctype -> ctype
+    val mk_type : typ -> typ -> typ
 
-    val arg_t : ctype -> ctype
+    val arg_t : typ -> typ
 
-    val ret_t : ctype -> ctype
+    val ret_t : typ -> typ
 
-    val func : string -> ctype -> (expr -> expr) -> expr
+    val func : string -> typ -> (expr -> expr) -> expr
 
     (* val of_name : string -> func_decl option *)
 
@@ -81,30 +83,30 @@ module type S = sig
 
   val unop :
     (string -> string, unit, string, string, string, string) format6 ->
-    ctype ->
+    typ ->
     expr ->
     expr
 
   val binop :
     (string -> string -> string, unit, string, string, string, string) format6 ->
-    ctype ->
+    typ ->
     expr ->
     expr ->
     expr
 
   module Sexp : sig
-    val type_ : ctype
+    val type_ : typ
 
     module List : sig
       val get : expr -> expr -> expr
 
       val length : expr -> expr
 
-      val type_ : ctype
+      val type_ : typ
     end
 
     module Atom : sig
-      val type_ : ctype
+      val type_ : typ
     end
 
     val input : unit -> expr
@@ -115,7 +117,7 @@ module type S = sig
   end
 
   module Bool : sig
-    val type_ : ctype
+    val type_ : typ
 
     val bool : bool -> expr
 
@@ -130,11 +132,11 @@ module type S = sig
     val sexp_of : expr -> expr
   end
 
-  val fresh_var : ctype -> mark -> expr
+  val fresh_var : typ -> mark -> expr
 
-  val fresh_decl : ?init:expr -> ctype -> expr
+  val fresh_decl : ?init:expr -> typ -> expr
 
-  val fresh_global : ctype -> expr
+  val fresh_global : typ -> expr
 
   val let_ : expr -> (expr -> expr) -> expr
 
@@ -166,22 +168,22 @@ end
 module Make () : S = struct
   type mark = unit -> bool
 
-  type ctype = Univ_map.t [@@deriving sexp_of]
+  type typ = Univ_map.t [@@deriving sexp_of]
 
   and expr = {
     ebody : string;
     ret : string;
-    etype : ctype;
+    etype : typ;
     efree : (string * (mark[@opaque])) list;
     eeffect : bool;
   }
   [@@deriving sexp_of]
 
-  type var_decl = { vname : string; vtype : ctype; init : expr option }
+  type var_decl = { vname : string; vtype : typ; init : expr option }
 
   type func_decl = {
     fname : string;
-    ftype : ctype;
+    ftype : typ;
     mutable locals : var_decl list;
     mutable args : var_decl list;
     mutable fbody : expr;
@@ -192,6 +194,8 @@ module Make () : S = struct
     mutable cur_func : func_decl;
     fresh : Fresh.t;
   }
+
+  type 'a ctype = typ [@@deriving sexp_of]
 
   type 'a t = expr [@@deriving sexp_of]
 
@@ -247,9 +251,9 @@ module Make () : S = struct
 
   let int_t = Type.create ~name:"int"
 
-  let arg_t = Univ_map.Key.create ~name:"arg_t" [%sexp_of: ctype]
+  let arg_t = Univ_map.Key.create ~name:"arg_t" [%sexp_of: typ]
 
-  let ret_t = Univ_map.Key.create ~name:"ret_t" [%sexp_of: ctype]
+  let ret_t = Univ_map.Key.create ~name:"ret_t" [%sexp_of: typ]
 
   let func_t t1 t2 =
     Univ_map.(of_alist_exn Packed.[ T (arg_t, t1); T (ret_t, t2) ])

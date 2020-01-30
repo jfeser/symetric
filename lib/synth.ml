@@ -114,7 +114,7 @@ let to_contexts term args =
 module Make
     (Sketch : Sigs.SKETCH)
     (S : Sigs.CODE)
-    (L : Sigs.LANG with type 'a code = 'a S.t and type Value.type_ = S.ctype)
+    (L : Sigs.LANG with type 'a code = 'a S.t)
     (C : Sigs.CACHE with type value = L.Value.t and type 'a code = 'a S.t) =
 struct
   open S.Int
@@ -187,7 +187,9 @@ struct
       let open S in
       let func =
         let func_t =
-          let args_t = Tuple.mk_type (type_of cache) (L.Value.type_of target) in
+          let args_t =
+            Tuple.mk_type (type_of cache) (type_of (L.Value.code_of target))
+          in
           Func.mk_type args_t unit_t
         and func_name = sprintf "reconstruct_%s_%d" state.V.symbol state.cost in
 

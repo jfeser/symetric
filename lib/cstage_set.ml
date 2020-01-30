@@ -4,14 +4,14 @@ module Set (C : Cstage_core.S) = struct
   module Int = Cstage_int.Int (C)
   open C
 
-  let elem_t = Univ_map.Key.create ~name:"elem_t" [%sexp_of: ctype]
+  let elem_t = Univ_map.Key.create ~name:"elem_t" [%sexp_of: typ]
 
   let elem_type t = Univ_map.find_exn t elem_t
 
-  let empty ctype =
+  let empty typ =
     let set = fresh_name () in
-    add_var_decl { vname = set; vtype = ctype; init = None };
-    { ret = set; ebody = ""; etype = ctype; efree = []; eeffect = true }
+    add_var_decl { vname = set; vtype = typ; init = None };
+    { ret = set; ebody = ""; etype = typ; efree = []; eeffect = true }
 
   let iter a f =
     let iter_name = fresh_name () in

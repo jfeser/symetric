@@ -22,203 +22,174 @@ let%expect_test "" =
 
     #include "sexp.hpp"
     int reconstruct_L_1(
-        std::pair<std::pair<std::vector<std::set<
-                                std::pair<std::vector<int>, std::vector<int>>>>,
-                            std::vector<std::set<std::pair<
-                                std::vector<std::vector<int>>, std::vector<int>>>>>,
-                  std::vector<std::vector<int>>>
-            x51);
+        std::pair<
+            std::pair<std::vector<std::set<std::vector<int32_t>>>,
+                      std::vector<std::set<std::vector<std::vector<int32_t>>>>>,
+            std::vector<std::vector<int32_t>>>
+            x49);
     int reconstruct_L_2(
-        std::pair<std::pair<std::vector<std::set<
-                                std::pair<std::vector<int>, std::vector<int>>>>,
-                            std::vector<std::set<std::pair<
-                                std::vector<std::vector<int>>, std::vector<int>>>>>,
-                  std::vector<std::vector<int>>>
-            x37);
+        std::pair<
+            std::pair<std::vector<std::set<std::vector<int32_t>>>,
+                      std::vector<std::set<std::vector<std::vector<int32_t>>>>>,
+            std::vector<std::vector<int32_t>>>
+            x35);
     int main();
-    std::set<std::pair<std::vector<std::vector<int>>, std::vector<int>>> x5;
-    std::set<std::pair<std::vector<int>, std::vector<int>>> x10;
+    std::set<std::vector<std::vector<int32_t>>> x5;
+    std::set<std::vector<int32_t>> x10;
     int main() {
       // begin Array.init
-      std::vector<std::set<std::pair<std::vector<int>, std::vector<int>>>> x7(100);
-      std::vector<std::set<std::pair<std::vector<int>, std::vector<int>>>> x8 = x7;
+      std::vector<std::set<std::vector<int32_t>>> x7(100);
+      std::vector<std::set<std::vector<int32_t>>> x8 = x7;
       for (int x9 = 0; x9 < 100; x9 += 1) {
         x8[x9] = x10;
       }
       // end Array.init
-      std::vector<std::set<std::pair<std::vector<int>, std::vector<int>>>> x11 = x8;
+      std::vector<std::set<std::vector<int32_t>>> x11 = x8;
       // begin Array.init
-      std::vector<
-          std::set<std::pair<std::vector<std::vector<int>>, std::vector<int>>>>
-          x2(100);
-      std::vector<
-          std::set<std::pair<std::vector<std::vector<int>>, std::vector<int>>>>
-          x3 = x2;
+      std::vector<std::set<std::vector<std::vector<int32_t>>>> x2(100);
+      std::vector<std::set<std::vector<std::vector<int32_t>>>> x3 = x2;
       for (int x4 = 0; x4 < 100; x4 += 1) {
         x3[x4] = x5;
       }
       // end Array.init
-      std::vector<
-          std::set<std::pair<std::vector<std::vector<int>>, std::vector<int>>>>
-          x6 = x3;
-      std::unique_ptr<sexp> x58 = sexp::load(std::cin);
-      const std::vector<std::unique_ptr<sexp>> &x59 =
-          ((list *)x58.get())->get_body();
+      std::vector<std::set<std::vector<std::vector<int32_t>>>> x6 = x3;
+      std::unique_ptr<sexp> x56 = sexp::load(std::cin);
+      const std::vector<std::unique_ptr<sexp>> &x57 =
+          ((list *)x56.get())->get_body();
       // begin Array.init
-      std::vector<std::vector<int>> x60((int)((x59).size()));
-      std::vector<std::vector<int>> x61 = x60;
-      for (int x62 = 0; x62 < (int)((x59).size()); x62 += 1) {
-        const std::vector<std::unique_ptr<sexp>> &x63 =
-            ((list *)(x59)[x62].get())->get_body();
+      std::vector<std::vector<int32_t>> x58((int)((x57).size()));
+      std::vector<std::vector<int32_t>> x59 = x58;
+      for (int x60 = 0; x60 < (int)((x57).size()); x60 += 1) {
+        const std::vector<std::unique_ptr<sexp>> &x61 =
+            ((list *)(x57)[x60].get())->get_body();
         // begin Array.init
-        std::vector<int> x64((int)((x63).size()));
-        std::vector<int> x65 = x64;
-        for (int x66 = 0; x66 < (int)((x63).size()); x66 += 1) {
-          int x67 = std::stoi(((atom *)(x63)[x66].get())->get_body());
-          x65[x66] = x67;
+        std::vector<int32_t> x62((int)((x61).size()));
+        std::vector<int32_t> x63 = x62;
+        for (int x64 = 0; x64 < (int)((x61).size()); x64 += 1) {
+          int32_t x65 = std::stoi(((atom *)(x61)[x64].get())->get_body());
+          x63[x64] = x65;
         }
         // end Array.init
-        x61[x62] = x65;
+        x59[x60] = x63;
       }
       // end Array.init
-
-      // begin Array.const
-      std::vector<int> x68(0);
-      std::vector<int> x69 = x68; // end Array.const
-      (x6[1]).insert(std::make_pair(x61, x69));
-      std::unique_ptr<sexp> x26 = sexp::load(std::cin);
-      const std::vector<std::unique_ptr<sexp>> &x27 =
-          ((list *)x26.get())->get_body();
+      (x6[1]).insert(x59);
+      std::unique_ptr<sexp> x24 = sexp::load(std::cin);
+      const std::vector<std::unique_ptr<sexp>> &x25 =
+          ((list *)x24.get())->get_body();
       // begin Array.init
-      std::vector<std::vector<int>> x28((int)((x27).size()));
-      std::vector<std::vector<int>> x29 = x28;
-      for (int x30 = 0; x30 < (int)((x27).size()); x30 += 1) {
-        const std::vector<std::unique_ptr<sexp>> &x31 =
-            ((list *)(x27)[x30].get())->get_body();
+      std::vector<std::vector<int32_t>> x26((int)((x25).size()));
+      std::vector<std::vector<int32_t>> x27 = x26;
+      for (int x28 = 0; x28 < (int)((x25).size()); x28 += 1) {
+        const std::vector<std::unique_ptr<sexp>> &x29 =
+            ((list *)(x25)[x28].get())->get_body();
         // begin Array.init
-        std::vector<int> x32((int)((x31).size()));
-        std::vector<int> x33 = x32;
-        for (int x34 = 0; x34 < (int)((x31).size()); x34 += 1) {
-          int x35 = std::stoi(((atom *)(x31)[x34].get())->get_body());
-          x33[x34] = x35;
+        std::vector<int32_t> x30((int)((x29).size()));
+        std::vector<int32_t> x31 = x30;
+        for (int x32 = 0; x32 < (int)((x29).size()); x32 += 1) {
+          int32_t x33 = std::stoi(((atom *)(x29)[x32].get())->get_body());
+          x31[x32] = x33;
         }
         // end Array.init
-        x29[x30] = x33;
+        x27[x28] = x31;
       }
       // end Array.init
-      std::vector<std::vector<int>> x36 = x29;
+      std::vector<std::vector<int32_t>> x34 = x27;
       for (auto x12 = (x6[1]).begin(); x12 != (x6[1]).end(); ++x12) {
-        std::vector<std::vector<int>> x13 = std::get<0>(*x12);
+        std::vector<std::vector<int32_t>> x13 = *x12;
         // begin Array.init
-        std::vector<std::vector<int>> x14(((int)((x13).size())));
-        std::vector<std::vector<int>> x15 = x14;
+        std::vector<std::vector<int32_t>> x14(((int)((x13).size())));
+        std::vector<std::vector<int32_t>> x15 = x14;
         for (int x16 = 0; x16 < ((int)((x13).size())); x16 += 1) {
-          std::vector<int> x17 = (x13[x16]);
-          int x18 = ((int)((x17).size()));
+          std::vector<int32_t> x17 = (x13[x16]);
+          int32_t x18 = ((int)((x17).size()));
           // begin Array.init
-          std::vector<int> x19(x18);
-          std::vector<int> x20 = x19;
+          std::vector<int32_t> x19(x18);
+          std::vector<int32_t> x20 = x19;
           for (int x21 = 0; x21 < x18; x21 += 1) {
-            int x22 = (x17[((x18 - x21) - 1)]);
+            int32_t x22 = (x17[((x18 - x21) - 1)]);
             x20[x21] = x22;
           }
           // end Array.init
           x15[x16] = x20;
         }
         // end Array.init
-        std::vector<std::vector<int>> x23 = x15;
-        int x56;
-        int x57 = x56;
-        if ((x23 == x36)) {
-          reconstruct_L_2(std::make_pair(std::make_pair(x11, x6), x36));
+        std::vector<std::vector<int32_t>> x23 = x15;
+        int x54;
+        int x55 = x54;
+        if ((x23 == x34)) {
+          reconstruct_L_2(std::make_pair(std::make_pair(x11, x6), x34));
           exit(0);
-          x57 = 0;
+          x55 = 0;
         } else {
 
-          x57 = 0;
+          x55 = 0;
         }
-
-        // begin Array.const
-        std::vector<int> x24(0);
-        std::vector<int> x25 = x24; // end Array.const
-        (x6[2]).insert(std::make_pair(x23, x25));
+        (x6[2]).insert(x23);
       }
       return 0;
     }
     int reconstruct_L_2(
-        std::pair<std::pair<std::vector<std::set<
-                                std::pair<std::vector<int>, std::vector<int>>>>,
-                            std::vector<std::set<std::pair<
-                                std::vector<std::vector<int>>, std::vector<int>>>>>,
-                  std::vector<std::vector<int>>>
-            x37) {
-      std::pair<
-          std::vector<std::set<std::pair<std::vector<int>, std::vector<int>>>>,
-          std::vector<
-              std::set<std::pair<std::vector<std::vector<int>>, std::vector<int>>>>>
-          x38 = std::get<0>(x37);
-      std::vector<std::vector<int>> x39 = std::get<1>(x37);
-      for (auto x40 = (std::get<1>(x38)[1]).begin();
-           x40 != (std::get<1>(x38)[1]).end(); ++x40) {
-        int x54;
-        int x55 = x54;
-        std::vector<std::vector<int>> x41 = std::get<0>(*x40);
+        std::pair<
+            std::pair<std::vector<std::set<std::vector<int32_t>>>,
+                      std::vector<std::set<std::vector<std::vector<int32_t>>>>>,
+            std::vector<std::vector<int32_t>>>
+            x35) {
+      std::pair<std::vector<std::set<std::vector<int32_t>>>,
+                std::vector<std::set<std::vector<std::vector<int32_t>>>>>
+          x36 = std::get<0>(x35);
+      std::vector<std::vector<int32_t>> x37 = std::get<1>(x35);
+      for (auto x38 = (std::get<1>(x36)[1]).begin();
+           x38 != (std::get<1>(x36)[1]).end(); ++x38) {
+        int x52;
+        int x53 = x52;
+        std::vector<std::vector<int32_t>> x39 = *x38;
         // begin Array.init
-        std::vector<std::vector<int>> x42(((int)((x41).size())));
-        std::vector<std::vector<int>> x43 = x42;
-        for (int x44 = 0; x44 < ((int)((x41).size())); x44 += 1) {
-          std::vector<int> x45 = (x41[x44]);
-          int x46 = ((int)((x45).size()));
+        std::vector<std::vector<int32_t>> x40(((int)((x39).size())));
+        std::vector<std::vector<int32_t>> x41 = x40;
+        for (int x42 = 0; x42 < ((int)((x39).size())); x42 += 1) {
+          std::vector<int32_t> x43 = (x39[x42]);
+          int32_t x44 = ((int)((x43).size()));
           // begin Array.init
-          std::vector<int> x47(x46);
-          std::vector<int> x48 = x47;
-          for (int x49 = 0; x49 < x46; x49 += 1) {
-            int x50 = (x45[((x46 - x49) - 1)]);
-            x48[x49] = x50;
+          std::vector<int32_t> x45(x44);
+          std::vector<int32_t> x46 = x45;
+          for (int x47 = 0; x47 < x44; x47 += 1) {
+            int32_t x48 = (x43[((x44 - x47) - 1)]);
+            x46[x47] = x48;
           }
           // end Array.init
-          x43[x44] = x48;
+          x41[x42] = x46;
         }
         // end Array.init
 
-        if ((0 || (x43 == x39))) {
+        if ((0 || (x41 == x37))) {
           std::cout << "(App reverse ((App L0 ())))" << std::endl;
-          reconstruct_L_1(std::make_pair(x38, std::get<0>(*x40)));
-          x55 = 0;
+          reconstruct_L_1(std::make_pair(x36, *x38));
+          x53 = 0;
         } else {
 
-          x55 = 0;
+          x53 = 0;
         }
       }
       return 0;
     }
     int reconstruct_L_1(
-        std::pair<std::pair<std::vector<std::set<
-                                std::pair<std::vector<int>, std::vector<int>>>>,
-                            std::vector<std::set<std::pair<
-                                std::vector<std::vector<int>>, std::vector<int>>>>>,
-                  std::vector<std::vector<int>>>
-            x51) {
-      std::pair<
-          std::vector<std::set<std::pair<std::vector<int>, std::vector<int>>>>,
-          std::vector<
-              std::set<std::pair<std::vector<std::vector<int>>, std::vector<int>>>>>
-          x52 = std::get<0>(x51);
-      std::vector<std::vector<int>> x53 = std::get<1>(x51);
+        std::pair<
+            std::pair<std::vector<std::set<std::vector<int32_t>>>,
+                      std::vector<std::set<std::vector<std::vector<int32_t>>>>>,
+            std::vector<std::vector<int32_t>>>
+            x49) {
+      std::pair<std::vector<std::set<std::vector<int32_t>>>,
+                std::vector<std::set<std::vector<std::vector<int32_t>>>>>
+          x50 = std::get<0>(x49);
+      std::vector<std::vector<int32_t>> x51 = std::get<1>(x49);
       return 0;
     }
  |}]
 
 let%expect_test "" =
   let module Code = Mlstage.Code in
-  let module Array = struct
-    include Code.Array
-
-    type 'a t = 'a Code.t
-
-    type ctype = Code.ctype
-  end in
-  let module Deepcoder = Deepcoder.Make (Array) (Code) in
+  let module Deepcoder = Deepcoder.Make (Code.Array) (Code) in
   let g = ("L", Grammar.Term.App ("input", [])) :: Deepcoder.Lang.grammar in
   let state = Random.State.make [||] in
   Grammar.sample_seq ~state "L" g

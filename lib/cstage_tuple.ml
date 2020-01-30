@@ -4,9 +4,9 @@ module Tuple (C : Cstage_core.S) = struct
   module Int = Cstage_int.Int (C)
   open C
 
-  let fst_t = Univ_map.Key.create ~name:"fst_t" [%sexp_of: ctype]
+  let fst_t = Univ_map.Key.create ~name:"fst_t" [%sexp_of: typ]
 
-  let snd_t = Univ_map.Key.create ~name:"snd_t" [%sexp_of: ctype]
+  let snd_t = Univ_map.Key.create ~name:"snd_t" [%sexp_of: typ]
 
   let mk_type x y =
     Type.create ~name:(sprintf "std::pair<%s,%s >" (Type.name x) (Type.name y))

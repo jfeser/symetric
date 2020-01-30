@@ -2,12 +2,14 @@ open! Core
 
 module Make
     (A : Sigs.ARRAY)
-    (C : Sigs.CODE with type 'a t = 'a A.t and type ctype = A.ctype) =
+    (C : Sigs.CODE with type 'a t = 'a A.t and type 'a ctype = 'a A.ctype) =
 struct
   module Value = struct
     type array_t = int32 A.array C.Array.array
 
     type int_t = int32 C.Array.array
+
+    type value = Value
 
     type t =
       | A of array_t C.t
@@ -16,9 +18,11 @@ struct
       | F_bool of (int32 C.t -> bool C.t)
       | F_int2 of (int32 C.t -> int32 C.t -> int32 C.t)
 
-    type type_ = C.ctype
-
     type mapper = { f : 'a. 'a C.t -> 'a C.t }
+
+    let int_t = C.Array.mk_type C.Int.type_
+
+    let array_t = C.Array.mk_type (A.mk_type C.Int.type_)
 
     let random ?(state = Random.State.default) sym n =
       let int_t = C.Int.type_ in
@@ -32,11 +36,19 @@ struct
         A.const (A.mk_type int_t) arr
       in
       let random_examples elem elem_t () =
-        C.Array.const (A.mk_type elem_t) (Array.init n ~f:(fun _ -> elem ()))
+        C.Array.const (C.Array.mk_type elem_t)
+          (Array.init n ~f:(fun _ -> elem ()))
       in
       if String.(sym = "L") then
         A (random_examples random_array (A.mk_type int_t) ())
       else I (random_examples random_int int_t ())
+
+    let code_of = function
+      | A x -> C.cast x
+      | I x -> C.cast x
+      | _ -> failwith "Not convertible"
+
+    let of_code _ = assert false
 
     let map ~f v =
       match v with
@@ -50,11 +62,6 @@ struct
       | I x, I x' -> Some C.Array.O.(x = x')
       | A _, I _ | I _, A _ -> None
       | _ -> failwith "Cannot compare"
-
-    let type_of = function
-      | A x -> C.type_of x
-      | I x -> C.type_of x
-      | _ -> assert false
 
     let code = function A x -> C.cast x | I x -> C.cast x | _ -> assert false
 
@@ -70,23 +77,13 @@ struct
       | I x -> C.let_ x (fun v' -> f (I v'))
       | _ -> assert false
 
-    let int_type = A.mk_type C.Int.type_
-
-    let array_type = A.mk_type (A.mk_type C.Int.type_)
-
     let of_sexp symbol s =
-      let int_t = C.Int.type_ in
       let array_of_sexp examples =
-        let open A in
-        C.Array.of_sexp
-          (mk_type (mk_type int_t))
-          examples
-          (fun array -> of_sexp (mk_type int_t) array C.Int.of_sexp)
+        let int_t = C.Int.type_ in
+        C.Array.of_sexp array_t examples (fun array ->
+            A.of_sexp (A.mk_type int_t) array C.Int.of_sexp)
       in
-      let int_of_sexp examples =
-        let open A in
-        C.Array.of_sexp (mk_type int_t) examples C.Int.of_sexp
-      in
+      let int_of_sexp examples = C.Array.of_sexp int_t examples C.Int.of_sexp in
 
       if String.(symbol = "L") then A (array_of_sexp s) else I (int_of_sexp s)
 
@@ -203,7 +200,7 @@ struct
       | App ("head", [ e ]) ->
           I
             ( let_ (eval ctx e |> to_array) @@ fun a ->
-              C.Array.map Value.int_type a ~f:(fun a ->
+              C.Array.map Value.int_t a ~f:(fun a ->
                   ite
                     (length a > int 0)
                     (fun () -> get a (int 0))
@@ -211,7 +208,7 @@ struct
       | App ("last", [ e ]) ->
           I
             ( let_ (eval ctx e |> to_array) @@ fun a ->
-              C.Array.map Value.int_type a ~f:(fun a ->
+              C.Array.map Value.int_t a ~f:(fun a ->
                   let_ (length a) (fun l ->
                       ite
                         (l > int 0)
@@ -221,19 +218,18 @@ struct
           A
             ( let_ (eval ctx e |> to_array) @@ fun a ->
               let_ (eval ctx n |> to_int) @@ fun n ->
-              C.Array.map2 Value.array_type a n ~f:(fun a n -> sub a (int 0) n)
-            )
+              C.Array.map2 Value.array_t a n ~f:(fun a n -> sub a (int 0) n) )
       | App ("drop", [ n; e ]) ->
           A
             ( let_ (eval ctx e |> to_array) @@ fun a ->
               let_ (eval ctx n |> to_int) @@ fun n ->
-              C.Array.map2 Value.array_type a n ~f:(fun a n ->
+              C.Array.map2 Value.array_t a n ~f:(fun a n ->
                   sub a n (length a - int 1)) )
       | App ("access", [ n; e ]) ->
           I
             ( let_ (eval ctx e |> to_array) @@ fun a ->
               let_ (eval ctx n |> to_int) @@ fun n ->
-              C.Array.map2 Value.int_type a n ~f:(fun a n ->
+              C.Array.map2 Value.int_t a n ~f:(fun a n ->
                   ite
                     Bool.(n >= int 0 && n < length a)
                     (fun () -> get a n)
@@ -241,7 +237,7 @@ struct
       | App ("minimum", [ e ]) ->
           I
             ( let_ (eval ctx e |> to_array) @@ fun a ->
-              C.Array.map Value.int_type a ~f:(fun a ->
+              C.Array.map Value.int_t a ~f:(fun a ->
                   fold
                     ~init:(int Int32.(max_value |> to_int_exn))
                     ~f:(fun acc x ->
@@ -250,7 +246,7 @@ struct
       | App ("maximum", [ e ]) ->
           I
             ( let_ (eval ctx e |> to_array) @@ fun a ->
-              C.Array.map Value.int_type a ~f:(fun a ->
+              C.Array.map Value.int_t a ~f:(fun a ->
                   fold
                     ~init:(int Int32.(min_value |> to_int_exn))
                     ~f:(fun acc x ->
@@ -259,26 +255,26 @@ struct
       | App ("reverse", [ e ]) ->
           A
             ( let_ (eval ctx e |> to_array) @@ fun a ->
-              C.Array.map Value.array_type a ~f:(fun a ->
+              C.Array.map Value.array_t a ~f:(fun a ->
                   let_ (length a) (fun l ->
                       init int_array l (fun i -> get a (l - i - int 1)))) )
       | App ("sum", [ e ]) ->
           I
             ( let_ (eval ctx e |> to_array) @@ fun a ->
-              C.Array.map Value.int_type a ~f:(fun a ->
+              C.Array.map Value.int_t a ~f:(fun a ->
                   fold ~init:(int 0) ~f:( + ) a) )
       | App ("map", [ f; e ]) ->
           let f = eval ctx f |> to_int_f in
           A
             ( let_ (eval ctx e |> to_array) @@ fun a ->
-              C.Array.map Value.array_type a ~f:(fun a ->
+              C.Array.map Value.array_t a ~f:(fun a ->
                   let_ a (fun a ->
                       init int_array (length a) (fun i -> f (get a i)))) )
       | App ("count", [ f; e ]) ->
           let f = eval ctx f |> to_bool_f in
           I
             ( let_ (eval ctx e |> to_array) @@ fun a ->
-              C.Array.map Value.int_type a ~f:(fun a ->
+              C.Array.map Value.int_t a ~f:(fun a ->
                   fold ~init:(int 0)
                     ~f:(fun acc x ->
                       ite (f x) (fun () -> acc + int 1) (fun () -> acc))
@@ -288,7 +284,7 @@ struct
           A
             ( let_ (eval ctx e |> to_array) @@ fun a ->
               let_ (eval ctx e' |> to_array) @@ fun a' ->
-              C.Array.map2 Value.array_type a a' ~f:(fun a a' ->
+              C.Array.map2 Value.array_t a a' ~f:(fun a a' ->
                   init int_array
                     (min (length a) (length a'))
                     (fun i -> f (get a i) (get a' i))) )
@@ -326,8 +322,8 @@ struct
       let mk_empty t =
         Array.init t (Int.int max_size) (fun _ -> Set.empty (Array.elem_type t))
       in
-      let i_cache_t = mk_type Value.int_type in
-      let a_cache_t = mk_type Value.array_type in
+      let i_cache_t = mk_type Value.int_t in
+      let a_cache_t = mk_type Value.array_t in
       let i_cache = Nonlocal_let.let_ let_ (fun () -> mk_empty i_cache_t) in
       let a_cache = Nonlocal_let.let_ let_ (fun () -> mk_empty a_cache_t) in
       Nonlocal_let.

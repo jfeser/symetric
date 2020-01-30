@@ -26,18 +26,18 @@ let%expect_test "" =
     int main();
     int main() {
       // begin Array.init
-      std::vector<int> x2(10);
-      std::vector<int> x3 = x2;
+      std::vector<int32_t> x2(10);
+      std::vector<int32_t> x3 = x2;
       for (int x4 = 0; x4 < 10; x4 += 1) {
         int x5 = x4;
         x3[x4] = x5;
       }
       // end Array.init
-      std::vector<int> x6 = x3;
+      std::vector<int32_t> x6 = x3;
       // begin Array.fold
-      int x7(0);
-      int x8 = x7;
-      int x9 = ((int)((x6).size()));
+      int32_t x7(0);
+      int32_t x8 = x7;
+      int32_t x9 = ((int)((x6).size()));
       for (int x10 = 0; x10 < x9; x10 += 1) {
         x8 = (x8 + (x6[x10]));
       }
@@ -65,12 +65,12 @@ let%expect_test "" =
     #include <vector>
 
     #include "sexp.hpp"
-    int g(int x3);
-    int f(int x2);
+    int32_t g(int32_t x3);
+    int32_t f(int32_t x2);
     int main();
     int main() { return f(g(0)); }
-    int f(int x2) { return (x2 + 1); }
-    int g(int x3) { return (x3 - 1); } |}];
+    int32_t f(int32_t x2) { return (x2 + 1); }
+    int32_t g(int32_t x3) { return (x3 - 1); } |}];
   code |> Util.clang_build |> print_endline;
   [%expect {| |}]
 
@@ -93,12 +93,12 @@ let%expect_test "" =
     #include <vector>
 
     #include "sexp.hpp"
-    int f(std::vector<int> x2);
+    int32_t f(std::vector<int32_t> x2);
     int main();
     int main() {
       // begin Array.init
-      std::vector<int> x3(10);
-      std::vector<int> x4 = x3;
+      std::vector<int32_t> x3(10);
+      std::vector<int32_t> x4 = x3;
       for (int x5 = 0; x5 < 10; x5 += 1) {
         int x6 = x5;
         x4[x5] = x6;
@@ -106,7 +106,7 @@ let%expect_test "" =
       // end Array.init
       return f(x4);
     }
-    int f(std::vector<int> x2) { return (x2[0]); } |}];
+    int32_t f(std::vector<int32_t> x2) { return (x2[0]); } |}];
   code |> Util.clang_build |> print_endline;
   [%expect {| |}]
 
@@ -138,8 +138,8 @@ let%expect_test "" =
     int main();
     int main() {
       // begin Array.init
-      std::vector<int> x6(10);
-      std::vector<int> x7 = x6;
+      std::vector<int32_t> x6(10);
+      std::vector<int32_t> x7 = x6;
       for (int x8 = 0; x8 < 10; x8 += 1) {
         int x9 = x8;
         x7[x8] = x9;
@@ -147,8 +147,8 @@ let%expect_test "" =
       // end Array.init
 
       // begin Array.init
-      std::vector<int> x2(10);
-      std::vector<int> x3 = x2;
+      std::vector<int32_t> x2(10);
+      std::vector<int32_t> x3 = x2;
       for (int x4 = 0; x4 < 10; x4 += 1) {
         int x5 = x4;
         x3[x4] = x5;
@@ -156,8 +156,8 @@ let%expect_test "" =
       // end Array.init
 
       // begin Array.init
-      std::vector<int> x6(10);
-      std::vector<int> x7 = x6;
+      std::vector<int32_t> x6(10);
+      std::vector<int32_t> x7 = x6;
       for (int x8 = 0; x8 < 10; x8 += 1) {
         int x9 = x8;
         x7[x8] = x9;
@@ -165,8 +165,8 @@ let%expect_test "" =
       // end Array.init
 
       // begin Array.init
-      std::vector<int> x2(10);
-      std::vector<int> x3 = x2;
+      std::vector<int32_t> x2(10);
+      std::vector<int32_t> x3 = x2;
       for (int x4 = 0; x4 < 10; x4 += 1) {
         int x5 = x4;
         x3[x4] = x5;
@@ -179,30 +179,30 @@ let%expect_test "" =
   code |> Util.clang_build |> print_endline;
   [%expect
     {|
-    <stdin>:23:20: error: redefinition of 'x6'
-      std::vector<int> x6 (10);  std::vector<int> x7 = x6;
-                       ^
-    <stdin>:9:20: note: previous definition is here
-      std::vector<int> x6 (10);  std::vector<int> x7 = x6;
-                       ^
-    <stdin>:23:47: error: redefinition of 'x7'
-      std::vector<int> x6 (10);  std::vector<int> x7 = x6;
-                                                  ^
-    <stdin>:9:47: note: previous definition is here
-      std::vector<int> x6 (10);  std::vector<int> x7 = x6;
-                                                  ^
-    <stdin>:30:20: error: redefinition of 'x2'
-      std::vector<int> x2 (10);  std::vector<int> x3 = x2;
-                       ^
-    <stdin>:16:20: note: previous definition is here
-      std::vector<int> x2 (10);  std::vector<int> x3 = x2;
-                       ^
-    <stdin>:30:47: error: redefinition of 'x3'
-      std::vector<int> x2 (10);  std::vector<int> x3 = x2;
-                                                  ^
-    <stdin>:16:47: note: previous definition is here
-      std::vector<int> x2 (10);  std::vector<int> x3 = x2;
-                                                  ^
+    <stdin>:23:24: error: redefinition of 'x6'
+      std::vector<int32_t> x6 (10);  std::vector<int32_t> x7 = x6;
+                           ^
+    <stdin>:9:24: note: previous definition is here
+      std::vector<int32_t> x6 (10);  std::vector<int32_t> x7 = x6;
+                           ^
+    <stdin>:23:55: error: redefinition of 'x7'
+      std::vector<int32_t> x6 (10);  std::vector<int32_t> x7 = x6;
+                                                          ^
+    <stdin>:9:55: note: previous definition is here
+      std::vector<int32_t> x6 (10);  std::vector<int32_t> x7 = x6;
+                                                          ^
+    <stdin>:30:24: error: redefinition of 'x2'
+      std::vector<int32_t> x2 (10);  std::vector<int32_t> x3 = x2;
+                           ^
+    <stdin>:16:24: note: previous definition is here
+      std::vector<int32_t> x2 (10);  std::vector<int32_t> x3 = x2;
+                           ^
+    <stdin>:30:55: error: redefinition of 'x3'
+      std::vector<int32_t> x2 (10);  std::vector<int32_t> x3 = x2;
+                                                          ^
+    <stdin>:16:55: note: previous definition is here
+      std::vector<int32_t> x2 (10);  std::vector<int32_t> x3 = x2;
+                                                          ^
     4 errors generated. |}]
 
 let%expect_test "" =
@@ -232,30 +232,30 @@ let%expect_test "" =
 
     #include "sexp.hpp"
     int main();
-    std::set<int> x2;
-    int x4;
+    std::set<int32_t> x2;
+    int32_t x4;
     int main() {
-      std::set<int> x3 = x2;
+      std::set<int32_t> x3 = x2;
       x3.insert(0);
       x3.insert(1);
       x3.insert(2);
       // begin Set.fold
-      int x5 = x4;
+      int32_t x5 = x4;
       x5 = 0;
       for (auto x6 = x3.begin(); x6 != x3.end(); ++x6) {
         x5 = (x5 + *x6);
       }
       // end Set.fold
-      int x7 = x5;
+      int32_t x7 = x5;
       return 0;
     }
  |}];
   code |> Util.clang_build |> print_endline;
   [%expect
     {|
-    <stdin>:14:7: warning: unused variable 'x7' [-Wunused-variable]
-      int x7 = x5; return 0; }
-          ^
+    <stdin>:14:11: warning: unused variable 'x7' [-Wunused-variable]
+      int32_t x7 = x5; return 0; }
+              ^
     1 warning generated. |}]
 
 let%expect_test "" =
@@ -288,31 +288,31 @@ let%expect_test "" =
 
     #include "sexp.hpp"
     int main();
-    std::set<int> x2;
-    int x4;
+    std::set<int32_t> x2;
+    int32_t x4;
     int main() {
-      std::set<int> x3 = x2;
+      std::set<int32_t> x3 = x2;
       x3.insert(0);
       x3.insert(1);
       x3.insert(2);
       // begin Set.fold
-      int x5 = x4;
+      int32_t x5 = x4;
       x5 = 0;
-      int x7 = (45 + 10);
+      int32_t x7 = (45 + 10);
       for (auto x6 = x3.begin(); x6 != x3.end(); ++x6) {
         x5 = ((x7 + x5) + *x6);
       }
       // end Set.fold
-      int x8 = x5;
+      int32_t x8 = x5;
       return 0;
     }
  |}];
   code |> Util.clang_build |> print_endline;
   [%expect
     {|
-    <stdin>:14:7: warning: unused variable 'x8' [-Wunused-variable]
-      int x8 = x5; return 0; }
-          ^
+    <stdin>:14:11: warning: unused variable 'x8' [-Wunused-variable]
+      int32_t x8 = x5; return 0; }
+              ^
     1 warning generated. |}]
 
 let%expect_test "" =
@@ -338,7 +338,7 @@ let%expect_test "" =
     #include "sexp.hpp"
     int main();
     int main() {
-      std::pair<int, int> x2 = std::make_pair(0, 1);
+      std::pair<int32_t, int32_t> x2 = std::make_pair(0, 1);
       return (std::get<0>(x2) + std::get<0>(x2));
     }
  |}];
@@ -362,8 +362,8 @@ let%expect_test "" =
     #include "sexp.hpp"
     int main();
     int main() {
-      int x2;
-      int x3 = x2;
+      int32_t x2;
+      int32_t x3 = x2;
       if (1) {
 
         x3 = 0;
@@ -377,13 +377,13 @@ let%expect_test "" =
   code |> Util.clang_build |> print_endline;
   [%expect
     {|
-    <stdin>:7:44: warning: variable 'x2' is uninitialized when used here [-Wuninitialized]
-    int main();int main() {  int x2;  int x3 = x2;
-                                               ^~
-    <stdin>:7:32: note: initialize the variable 'x2' to silence this warning
-    int main();int main() {  int x2;  int x3 = x2;
-                                   ^
-                                    = 0
+    <stdin>:7:52: warning: variable 'x2' is uninitialized when used here [-Wuninitialized]
+    int main();int main() {  int32_t x2;  int32_t x3 = x2;
+                                                       ^~
+    <stdin>:7:36: note: initialize the variable 'x2' to silence this warning
+    int main();int main() {  int32_t x2;  int32_t x3 = x2;
+                                       ^
+                                        = 0
     1 warning generated. |}]
 
 let%expect_test "" =
@@ -454,9 +454,9 @@ let%expect_test "" =
     #include "sexp.hpp"
     int main();
     int main() {
-      int x2 = 10;
-      int x3;
-      int x4 = x3;
+      int32_t x2 = 10;
+      int32_t x3;
+      int32_t x4 = x3;
       if (1) {
 
         x4 = 0;
@@ -470,13 +470,13 @@ let%expect_test "" =
   code |> Util.clang_build |> print_endline;
   [%expect
     {|
-    <stdin>:7:58: warning: variable 'x3' is uninitialized when used here [-Wuninitialized]
-    int main();int main() {   int x2 = 10; int x3;  int x4 = x3;
-                                                             ^~
-    <stdin>:7:46: note: initialize the variable 'x3' to silence this warning
-    int main();int main() {   int x2 = 10; int x3;  int x4 = x3;
-                                                 ^
-                                                  = 0
+    <stdin>:7:70: warning: variable 'x3' is uninitialized when used here [-Wuninitialized]
+    int main();int main() {   int32_t x2 = 10; int32_t x3;  int32_t x4 = x3;
+                                                                         ^~
+    <stdin>:7:54: note: initialize the variable 'x3' to silence this warning
+    int main();int main() {   int32_t x2 = 10; int32_t x3;  int32_t x4 = x3;
+                                                         ^
+                                                          = 0
     1 warning generated. |}]
 
 let%expect_test "" =
@@ -529,25 +529,25 @@ let%expect_test "" =
     int main();
     int main() {
       // begin Array.const
-      std::vector<int> x2(3);
-      std::vector<int> x3 = x2;
+      std::vector<int32_t> x2(3);
+      std::vector<int32_t> x3 = x2;
       x3[0] = 0;
       x3[1] = 1;
       x3[2] = 2; // end Array.const
-      std::vector<int> x4 = x3;
+      std::vector<int32_t> x4 = x3;
       // begin Array.fold
-      int x9(0);
-      int x10 = x9;
-      int x11 = ((int)((x4).size()));
+      int32_t x9(0);
+      int32_t x10 = x9;
+      int32_t x11 = ((int)((x4).size()));
       for (int x12 = 0; x12 < x11; x12 += 1) {
         x10 = (x10 + (x4[x12]));
       }
       // end Array.fold
 
       // begin Array.fold
-      int x5(0);
-      int x6 = x5;
-      int x7 = ((int)((x4).size()));
+      int32_t x5(0);
+      int32_t x6 = x5;
+      int32_t x7 = ((int)((x4).size()));
       for (int x8 = 0; x8 < x7; x8 += 1) {
         x6 = (x6 * (x4[x8]));
       }
@@ -579,20 +579,20 @@ let%expect_test "" =
     int main();
     int main() {
       // begin Array.fold
-      int x8(0);
-      int x9 = x8;
+      int32_t x8(0);
+      int32_t x9 = x8;
       // begin Array.const
-      std::vector<int> x2(3);
-      std::vector<int> x3 = x2;
+      std::vector<int32_t> x2(3);
+      std::vector<int32_t> x3 = x2;
       x3[0] = 0;
       x3[1] = 1;
       x3[2] = 2; // end Array.const
-      int x10 = ((int)((x3).size()));
+      int32_t x10 = ((int)((x3).size()));
       for (int x11 = 0; x11 < x10; x11 += 1) {
 
         // begin Array.const
-        std::vector<int> x2(3);
-        std::vector<int> x3 = x2;
+        std::vector<int32_t> x2(3);
+        std::vector<int32_t> x3 = x2;
         x3[0] = 0;
         x3[1] = 1;
         x3[2] = 2; // end Array.const
@@ -601,20 +601,20 @@ let%expect_test "" =
       // end Array.fold
 
       // begin Array.fold
-      int x4(0);
-      int x5 = x4;
+      int32_t x4(0);
+      int32_t x5 = x4;
       // begin Array.const
-      std::vector<int> x2(3);
-      std::vector<int> x3 = x2;
+      std::vector<int32_t> x2(3);
+      std::vector<int32_t> x3 = x2;
       x3[0] = 0;
       x3[1] = 1;
       x3[2] = 2; // end Array.const
-      int x6 = ((int)((x3).size()));
+      int32_t x6 = ((int)((x3).size()));
       for (int x7 = 0; x7 < x6; x7 += 1) {
 
         // begin Array.const
-        std::vector<int> x2(3);
-        std::vector<int> x3 = x2;
+        std::vector<int32_t> x2(3);
+        std::vector<int32_t> x3 = x2;
         x3[0] = 0;
         x3[1] = 1;
         x3[2] = 2; // end Array.const
@@ -627,18 +627,18 @@ let%expect_test "" =
   code |> Util.clang_build |> print_endline;
   [%expect
     {|
-    <stdin>:24:20: error: redefinition of 'x2'
-      std::vector<int> x2 (3);  std::vector<int> x3 = x2;  x3[0] = 0;  x3[1] = 1;  x3[2] = 2;// end Array.const
-                       ^
-    <stdin>:11:20: note: previous definition is here
-      std::vector<int> x2 (3);  std::vector<int> x3 = x2;  x3[0] = 0;  x3[1] = 1;  x3[2] = 2;// end Array.const
-                       ^
-    <stdin>:24:46: error: redefinition of 'x3'
-      std::vector<int> x2 (3);  std::vector<int> x3 = x2;  x3[0] = 0;  x3[1] = 1;  x3[2] = 2;// end Array.const
-                                                 ^
-    <stdin>:11:46: note: previous definition is here
-      std::vector<int> x2 (3);  std::vector<int> x3 = x2;  x3[0] = 0;  x3[1] = 1;  x3[2] = 2;// end Array.const
-                                                 ^
+    <stdin>:24:24: error: redefinition of 'x2'
+      std::vector<int32_t> x2 (3);  std::vector<int32_t> x3 = x2;  x3[0] = 0;  x3[1] = 1;  x3[2] = 2;// end Array.const
+                           ^
+    <stdin>:11:24: note: previous definition is here
+      std::vector<int32_t> x2 (3);  std::vector<int32_t> x3 = x2;  x3[0] = 0;  x3[1] = 1;  x3[2] = 2;// end Array.const
+                           ^
+    <stdin>:24:54: error: redefinition of 'x3'
+      std::vector<int32_t> x2 (3);  std::vector<int32_t> x3 = x2;  x3[0] = 0;  x3[1] = 1;  x3[2] = 2;// end Array.const
+                                                         ^
+    <stdin>:11:54: note: previous definition is here
+      std::vector<int32_t> x2 (3);  std::vector<int32_t> x3 = x2;  x3[0] = 0;  x3[1] = 1;  x3[2] = 2;// end Array.const
+                                                         ^
     2 errors generated. |}]
 
 let%expect_test "" =
@@ -666,25 +666,25 @@ let%expect_test "" =
     int main();
     int main() {
       // begin Array.const
-      std::vector<int> x2(3);
-      std::vector<int> x3 = x2;
+      std::vector<int32_t> x2(3);
+      std::vector<int32_t> x3 = x2;
       x3[0] = 0;
       x3[1] = 1;
       x3[2] = 2; // end Array.const
-      std::vector<int> x4 = x3;
+      std::vector<int32_t> x4 = x3;
       // begin Array.fold
-      int x9(0);
-      int x10 = x9;
-      int x11 = ((int)((x4).size()));
+      int32_t x9(0);
+      int32_t x10 = x9;
+      int32_t x11 = ((int)((x4).size()));
       for (int x12 = 0; x12 < x11; x12 += 1) {
         x10 = (x10 + (x4[x12]));
       }
       // end Array.fold
 
       // begin Array.fold
-      int x5(0);
-      int x6 = x5;
-      int x7 = ((int)((x4).size()));
+      int32_t x5(0);
+      int32_t x6 = x5;
+      int32_t x7 = ((int)((x4).size()));
       for (int x8 = 0; x8 < x7; x8 += 1) {
         x6 = (x6 * (x4[x8]));
       }
@@ -720,32 +720,32 @@ let%expect_test "" =
     int main();
     int main() {
       // begin Array.const
-      std::vector<int> x2(3);
-      std::vector<int> x3 = x2;
+      std::vector<int32_t> x2(3);
+      std::vector<int32_t> x3 = x2;
       x3[0] = 0;
       x3[1] = 1;
       x3[2] = 2; // end Array.const
-      std::vector<int> x4 = x3;
+      std::vector<int32_t> x4 = x3;
       // begin Array.const
-      std::vector<int> x9(3);
-      std::vector<int> x10 = x9;
+      std::vector<int32_t> x9(3);
+      std::vector<int32_t> x10 = x9;
       x10[0] = 0;
       x10[1] = 1;
       x10[2] = 2; // end Array.const
-      std::vector<int> x11 = x10;
+      std::vector<int32_t> x11 = x10;
       // begin Array.fold
-      int x12(0);
-      int x13 = x12;
-      int x14 = ((int)((x11).size()));
+      int32_t x12(0);
+      int32_t x13 = x12;
+      int32_t x14 = ((int)((x11).size()));
       for (int x15 = 0; x15 < x14; x15 += 1) {
         x13 = (x13 + (x11[x15]));
       }
       // end Array.fold
 
       // begin Array.fold
-      int x5(0);
-      int x6 = x5;
-      int x7 = ((int)((x4).size()));
+      int32_t x5(0);
+      int32_t x6 = x5;
+      int32_t x7 = ((int)((x4).size()));
       for (int x8 = 0; x8 < x7; x8 += 1) {
         x6 = (x6 * (x4[x8]));
       }
@@ -780,20 +780,20 @@ let%expect_test "" =
     int main();
     int main() {
       // begin Array.fold
-      int x8(0);
-      int x9 = x8;
+      int32_t x8(0);
+      int32_t x9 = x8;
       // begin Array.const
-      std::vector<int> x2(3);
-      std::vector<int> x3 = x2;
+      std::vector<int32_t> x2(3);
+      std::vector<int32_t> x3 = x2;
       x3[0] = 0;
       x3[1] = 1;
       x3[2] = 2; // end Array.const
-      int x10 = ((int)((x3).size()));
+      int32_t x10 = ((int)((x3).size()));
       for (int x11 = 0; x11 < x10; x11 += 1) {
 
         // begin Array.const
-        std::vector<int> x2(3);
-        std::vector<int> x3 = x2;
+        std::vector<int32_t> x2(3);
+        std::vector<int32_t> x3 = x2;
         x3[0] = 0;
         x3[1] = 1;
         x3[2] = 2; // end Array.const
@@ -802,20 +802,20 @@ let%expect_test "" =
       // end Array.fold
 
       // begin Array.fold
-      int x4(0);
-      int x5 = x4;
+      int32_t x4(0);
+      int32_t x5 = x4;
       // begin Array.const
-      std::vector<int> x2(3);
-      std::vector<int> x3 = x2;
+      std::vector<int32_t> x2(3);
+      std::vector<int32_t> x3 = x2;
       x3[0] = 0;
       x3[1] = 1;
       x3[2] = 2; // end Array.const
-      int x6 = ((int)((x3).size()));
+      int32_t x6 = ((int)((x3).size()));
       for (int x7 = 0; x7 < x6; x7 += 1) {
 
         // begin Array.const
-        std::vector<int> x2(3);
-        std::vector<int> x3 = x2;
+        std::vector<int32_t> x2(3);
+        std::vector<int32_t> x3 = x2;
         x3[0] = 0;
         x3[1] = 1;
         x3[2] = 2; // end Array.const
@@ -828,18 +828,18 @@ let%expect_test "" =
   code |> Util.clang_build |> print_endline;
   [%expect
     {|
-    <stdin>:24:20: error: redefinition of 'x2'
-      std::vector<int> x2 (3);  std::vector<int> x3 = x2;  x3[0] = 0;  x3[1] = 1;  x3[2] = 2;// end Array.const
-                       ^
-    <stdin>:11:20: note: previous definition is here
-      std::vector<int> x2 (3);  std::vector<int> x3 = x2;  x3[0] = 0;  x3[1] = 1;  x3[2] = 2;// end Array.const
-                       ^
-    <stdin>:24:46: error: redefinition of 'x3'
-      std::vector<int> x2 (3);  std::vector<int> x3 = x2;  x3[0] = 0;  x3[1] = 1;  x3[2] = 2;// end Array.const
-                                                 ^
-    <stdin>:11:46: note: previous definition is here
-      std::vector<int> x2 (3);  std::vector<int> x3 = x2;  x3[0] = 0;  x3[1] = 1;  x3[2] = 2;// end Array.const
-                                                 ^
+    <stdin>:24:24: error: redefinition of 'x2'
+      std::vector<int32_t> x2 (3);  std::vector<int32_t> x3 = x2;  x3[0] = 0;  x3[1] = 1;  x3[2] = 2;// end Array.const
+                           ^
+    <stdin>:11:24: note: previous definition is here
+      std::vector<int32_t> x2 (3);  std::vector<int32_t> x3 = x2;  x3[0] = 0;  x3[1] = 1;  x3[2] = 2;// end Array.const
+                           ^
+    <stdin>:24:54: error: redefinition of 'x3'
+      std::vector<int32_t> x2 (3);  std::vector<int32_t> x3 = x2;  x3[0] = 0;  x3[1] = 1;  x3[2] = 2;// end Array.const
+                                                         ^
+    <stdin>:11:54: note: previous definition is here
+      std::vector<int32_t> x2 (3);  std::vector<int32_t> x3 = x2;  x3[0] = 0;  x3[1] = 1;  x3[2] = 2;// end Array.const
+                                                         ^
     2 errors generated. |}]
 
 let%expect_test "" =
@@ -868,25 +868,25 @@ let%expect_test "" =
     int main();
     int main() {
       // begin Array.const
-      std::vector<int> x2(3);
-      std::vector<int> x3 = x2;
+      std::vector<int32_t> x2(3);
+      std::vector<int32_t> x3 = x2;
       x3[0] = 0;
       x3[1] = 1;
       x3[2] = 2; // end Array.const
-      std::vector<int> x4 = x3;
+      std::vector<int32_t> x4 = x3;
       // begin Array.fold
-      int x9(0);
-      int x10 = x9;
-      int x11 = ((int)((x4).size()));
+      int32_t x9(0);
+      int32_t x10 = x9;
+      int32_t x11 = ((int)((x4).size()));
       for (int x12 = 0; x12 < x11; x12 += 1) {
         x10 = (x10 + (x4[x12]));
       }
       // end Array.fold
 
       // begin Array.fold
-      int x5(0);
-      int x6 = x5;
-      int x7 = ((int)((x4).size()));
+      int32_t x5(0);
+      int32_t x6 = x5;
+      int32_t x7 = ((int)((x4).size()));
       for (int x8 = 0; x8 < x7; x8 += 1) {
         x6 = (x6 * (x4[x8]));
       }
@@ -930,7 +930,7 @@ let%expect_test "" =
       // end Array.init
       std::vector<std::string> x9 = x6;
       // begin Array.iter
-      int x10 = ((int)((x9).size()));
+      int32_t x10 = ((int)((x9).size()));
       for (int x11 = 0; x11 < x10; x11 += 1) {
         std::cout << (x9[x11]) << std::endl;
       }

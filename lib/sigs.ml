@@ -50,7 +50,11 @@ module type LANG = sig
   module Value : sig
     type t
 
-    type type_
+    type value
+
+    val code_of : t -> value code
+
+    val of_code : value code -> t
 
     val ( = ) : t -> t -> bool code option
 
@@ -59,8 +63,6 @@ module type LANG = sig
     val code : t -> 'a code
 
     val let_ : t -> (t -> 'a code) -> 'a code
-
-    val type_of : t -> type_
 
     val of_sexp : Grammar.nonterm -> sexp code -> t
 
@@ -81,9 +83,9 @@ end
 module type INT = sig
   type 'a t
 
-  type ctype
+  type 'a ctype
 
-  val type_ : ctype
+  val type_ : int32 ctype
 
   val int : int -> int32 t
 
@@ -123,17 +125,17 @@ module type ARRAY = sig
 
   type 'a array
 
-  type ctype
+  type 'a ctype
 
-  val mk_type : ctype -> ctype
+  val mk_type : 'a ctype -> 'a array ctype
 
-  val elem_type : ctype -> ctype
+  val elem_type : 'a array ctype -> 'a ctype
 
   module O : sig
     val ( = ) : 'a array t -> 'a array t -> bool t
   end
 
-  val const : ctype -> 'a t Array.t -> 'a array t
+  val const : 'a array ctype -> 'a t Array.t -> 'a array t
 
   val get : 'a array t -> int32 t -> 'a t
 
@@ -147,14 +149,18 @@ module type ARRAY = sig
 
   val sub : 'a array t -> int32 t -> int32 t -> 'a array t
 
-  val init : ctype -> int32 t -> (int32 t -> 'a t) -> 'a array t
+  val init : 'a array ctype -> int32 t -> (int32 t -> 'a t) -> 'a array t
 
-  val map : ctype -> 'a array t -> f:('a t -> 'b t) -> 'b array t
+  val map : 'b array ctype -> 'a array t -> f:('a t -> 'b t) -> 'b array t
 
   val map2 :
-    ctype -> 'a array t -> 'b array t -> f:('a t -> 'b t -> 'c t) -> 'c array t
+    'c array ctype ->
+    'a array t ->
+    'b array t ->
+    f:('a t -> 'b t -> 'c t) ->
+    'c array t
 
-  val of_sexp : ctype -> sexp t -> (sexp t -> 'a t) -> 'a array t
+  val of_sexp : 'a array ctype -> sexp t -> (sexp t -> 'a t) -> 'a array t
 
   val sexp_of : 'a array t -> ('a t -> sexp t) -> sexp t
 end
@@ -162,11 +168,11 @@ end
 module type SET = sig
   type 'a t
 
-  type ctype
+  type 'a ctype
 
-  val mk_type : ctype -> ctype
+  val mk_type : 'a ctype -> 'a set ctype
 
-  val empty : ctype -> 'a set t
+  val empty : 'a set ctype -> 'a set t
 
   val add : 'a set t -> 'a t -> unit t
 
@@ -174,7 +180,7 @@ module type SET = sig
 
   val fold : 'a set t -> init:'b t -> f:('b t -> 'a t -> 'b t) -> 'b t
 
-  val of_sexp : ctype -> sexp t -> (sexp t -> 'a t) -> 'a set t
+  val of_sexp : 'a set ctype -> sexp t -> (sexp t -> 'a t) -> 'a set t
 
   val sexp_of : 'a set t -> ('a t -> sexp t) -> sexp t
 end
@@ -182,9 +188,9 @@ end
 module type CODE = sig
   type 'a t [@@deriving sexp_of]
 
-  type ctype [@@deriving sexp_of]
+  type 'a ctype [@@deriving sexp_of]
 
-  val type_of : 'a t -> ctype
+  val type_of : 'a t -> 'a ctype
 
   val to_string : 'a t -> string
 
@@ -195,13 +201,13 @@ module type CODE = sig
   val let_locus : (unit -> 'a t) -> 'a t
 
   (* Unit *)
-  val unit_t : ctype
+  val unit_t : unit ctype
 
   val unit : unit t
 
   (* Boolean operations *)
   module Bool : sig
-    val type_ : ctype
+    val type_ : bool ctype
 
     val bool : bool -> bool t
 
@@ -218,22 +224,22 @@ module type CODE = sig
 
   (* Function operations *)
   module Func : sig
-    val mk_type : ctype -> ctype -> ctype
+    val mk_type : 'a ctype -> 'b ctype -> ('a -> 'b) ctype
 
     val apply : ('a -> 'b) t -> 'a t -> 'b t
 
-    val func : string -> ctype -> ('a t -> 'b t) -> ('a -> 'b) t
+    val func : string -> ('a -> 'b) ctype -> ('a t -> 'b t) -> ('a -> 'b) t
   end
 
-  module Int : INT with type 'a t := 'a t and type ctype := ctype
+  module Int : INT with type 'a t := 'a t and type 'a ctype := 'a ctype
 
-  module Array : ARRAY with type 'a t := 'a t and type ctype := ctype
+  module Array : ARRAY with type 'a t := 'a t and type 'a ctype := 'a ctype
 
-  module Set : SET with type 'a t := 'a t and type ctype := ctype
+  module Set : SET with type 'a t := 'a t and type 'a ctype := 'a ctype
 
   (* Tuples *)
   module Tuple : sig
-    val mk_type : ctype -> ctype -> ctype
+    val mk_type : 'a ctype -> 'b ctype -> ('a * 'b) ctype
 
     val create : 'a t -> 'b t -> ('a * 'b) t
 
@@ -247,7 +253,7 @@ module type CODE = sig
   end
 
   module String : sig
-    val type_ : ctype
+    val type_ : string ctype
 
     module O : sig
       val ( = ) : string t -> string t -> bool t
@@ -265,7 +271,7 @@ module type CODE = sig
   end
 
   module Sexp : sig
-    val type_ : ctype
+    val type_ : sexp ctype
 
     val input : unit -> sexp t
 

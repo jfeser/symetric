@@ -21,7 +21,7 @@ module Code = struct
 
   type 'a t = (unit -> Value.t[@opaque]) [@@deriving sexp_of]
 
-  type ctype = unit [@@deriving compare, sexp]
+  type 'a ctype = unit [@@deriving compare, sexp]
 
   let let_ v f = f v
 
@@ -162,6 +162,10 @@ module Code = struct
   end
 
   module Array = struct
+    type nonrec 'a t = 'a t
+
+    type nonrec 'a ctype = 'a ctype
+
     type 'a array = Array_t
 
     let mk_type _ = ()
