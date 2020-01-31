@@ -5,11 +5,9 @@ module type Base = sig
 
   type expr
 
+  val create : typ -> expr -> expr
+
   val length : expr -> expr
-
-  val const : typ -> expr array -> expr
-
-  val init : typ -> expr -> (expr -> expr) -> expr
 
   val set : expr -> expr -> expr -> expr
 
@@ -20,6 +18,10 @@ module type Derived = sig
   type typ
 
   type expr
+
+  val const : typ -> expr array -> expr
+
+  val init : typ -> expr -> (expr -> expr) -> expr
 
   val map : typ -> expr -> f:(expr -> expr) -> expr
 
@@ -61,6 +63,22 @@ module Derived
   module Int = Cstage_int.Int (C)
   open C
   open B
+
+  let no_effect e = { e with eeffect = false }
+
+  let const t a =
+    let a = Array.to_list a in
+    ( let_ (create t (Int.int (List.length a))) @@ fun arr ->
+      sseq [ List.mapi a ~f:(fun i -> set arr (Int.int i)) |> sseq; arr ] )
+    |> no_effect |> with_comment "Array.const"
+
+  let init t len f =
+    ( let_ (create t len) @@ fun a ->
+      sseq
+        [
+          for_ (Int.int 0) (Int.int 1) len (fun i -> set a i (genlet (f i))); a;
+        ] )
+    |> no_effect |> with_comment "Array.init"
 
   let map t arr ~f = init t (length arr) (fun i -> let_ (get arr i) f)
 
@@ -115,8 +133,6 @@ module Array (C : Cstage_core.S) = struct
 
   type 'a ctype = 'a C.ctype
 
-  let no_effect e = { e with eeffect = false }
-
   let elem_t = Univ_map.Key.create ~name:"elem_t" [%sexp_of: typ]
 
   let mk_type e =
@@ -137,6 +153,8 @@ module Array (C : Cstage_core.S) = struct
 
     type expr = C.expr
 
+    let create t n = fresh_decl ~init:n t
+
     let length x = unop "((int)((%s).size()))" Int.type_ x
 
     let set a i x =
@@ -145,21 +163,6 @@ module Array (C : Cstage_core.S) = struct
 
     let get a x =
       eformat "($(a)[$(x)])" (elem_type a.etype) "" [ ("a", C a); ("x", C x) ]
-
-    let const t a =
-      let a = Array.to_list a in
-      ( let_ (fresh_decl ~init:(Int.int (List.length a)) t) @@ fun arr ->
-        sseq [ List.mapi a ~f:(fun i -> set arr (Int.int i)) |> sseq; arr ] )
-      |> no_effect |> with_comment "Array.const"
-
-    let init t len f =
-      ( let_ (fresh_decl ~init:len t) @@ fun a ->
-        sseq
-          [
-            for_ (Int.int 0) (Int.int 1) len (fun i -> set a i (genlet (f i)));
-            a;
-          ] )
-      |> no_effect |> with_comment "Array.init"
   end
 
   include (Base : Base with type typ := C.typ and type expr := C.expr)
@@ -167,84 +170,87 @@ module Array (C : Cstage_core.S) = struct
   include Derived (C) (Base)
 end
 
-module ImmutableArray (C : Cstage_core.S) = struct
+module ArenaArray (C : Cstage_core.S) = struct
+  module Int = Cstage_int.Int (C)
+  open C
   module A = Array (C)
 
-  let const = A.const
+  type 'a t = 'a C.t
 
-  let init = A.init
+  type typ = C.typ
 
-  let get = A.get
+  type 'a ctype = 'a C.ctype
 
-  let map = A.map
+  type 'a array = ArenaArray
 
-  let map2 = A.map2
+  let no_effect e = { e with eeffect = false }
 
-  let sub = A.sub
+  let elem_k = Univ_map.Key.create ~name:"elem_t" [%sexp_of: typ]
 
-  let fold = A.fold
+  let arena_k = Univ_map.Key.create ~name:"arena" [%sexp_of: expr]
 
-  let iter = A.iter
+  let mk_type e =
+    Type.create ~name:(sprintf "span<%s>" (Type.name e))
+    |> Type.add_exn ~key:elem_k ~data:e
+    |> Type.add_exn ~key:arena_k ~data:(fresh_global (A.mk_type e))
+
+  let elem_type t = Univ_map.find_exn t elem_k
+
+  let arena t = Univ_map.find_exn t arena_k
+
+  module O = struct
+    let ( = ) a a' = binop "(%s == %s)" Bool.type_ a a'
+  end
+
+  module Base = struct
+    type typ = C.typ
+
+    type expr = C.expr
+
+    let create t l =
+      let arena = arena t in
+      let ctx = [ ("vec", C arena); ("len", C l) ] in
+      sseq
+        [
+          let_ (A.length arena) (fun end_ ->
+              sseq
+                [
+                  (* Ensure arena has enough space. *)
+                  eformat "0" unit_t
+                    "($(vec)).resize(($(vec)).size() + ($(len)));" ctx;
+                  eformat "($(type)){$(vec).data() + $(end), $(len)}" t ""
+                    (("type", S (Type.name t)) :: ("end", C end_) :: ctx);
+                ]);
+        ]
+
+    let length x = unop "((int)((%s).len))" Int.type_ x
+
+    let set a i x =
+      eformat ~has_effect:true "0" unit_t "$(a).ptr[$(i)] = $(x);"
+        [ ("a", C a); ("i", C i); ("x", C x) ]
+
+    let get a x =
+      eformat "($(a).ptr[$(x)])" (elem_type a.etype) ""
+        [ ("a", C a); ("x", C x) ]
+  end
+
+  include (Base : Base with type typ := C.typ and type expr := C.expr)
+
+  include Derived (C) (Base)
+
+  let sub a start len =
+    let open Int in
+    let_ (length a) @@ fun n ->
+    let_ (start + len) @@ fun end_ ->
+    let_ (start |> min (n - int 1) |> max (int 0)) @@ fun start ->
+    let_ (end_ |> min n |> max start) @@ fun end_ ->
+    let_ (end_ - start) @@ fun len ->
+    let t = type_of a in
+    eformat "($(type)){$(span).ptr + $(start), $(span).len + $(len)}" t ""
+      [
+        ("type", S (Type.name t));
+        ("span", C a);
+        ("len", C len);
+        ("start", C start);
+      ]
 end
-
-(* module FixedSizeArray (Size : sig
- *   val size : int
- * end)
- * (C : Cstage_core.S) =
- * struct
- *   module Int = Cstage_int.Int (C)
- *   open C
- * 
- *   type 'a t = 'a C.t
- * 
- *   type typ = C.typ
- * 
- *   let no_effect e = { e with eeffect = false }
- * 
- *   let elem_t = Univ_map.Key.create ~name:"elem_t" [%sexp_of: typ]
- * 
- *   let mk_type e =
- *     Type.create
- *       ~name:(sprintf "std::span<std::array<%s, %d>>" (Type.name e) Size.size)
- *     |> Type.add_exn ~key:elem_t ~data:e
- * 
- *   let elem_type t = Univ_map.find_exn t elem_t
- * 
- *   module O = struct
- *     let ( = ) a a' = binop "(%s == %s)" Bool.type_ a a'
- *   end
- * 
- *   module Base = struct
- *     type typ = C.typ
- * 
- *     type expr = C.expr
- * 
- *     let length x = unop "((int)((%s).size()))" Int.type_ x
- * 
- *     let set a i x =
- *       eformat ~has_effect:true "0" unit_t "$(a)[$(i)] = $(x);"
- *         [ ("a", C a); ("i", C i); ("x", C x) ]
- * 
- *     let get a x =
- *       eformat "($(a)[$(x)])" (elem_type a.etype) "" [ ("a", C a); ("x", C x) ]
- * 
- *     let const t a =
- *       let a = Core.Array.to_list a in
- *       ( let_ (create t (Core.List.length a)) @@ fun arr ->
- *         sseq [ List.mapi a ~f:(fun i -> set arr (Int.int i)) |> sseq; arr ] )
- *       |> no_effect |> with_comment "Array.const"
- * 
- *     let init t len f =
- *       ( let_ (create t len) @@ fun a ->
- *         sseq
- *           [
- *             for_ (Int.int 0) (Int.int 1) len (fun i -> set a i (genlet (f i)));
- *             a;
- *           ] )
- *       |> no_effect |> with_comment "Array.init"
- *   end
- * 
- *   include (Base : Base with type typ := C.typ and type expr := C.expr)
- * 
- *   include Derived (C) (Base)
- * end *)

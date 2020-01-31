@@ -13,7 +13,8 @@ let%expect_test "" =
   let module DeepSynth =
     Synth.Make (Sketch) (Code) (Deepcoder.Lang) (Deepcoder.Cache)
   in
-  DeepSynth.enumerate 2 |> Code.to_string |> Util.clang_format |> print_endline;
+  let code = DeepSynth.enumerate 2 |> Code.to_string in
+  code |> Util.clang_format |> print_endline;
   [%expect
     {|
     #include <iostream>
@@ -21,6 +22,43 @@ let%expect_test "" =
     #include <vector>
 
     #include "sexp.hpp"
+    #include "stdlib.hpp"
+
+    template <typename T> struct span {
+      T *ptr;
+      int len;
+
+      bool operator==(const span<T> &rhs) const {
+        if (len != rhs.len) {
+          return false;
+        } else {
+          bool ret = true;
+          for (int i = 0; i < len; i++) {
+            ret = ret && (ptr[i] == rhs.ptr[i]);
+          }
+          return ret;
+        }
+      }
+
+      bool operator<(const span<T> &rhs) const {
+        if (len != rhs.len) {
+          return len < rhs.len;
+        }
+        for (int i = 0; i < len; i++) {
+          if (ptr[i] != rhs.ptr[i]) {
+            return ptr[i] < rhs.ptr[i];
+          }
+        }
+        return false;
+      }
+
+      bool operator<=(const span<T> &rhs) const {
+        return this < rhs || this == rhs;
+      }
+      bool operator>(const span<T> &rhs) const { return !(this <= rhs); }
+      bool operator>=(const span<T> &rhs) const { return !(this < rhs); }
+    };
+
     int reconstruct_L_1(
         std::pair<
             std::pair<std::vector<std::set<std::vector<int32_t>>>,
@@ -185,7 +223,268 @@ let%expect_test "" =
       std::vector<std::vector<int32_t>> x51 = std::get<1>(x49);
       return 0;
     }
- |}]
+ |}];
+  code |> Util.clang_build |> print_endline;
+  [%expect {|
+    <stdin>:105:68: warning: variable 'x54' is uninitialized when used here [-Wuninitialized]
+      std::vector<std::vector<int32_t>> x23 = x15; int x54;  int x55 = x54;
+                                                                       ^~~
+    <stdin>:105:55: note: initialize the variable 'x54' to silence this warning
+      std::vector<std::vector<int32_t>> x23 = x15; int x54;  int x55 = x54;
+                                                          ^
+                                                           = 0
+    <stdin>:117:30: warning: variable 'x52' is uninitialized when used here [-Wuninitialized]
+             int x52;  int x53 = x52;    std::vector<std::vector<int32_t>> x39 = *x38;
+                                 ^~~
+    <stdin>:117:17: note: initialize the variable 'x52' to silence this warning
+             int x52;  int x53 = x52;    std::vector<std::vector<int32_t>> x39 = *x38;
+                    ^
+                     = 0
+    2 warnings generated. |}]
+
+let%expect_test "" =
+  let module Core = Cstage_core.Make () in
+  let module Code = Cstage.Code (Core) in
+  let module Array = Cstage_array.ArenaArray (Core) in
+  let module Deepcoder = Deepcoder.Make (Array) (Code) in
+  let module Sketch = struct
+    let inputs = [ "L" ]
+
+    let output = "L"
+  end in
+  let module DeepSynth =
+    Synth.Make (Sketch) (Code) (Deepcoder.Lang) (Deepcoder.Cache)
+  in
+  let code = DeepSynth.enumerate 2 |> Code.to_string in
+  code |> Util.clang_format |> print_endline;
+  [%expect {|
+    #include <iostream>
+    #include <set>
+    #include <vector>
+
+    #include "sexp.hpp"
+    #include "stdlib.hpp"
+
+    template <typename T> struct span {
+      T *ptr;
+      int len;
+
+      bool operator==(const span<T> &rhs) const {
+        if (len != rhs.len) {
+          return false;
+        } else {
+          bool ret = true;
+          for (int i = 0; i < len; i++) {
+            ret = ret && (ptr[i] == rhs.ptr[i]);
+          }
+          return ret;
+        }
+      }
+
+      bool operator<(const span<T> &rhs) const {
+        if (len != rhs.len) {
+          return len < rhs.len;
+        }
+        for (int i = 0; i < len; i++) {
+          if (ptr[i] != rhs.ptr[i]) {
+            return ptr[i] < rhs.ptr[i];
+          }
+        }
+        return false;
+      }
+
+      bool operator<=(const span<T> &rhs) const {
+        return this < rhs || this == rhs;
+      }
+      bool operator>(const span<T> &rhs) const { return !(this <= rhs); }
+      bool operator>=(const span<T> &rhs) const { return !(this < rhs); }
+    };
+
+    int reconstruct_L_1(
+        std::pair<std::pair<std::vector<std::set<std::vector<int32_t>>>,
+                            std::vector<std::set<std::vector<span<int32_t>>>>>,
+                  std::vector<span<int32_t>>>
+            x52);
+    int reconstruct_L_2(
+        std::pair<std::pair<std::vector<std::set<std::vector<int32_t>>>,
+                            std::vector<std::set<std::vector<span<int32_t>>>>>,
+                  std::vector<span<int32_t>>>
+            x38);
+    int main();
+    std::vector<int32_t> x2;
+    std::vector<int32_t> x3;
+    std::set<std::vector<span<int32_t>>> x7;
+    std::set<std::vector<int32_t>> x12;
+    std::vector<int32_t> x31;
+    std::vector<int32_t> x64;
+    int main() {
+      // begin Array.init
+      std::vector<std::set<std::vector<int32_t>>> x9(100);
+      std::vector<std::set<std::vector<int32_t>>> x10 = x9;
+      for (int x11 = 0; x11 < 100; x11 += 1) {
+        x10[x11] = x12;
+      }
+      // end Array.init
+      std::vector<std::set<std::vector<int32_t>>> x13 = x10;
+      // begin Array.init
+      std::vector<std::set<std::vector<span<int32_t>>>> x4(100);
+      std::vector<std::set<std::vector<span<int32_t>>>> x5 = x4;
+      for (int x6 = 0; x6 < 100; x6 += 1) {
+        x5[x6] = x7;
+      }
+      // end Array.init
+      std::vector<std::set<std::vector<span<int32_t>>>> x8 = x5;
+      std::unique_ptr<sexp> x59 = sexp::load(std::cin);
+      const std::vector<std::unique_ptr<sexp>> &x60 =
+          ((list *)x59.get())->get_body();
+      // begin Array.init
+      std::vector<span<int32_t>> x61((int)((x60).size()));
+      std::vector<span<int32_t>> x62 = x61;
+      for (int x63 = 0; x63 < (int)((x60).size()); x63 += 1) {
+        const std::vector<std::unique_ptr<sexp>> &x65 =
+            ((list *)(x60)[x63].get())->get_body();
+        // begin Array.init
+        int32_t x66 = ((int)((x64).size()));
+        (x64).resize((x64).size() + ((int)((x65).size())));
+        span<int32_t> x67 = (span<int32_t>){x64.data() + x66, (int)((x65).size())};
+        for (int x68 = 0; x68 < (int)((x65).size()); x68 += 1) {
+          int32_t x69 = std::stoi(((atom *)(x65)[x68].get())->get_body());
+          x67.ptr[x68] = x69;
+        }
+        // end Array.init
+        x62[x63] = x67;
+      }
+      // end Array.init
+      (x8[1]).insert(x62);
+      std::unique_ptr<sexp> x26 = sexp::load(std::cin);
+      const std::vector<std::unique_ptr<sexp>> &x27 =
+          ((list *)x26.get())->get_body();
+      // begin Array.init
+      std::vector<span<int32_t>> x28((int)((x27).size()));
+      std::vector<span<int32_t>> x29 = x28;
+      for (int x30 = 0; x30 < (int)((x27).size()); x30 += 1) {
+        const std::vector<std::unique_ptr<sexp>> &x32 =
+            ((list *)(x27)[x30].get())->get_body();
+        // begin Array.init
+        int32_t x33 = ((int)((x31).size()));
+        (x31).resize((x31).size() + ((int)((x32).size())));
+        span<int32_t> x34 = (span<int32_t>){x31.data() + x33, (int)((x32).size())};
+        for (int x35 = 0; x35 < (int)((x32).size()); x35 += 1) {
+          int32_t x36 = std::stoi(((atom *)(x32)[x35].get())->get_body());
+          x34.ptr[x35] = x36;
+        }
+        // end Array.init
+        x29[x30] = x34;
+      }
+      // end Array.init
+      std::vector<span<int32_t>> x37 = x29;
+      for (auto x14 = (x8[1]).begin(); x14 != (x8[1]).end(); ++x14) {
+        std::vector<span<int32_t>> x15 = *x14;
+        // begin Array.init
+        std::vector<span<int32_t>> x16(((int)((x15).size())));
+        std::vector<span<int32_t>> x17 = x16;
+        for (int x18 = 0; x18 < ((int)((x15).size())); x18 += 1) {
+          span<int32_t> x19 = (x15[x18]);
+          int32_t x20 = ((int)((x19).len));
+          // begin Array.init
+          int32_t x21 = ((int)((x3).size()));
+          (x3).resize((x3).size() + (x20));
+          span<int32_t> x22 = (span<int32_t>){x3.data() + x21, x20};
+          for (int x23 = 0; x23 < x20; x23 += 1) {
+            int32_t x24 = (x19.ptr[((x20 - x23) - 1)]);
+            x22.ptr[x23] = x24;
+          }
+          // end Array.init
+          x17[x18] = x22;
+        }
+        // end Array.init
+        std::vector<span<int32_t>> x25 = x17;
+        int x57;
+        int x58 = x57;
+        if ((x25 == x37)) {
+          reconstruct_L_2(std::make_pair(std::make_pair(x13, x8), x37));
+          exit(0);
+          x58 = 0;
+        } else {
+
+          x58 = 0;
+        }
+        (x8[2]).insert(x25);
+      }
+      return 0;
+    }
+    int reconstruct_L_2(
+        std::pair<std::pair<std::vector<std::set<std::vector<int32_t>>>,
+                            std::vector<std::set<std::vector<span<int32_t>>>>>,
+                  std::vector<span<int32_t>>>
+            x38) {
+      std::pair<std::vector<std::set<std::vector<int32_t>>>,
+                std::vector<std::set<std::vector<span<int32_t>>>>>
+          x39 = std::get<0>(x38);
+      std::vector<span<int32_t>> x40 = std::get<1>(x38);
+      for (auto x41 = (std::get<1>(x39)[1]).begin();
+           x41 != (std::get<1>(x39)[1]).end(); ++x41) {
+        int x55;
+        int x56 = x55;
+        std::vector<span<int32_t>> x42 = *x41;
+        // begin Array.init
+        std::vector<span<int32_t>> x43(((int)((x42).size())));
+        std::vector<span<int32_t>> x44 = x43;
+        for (int x45 = 0; x45 < ((int)((x42).size())); x45 += 1) {
+          span<int32_t> x46 = (x42[x45]);
+          int32_t x47 = ((int)((x46).len));
+          // begin Array.init
+          int32_t x48 = ((int)((x3).size()));
+          (x3).resize((x3).size() + (x47));
+          span<int32_t> x49 = (span<int32_t>){x3.data() + x48, x47};
+          for (int x50 = 0; x50 < x47; x50 += 1) {
+            int32_t x51 = (x46.ptr[((x47 - x50) - 1)]);
+            x49.ptr[x50] = x51;
+          }
+          // end Array.init
+          x44[x45] = x49;
+        }
+        // end Array.init
+
+        if ((0 || (x44 == x40))) {
+          std::cout << "(App reverse ((App L0 ())))" << std::endl;
+          reconstruct_L_1(std::make_pair(x39, *x41));
+          x56 = 0;
+        } else {
+
+          x56 = 0;
+        }
+      }
+      return 0;
+    }
+    int reconstruct_L_1(
+        std::pair<std::pair<std::vector<std::set<std::vector<int32_t>>>,
+                            std::vector<std::set<std::vector<span<int32_t>>>>>,
+                  std::vector<span<int32_t>>>
+            x52) {
+      std::pair<std::vector<std::set<std::vector<int32_t>>>,
+                std::vector<std::set<std::vector<span<int32_t>>>>>
+          x53 = std::get<0>(x52);
+      std::vector<span<int32_t>> x54 = std::get<1>(x52);
+      return 0;
+    } |}];
+  code |> Util.clang_build |> print_endline;
+  [%expect {|
+    <stdin>:105:61: warning: variable 'x57' is uninitialized when used here [-Wuninitialized]
+      std::vector<span<int32_t>> x25 = x17; int x57;  int x58 = x57;
+                                                                ^~~
+    <stdin>:105:48: note: initialize the variable 'x57' to silence this warning
+      std::vector<span<int32_t>> x25 = x17; int x57;  int x58 = x57;
+                                                   ^
+                                                    = 0
+    <stdin>:117:30: warning: variable 'x55' is uninitialized when used here [-Wuninitialized]
+             int x55;  int x56 = x55;    std::vector<span<int32_t>> x42 = *x41;
+                                 ^~~
+    <stdin>:117:17: note: initialize the variable 'x55' to silence this warning
+             int x55;  int x56 = x55;    std::vector<span<int32_t>> x42 = *x41;
+                    ^
+                     = 0
+    2 warnings generated. |}]
 
 let%expect_test "" =
   let module Code = Mlstage.Code in

@@ -365,7 +365,45 @@ module Make () : S = struct
 #include <set>
 #include <iostream>
 
+#include "stdlib.hpp"
 #include "sexp.hpp"
+
+template <typename T>
+struct span {
+  T *ptr;
+  int len;
+
+  bool operator==(const span<T> &rhs) const {
+    if (len != rhs.len) {
+      return false;
+    } else {
+      bool ret = true;
+      for (int i = 0; i < len; i++) {
+        ret = ret && (ptr[i] == rhs.ptr[i]);
+      }
+      return ret;
+    }
+  }
+
+  bool operator<(const span<T> &rhs) const {
+    if (len != rhs.len) { return len < rhs.len; }
+    for (int i = 0; i < len; i++) {
+        if (ptr[i] != rhs.ptr[i]) { return ptr[i] < rhs.ptr[i]; }
+    }
+    return false;
+  }
+
+  bool operator<=(const span<T> &rhs) const {
+        return this < rhs || this == rhs;
+  }
+  bool operator>(const span<T> &rhs) const {
+        return !(this <= rhs);
+  }
+  bool operator>=(const span<T> &rhs) const {
+        return !(this < rhs);
+  }
+};
+
 |}
     and forward_decls =
       List.map prog.funcs ~f:func_to_decl_str |> String.concat ~sep:"\n"

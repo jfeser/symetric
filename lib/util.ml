@@ -25,7 +25,8 @@ let clang_exec
   let exe = Filename.temp_file "test" ".exe" in
   let compiler_output =
     let read, write =
-      Unix.open_process (sprintf "clang++ %s sexp.cpp %s -o %s" args main exe)
+      Unix.open_process
+        (sprintf "clang++ %s -Ietc sexp.cpp %s -o %s" args main exe)
     in
     Out_channel.output_string write src;
     Out_channel.close write;
