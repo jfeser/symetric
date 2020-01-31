@@ -12,7 +12,7 @@ module String (C : Cstage_core.S) = struct
       eformat "($(s)) == ($(s'))" Bool.type_ "" [ ("s", C s); ("s'", C s') ]
   end
 
-  let const s = eformat "\"$(s)\"" type_ "" [ ("s", S (sprintf "%S" s)) ]
+  let const s = eformat "$(s)" type_ "" [ ("s", S (sprintf "%S" s)) ]
 
   let print s =
     eformat ~has_effect:true "0" unit_t "std::cout << $(str) << std::endl;"

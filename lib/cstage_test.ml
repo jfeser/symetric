@@ -18,6 +18,7 @@ let%expect_test "" =
   code |> Util.clang_format |> print_endline;
   [%expect
     {|
+    #include <array>
     #include <iostream>
     #include <set>
     #include <vector>
@@ -97,6 +98,7 @@ let%expect_test "" =
   code |> Util.clang_format |> print_endline;
   [%expect
     {|
+    #include <array>
     #include <iostream>
     #include <set>
     #include <vector>
@@ -162,6 +164,7 @@ let%expect_test "" =
   code |> Util.clang_format |> print_endline;
   [%expect
     {|
+    #include <array>
     #include <iostream>
     #include <set>
     #include <vector>
@@ -241,6 +244,7 @@ let%expect_test "" =
   code |> Util.clang_format |> print_endline;
   [%expect
     {|
+    #include <array>
     #include <iostream>
     #include <set>
     #include <vector>
@@ -327,28 +331,28 @@ let%expect_test "" =
   code |> Util.clang_build |> print_endline;
   [%expect
     {|
-    <stdin>:61:24: error: redefinition of 'x6'
+    <stdin>:62:24: error: redefinition of 'x6'
       std::vector<int32_t> x6 (10);  std::vector<int32_t> x7 = x6;
                            ^
-    <stdin>:47:24: note: previous definition is here
+    <stdin>:48:24: note: previous definition is here
       std::vector<int32_t> x6 (10);  std::vector<int32_t> x7 = x6;
                            ^
-    <stdin>:61:55: error: redefinition of 'x7'
-      std::vector<int32_t> x6 (10);  std::vector<int32_t> x7 = x6;
-                                                          ^
-    <stdin>:47:55: note: previous definition is here
+    <stdin>:62:55: error: redefinition of 'x7'
       std::vector<int32_t> x6 (10);  std::vector<int32_t> x7 = x6;
                                                           ^
-    <stdin>:68:24: error: redefinition of 'x2'
+    <stdin>:48:55: note: previous definition is here
+      std::vector<int32_t> x6 (10);  std::vector<int32_t> x7 = x6;
+                                                          ^
+    <stdin>:69:24: error: redefinition of 'x2'
       std::vector<int32_t> x2 (10);  std::vector<int32_t> x3 = x2;
                            ^
-    <stdin>:54:24: note: previous definition is here
+    <stdin>:55:24: note: previous definition is here
       std::vector<int32_t> x2 (10);  std::vector<int32_t> x3 = x2;
                            ^
-    <stdin>:68:55: error: redefinition of 'x3'
+    <stdin>:69:55: error: redefinition of 'x3'
       std::vector<int32_t> x2 (10);  std::vector<int32_t> x3 = x2;
                                                           ^
-    <stdin>:54:55: note: previous definition is here
+    <stdin>:55:55: note: previous definition is here
       std::vector<int32_t> x2 (10);  std::vector<int32_t> x3 = x2;
                                                           ^
     4 errors generated. |}]
@@ -374,6 +378,7 @@ let%expect_test "" =
   code |> Util.clang_format |> print_endline;
   [%expect
     {|
+    #include <array>
     #include <iostream>
     #include <set>
     #include <vector>
@@ -438,7 +443,7 @@ let%expect_test "" =
   code |> Util.clang_build |> print_endline;
   [%expect
     {|
-    <stdin>:52:11: warning: unused variable 'x7' [-Wunused-variable]
+    <stdin>:53:11: warning: unused variable 'x7' [-Wunused-variable]
       int32_t x7 = x5; return 0; }
               ^
     1 warning generated. |}]
@@ -467,6 +472,7 @@ let%expect_test "" =
   code |> Util.clang_format |> print_endline;
   [%expect
     {|
+    #include <array>
     #include <iostream>
     #include <set>
     #include <vector>
@@ -532,7 +538,7 @@ let%expect_test "" =
   code |> Util.clang_build |> print_endline;
   [%expect
     {|
-    <stdin>:52:11: warning: unused variable 'x8' [-Wunused-variable]
+    <stdin>:53:11: warning: unused variable 'x8' [-Wunused-variable]
       int32_t x8 = x5; return 0; }
               ^
     1 warning generated. |}]
@@ -553,6 +559,7 @@ let%expect_test "" =
   code |> Util.clang_format |> print_endline;
   [%expect
     {|
+    #include <array>
     #include <iostream>
     #include <set>
     #include <vector>
@@ -614,6 +621,7 @@ let%expect_test "" =
   code |> Util.clang_format |> print_endline;
   [%expect
     {|
+    #include <array>
     #include <iostream>
     #include <set>
     #include <vector>
@@ -673,10 +681,10 @@ let%expect_test "" =
   code |> Util.clang_build |> print_endline;
   [%expect
     {|
-    <stdin>:45:52: warning: variable 'x2' is uninitialized when used here [-Wuninitialized]
+    <stdin>:46:52: warning: variable 'x2' is uninitialized when used here [-Wuninitialized]
     int main();int main() {  int32_t x2;  int32_t x3 = x2;
                                                        ^~
-    <stdin>:45:36: note: initialize the variable 'x2' to silence this warning
+    <stdin>:46:36: note: initialize the variable 'x2' to silence this warning
     int main();int main() {  int32_t x2;  int32_t x3 = x2;
                                        ^
                                         = 0
@@ -694,6 +702,7 @@ let%expect_test "" =
   code |> Util.clang_format |> print_endline;
   [%expect
     {|
+    #include <array>
     #include <iostream>
     #include <set>
     #include <vector>
@@ -754,10 +763,10 @@ let%expect_test "" =
   code |> Util.clang_build |> print_endline;
   [%expect
     {|
-    <stdin>:45:44: warning: variable 'x2' is uninitialized when used here [-Wuninitialized]
+    <stdin>:46:44: warning: variable 'x2' is uninitialized when used here [-Wuninitialized]
     int main();int main() {  int x2;  int x3 = x2;
                                                ^~
-    <stdin>:45:32: note: initialize the variable 'x2' to silence this warning
+    <stdin>:46:32: note: initialize the variable 'x2' to silence this warning
     int main();int main() {  int x2;  int x3 = x2;
                                    ^
                                     = 0
@@ -780,6 +789,7 @@ let%expect_test "" =
   code |> Util.clang_format |> print_endline;
   [%expect
     {|
+    #include <array>
     #include <iostream>
     #include <set>
     #include <vector>
@@ -840,10 +850,10 @@ let%expect_test "" =
   code |> Util.clang_build |> print_endline;
   [%expect
     {|
-    <stdin>:45:70: warning: variable 'x3' is uninitialized when used here [-Wuninitialized]
+    <stdin>:46:70: warning: variable 'x3' is uninitialized when used here [-Wuninitialized]
     int main();int main() {   int32_t x2 = 10; int32_t x3;  int32_t x4 = x3;
                                                                          ^~
-    <stdin>:45:54: note: initialize the variable 'x3' to silence this warning
+    <stdin>:46:54: note: initialize the variable 'x3' to silence this warning
     int main();int main() {   int32_t x2 = 10; int32_t x3;  int32_t x4 = x3;
                                                          ^
                                                           = 0
@@ -859,6 +869,7 @@ let%expect_test "" =
   code |> Util.clang_format |> print_endline;
   [%expect
     {|
+    #include <array>
     #include <iostream>
     #include <set>
     #include <vector>
@@ -928,6 +939,7 @@ let%expect_test "" =
   code |> Util.clang_format |> print_endline;
   [%expect
     {|
+    #include <array>
     #include <iostream>
     #include <set>
     #include <vector>
@@ -1015,6 +1027,7 @@ let%expect_test "" =
   code |> Util.clang_format |> print_endline;
   [%expect
     {|
+    #include <array>
     #include <iostream>
     #include <set>
     #include <vector>
@@ -1108,16 +1121,16 @@ let%expect_test "" =
   code |> Util.clang_build |> print_endline;
   [%expect
     {|
-    <stdin>:62:24: error: redefinition of 'x2'
+    <stdin>:63:24: error: redefinition of 'x2'
       std::vector<int32_t> x2 (3);  std::vector<int32_t> x3 = x2;  x3[0] = 0;  x3[1] = 1;  x3[2] = 2;// end Array.const
                            ^
-    <stdin>:49:24: note: previous definition is here
+    <stdin>:50:24: note: previous definition is here
       std::vector<int32_t> x2 (3);  std::vector<int32_t> x3 = x2;  x3[0] = 0;  x3[1] = 1;  x3[2] = 2;// end Array.const
                            ^
-    <stdin>:62:54: error: redefinition of 'x3'
+    <stdin>:63:54: error: redefinition of 'x3'
       std::vector<int32_t> x2 (3);  std::vector<int32_t> x3 = x2;  x3[0] = 0;  x3[1] = 1;  x3[2] = 2;// end Array.const
                                                          ^
-    <stdin>:49:54: note: previous definition is here
+    <stdin>:50:54: note: previous definition is here
       std::vector<int32_t> x2 (3);  std::vector<int32_t> x3 = x2;  x3[0] = 0;  x3[1] = 1;  x3[2] = 2;// end Array.const
                                                          ^
     2 errors generated. |}]
@@ -1139,6 +1152,7 @@ let%expect_test "" =
   code |> Util.clang_format |> print_endline;
   [%expect
     {|
+    #include <array>
     #include <iostream>
     #include <set>
     #include <vector>
@@ -1230,6 +1244,7 @@ let%expect_test "" =
   code |> Util.clang_format |> print_endline;
   [%expect
     {|
+    #include <array>
     #include <iostream>
     #include <set>
     #include <vector>
@@ -1327,6 +1342,7 @@ let%expect_test "" =
   code |> Util.clang_format |> print_endline;
   [%expect
     {|
+    #include <array>
     #include <iostream>
     #include <set>
     #include <vector>
@@ -1420,16 +1436,16 @@ let%expect_test "" =
   code |> Util.clang_build |> print_endline;
   [%expect
     {|
-    <stdin>:62:24: error: redefinition of 'x2'
+    <stdin>:63:24: error: redefinition of 'x2'
       std::vector<int32_t> x2 (3);  std::vector<int32_t> x3 = x2;  x3[0] = 0;  x3[1] = 1;  x3[2] = 2;// end Array.const
                            ^
-    <stdin>:49:24: note: previous definition is here
+    <stdin>:50:24: note: previous definition is here
       std::vector<int32_t> x2 (3);  std::vector<int32_t> x3 = x2;  x3[0] = 0;  x3[1] = 1;  x3[2] = 2;// end Array.const
                            ^
-    <stdin>:62:54: error: redefinition of 'x3'
+    <stdin>:63:54: error: redefinition of 'x3'
       std::vector<int32_t> x2 (3);  std::vector<int32_t> x3 = x2;  x3[0] = 0;  x3[1] = 1;  x3[2] = 2;// end Array.const
                                                          ^
-    <stdin>:49:54: note: previous definition is here
+    <stdin>:50:54: note: previous definition is here
       std::vector<int32_t> x2 (3);  std::vector<int32_t> x3 = x2;  x3[0] = 0;  x3[1] = 1;  x3[2] = 2;// end Array.const
                                                          ^
     2 errors generated. |}]
@@ -1452,6 +1468,7 @@ let%expect_test "" =
   code |> Util.clang_format |> print_endline;
   [%expect
     {|
+    #include <array>
     #include <iostream>
     #include <set>
     #include <vector>
@@ -1539,6 +1556,7 @@ let%expect_test "" =
   code |> Util.clang_format |> print_endline;
   [%expect
     {|
+    #include <array>
     #include <iostream>
     #include <set>
     #include <vector>
@@ -1609,3 +1627,108 @@ let%expect_test "" =
     one
     two
     three |}]
+
+let%expect_test "" =
+  let module Core = Cstage_core.Make () in
+  let module Array = Cstage_array.ArenaArray (Core) in
+  let module C = Cstage.Code (Core) in
+  let array_t = Array.mk_type C.Int.type_ in
+  let code =
+    C.let_ (Array.const array_t [| C.Int.int 1; C.Int.int 2; C.Int.int 3 |])
+    @@ fun a1 ->
+    C.let_ (Array.const array_t [| C.Int.int 1; C.Int.int 2; C.Int.int 3 |])
+    @@ fun a2 ->
+    C.ite
+      Array.O.(a1 = a2)
+      (fun () -> C.String.(print @@ const "true"))
+      (fun () -> C.String.(print @@ const "false"))
+  in
+  let code = C.to_string code in
+  code |> Util.clang_format |> print_endline;
+  [%expect {|
+    #include <array>
+    #include <iostream>
+    #include <set>
+    #include <vector>
+
+    #include "sexp.hpp"
+    #include "stdlib.hpp"
+
+    template <typename T> struct span {
+      T *ptr;
+      int len;
+
+      bool operator==(const span<T> &rhs) const {
+        if (len != rhs.len) {
+          return false;
+        } else {
+          bool ret = true;
+          for (int i = 0; i < len; i++) {
+            ret = ret && (ptr[i] == rhs.ptr[i]);
+          }
+          return ret;
+        }
+      }
+
+      bool operator<(const span<T> &rhs) const {
+        if (len != rhs.len) {
+          return len < rhs.len;
+        }
+        for (int i = 0; i < len; i++) {
+          if (ptr[i] != rhs.ptr[i]) {
+            return ptr[i] < rhs.ptr[i];
+          }
+        }
+        return false;
+      }
+
+      bool operator<=(const span<T> &rhs) const {
+        return this < rhs || this == rhs;
+      }
+      bool operator>(const span<T> &rhs) const { return !(this <= rhs); }
+      bool operator>=(const span<T> &rhs) const { return !(this < rhs); }
+    };
+
+    int main();
+    std::array<int32_t, 500000> x2;
+    int32_t x3;
+    int main() {
+      // begin Array.const
+      span<int32_t> x4 = (span<int32_t>){(x2).data() + x3, 3};
+      x3 += 3;
+      span<int32_t> x5 = x4;
+      x5.ptr[0] = 1;
+      x5.ptr[1] = 2;
+      x5.ptr[2] = 3; // end Array.const
+      span<int32_t> x6 = x5;
+      // begin Array.const
+      span<int32_t> x7 = (span<int32_t>){(x2).data() + x3, 3};
+      x3 += 3;
+      span<int32_t> x8 = x7;
+      x8.ptr[0] = 1;
+      x8.ptr[1] = 2;
+      x8.ptr[2] = 3; // end Array.const
+      span<int32_t> x9 = x8;
+      int x10;
+      int x11 = x10;
+      if ((x6 == x9)) {
+        std::cout << "true" << std::endl;
+        x11 = 0;
+      } else {
+        std::cout << "false" << std::endl;
+        x11 = 0;
+      }
+      return x11;
+    } |}];
+  let out = Util.clang_exec ~input:"(one two three)" code in
+  out#exe_output |> print_endline;
+  [%expect {|
+    main.cpp:52:46: warning: variable 'x10' is uninitialized when used here [-Wuninitialized]
+      span<int32_t> x9 = x8; int x10;  int x11 = x10;
+                                                 ^~~
+    main.cpp:52:33: note: initialize the variable 'x10' to silence this warning
+      span<int32_t> x9 = x8; int x10;  int x11 = x10;
+                                    ^
+                                     = 0
+    1 warning generated.
+    true |}]

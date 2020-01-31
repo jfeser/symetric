@@ -361,6 +361,7 @@ module Make () : S = struct
 
     let header =
       {|
+#include <array>
 #include <vector>
 #include <set>
 #include <iostream>

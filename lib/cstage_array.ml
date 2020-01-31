@@ -183,20 +183,32 @@ module ArenaArray (C : Cstage_core.S) = struct
 
   type 'a array = ArenaArray
 
+  (** Number of elements in the arena. *)
+  let default_size = 500_000
+
   let no_effect e = { e with eeffect = false }
 
   let elem_k = Univ_map.Key.create ~name:"elem_t" [%sexp_of: typ]
 
   let arena_k = Univ_map.Key.create ~name:"arena" [%sexp_of: expr]
 
+  let arena_offset_k = Univ_map.Key.create ~name:"arena_offset" [%sexp_of: expr]
+
   let mk_type e =
+    let arena_type =
+      Type.create
+        ~name:(sprintf "std::array<%s, %d>" (Type.name e) default_size)
+    in
     Type.create ~name:(sprintf "span<%s>" (Type.name e))
     |> Type.add_exn ~key:elem_k ~data:e
-    |> Type.add_exn ~key:arena_k ~data:(fresh_global (A.mk_type e))
+    |> Type.add_exn ~key:arena_k ~data:(fresh_global arena_type)
+    |> Type.add_exn ~key:arena_offset_k ~data:(fresh_global Int.type_)
 
   let elem_type t = Univ_map.find_exn t elem_k
 
   let arena t = Univ_map.find_exn t arena_k
+
+  let arena_offset t = Univ_map.find_exn t arena_offset_k
 
   module O = struct
     let ( = ) a a' = binop "(%s == %s)" Bool.type_ a a'
@@ -208,20 +220,16 @@ module ArenaArray (C : Cstage_core.S) = struct
     type expr = C.expr
 
     let create t l =
-      let arena = arena t in
-      let ctx = [ ("vec", C arena); ("len", C l) ] in
-      sseq
+      let ctx =
         [
-          let_ (A.length arena) (fun end_ ->
-              sseq
-                [
-                  (* Ensure arena has enough space. *)
-                  eformat "0" unit_t
-                    "($(vec)).resize(($(vec)).size() + ($(len)));" ctx;
-                  eformat "($(type)){$(vec).data() + $(end), $(len)}" t ""
-                    (("type", S (Type.name t)) :: ("end", C end_) :: ctx);
-                ]);
+          ("arena", C (arena t));
+          ("len", C l);
+          ("type", S (Type.name t));
+          ("offset", C (arena_offset t));
         ]
+      in
+      let_ (eformat "($(type)){($(arena)).data() + $(offset), $(len)}" t "" ctx)
+      @@ fun arr -> sseq [ eformat "0" unit_t "$(offset) += $(len);" ctx; arr ]
 
     let length x = unop "((int)((%s).len))" Int.type_ x
 
