@@ -36,6 +36,10 @@ module type Derived = sig
   val of_sexp : typ -> expr -> (expr -> expr) -> expr
 
   val sexp_of : expr -> (expr -> expr) -> expr
+
+  module O : sig
+    val ( = ) : expr -> expr -> expr
+  end
 end
 
 module type S = sig
@@ -50,10 +54,6 @@ module type S = sig
   val mk_type : typ -> typ
 
   val elem_type : typ -> typ
-
-  module O : sig
-    val ( = ) : expr -> expr -> expr
-  end
 end
 
 module Derived
@@ -119,6 +119,10 @@ module Derived
     init t (Sexp.List.length l) (fun i -> elem_of_sexp (Sexp.List.get l i))
 
   let sexp_of _ _ = failwith "unimplemented"
+
+  module O = struct
+    let ( = ) a a' = binop "(%s == %s)" Bool.type_ a a'
+  end
 end
 
 module Array (C : Cstage_core.S) = struct
@@ -143,10 +147,6 @@ module Array (C : Cstage_core.S) = struct
     match Univ_map.find t elem_t with
     | Some et -> et
     | None -> Error.create "Not an array type." t [%sexp_of: typ] |> Error.raise
-
-  module O = struct
-    let ( = ) a a' = binop "(%s == %s)" Bool.type_ a a'
-  end
 
   module Base = struct
     type typ = C.typ
@@ -210,10 +210,6 @@ module ArenaArray (C : Cstage_core.S) = struct
 
   let arena_offset t = Univ_map.find_exn t arena_offset_k
 
-  module O = struct
-    let ( = ) a a' = binop "(%s == %s)" Bool.type_ a a'
-  end
-
   module Base = struct
     type typ = C.typ
 
@@ -261,4 +257,57 @@ module ArenaArray (C : Cstage_core.S) = struct
         ("len", C len);
         ("start", C start);
       ]
+end
+
+module ReversibleArray
+    (C : Cstage_core.S)
+    (A : S with type expr = C.expr and type typ = C.typ) =
+struct
+  module Int = Cstage_int.Int (C)
+  module Tuple = Cstage_tuple.Tuple (C)
+  open C
+
+  type 'a t = 'a C.t
+
+  type typ = C.typ
+
+  type 'a ctype = 'a C.ctype
+
+  type 'a array = ArenaArray
+
+  let elem_k = Univ_map.Key.create ~name:"elem_t" [%sexp_of: typ]
+
+  let arena_offset_k = Univ_map.Key.create ~name:"arena_offset" [%sexp_of: expr]
+
+  let mk_type e = Tuple.mk_type (A.mk_type e) Bool.type_
+
+  let elem_type t = Univ_map.find_exn t elem_k
+
+  module Base = struct
+    type typ = C.typ
+
+    type expr = C.expr
+
+    let create t l = Tuple.create (A.create t l) (C.Bool.bool false)
+
+    let length x = A.length (Tuple.fst x)
+
+    let set a i x =
+      C.let_ (Tuple.fst a) @@ fun arr ->
+      C.ite (Tuple.snd a)
+        (fun () -> A.set arr Int.(A.length arr - i - int 1) x)
+        (fun () -> A.set arr i x)
+
+    let get a i =
+      C.let_ (Tuple.fst a) @@ fun arr ->
+      C.ite (Tuple.snd a)
+        (fun () -> A.get arr Int.(A.length arr - i - int 1))
+        (fun () -> A.get arr i)
+  end
+
+  include (Base : Base with type typ := C.typ and type expr := C.expr)
+
+  include Derived (C) (Base)
+
+  let reverse a = Tuple.create (Tuple.fst a) (Bool.not (Tuple.snd a))
 end
