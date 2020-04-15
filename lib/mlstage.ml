@@ -332,4 +332,8 @@ module Code = struct
 
     let apply f x () = (to_func f) (to_value x)
   end
+
+  let add_annot _ _ _ = assert false
+
+  let find_annot _ _ = assert false
 end

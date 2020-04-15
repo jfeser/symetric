@@ -43,12 +43,19 @@ struct
         A (random_examples random_array (A.mk_type int_t) ())
       else I (random_examples random_int int_t ())
 
+    let key =
+      Univ_map.Key.create ~name:"deepcoder.value" [%sexp_of: [ `A | `I ]]
+
     let code_of = function
-      | A x -> C.cast x
-      | I x -> C.cast x
+      | A x -> C.add_annot (C.cast x) key `A
+      | I x -> C.add_annot (C.cast x) key `I
       | _ -> failwith "Not convertible"
 
-    let of_code _ = assert false
+    let of_code c =
+      match C.find_annot c key with
+      | Some `A -> A (C.cast c)
+      | Some `I -> I (C.cast c)
+      | None -> failwith "Not convertible."
 
     let map ~f v =
       match v with
@@ -58,9 +65,9 @@ struct
 
     let ( = ) v v' =
       match (v, v') with
-      | A a, A a' -> Some C.Array.O.(a = a')
-      | I x, I x' -> Some C.Array.O.(x = x')
-      | A _, I _ | I _, A _ -> None
+      | A a, A a' -> `Dyn C.Array.O.(a = a')
+      | I x, I x' -> `Dyn C.Array.O.(x = x')
+      | A _, I _ | I _, A _ -> `Static false
       | _ -> failwith "Cannot compare"
 
     let code = function A x -> C.cast x | I x -> C.cast x | _ -> assert false

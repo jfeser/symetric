@@ -152,8 +152,12 @@ struct
       let check_one args =
         let term, ctxs = to_contexts term args in
         let found_target =
-          List.fold_left ctxs ~init:(S.Bool.bool false) ~f:(fun found ctx ->
-              S.Bool.(found || L.Value.eq (L.eval ctx term) target))
+          List.fold_until ctxs ~init:(S.Bool.bool false) ~finish:Fun.id
+            ~f:(fun found ctx ->
+              match L.Value.(L.eval ctx term = of_code target) with
+              | `Static true -> Stop (S.Bool.bool true)
+              | `Static false -> Continue found
+              | `Dyn b -> Continue S.Bool.(found || b))
         in
         S.ite found_target
           (fun () ->
@@ -199,7 +203,7 @@ struct
             Log.debug (fun m -> m "Building %s." func_name);
             of_state { graph = g; cache } state target)
       in
-      Func.apply func (Tuple.create cache (L.Value.code target))
+      Func.apply func (Tuple.create cache (L.Value.code_of target))
   end
 
   let contract_state g =
@@ -286,8 +290,10 @@ struct
         @@ (Sexp.input () |> L.Value.of_sexp sym))
     |> sseq
 
+  let vlet v f = S.let_ (L.Value.code_of v) (fun v' -> f (L.Value.of_code v'))
+
   let output =
-    Nonlocal_let.let_ L.Value.let_ (fun () ->
+    Nonlocal_let.let_ vlet (fun () ->
         S.Sexp.input () |> L.Value.of_sexp Sketch.output)
 
   let fill_code g state code_node =
@@ -314,20 +320,20 @@ struct
             m "Skipping reconstruction: (%s <> %s)" Sketch.output symbol);
         S.unit )
       else
+        let reconstruct_code =
+          S.sseq
+            [
+              debug_print "Starting reconstruction";
+              Reconstruct.reconstruct
+                { graph = g; cache = cache.value () |> C.code_of }
+                (output.value ()) state;
+              S.exit;
+            ]
+        in
         match L.Value.(value = output.value ()) with
-        | Some eq ->
-            S.ite eq
-              (fun () ->
-                S.sseq
-                  [
-                    debug_print "Starting reconstruction";
-                    Reconstruct.reconstruct
-                      { graph = g; cache = cache.value () |> C.code_of }
-                      (output.value ()) state;
-                    S.exit;
-                  ])
-              (fun () -> S.unit)
-        | None ->
+        | `Static true -> reconstruct_code
+        | `Dyn eq -> S.ite eq (fun () -> reconstruct_code) (fun () -> S.unit)
+        | `Static false ->
             Log.debug (fun m -> m "Skipping reconstruction: no equality");
             S.unit
     in
@@ -335,7 +341,7 @@ struct
     let fill args =
       let term, ctxs = to_contexts term args in
       List.map ctxs ~f:(fun ctx ->
-          L.Value.let_ (L.eval ctx term) @@ fun value ->
+          vlet (L.eval ctx term) @@ fun value ->
           S.seq (reconstruct value) (insert value))
       |> S.sseq
     in

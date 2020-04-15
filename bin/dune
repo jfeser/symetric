@@ -6,6 +6,13 @@
  (preprocess (pps ppx_let)))
 
 (executable
+ (name mk_cad_bench)
+ (modes byte)
+ (modules mk_cad_bench)
+ (libraries core staged_synth)
+ (preprocess (pps ppx_let)))
+
+(executable
  (name bench)
  (modes byte)
  (modules bench)

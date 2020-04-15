@@ -40,8 +40,6 @@ module type CACHE = sig
 
   val iter :
     sym:string -> size:int32 code -> f:(value -> unit code) -> t -> unit code
-
-  val print_size : t -> unit code
 end
 
 module type LANG = sig
@@ -56,23 +54,11 @@ module type LANG = sig
 
     val of_code : value code -> t
 
-    val ( = ) : t -> t -> bool code option
-
-    val eq : t -> 'a code -> bool code
-
-    val code : t -> 'a code
-
-    val let_ : t -> (t -> 'a code) -> 'a code
+    val ( = ) : t -> t -> [ `Static of bool | `Dyn of bool code ]
 
     val of_sexp : Grammar.nonterm -> sexp code -> t
 
     val sexp_of : t -> sexp code
-
-    type mapper = { f : 'a. 'a code -> 'a code }
-
-    val map : f:mapper -> t -> t
-
-    val random : ?state:Random.State.t -> Grammar.nonterm -> int -> t
   end
 
   val grammar : Grammar.t
@@ -191,6 +177,10 @@ module type CODE = sig
   type 'a ctype [@@deriving sexp_of]
 
   val type_of : 'a t -> 'a ctype
+
+  val add_annot : 'a t -> 'b Univ_map.Key.t -> 'b -> 'a t
+
+  val find_annot : 'a t -> 'b Univ_map.Key.t -> 'b option
 
   val to_string : 'a t -> string
 

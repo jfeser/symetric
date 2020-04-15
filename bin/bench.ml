@@ -1,7 +1,25 @@
 open! Core
 open Staged_synth
 
-module Bench (Dsl : Sigs.LANG with type 'a code = 'a Mlstage.Code.t) = struct
+module type LANG = sig
+  type 'a code
+
+  module Value : sig
+    type t
+
+    type value
+
+    val sexp_of : t -> Sexp.t code
+
+    val random : ?state:Random.State.t -> Grammar.nonterm -> int -> t
+  end
+
+  val grammar : Grammar.t
+
+  val eval : Value.t Map.M(String).t -> Grammar.Term.t -> Value.t
+end
+
+module Bench (Dsl : LANG with type 'a code = 'a Mlstage.Code.t) = struct
   module Code = Mlstage.Code
 
   type t = {

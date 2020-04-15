@@ -1,5 +1,50 @@
 open! Core
 
+module type S = sig
+  type 'a t
+
+  type 'a ctype
+
+  type sexp
+
+  val mk_type : 'a ctype -> 'a array ctype
+
+  val elem_type : 'a array ctype -> 'a ctype
+
+  module O : sig
+    val ( = ) : 'a array t -> 'a array t -> bool t
+  end
+
+  val const : 'a array ctype -> 'a t array -> 'a array t
+
+  val get : 'a array t -> int32 t -> 'a t
+
+  val set : 'a array t -> int32 t -> 'a t -> unit t
+
+  val length : 'a array t -> int32 t
+
+  val fold : 'a array t -> init:'b t -> f:('b t -> 'a t -> 'b t) -> 'b t
+
+  val iter : 'a array t -> f:('a t -> unit t) -> unit t
+
+  val sub : 'a array t -> int32 t -> int32 t -> 'a array t
+
+  val init : 'a array ctype -> int32 t -> (int32 t -> 'a t) -> 'a array t
+
+  val map : 'b array ctype -> 'a array t -> f:('a t -> 'b t) -> 'b array t
+
+  val map2 :
+    'c array ctype ->
+    'a array t ->
+    'b array t ->
+    f:('a t -> 'b t -> 'c t) ->
+    'c array t
+
+  val of_sexp : 'a array ctype -> sexp t -> (sexp t -> 'a t) -> 'a array t
+
+  val sexp_of : 'a array t -> ('a t -> sexp t) -> sexp t
+end
+
 module type Base = sig
   type typ
 
@@ -42,7 +87,7 @@ module type Derived = sig
   end
 end
 
-module type S = sig
+module type S_ = sig
   type typ
 
   type expr
@@ -261,7 +306,7 @@ end
 
 module ReversibleArray
     (C : Cstage_core.S)
-    (A : S with type expr = C.expr and type typ = C.typ) =
+    (A : S_ with type expr = C.expr and type typ = C.typ) =
 struct
   module Int = Cstage_int.Int (C)
   module Tuple = Cstage_tuple.Tuple (C)

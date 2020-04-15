@@ -3,7 +3,8 @@
  (modes byte)
  (libraries core combinat utils ocamlgraph delimcc)
  (preprocess (pps ppx_sexp_conv ppx_compare ppx_hash ppx_expect ppx_assert))
- (inline_tests (modes byte)))
+ (inline_tests (modes byte))
+ (flags -open Core))
 
 (copy_files ../etc/{*.cpp,*.hpp})
 

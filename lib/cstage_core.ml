@@ -45,7 +45,7 @@ module type S = sig
     val add_exn : typ -> key:'a Type_equal.Id.t -> data:'a -> typ
   end
 
-  type fmt_arg = C : expr -> fmt_arg | S : string -> fmt_arg
+  type fmt_arg = C of expr | S of string
 
   val eformat :
     ?has_effect:bool ->
@@ -163,6 +163,12 @@ module type S = sig
   val exit : expr
 
   val with_comment : string -> expr -> expr
+
+  val assert_ : expr -> expr
+
+  val add_annot : expr -> 'b Univ_map.Key.t -> 'b -> expr
+
+  val find_annot : expr -> 'b Univ_map.Key.t -> 'b option
 end
 
 module Make () : S = struct
@@ -199,7 +205,7 @@ module Make () : S = struct
 
   type 'a t = expr [@@deriving sexp_of]
 
-  type fmt_arg = C : expr -> fmt_arg | S : string -> fmt_arg
+  type fmt_arg = C of expr | S of string
 
   let type_of e = e.etype
 
@@ -603,4 +609,11 @@ for(int $(i) = $(lo); $(i) < $(hi); $(i) += $(step)) {
 
   let with_comment s e =
     { e with ebody = sprintf "\n// begin %s\n%s// end %s\n" s e.ebody s }
+
+  let assert_ f =
+    eformat ~has_effect:true "0" unit_t "assert($(cond));" [ ("cond", C f) ]
+
+  let add_annot e k v = { e with etype = Univ_map.add_exn e.etype k v }
+
+  let find_annot e k = Univ_map.find e.etype k
 end
