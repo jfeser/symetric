@@ -35,3 +35,4 @@ _build.prev/
 node_modules/
 
 .clangd/
+.DS_Store
