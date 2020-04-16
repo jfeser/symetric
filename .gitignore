@@ -33,3 +33,5 @@ _opam/
 _esy/
 _build.prev/
 node_modules/
+
+.clangd/

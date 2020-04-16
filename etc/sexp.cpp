@@ -34,7 +34,7 @@ void slurp_white(istream &in) {
   }
 }
 
-unique_ptr<atom> atom::load(istream & in) {
+atom* atom::load(istream & in) {
   string buf;
   slurp_white(in);
   while (true) {
@@ -48,7 +48,7 @@ unique_ptr<atom> atom::load(istream & in) {
     case ')':
     case char_traits<char>::eof(): {
       if (buf.length() > 0) {
-        return make_unique<atom>(buf);
+        return new atom(buf);
       } else {
         return nullptr;
       }
@@ -72,35 +72,35 @@ ostream &list::print(ostream & os) const {
   return os;
 }
 
-unique_ptr<list> list::load(istream & in) {
-  vector<unique_ptr<sexp>> elems;
+list* list::load(istream & in) {
+  vector<sexp*> elems;
 
   slurp_white(in);
   if (!parse_char(in, '(')) {
     return nullptr;
   }
   while (true) {
-    unique_ptr<sexp> s = sexp::load(in);
+    sexp* s = sexp::load(in);
     if (!s) {
       break;
     }
-    elems.push_back(move(s));
+    elems.push_back(s);
   }
   if (!parse_char(in, ')')) {
     return nullptr;
   }
 
-  return make_unique<list>(elems);
+  return new list(elems);
 }
 
 void list::accept(sexp_visitor & v) const { v.visit(*this); }
 
-unique_ptr<sexp> sexp::load(istream & in) {
-  unique_ptr<list> lout = list::load(in);
+sexp* sexp::load(istream & in) {
+  list *lout = list::load(in);
   if (lout) {
     return lout;
   }
-  unique_ptr<atom> aout = atom::load(in);
+  atom *aout = atom::load(in);
   if (aout) {
     return aout;
   }

@@ -76,7 +76,7 @@ module Make (C : Cstage_core.S) = struct
   let max x y = binop "std::max(%s, %s)" type_ x y
 
   let of_sexp x =
-    eformat "std::atof(((atom*)$(x).get())->get_body())" type_ "" [ ("x", C x) ]
+    eformat "std::atof(((atom*)$(x))->get_body())" type_ "" [ ("x", C x) ]
 
   let sexp_of x =
     eformat "atom(std::to_string($(x)))" Sexp.type_ "" [ ("x", C x) ]

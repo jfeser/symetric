@@ -121,11 +121,58 @@ struct
   open C
   module Gr = Grammar
 
+  let cache = C.empty ()
+
+  let bind_io, inputs, output =
+    let io =
+      Nonlocal_let.let_ S.let_global @@ fun () ->
+      S.Sexp.input () |> S.Sexp.to_list
+    in
+    let inputs =
+      List.mapi Sketch.inputs ~f:(fun idx sym ->
+          ( sym,
+            Nonlocal_let.let_ S.let_global @@ fun () ->
+            S.Sexp.List.get (io.value ()) (S.Int.int idx)
+            |> L.Value.of_sexp sym |> L.Value.code_of ))
+    in
+    let output =
+      Nonlocal_let.let_ S.let_global @@ fun () ->
+      S.Sexp.List.get (io.value ()) (S.Int.int (List.length Sketch.inputs))
+      |> L.Value.of_sexp Sketch.output
+      |> L.Value.code_of
+    in
+    let bind f =
+      io.bind @@ fun () ->
+      output.bind @@ fun () ->
+      let rec bind_all = function
+        | [ x ] -> x.Nonlocal_let.bind f
+        | x :: xs -> x.bind @@ fun () -> bind_all xs
+        | [] -> assert false
+      in
+      bind_all (List.map ~f:(fun (_, v) -> v) inputs)
+    and inputs () =
+      List.map inputs ~f:(fun (sym, i) -> (sym, L.Value.of_code @@ i.value ()))
+    and output () = L.Value.of_code @@ output.value () in
+    (bind, inputs, output)
+
+  let cache_iter ~sym ~size ~f cache =
+    let open S in
+    sseq
+      [
+        ite
+          (size = int 1)
+          (fun () ->
+            inputs ()
+            |> List.filter ~f:(fun (sym', _) -> Core.String.(sym = sym'))
+            |> List.map ~f:(fun (_, v) -> f v)
+            |> S.sseq)
+          (fun () -> unit);
+        C.iter ~sym ~size ~f cache;
+      ]
+
   let debug = false
 
   let debug_print msg = if debug then S.print msg else S.unit
-
-  let cache = C.empty ()
 
   let rec of_list = function
     | [] -> S.unit
@@ -171,7 +218,9 @@ struct
             let state = V.to_state node in
             let sym = state.V.symbol and size = int state.V.cost in
             fun ctx ->
-              C.iter ~sym ~size ~f:(fun v -> check ((state, v) :: ctx)) cache)
+              cache_iter ~sym ~size
+                ~f:(fun v -> check ((state, v) :: ctx))
+                cache)
       in
       check_all []
 
@@ -246,15 +295,16 @@ struct
     done;
     let g = !g in
 
+    let vertices = G.fold_vertex (fun v vs -> v :: vs) g [] in
     let sinks =
-      G.fold_vertex
-        (fun v vs ->
-          match v with
-          | State { symbol; _ } when String.(symbol = Sketch.output) -> v :: vs
-          | _ -> vs)
-        g []
+      List.filter vertices ~f:(function
+        | State { symbol; _ } -> String.(symbol = Sketch.output)
+        | _ -> false)
     and sources =
-      List.map Sketch.inputs ~f:(fun sym -> V.State { symbol = sym; cost = 1 })
+      List.filter vertices ~f:(function
+        | State { symbol; cost = 1 } ->
+            List.mem Sketch.inputs symbol ~equal:[%compare.equal: string]
+        | _ -> false)
     in
 
     (* Prune nodes that the sinks don't depend on and nodes that can't reach a
@@ -283,18 +333,7 @@ struct
 
     if prune then prune_loop g else g
 
-  let load_inputs () =
-    let open S in
-    List.map Sketch.inputs ~f:(fun sym ->
-        put ~sym ~size:1 (cache.value ())
-        @@ (Sexp.input () |> L.Value.of_sexp sym))
-    |> sseq
-
   let vlet v f = S.let_ (L.Value.code_of v) (fun v' -> f (L.Value.of_code v'))
-
-  let output =
-    Nonlocal_let.let_ vlet (fun () ->
-        S.Sexp.input () |> L.Value.of_sexp Sketch.output)
 
   let fill_code g state code_node =
     let code = V.to_code code_node in
@@ -326,11 +365,11 @@ struct
               debug_print "Starting reconstruction";
               Reconstruct.reconstruct
                 { graph = g; cache = cache.value () |> C.code_of }
-                (output.value ()) state;
+                (output ()) state;
               S.exit;
             ]
         in
-        match L.Value.(value = output.value ()) with
+        match L.Value.(value = output ()) with
         | `Static true -> reconstruct_code
         | `Dyn eq -> S.ite eq (fun () -> reconstruct_code) (fun () -> S.unit)
         | `Static false ->
@@ -357,7 +396,7 @@ struct
                    let symbol = state.symbol in
                    let cost = state.cost in
                    let fill ctx =
-                     C.iter ~sym:symbol ~size:(int cost)
+                     cache_iter ~sym:symbol ~size:(int cost)
                        ~f:(fun v -> fill ((state, v) :: ctx))
                        (cache.value ())
                    in
@@ -375,21 +414,14 @@ struct
     (* Generate a graph that only contains the state nodes. *)
     let lhs_g = contract_state g |> G.reverse in
 
-    let loops () =
-      G.Topo.fold
-        (fun v code ->
-          let state = V.to_state v in
-          code @ [ fill_state g state ])
-        lhs_g []
-    in
-
     let open S in
     cache.bind @@ fun () ->
-    sseq
-      [
-        (* Load the inputs into the cache. *)
-        load_inputs ();
-        (* Fold over the state nodes, generating code to fill them. *)
-        (output.bind @@ fun () -> sseq (loops ()));
-      ]
+    bind_io @@ fun () ->
+    (* Fold over the state nodes, generating code to fill them. *)
+    G.Topo.fold
+      (fun v code ->
+        let state = V.to_state v in
+        code @ [ fill_state g state ])
+      lhs_g []
+    |> sseq
 end

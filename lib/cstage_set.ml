@@ -10,7 +10,7 @@ module Set (C : Cstage_core.S) = struct
 
   let empty typ =
     let set = fresh_name () in
-    add_var_decl { vname = set; vtype = typ; init = None };
+    add_local { vname = set; vtype = typ; init = None };
     { ret = set; ebody = ""; etype = typ; efree = []; eeffect = true }
 
   let iter a f =

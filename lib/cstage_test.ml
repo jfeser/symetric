@@ -422,9 +422,9 @@ let%expect_test "" =
     };
 
     int main();
-    std::set<int32_t> x2;
     int32_t x4;
     int main() {
+      std::set<int32_t> x2;
       std::set<int32_t> x3 = x2;
       x3.insert(0);
       x3.insert(1);
@@ -516,9 +516,9 @@ let%expect_test "" =
     };
 
     int main();
-    std::set<int32_t> x2;
     int32_t x4;
     int main() {
+      std::set<int32_t> x2;
       std::set<int32_t> x3 = x2;
       x3.insert(0);
       x3.insert(1);
@@ -681,13 +681,13 @@ let%expect_test "" =
   code |> Util.clang_build |> print_endline;
   [%expect
     {|
-    <stdin>:46:52: warning: variable 'x2' is uninitialized when used here [-Wuninitialized]
-    int main();int main() {  int32_t x2;  int32_t x3 = x2;
-                                                       ^~
-    <stdin>:46:36: note: initialize the variable 'x2' to silence this warning
-    int main();int main() {  int32_t x2;  int32_t x3 = x2;
-                                       ^
-                                        = 0
+    <stdin>:46:53: warning: variable 'x2' is uninitialized when used here [-Wuninitialized]
+    int main();int main() {   int32_t x2;  int32_t x3 = x2;
+                                                        ^~
+    <stdin>:46:37: note: initialize the variable 'x2' to silence this warning
+    int main();int main() {   int32_t x2;  int32_t x3 = x2;
+                                        ^
+                                         = 0
     1 warning generated. |}]
 
 let%expect_test "" =
@@ -763,13 +763,13 @@ let%expect_test "" =
   code |> Util.clang_build |> print_endline;
   [%expect
     {|
-    <stdin>:46:44: warning: variable 'x2' is uninitialized when used here [-Wuninitialized]
-    int main();int main() {  int x2;  int x3 = x2;
-                                               ^~
-    <stdin>:46:32: note: initialize the variable 'x2' to silence this warning
-    int main();int main() {  int x2;  int x3 = x2;
-                                   ^
-                                    = 0
+    <stdin>:46:45: warning: variable 'x2' is uninitialized when used here [-Wuninitialized]
+    int main();int main() {   int x2;  int x3 = x2;
+                                                ^~
+    <stdin>:46:33: note: initialize the variable 'x2' to silence this warning
+    int main();int main() {   int x2;  int x3 = x2;
+                                    ^
+                                     = 0
     1 warning generated. |}]
 
 let%expect_test "" =
@@ -850,13 +850,13 @@ let%expect_test "" =
   code |> Util.clang_build |> print_endline;
   [%expect
     {|
-    <stdin>:46:70: warning: variable 'x3' is uninitialized when used here [-Wuninitialized]
-    int main();int main() {   int32_t x2 = 10; int32_t x3;  int32_t x4 = x3;
-                                                                         ^~
-    <stdin>:46:54: note: initialize the variable 'x3' to silence this warning
-    int main();int main() {   int32_t x2 = 10; int32_t x3;  int32_t x4 = x3;
-                                                         ^
-                                                          = 0
+    <stdin>:46:71: warning: variable 'x3' is uninitialized when used here [-Wuninitialized]
+    int main();int main() {    int32_t x2 = 10; int32_t x3;  int32_t x4 = x3;
+                                                                          ^~
+    <stdin>:46:55: note: initialize the variable 'x3' to silence this warning
+    int main();int main() {    int32_t x2 = 10; int32_t x3;  int32_t x4 = x3;
+                                                          ^
+                                                           = 0
     1 warning generated. |}]
 
 let%expect_test "" =
@@ -1601,14 +1601,14 @@ let%expect_test "" =
 
     int main();
     int main() {
-      std::unique_ptr<sexp> x2 = sexp::load(std::cin);
-      const std::unique_ptr<sexp> &x3 = x2;
-      const std::vector<std::unique_ptr<sexp>> &x4 = ((list *)x3.get())->get_body();
+      sexp *x2 = sexp::load(std::cin);
+      sexp *x3 = x2;
+      std::vector<sexp *> x4 = ((list *)x3)->get_body();
       // begin Array.init
       std::vector<std::string> x5((int)((x4).size()));
       std::vector<std::string> x6 = x5;
       for (int x7 = 0; x7 < (int)((x4).size()); x7 += 1) {
-        std::string x8 = ((atom *)(x4)[x7].get())->get_body();
+        std::string x8 = ((atom *)(x4)[x7])->get_body();
         x6[x7] = x8;
       }
       // end Array.init

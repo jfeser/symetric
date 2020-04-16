@@ -25,6 +25,7 @@ module type S = sig
 
   type prog = {
     mutable funcs : func_decl list;
+    mutable globals : var_decl list;
     mutable cur_func : func_decl;
     fresh : Fresh.t;
   }
@@ -71,7 +72,9 @@ module type S = sig
     val apply : expr -> expr -> expr
   end
 
-  val add_var_decl : var_decl -> unit
+  val add_local : var_decl -> unit
+
+  val add_global : var_decl -> unit
 
   val fresh_name : unit -> string
 
@@ -197,6 +200,7 @@ module Make () : S = struct
 
   type prog = {
     mutable funcs : func_decl list;
+    mutable globals : var_decl list;
     mutable cur_func : func_decl;
     fresh : Fresh.t;
   }
@@ -275,9 +279,11 @@ module Make () : S = struct
           { ebody = ""; ret = "0"; etype = unit_t; efree = []; eeffect = false };
       }
     in
-    { funcs = [ main ]; cur_func = main; fresh = Fresh.create () }
+    { globals = []; funcs = [ main ]; cur_func = main; fresh = Fresh.create () }
 
-  let add_var_decl x = prog.cur_func.locals <- x :: prog.cur_func.locals
+  let add_local x = prog.cur_func.locals <- x :: prog.cur_func.locals
+
+  let add_global x = prog.globals <- x :: prog.globals
 
   let add_func f = prog.funcs <- f :: prog.funcs
 
@@ -354,12 +360,8 @@ module Make () : S = struct
         |> String.concat ~sep:" "
       and args_str = List.map f.args ~f:arg_to_str |> String.concat ~sep:","
       and ret_t_name = Type.name (Func.ret_t f.ftype) in
-      if String.(f.fname = "main") then
-        sprintf "%s %s(%s) { %s return %s; }" ret_t_name f.fname args_str
-          (expr_to_str f.fbody) f.fbody.ret
-      else
-        sprintf "%s %s(%s) { %s %s return %s; }" ret_t_name f.fname args_str
-          locals_str (expr_to_str f.fbody) f.fbody.ret
+      sprintf "%s %s(%s) { %s %s return %s; }" ret_t_name f.fname args_str
+        locals_str (expr_to_str f.fbody) f.fbody.ret
     in
 
     prog.cur_func.fbody <-
@@ -414,19 +416,16 @@ struct span {
 |}
     and forward_decls =
       List.map prog.funcs ~f:func_to_decl_str |> String.concat ~sep:"\n"
-    and main_decls =
-      Func.of_name "main"
-      |> Option.map ~f:(fun func ->
-             List.rev func.locals
-             |> List.map ~f:var_decl_to_str
-             |> String.concat ~sep:" ")
-      |> Option.value ~default:""
+    and global_decls =
+      prog.globals |> List.rev
+      |> List.map ~f:var_decl_to_str
+      |> String.concat ~sep:" "
     and funcs =
       List.rev prog.funcs
       |> List.map ~f:func_to_def_str
       |> String.concat ~sep:"\n"
     in
-    header ^ forward_decls ^ main_decls ^ funcs
+    header ^ forward_decls ^ global_decls ^ funcs
 
   let unop fmt type_ x =
     eformat (sprintf fmt "$(arg)") type_ "" [ ("arg", C x) ]
@@ -438,7 +437,7 @@ struct span {
       [ ("arg1", C x); ("arg2", C x') ]
 
   module Sexp = struct
-    let type_ = Type.create ~name:"const std::unique_ptr<sexp>&"
+    let type_ = Type.create ~name:"sexp*"
 
     module List = struct
       let get x i = eformat "($(x))[$(i)]" type_ "" [ ("x", C x); ("i", C i) ]
@@ -447,7 +446,7 @@ struct span {
         eformat "(int)(($(x)).size())" (Type.create ~name:"int") ""
           [ ("x", C x) ]
 
-      let type_ = Type.create ~name:"const std::vector<std::unique_ptr<sexp>>&"
+      let type_ = Type.create ~name:"std::vector<sexp*>"
     end
 
     module Atom = struct
@@ -456,14 +455,14 @@ struct span {
 
     let input () =
       eformat ~has_effect:false "$(name)" type_
-        "std::unique_ptr<sexp> $(name) = sexp::load(std::cin);"
+        "sexp *$(name) = sexp::load(std::cin);"
         [ ("name", S (fresh_name ())) ]
 
     let to_list x =
-      eformat "((list*)$(x).get())->get_body()" List.type_ "" [ ("x", C x) ]
+      eformat "((list*)$(x))->get_body()" List.type_ "" [ ("x", C x) ]
 
     let to_atom x =
-      eformat "((atom*)$(x).get())->get_body()" Atom.type_ "" [ ("x", C x) ]
+      eformat "((atom*)$(x))->get_body()" Atom.type_ "" [ ("x", C x) ]
   end
 
   module Bool = struct
@@ -478,11 +477,10 @@ struct span {
     let not x = unop "(!%s)" type_ x
 
     let of_sexp x =
-      eformat "std::stoi(((atom*)$(x).get())->get_body())" type_ ""
-        [ ("x", C x) ]
+      eformat "std::stoi(((atom*)$(x))->get_body())" type_ "" [ ("x", C x) ]
 
     let sexp_of x =
-      eformat "atom(std::to_string($(x)))" Sexp.type_ "" [ ("x", C x) ]
+      eformat "(new atom(std::to_string($(x))))" Sexp.type_ "" [ ("x", C x) ]
   end
 
   let fresh_var etype m =
@@ -510,7 +508,7 @@ struct span {
 
   let fresh_global type_ =
     let name = fresh_name () in
-    add_var_decl { vname = name; vtype = type_; init = None };
+    add_global { vname = name; vtype = type_; init = None };
     eformat name type_ "" []
 
   let let_ v b =
@@ -613,7 +611,7 @@ for(int $(i) = $(lo); $(i) < $(hi); $(i) += $(step)) {
   let assert_ f =
     eformat ~has_effect:true "0" unit_t "assert($(cond));" [ ("cond", C f) ]
 
-  let add_annot e k v = { e with etype = Univ_map.add_exn e.etype k v }
+  let add_annot e k v = { e with etype = Univ_map.set e.etype k v }
 
   let find_annot e k = Univ_map.find e.etype k
 end

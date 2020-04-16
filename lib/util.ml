@@ -1,7 +1,7 @@
 open! Core
 
 let clang_format src =
-  let read, write = Unix.open_process "clang-format" in
+  let read, write = Unix.open_process "clang-format-9" in
   Out_channel.output_string write src;
   Out_channel.close write;
   let ret = In_channel.input_all read in
@@ -9,7 +9,7 @@ let clang_format src =
   ret
 
 let clang_build ?(args = "-std=c++17 -Wall -Wextra -c") src =
-  let read, write = Unix.open_process (sprintf "clang++ %s -x c++ -" args) in
+  let read, write = Unix.open_process (sprintf "clang++-9 %s -x c++ -" args) in
   Out_channel.output_string write src;
   Out_channel.close write;
   let ret = In_channel.input_all read in
@@ -26,7 +26,7 @@ let clang_exec
   let compiler_output =
     let read, write =
       Unix.open_process
-        (sprintf "clang++ %s -Ietc sexp.cpp %s -o %s" args main exe)
+        (sprintf "clang++-9 %s -Ietc sexp.cpp %s -o %s" args main exe)
     in
     Out_channel.output_string write src;
     Out_channel.close write;
