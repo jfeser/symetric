@@ -1,22 +1,23 @@
 open! Core
+open Types
 
 module Make
-    (A : Sigs.ARRAY)
-    (C : Sigs.CODE with type 'a t = 'a A.t and type 'a ctype = 'a A.ctype) =
+    (A : Cstage_array.S)
+    (C : Sigs.CODE with type 'a t = 'a A.code and type 'a ctype = 'a A.ctype) =
 struct
   module Value = struct
-    type array_t = int32 A.array C.Array.array
+    type array_t = int A.t C.Array.t
 
-    type int_t = int32 C.Array.array
+    type int_t = int C.Array.t
 
     type value = Value
 
     type t =
       | A of array_t C.t
       | I of int_t C.t
-      | F_int of (int32 C.t -> int32 C.t)
-      | F_bool of (int32 C.t -> bool C.t)
-      | F_int2 of (int32 C.t -> int32 C.t -> int32 C.t)
+      | F_int of (int C.t -> int C.t)
+      | F_bool of (int C.t -> bool C.t)
+      | F_int2 of (int C.t -> int C.t -> int C.t)
 
     type mapper = { f : 'a. 'a C.t -> 'a C.t }
 
@@ -312,12 +313,11 @@ struct
 
     type 'a code = 'a C.t
 
-    type cache =
-      Value.int_t Sigs.set C.Array.array * Value.array_t Sigs.set C.Array.array
+    type cache = Value.int_t set array * Value.array_t set array
 
     type t = {
-      ints : Value.int_t Sigs.set C.Array.array code;
-      arrays : Value.array_t Sigs.set C.Array.array code;
+      ints : Value.int_t set C.Array.t code;
+      arrays : Value.array_t set C.Array.t code;
     }
 
     let max_size = 100

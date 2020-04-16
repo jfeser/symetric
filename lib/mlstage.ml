@@ -80,6 +80,8 @@ module Code = struct
   end
 
   module Int = struct
+    type t = Types.int
+
     let type_ = int_t
 
     let int x () = Int x
@@ -120,6 +122,8 @@ module Code = struct
   end
 
   module Bool = struct
+    type t
+
     let type_ = bool_t
 
     let bool x () = Bool x
@@ -138,6 +142,8 @@ module Code = struct
   end
 
   module String = struct
+    type t
+
     let type_ = ()
 
     module O = struct
@@ -162,11 +168,11 @@ module Code = struct
   end
 
   module Array = struct
-    type nonrec 'a t = 'a t
+    type nonrec 'a code = 'a t
 
     type nonrec 'a ctype = 'a ctype
 
-    type 'a array = Array_t
+    type 'a t = Array_t
 
     let mk_type _ = ()
 
@@ -230,6 +236,8 @@ module Code = struct
   end
 
   module Set = struct
+    type 'a t
+
     let mk_type _ = ()
 
     let to_set x = match to_value x with Set x -> x | _ -> assert false

@@ -1,53 +1,56 @@
 open! Core
+open Types
 
 module type S = sig
-  type 'a t
+  type t
+
+  type 'a code
 
   type 'a ctype
 
-  type sexp
+  val type_ : t ctype
 
-  val type_ : float ctype
+  val float : float -> t code
 
-  val float : float -> float t
+  val ( ~- ) : t code -> t code
 
-  val ( ~- ) : float t -> float t
+  val ( + ) : t code -> t code -> t code
 
-  val ( + ) : float t -> float t -> float t
+  val ( - ) : t code -> t code -> t code
 
-  val ( - ) : float t -> float t -> float t
+  val ( * ) : t code -> t code -> t code
 
-  val ( * ) : float t -> float t -> float t
+  val ( / ) : t code -> t code -> t code
 
-  val ( / ) : float t -> float t -> float t
+  val ( ** ) : t code -> t code -> t code
 
-  val ( ** ) : float t -> float t -> float t
+  val ( > ) : t code -> t code -> bool code
 
-  val ( > ) : float t -> float t -> bool t
+  val ( < ) : t code -> t code -> bool code
 
-  val ( < ) : float t -> float t -> bool t
+  val ( >= ) : t code -> t code -> bool code
 
-  val ( >= ) : float t -> float t -> bool t
+  val ( <= ) : t code -> t code -> bool code
 
-  val ( <= ) : float t -> float t -> bool t
+  val ( = ) : t code -> t code -> bool code
 
-  val ( = ) : float t -> float t -> bool t
+  val min : t code -> t code -> t code
 
-  val min : float t -> float t -> float t
+  val max : t code -> t code -> t code
 
-  val max : float t -> float t -> float t
+  val cos : t code -> t code
 
-  val cos : float t -> float t
+  val sin : t code -> t code
 
-  val sin : float t -> float t
+  val of_sexp : sexp code -> t code
 
-  val of_sexp : sexp t -> float t
-
-  val sexp_of : float t -> sexp t
+  val sexp_of : t code -> sexp code
 end
 
 module Make (C : Cstage_core.S) = struct
   open C
+
+  type t
 
   let type_ = Type.create ~name:"float"
 

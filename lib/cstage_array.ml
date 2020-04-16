@@ -1,48 +1,50 @@
 open! Core
+open Types
 
 module type S = sig
-  type 'a t
+  type 'a code
 
   type 'a ctype
 
-  type sexp
+  type 'a t
 
-  val mk_type : 'a ctype -> 'a array ctype
+  val mk_type : 'a ctype -> 'a t ctype
 
-  val elem_type : 'a array ctype -> 'a ctype
+  val elem_type : 'a t ctype -> 'a ctype
 
   module O : sig
-    val ( = ) : 'a array t -> 'a array t -> bool t
+    val ( = ) : 'a t code -> 'a t code -> bool code
   end
 
-  val const : 'a array ctype -> 'a t array -> 'a array t
+  val const : 'a t ctype -> 'a code Array.t -> 'a t code
 
-  val get : 'a array t -> int32 t -> 'a t
+  val get : 'a t code -> int code -> 'a code
 
-  val set : 'a array t -> int32 t -> 'a t -> unit t
+  val set : 'a t code -> int code -> 'a code -> unit code
 
-  val length : 'a array t -> int32 t
+  val length : 'a t code -> int code
 
-  val fold : 'a array t -> init:'b t -> f:('b t -> 'a t -> 'b t) -> 'b t
+  val fold :
+    'a t code -> init:'b code -> f:('b code -> 'a code -> 'b code) -> 'b code
 
-  val iter : 'a array t -> f:('a t -> unit t) -> unit t
+  val iter : 'a t code -> f:('a code -> unit code) -> unit code
 
-  val sub : 'a array t -> int32 t -> int32 t -> 'a array t
+  val sub : 'a t code -> int code -> int code -> 'a t code
 
-  val init : 'a array ctype -> int32 t -> (int32 t -> 'a t) -> 'a array t
+  val init : 'a t ctype -> int code -> (int code -> 'a code) -> 'a t code
 
-  val map : 'b array ctype -> 'a array t -> f:('a t -> 'b t) -> 'b array t
+  val map : 'b t ctype -> 'a t code -> f:('a code -> 'b code) -> 'b t code
 
   val map2 :
-    'c array ctype ->
-    'a array t ->
-    'b array t ->
-    f:('a t -> 'b t -> 'c t) ->
-    'c array t
+    'c t ctype ->
+    'a t code ->
+    'b t code ->
+    f:('a code -> 'b code -> 'c code) ->
+    'c t code
 
-  val of_sexp : 'a array ctype -> sexp t -> (sexp t -> 'a t) -> 'a array t
+  val of_sexp : 'a t ctype -> sexp code -> (sexp code -> 'a code) -> 'a t code
 
-  val sexp_of : 'a array t -> ('a t -> sexp t) -> sexp t
+  val sexp_of : 'a t code -> ('a code -> sexp code) -> sexp code
 end
 
 module type Base = sig
@@ -174,9 +176,9 @@ module Array (C : Cstage_core.S) = struct
   module Int = Cstage_int.Int (C)
   open C
 
-  type 'a array = Array
+  type 'a t
 
-  type 'a t = 'a C.t
+  type 'a code = 'a C.t
 
   type typ = C.typ
 
@@ -220,13 +222,13 @@ module ArenaArray (C : Cstage_core.S) = struct
   open C
   module A = Array (C)
 
-  type 'a t = 'a C.t
+  type 'a t
 
   type typ = C.typ
 
   type 'a ctype = 'a C.ctype
 
-  type 'a array = ArenaArray
+  type 'a code = 'a C.t
 
   (** Number of elements in the arena. *)
   let default_size = 500_000
@@ -312,13 +314,13 @@ struct
   module Tuple = Cstage_tuple.Tuple (C)
   open C
 
-  type 'a t = 'a C.t
+  type 'a code = 'a C.t
 
   type typ = C.typ
 
   type 'a ctype = 'a C.ctype
 
-  type 'a array = ArenaArray
+  type 'a t
 
   let elem_k = Univ_map.Key.create ~name:"elem_t" [%sexp_of: typ]
 

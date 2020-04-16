@@ -1,4 +1,5 @@
 open! Core
+open Types
 
 module Tuple (C : Cstage_core.S) = struct
   module Int = Cstage_int.Int (C)
@@ -40,36 +41,38 @@ end
 
 module Tuple_3 = struct
   module type S = sig
-    type sexp
+    type ('a, 'b, 'c) t
 
     type 'a ctype
 
-    type 'a t
+    type 'a code
 
-    val mk_type : 'a ctype -> 'b ctype -> 'c ctype -> ('a * 'b * 'c) ctype
+    val mk_type : 'a ctype -> 'b ctype -> 'c ctype -> ('a, 'b, 'c) t ctype
 
-    val of_tuple : 'a t * 'b t * 'c t -> ('a * 'b * 'c) t
+    val of_tuple : 'a code * 'b code * 'c code -> ('a, 'b, 'c) t code
 
-    val tuple_of : ('a * 'b * 'c) t -> 'a t * 'b t * 'c t
+    val tuple_of : ('a, 'b, 'c) t code -> 'a code * 'b code * 'c code
 
     val of_sexp :
-      sexp t ->
-      (sexp t -> 'a t) ->
-      (sexp t -> 'b t) ->
-      (sexp t -> 'c t) ->
-      ('a * 'b * 'c) t
+      sexp code ->
+      (sexp code -> 'a code) ->
+      (sexp code -> 'b code) ->
+      (sexp code -> 'c code) ->
+      ('a, 'b, 'c) t code
 
     val sexp_of :
-      ('a * 'b * 'c) t ->
-      ('a t -> sexp t) ->
-      ('b t -> sexp t) ->
-      ('c t -> sexp t) ->
-      sexp t
+      ('a, 'b, 'c) t code ->
+      ('a code -> sexp code) ->
+      ('b code -> sexp code) ->
+      ('c code -> sexp code) ->
+      sexp code
   end
 
   module Make (C : Cstage_core.S) = struct
     module Int = Cstage_int.Int (C)
     open C
+
+    type ('a, 'b, 'c) t
 
     let fst_t = Univ_map.Key.create ~name:"fst_t" [%sexp_of: typ]
 
@@ -120,39 +123,43 @@ end
 
 module Tuple_4 = struct
   module type S = sig
+    type ('a, 'b, 'c, 'd) t
+
     type 'a ctype
 
-    type 'a t
-
-    type sexp
+    type 'a code
 
     val mk_type :
-      'a ctype -> 'b ctype -> 'c ctype -> 'd ctype -> ('a * 'b * 'c * 'd) ctype
+      'a ctype -> 'b ctype -> 'c ctype -> 'd ctype -> ('a, 'b, 'c, 'd) t ctype
 
-    val of_tuple : 'a t * 'b t * 'c t * 'd t -> ('a * 'b * 'c * 'd) t
+    val of_tuple :
+      'a code * 'b code * 'c code * 'd code -> ('a, 'b, 'c, 'd) t code
 
-    val tuple_of : ('a * 'b * 'c * 'd) t -> 'a t * 'b t * 'c t * 'd t
+    val tuple_of :
+      ('a, 'b, 'c, 'd) t code -> 'a code * 'b code * 'c code * 'd code
 
     val of_sexp :
-      sexp t ->
-      (sexp t -> 'a t) ->
-      (sexp t -> 'b t) ->
-      (sexp t -> 'c t) ->
-      (sexp t -> 'd t) ->
-      ('a * 'b * 'c * 'd) t
+      sexp code ->
+      (sexp code -> 'a code) ->
+      (sexp code -> 'b code) ->
+      (sexp code -> 'c code) ->
+      (sexp code -> 'd code) ->
+      ('a, 'b, 'c, 'd) t code
 
     val sexp_of :
-      ('a * 'b * 'c * 'd) t ->
-      ('a t -> sexp t) ->
-      ('b t -> sexp t) ->
-      ('c t -> sexp t) ->
-      ('d t -> sexp t) ->
-      sexp t
+      ('a, 'b, 'c, 'd) t code ->
+      ('a code -> sexp code) ->
+      ('b code -> sexp code) ->
+      ('c code -> sexp code) ->
+      ('d code -> sexp code) ->
+      sexp code
   end
 
   module Make (C : Cstage_core.S) = struct
     module Int = Cstage_int.Int (C)
     open C
+
+    type ('a, 'b, 'c, 'd) t
 
     let fst_t = Univ_map.Key.create ~name:"fst_t" [%sexp_of: typ]
 

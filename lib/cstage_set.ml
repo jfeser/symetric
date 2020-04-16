@@ -1,8 +1,35 @@
 open! Core
+open Types
+
+module type S = sig
+  type 'a t
+
+  type 'a code
+
+  type 'a ctype
+
+  val mk_type : 'a ctype -> 'a set ctype
+
+  val empty : 'a set ctype -> 'a set code
+
+  val add : 'a set code -> 'a code -> unit code
+
+  val iter : 'a set code -> ('a code -> unit code) -> unit code
+
+  val fold :
+    'a set code -> init:'b code -> f:('b code -> 'a code -> 'b code) -> 'b code
+
+  val of_sexp :
+    'a set ctype -> sexp code -> (sexp code -> 'a code) -> 'a set code
+
+  val sexp_of : 'a set code -> ('a code -> sexp code) -> sexp code
+end
 
 module Set (C : Cstage_core.S) = struct
   module Int = Cstage_int.Int (C)
   open C
+
+  type 'a t
 
   let elem_t = Univ_map.Key.create ~name:"elem_t" [%sexp_of: typ]
 

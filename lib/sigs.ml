@@ -1,8 +1,5 @@
 open! Core
-
-type 'a set
-
-type sexp
+open Types
 
 module type EXAMPLES = sig
   type value
@@ -36,10 +33,10 @@ module type CACHE = sig
 
   val empty : unit -> (t, 'a code) Nonlocal_let.t
 
-  val put : sym:string -> size:int -> t -> value -> unit code
+  val put : sym:string -> size:Int.t -> t -> value -> unit code
 
   val iter :
-    sym:string -> size:int32 code -> f:(value -> unit code) -> t -> unit code
+    sym:string -> size:int code -> f:(value -> unit code) -> t -> unit code
 end
 
 module type LANG = sig
@@ -64,111 +61,6 @@ module type LANG = sig
   val grammar : Grammar.t
 
   val eval : Value.t Map.M(String).t -> Grammar.Term.t -> Value.t
-end
-
-module type INT = sig
-  type 'a t
-
-  type 'a ctype
-
-  val type_ : int32 ctype
-
-  val int : int -> int32 t
-
-  val ( ~- ) : int32 t -> int32 t
-
-  val ( + ) : int32 t -> int32 t -> int32 t
-
-  val ( - ) : int32 t -> int32 t -> int32 t
-
-  val ( * ) : int32 t -> int32 t -> int32 t
-
-  val ( / ) : int32 t -> int32 t -> int32 t
-
-  val ( mod ) : int32 t -> int32 t -> int32 t
-
-  val ( > ) : int32 t -> int32 t -> bool t
-
-  val ( < ) : int32 t -> int32 t -> bool t
-
-  val ( >= ) : int32 t -> int32 t -> bool t
-
-  val ( <= ) : int32 t -> int32 t -> bool t
-
-  val ( = ) : int32 t -> int32 t -> bool t
-
-  val min : int32 t -> int32 t -> int32 t
-
-  val max : int32 t -> int32 t -> int32 t
-
-  val of_sexp : sexp t -> int32 t
-
-  val sexp_of : int32 t -> sexp t
-end
-
-module type ARRAY = sig
-  type 'a t
-
-  type 'a array
-
-  type 'a ctype
-
-  val mk_type : 'a ctype -> 'a array ctype
-
-  val elem_type : 'a array ctype -> 'a ctype
-
-  module O : sig
-    val ( = ) : 'a array t -> 'a array t -> bool t
-  end
-
-  val const : 'a array ctype -> 'a t Array.t -> 'a array t
-
-  val get : 'a array t -> int32 t -> 'a t
-
-  val set : 'a array t -> int32 t -> 'a t -> unit t
-
-  val length : 'a array t -> int32 t
-
-  val fold : 'a array t -> init:'b t -> f:('b t -> 'a t -> 'b t) -> 'b t
-
-  val iter : 'a array t -> f:('a t -> unit t) -> unit t
-
-  val sub : 'a array t -> int32 t -> int32 t -> 'a array t
-
-  val init : 'a array ctype -> int32 t -> (int32 t -> 'a t) -> 'a array t
-
-  val map : 'b array ctype -> 'a array t -> f:('a t -> 'b t) -> 'b array t
-
-  val map2 :
-    'c array ctype ->
-    'a array t ->
-    'b array t ->
-    f:('a t -> 'b t -> 'c t) ->
-    'c array t
-
-  val of_sexp : 'a array ctype -> sexp t -> (sexp t -> 'a t) -> 'a array t
-
-  val sexp_of : 'a array t -> ('a t -> sexp t) -> sexp t
-end
-
-module type SET = sig
-  type 'a t
-
-  type 'a ctype
-
-  val mk_type : 'a ctype -> 'a set ctype
-
-  val empty : 'a set ctype -> 'a set t
-
-  val add : 'a set t -> 'a t -> unit t
-
-  val iter : 'a set t -> ('a t -> unit t) -> unit t
-
-  val fold : 'a set t -> init:'b t -> f:('b t -> 'a t -> 'b t) -> 'b t
-
-  val of_sexp : 'a set ctype -> sexp t -> (sexp t -> 'a t) -> 'a set t
-
-  val sexp_of : 'a set t -> ('a t -> sexp t) -> sexp t
 end
 
 module type CODE = sig
@@ -221,11 +113,20 @@ module type CODE = sig
     val func : string -> ('a -> 'b) ctype -> ('a t -> 'b t) -> ('a -> 'b) t
   end
 
-  module Int : INT with type 'a t := 'a t and type 'a ctype := 'a ctype
+  module Int :
+    Cstage_int.S
+      with type 'a code := 'a t
+       and type 'a ctype := 'a ctype
+       and type t = int
 
-  module Array : ARRAY with type 'a t := 'a t and type 'a ctype := 'a ctype
+  module Array :
+    Cstage_array.S with type 'a code := 'a t and type 'a ctype := 'a ctype
 
-  module Set : SET with type 'a t := 'a t and type 'a ctype := 'a ctype
+  module Set :
+    Cstage_set.S with type 'a code := 'a t and type 'a ctype := 'a ctype
+
+  module String :
+    Cstage_string.S with type 'a code := 'a t and type 'a ctype := 'a ctype
 
   (* Tuples *)
   module Tuple : sig
@@ -242,24 +143,6 @@ module type CODE = sig
     val sexp_of : ('a * 'b) t -> ('a t -> sexp t) -> ('b t -> sexp t) -> sexp t
   end
 
-  module String : sig
-    val type_ : string ctype
-
-    module O : sig
-      val ( = ) : string t -> string t -> bool t
-    end
-
-    val const : string -> string t
-
-    val input : string t
-
-    val print : string t -> unit t
-
-    val of_sexp : sexp t -> string t
-
-    val sexp_of : string t -> sexp t
-  end
-
   module Sexp : sig
     val type_ : sexp ctype
 
@@ -268,14 +151,14 @@ module type CODE = sig
     val to_list : sexp t -> sexp list t
 
     module List : sig
-      val get : sexp list t -> int32 t -> sexp t
+      val get : sexp list t -> int t -> sexp t
 
-      val length : sexp list t -> int32 t
+      val length : sexp list t -> int t
     end
   end
 
   (* Control flow *)
-  val for_ : int32 t -> int32 t -> int32 t -> (int32 t -> unit t) -> unit t
+  val for_ : int t -> int t -> int t -> (int t -> unit t) -> unit t
 
   val ite : bool t -> (unit -> 'a t) -> (unit -> 'a t) -> 'a t
 

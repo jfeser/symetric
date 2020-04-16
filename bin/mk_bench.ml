@@ -7,7 +7,7 @@ let main () =
   let module Code = Cstage.Code (Core) in
   let module Deepcoder = Deepcoder.Make (Cstage_array.Array (Core)) (Code) in
   let module Sketch = struct
-    let inputs = [ ("a1", "L") ]
+    let inputs = [ "L" ]
 
     let output = "L"
   end in

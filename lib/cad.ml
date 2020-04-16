@@ -1,29 +1,23 @@
+open Types
+
 module type Deps = sig
   include Sigs.CODE
 
   module Array :
-    Cstage_array.S
-      with type 'a t := 'a t
-       and type 'a ctype := 'a ctype
-       and type sexp := Sigs.sexp
+    Cstage_array.S with type 'a code := 'a t and type 'a ctype := 'a ctype
 
   module Float :
-    Cstage_float.S
-      with type 'a t := 'a t
-       and type 'a ctype := 'a ctype
-       and type sexp := Sigs.sexp
+    Cstage_float.S with type 'a code := 'a t and type 'a ctype := 'a ctype
 
   module Tuple_3 :
     Cstage_tuple.Tuple_3.S
-      with type 'a t := 'a t
+      with type 'a code := 'a t
        and type 'a ctype := 'a ctype
-       and type sexp := Sigs.sexp
 
   module Tuple_4 :
     Cstage_tuple.Tuple_4.S
-      with type 'a t := 'a t
+      with type 'a code := 'a t
        and type 'a ctype := 'a ctype
-       and type sexp := Sigs.sexp
 end
 
 module Make (C : Deps) = struct
@@ -32,9 +26,9 @@ module Make (C : Deps) = struct
       type value = Value
 
       type t =
-        | Examples of bool array C.t
-        | Vectors of (float * float * float) array C.t
-        | Sphere of (float * float * float * float) C.t
+        | Examples of bool C.Array.t C.t
+        | Vectors of (C.Float.t, C.Float.t, C.Float.t) C.Tuple_3.t C.Array.t C.t
+        | Sphere of (C.Float.t, C.Float.t, C.Float.t, C.Float.t) C.Tuple_4.t C.t
         (*    adt CylinderHint {
 	          *    float theta_x;
 	          *   float theta_y;
@@ -47,8 +41,12 @@ module Make (C : Deps) = struct
 	          *   int[xlen] xlistint;
          * } *)
         | Cyl of
-            ( (float * float * float * float)
-            * (float * float * float array * int array) )
+            ( (C.Float.t, C.Float.t, C.Float.t, C.Float.t) C.Tuple_4.t
+            * ( C.Float.t,
+                C.Float.t,
+                C.Float.t C.Array.t,
+                C.Int.t C.Array.t )
+              C.Tuple_4.t )
             C.t
 
       let examples_t = C.Array.mk_type C.Bool.type_
@@ -69,6 +67,7 @@ module Make (C : Deps) = struct
           | Examples _ -> "examples"
           | Vectors _ -> "vectors"
           | Sphere _ -> "sphere"
+          | Cyl _ -> "cylinder"
         in
         failwith @@ sprintf "Expected %s but got %s" expected got
 
@@ -209,7 +208,7 @@ module Make (C : Deps) = struct
 
     type 'a code = 'a C.t
 
-    type cache = bool array Sigs.set array
+    type cache = bool C.Array.t C.Set.t C.Array.t
 
     type t = cache C.t
 

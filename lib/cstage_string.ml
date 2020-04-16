@@ -1,6 +1,33 @@
 open! Core
+open Types
+
+module type S = sig
+  type t
+
+  type 'a code
+
+  type 'a ctype
+
+  val type_ : t ctype
+
+  module O : sig
+    val ( = ) : t code -> t code -> bool code
+  end
+
+  val const : String.t -> t code
+
+  val input : t code
+
+  val print : t code -> unit code
+
+  val of_sexp : sexp code -> t code
+
+  val sexp_of : t code -> sexp code
+end
 
 module String (C : Cstage_core.S) = struct
+  type t
+
   open C
 
   let type_ = Type.create ~name:"std::string"
