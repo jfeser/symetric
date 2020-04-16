@@ -37,6 +37,10 @@ module type S = sig
 
   val max : float t -> float t -> float t
 
+  val cos : float t -> float t
+
+  val sin : float t -> float t
+
   val of_sexp : sexp t -> float t
 
   val sexp_of : float t -> sexp t
@@ -74,6 +78,10 @@ module Make (C : Cstage_core.S) = struct
   let min x y = binop "std::min(%s, %s)" type_ x y
 
   let max x y = binop "std::max(%s, %s)" type_ x y
+
+  let cos x = unop "std::cos(%s)" type_ x
+
+  let sin x = unop "std::sin(%s)" type_ x
 
   let of_sexp x =
     eformat "std::atof(((atom*)$(x))->get_body())" type_ "" [ ("x", C x) ]

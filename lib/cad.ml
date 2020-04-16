@@ -35,7 +35,21 @@ module Make (C : Deps) = struct
         | Examples of bool array C.t
         | Vectors of (float * float * float) array C.t
         | Sphere of (float * float * float * float) C.t
-        | Int of int32 C.t
+        (*    adt CylinderHint {
+	          *    float theta_x;
+	          *   float theta_y;
+	          *   float theta_z;
+	          *   float radius;
+	          *   float y;
+	          *   float z;
+	          *   int xlen;
+	          *   float[xlen] xlist;
+	          *   int[xlen] xlistint;
+         * } *)
+        | Cyl of
+            ( (float * float * float * float)
+            * (float * float * float array * int array) )
+            C.t
 
       let examples_t = C.Array.mk_type C.Bool.type_
 
@@ -55,7 +69,6 @@ module Make (C : Deps) = struct
           | Examples _ -> "examples"
           | Vectors _ -> "vectors"
           | Sphere _ -> "sphere"
-          | Int _ -> "int"
         in
         failwith @@ sprintf "Expected %s but got %s" expected got
 
@@ -64,8 +77,6 @@ module Make (C : Deps) = struct
       let to_vectors = function Vectors x -> x | x -> err "vectors" x
 
       let to_sphere = function Sphere x -> x | x -> err "sphere" x
-
-      let to_int = function Int x -> x | _ -> failwith "Expected int"
 
       let sexp_of _ = assert false
 
@@ -118,12 +129,41 @@ module Make (C : Deps) = struct
       let nt x = Nonterm x in
       [
         ("E", App ("sphere", [ nt "S"; nt "V" ]));
-        (* ("E", App ("cyl", [ nt "YI" ]));
-         * ("E", App ("cuboid", [ nt "CI" ])); *)
+        ("E", App ("cyl", [ nt "C"; nt "V" ]));
+        (* ("E", App ("cuboid", [ nt "CI" ])); *)
         ("E", App ("union", [ nt "E"; nt "E" ]));
         ("E", App ("inter", [ nt "E"; nt "E" ]));
         ("E", App ("sub", [ nt "E"; nt "E" ]));
       ]
+
+    let inverse_rotate (x, y, z) (x', y', z') r =
+      (*   float x0 = p.x; float y0 = p.y; float z0 = p.z;
+	     * 
+	     * float x1 = cos(-theta_z)*x0 - sin(-theta_z)*y0;
+	     * float y1 = sin(-theta_z)*x0 + cos(-theta_z)*y0;
+	     * float z1 = z0;
+	     * 
+	     * float x2 = cos(-theta_y)*x1 + sin(-theta_y)*z1;
+	     * float y2 = y1;
+	     * float z2 = -sin(-theta_y)*x1 + cos(-theta_y)*z1;
+	     * 
+	     * float x3 = x2;
+	     * float y3 = cos(-theta_x)*y2 -sin(-theta_x)*z2;
+	     * float z3 = sin(-theta_x)*y2 + cos(-theta_x)*z2;
+       * 
+	         * return new Vector(x = x3, y = y3, z = z3); *)
+      let open C.Float in
+      let x0 = x and y0 = y and z0 = z in
+      C.let_ ((cos (-z') * x0) - (sin (-z') * y0)) @@ fun x1 ->
+      C.let_ ((sin (-z') * x0) + (cos (-z') * y0)) @@ fun y1 ->
+      let z1 = z0 in
+      C.let_ ((cos (-y') * x1) + (sin (-y') * z1)) @@ fun x2 ->
+      let y2 = y1 in
+      C.let_ ((-sin (-y') * x1) + (cos (-y') * z1)) @@ fun z2 ->
+      let x3 = x2 in
+      C.let_ ((cos (-x') * y2) - (sin (-x') * z2)) @@ fun y3 ->
+      C.let_ ((sin (-x') * y2) + (cos (-x') * z2)) @@ fun z3 ->
+      C.Tuple_3.of_tuple (x3, y3, z3)
 
     let rec eval ctx = function
       | Grammar.Term.App ("sphere", [ s; v ]) ->
