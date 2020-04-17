@@ -16,7 +16,7 @@ module type LANG = sig
 
   val grammar : Grammar.t
 
-  val eval : Value.t Map.M(String).t -> Grammar.Term.t -> Value.t
+  val eval : Value.t Map.M(String).t -> [ `Closed ] Grammar.Term.t -> Value.t
 end
 
 module Bench (Dsl : LANG with type 'a code = 'a Mlstage.Code.t) = struct
@@ -33,7 +33,7 @@ module Bench (Dsl : LANG with type 'a code = 'a Mlstage.Code.t) = struct
     let module Sketch = (val spec.sketch) in
     let grammar =
       List.mapi Sketch.inputs ~f:(fun i kind ->
-          (kind, Grammar.Term.App (sprintf "input%d" i, [])))
+          (kind, Grammar.Term.app (sprintf "input%d" i) []))
       @ Dsl.grammar
     in
 

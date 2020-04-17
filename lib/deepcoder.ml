@@ -117,24 +117,25 @@ struct
     let grammar : Grammar.t =
       let open Grammar in
       let open Grammar.Term in
-      let nt x = Nonterm x in
-      let id x = App (x, []) in
+      let nt x = nonterm x in
+      let id x = app x [] in
+      let app (x, y) = app x y in
       [
-        ("I", App ("head", [ nt "L" ]));
-        ("I", App ("last", [ nt "L" ]));
-        ("L", App ("take", [ nt "I"; nt "L" ]));
-        ("L", App ("drop", [ nt "I"; nt "L" ]));
-        ("I", App ("access", [ nt "I"; nt "L" ]));
-        ("I", App ("minimum", [ nt "L" ]));
-        ("I", App ("maximum", [ nt "L" ]));
-        ("L", App ("reverse", [ nt "L" ]));
-        (* ("L", App ("sort", [ nt "L" ])); *)
-        ("I", App ("sum", [ nt "L" ]));
-        ("L", App ("map", [ nt "FII"; nt "L" ]));
-        (* ("L", App ("filter", [ nt "FIB"; nt "L" ])); *)
-        ("I", App ("count", [ nt "FIB"; nt "L" ]));
-        ("L", App ("zipwith", [ nt "FIII"; nt "L"; nt "L" ]));
-        (* ("L", App ("scanl1", [ nt "FIII"; nt "L" ])); *)
+        ("I", app ("head", [ nt "L" ]));
+        ("I", app ("last", [ nt "L" ]));
+        ("L", app ("take", [ nt "I"; nt "L" ]));
+        ("L", app ("drop", [ nt "I"; nt "L" ]));
+        ("I", app ("access", [ nt "I"; nt "L" ]));
+        ("I", app ("minimum", [ nt "L" ]));
+        ("I", app ("maximum", [ nt "L" ]));
+        ("L", app ("reverse", [ nt "L" ]));
+        (* ("L", app ("sort", [ nt "L" ])); *)
+        ("I", app ("sum", [ nt "L" ]));
+        ("L", app ("map", [ nt "FII"; nt "L" ]));
+        (* ("L", app ("filter", [ nt "FIB"; nt "L" ])); *)
+        ("I", app ("count", [ nt "FIB"; nt "L" ]));
+        ("L", app ("zipwith", [ nt "FIII"; nt "L"; nt "L" ]));
+        (* ("L", app ("scanl1", [ nt "FIII"; nt "L" ])); *)
         ("FII", id "(+1)");
         ("FII", id "(-1)");
         ("FII", id "(*2)");
@@ -177,7 +178,7 @@ struct
     let rec eval ctx =
       let open Int in
       function
-      | Grammar.Term.App ("(+1)", []) -> F_int (fun x -> x + int 1)
+      | Grammar.Untyped_term.App ("(+1)", []) -> F_int (fun x -> x + int 1)
       | App ("(-1)", []) -> F_int (fun x -> x - int 1)
       | App ("(*2)", []) -> F_int (fun x -> x * int 2)
       | App ("(/2)", []) -> F_int (fun x -> x / int 2)
@@ -297,15 +298,17 @@ struct
                     (min (length a) (length a'))
                     (fun i -> f (get a i) (get a' i))) )
       | e ->
-          Error.create "Unexpected expression." e [%sexp_of: Grammar.Term.t]
+          Error.create "Unexpected expression." e
+            [%sexp_of: Grammar.Untyped_term.t]
           |> Error.raise
 
     let eval ctx expr =
-      try eval ctx expr
+      try eval ctx (expr : [ `Closed ] Grammar.Term.t :> Grammar.Untyped_term.t)
       with exn ->
         let open Error in
         let err = of_exn exn in
-        tag_arg err "Evaluation failed" expr [%sexp_of: Grammar.Term.t] |> raise
+        tag_arg err "Evaluation failed" expr [%sexp_of: _ Grammar.Term.t]
+        |> raise
   end
 
   module Cache = struct

@@ -125,14 +125,14 @@ module Make (C : Deps) = struct
     let grammar : Grammar.t =
       let open Grammar in
       let open Grammar.Term in
-      let nt x = Nonterm x in
+      let nt x = nonterm x in
       [
-        ("E", App ("sphere", [ nt "S"; nt "V" ]));
-        ("E", App ("cyl", [ nt "C"; nt "V" ]));
+        ("E", app "sphere" [ nt "S"; nt "V" ]);
+        ("E", app "cyl" [ nt "C"; nt "V" ]);
         (* ("E", App ("cuboid", [ nt "CI" ])); *)
-        ("E", App ("union", [ nt "E"; nt "E" ]));
-        ("E", App ("inter", [ nt "E"; nt "E" ]));
-        ("E", App ("sub", [ nt "E"; nt "E" ]));
+        ("E", app "union" [ nt "E"; nt "E" ]);
+        ("E", app "inter" [ nt "E"; nt "E" ]);
+        ("E", app "sub" [ nt "E"; nt "E" ]);
       ]
 
     let inverse_rotate (x, y, z) (x', y', z') r =
@@ -165,7 +165,7 @@ module Make (C : Deps) = struct
       C.Tuple_3.of_tuple (x3, y3, z3)
 
     let rec eval ctx = function
-      | Grammar.Term.App ("sphere", [ s; v ]) ->
+      | Grammar.Untyped_term.App ("sphere", [ s; v ]) ->
           let sphere = to_sphere (eval ctx s) in
           let vectors = to_vectors (eval ctx v) in
           let x, y, z, r = C.Tuple_4.tuple_of sphere in
@@ -192,15 +192,17 @@ module Make (C : Deps) = struct
           @@ C.Array.map2 examples_t v1 v2 ~f:C.Bool.(fun x1 x2 -> x1 && not x2)
       | App (var, []) -> Map.find_exn ctx var
       | e ->
-          Error.create "Unexpected expression." e [%sexp_of: Grammar.Term.t]
+          Error.create "Unexpected expression." e
+            [%sexp_of: Grammar.Untyped_term.t]
           |> Error.raise
 
     let eval ctx expr =
-      try eval ctx expr
+      try eval ctx (expr : [ `Closed ] Grammar.Term.t :> Grammar.Untyped_term.t)
       with exn ->
         let open Error in
         let err = of_exn exn in
-        tag_arg err "Evaluation failed" expr [%sexp_of: Grammar.Term.t] |> raise
+        tag_arg err "Evaluation failed" expr [%sexp_of: _ Grammar.Term.t]
+        |> raise
   end
 
   module Cache = struct

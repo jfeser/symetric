@@ -1,9 +1,11 @@
 open! Core
 open Utils
 
-module Term = struct
+type nonterm = string [@@deriving compare, hash, sexp]
+
+module Untyped_term = struct
   module T = struct
-    type t = Nonterm of string | App of string * t list
+    type t = Nonterm of nonterm | App of string * t list
     [@@deriving compare, hash, sexp]
   end
 
@@ -53,9 +55,31 @@ module Term = struct
         app n ts
 end
 
-type nonterm = string [@@deriving compare, sexp]
+module Term = struct
+  type 's t = Untyped_term.t [@@deriving compare, hash, sexp]
 
-type t = (nonterm * Term.t) list [@@deriving compare, sexp]
+  open Untyped_term
+
+  let nonterm n = Nonterm n
+
+  let app n ts = App (n, ts)
+
+  let non_terminals = non_terminals
+
+  let size = size
+
+  let n_holes = n_holes
+
+  let to_string = to_string
+
+  let with_holes = with_holes
+
+  let map = map
+end
+
+type t = (nonterm * Untyped_term.t) list [@@deriving compare, sexp]
+
+open Untyped_term
 
 let rhs g s =
   List.filter_map g ~f:(fun (s', t) -> if String.(s = s') then Some t else None)
@@ -77,12 +101,11 @@ let inline sym g =
         if [%compare.equal: nonterm] sym s then Some r else None)
   in
   let rec subst_all = function
-    | Term.Nonterm x as t ->
-        if [%compare.equal: nonterm] sym x then rhs else [ t ]
+    | Nonterm x as t -> if [%compare.equal: nonterm] sym x then rhs else [ t ]
     | App (_, []) as t -> [ t ]
     | App (f, ts) ->
         List.map ts ~f:subst_all |> product
-        |> List.map ~f:(fun ts -> Term.App (f, ts))
+        |> List.map ~f:(fun ts -> App (f, ts))
   in
   List.concat_map g ~f:(fun (lhs, rhs) ->
       subst_all rhs |> List.map ~f:(fun rhs' -> (lhs, rhs')))
@@ -126,7 +149,7 @@ let sample ?(state = Random.State.default) ?(factor = 0.01) symbol g =
     in
     Term.map random_prod ~nonterm:(sample pcount)
   in
-  sample (Map.empty (module Term)) symbol
+  sample (Map.empty (module Untyped_term)) symbol
 
 let sample_seq ?state ?factor symbol g =
   Sequence.unfold ~init:() ~f:(fun () ->

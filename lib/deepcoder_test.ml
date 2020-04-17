@@ -704,7 +704,7 @@ let%expect_test "" =
 let%expect_test "" =
   let module Code = Mlstage.Code in
   let module Deepcoder = Deepcoder.Make (Code.Array) (Code) in
-  let g = ("L", Grammar.Term.App ("input", [])) :: Deepcoder.Lang.grammar in
+  let g = ("L", Grammar.Term.app "input" []) :: Deepcoder.Lang.grammar in
   let state = Random.State.make [||] in
   Grammar.sample_seq ~state "L" g
   |> Sequence.filter ~f:(fun t ->

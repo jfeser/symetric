@@ -60,7 +60,7 @@ module type LANG = sig
 
   val grammar : Grammar.t
 
-  val eval : Value.t Map.M(String).t -> Grammar.Term.t -> Value.t
+  val eval : Value.t Map.M(String).t -> [ `Closed ] Grammar.Term.t -> Value.t
 end
 
 module type CODE = sig

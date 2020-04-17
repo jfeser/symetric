@@ -19,7 +19,7 @@ let to_list a = List.init (Bigarray.Array1.dim a) ~f:(fun i -> a.{i})
 module V = struct
   type state = { cost : int; symbol : string } [@@deriving compare, hash, sexp]
 
-  type code = { cost : int; term : Grammar.Term.t }
+  type code = { cost : int; term : [ `Closed | `Open ] Grammar.Term.t }
   [@@deriving compare, hash, sexp]
 
   type arg = { id : int; n_args : int } [@@deriving compare, hash, sexp]
@@ -105,7 +105,7 @@ let to_contexts term args =
   List.iter ctxs ~f:(fun ctx ->
       [%test_result: int]
         ~message:
-          ( [%sexp_of: Grammar.Term.t * (V.state * _) list] (term, args)
+          ( [%sexp_of: _ Grammar.Term.t * (V.state * _) list] (term, args)
           |> Sexp.to_string_hum )
         ~expect:(Grammar.Term.non_terminals term |> List.length)
         (Map.length ctx));
@@ -209,7 +209,7 @@ struct
         S.ite found_target
           (fun () ->
             S.sseq
-              ( S.print ([%sexp_of: Gr.Term.t] term |> Sexp.to_string_hum)
+              ( S.print ([%sexp_of: _ Gr.Term.t] term |> Sexp.to_string_hum)
               :: List.map args ~f:(fun (n, v) -> reconstruct ctx v n) ))
           (fun () -> S.unit)
       in
