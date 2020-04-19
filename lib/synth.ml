@@ -16,69 +16,6 @@ let for_all a f =
 
 let to_list a = List.init (Bigarray.Array1.dim a) ~f:(fun i -> a.{i})
 
-module V = struct
-  type state = { cost : int; symbol : string } [@@deriving compare, hash, sexp]
-
-  type code = { cost : int; term : [ `Closed | `Open ] Grammar.Term.t }
-  [@@deriving compare, hash, sexp]
-
-  type arg = { id : int; n_args : int } [@@deriving compare, hash, sexp]
-
-  type t = State of state | Code of code | Arg of arg
-  [@@deriving compare, hash, sexp]
-
-  let to_state = function State s -> s | _ -> failwith "Not a state"
-
-  let to_code = function Code s -> s | _ -> failwith "Not a code"
-
-  let equal = [%compare.equal: t]
-end
-
-module G = struct
-  module X = struct
-    open V
-
-    let graph_attributes _ = []
-
-    let default_vertex_attributes _ = []
-
-    let vertex_name v = [%sexp_of: V.t] v |> Sexp.to_string |> sprintf "%S"
-
-    let vertex_label = function
-      | State v -> sprintf "%s : %d" v.symbol v.cost
-      | Code v -> Grammar.Term.to_string v.term
-      | Arg x -> sprintf "%d" x.n_args
-
-    let vertex_attributes v =
-      let shape = match v with Arg _ -> [ `Shape `Circle ] | _ -> [] in
-      let label = [ `Label (vertex_label v) ] in
-      shape @ label
-
-    let get_subgraph _ = None
-
-    let default_edge_attributes _ = []
-
-    let edge_attributes _ = []
-
-    include Graph.Persistent.Digraph.ConcreteBidirectional (V)
-  end
-
-  include X
-  include Graph.Graphviz.Dot (X)
-  include Graph.Traverse.Dfs (X)
-  include Graph.Oper.P (X)
-  module Topo = Graph.Topological.Make_stable (X)
-
-  let filter_vertex g ~f =
-    fold_vertex (fun v g -> if f v then remove_vertex g v else g) g g
-
-  let add_edges g vs =
-    List.fold_left ~init:g ~f:(fun g (v, v') -> add_edge g v v') vs
-
-  let reverse g =
-    fold_edges (fun v v' g -> add_edge (remove_edge g v v') v' v) g g
-end
-
 let rec n_cartesian_product = function
   | [] -> [ [] ]
   | h :: t ->
@@ -88,7 +25,7 @@ let rec n_cartesian_product = function
 let to_contexts term args =
   let new_term, holes = Grammar.with_holes term in
   let ctxs =
-    List.group_by (module String) (fun (n, _) -> n.V.symbol) args
+    List.group_by (module String) (fun (sym, _) -> sym) args
     |> List.map ~f:(fun (sym, vals) ->
            let vals = List.map vals ~f:Tuple.T2.get2
            and holes =
@@ -105,7 +42,8 @@ let to_contexts term args =
   List.iter ctxs ~f:(fun ctx ->
       [%test_result: int]
         ~message:
-          ( [%sexp_of: _ Grammar.Term.t * (V.state * _) list] (term, args)
+          ( [%sexp_of: _ Grammar.Term.t * (Grammar.nonterm * _) list]
+              (term, args)
           |> Sexp.to_string_hum )
         ~expect:(Grammar.Term.non_terminals term |> List.length)
         (Map.length ctx));
@@ -117,9 +55,80 @@ module Make
     (L : Sigs.LANG with type 'a code = 'a S.t)
     (C : Sigs.CACHE with type value = L.Value.t and type 'a code = 'a S.t) =
 struct
+  module Gr = Grammar
+
+  module V = struct
+    type state = { cost : int; symbol : string }
+    [@@deriving compare, hash, sexp]
+
+    type code = {
+      cost : int;
+      rule :
+        ((L.Value.t, bool S.t) Semantics.t
+        [@compare.ignore] [@sexp.opaque])
+        Gr.Rule.t;
+    }
+    [@@deriving compare, hash, sexp]
+
+    type arg = { id : int; n_args : int } [@@deriving compare, hash, sexp]
+
+    type t = State of state | Code of code | Arg of arg
+    [@@deriving compare, hash, sexp]
+
+    let to_state = function State s -> s | _ -> failwith "Not a state"
+
+    let to_code = function Code s -> s | _ -> failwith "Not a code"
+
+    let equal = [%compare.equal: t]
+  end
+
+  module G = struct
+    module X = struct
+      open V
+
+      let graph_attributes _ = []
+
+      let default_vertex_attributes _ = []
+
+      let vertex_name v = [%sexp_of: V.t] v |> Sexp.to_string |> sprintf "%S"
+
+      let vertex_label = function
+        | State v -> sprintf "%s : %d" v.symbol v.cost
+        | Code v -> Gr.Term.to_string @@ Gr.Rule.rhs v.rule
+        | Arg x -> sprintf "%d" x.n_args
+
+      let vertex_attributes v =
+        let shape = match v with Arg _ -> [ `Shape `Circle ] | _ -> [] in
+        let label = [ `Label (vertex_label v) ] in
+        shape @ label
+
+      let get_subgraph _ = None
+
+      let default_edge_attributes _ = []
+
+      let edge_attributes _ = []
+
+      include Graph.Persistent.Digraph.ConcreteBidirectional (V)
+    end
+
+    include X
+    include Graph.Graphviz.Dot (X)
+    include Graph.Traverse.Dfs (X)
+    include Graph.Oper.P (X)
+    module Topo = Graph.Topological.Make_stable (X)
+
+    let filter_vertex g ~f =
+      fold_vertex (fun v g -> if f v then remove_vertex g v else g) g g
+
+    let add_edges g vs =
+      List.fold_left ~init:g ~f:(fun g (v, v') -> add_edge g v v') vs
+
+    let reverse g =
+      fold_edges (fun v v' g -> add_edge (remove_edge g v v') v' v) g g
+  end
+
   open S.Int
   open C
-  module Gr = Grammar
 
   let cache = C.empty ()
 
@@ -191,6 +200,9 @@ struct
 
   let costs_t = S.Array.mk_type S.Int.type_
 
+  let to_contexts term args =
+    to_contexts term (List.map args ~f:(fun (s, v) -> (s.V.symbol, v)))
+
   module Reconstruct = struct
     type ctx = { graph : G.t; cache : cache code }
 
@@ -227,7 +239,8 @@ struct
     (** Reconstruct a target assuming that it was produced by a particular code
       node. *)
     and of_code ({ graph = g; _ } as ctx) target code_node =
-      let term = (V.to_code code_node).term and args = G.succ g code_node in
+      let term = Gr.Rule.rhs @@ (V.to_code code_node).rule
+      and args = G.succ g code_node in
       if List.is_empty args then of_args ctx target term []
       else
         List.map args ~f:(fun n -> of_args ctx target term (G.succ g n))
@@ -269,29 +282,53 @@ struct
       g g
     |> G.filter_vertex ~f:(fun v -> match v with State _ -> false | _ -> true)
 
+  let argument_graph rule =
+    let module G = Graph.Persistent.Digraph.ConcreteBidirectional (Int) in
+    let module Topo = Graph.Topological.Make_stable (G) in
+    let indexes_g =
+      List.init ~f:Fun.id (Gr.Term.n_holes @@ Gr.Rule.rhs rule)
+      |> List.fold_left ~init:G.empty ~f:G.add_vertex
+    in
+    let g =
+      List.fold_left (Gr.Rule.semantics rule) ~init:indexes_g ~f:(fun g ->
+        function
+        | Semantics.Prop { deps; out } ->
+            List.fold_left deps ~init:g ~f:(fun g node -> G.add_edge g node out)
+        | _ -> g)
+    in
+    Topo.fold (fun v l -> v :: l) g [] |> List.rev
+
   let search_graph ?(prune = true) max_cost =
     (* Compute search graph. *)
     let fresh = Fresh.create () and g = ref G.empty in
 
     for cost = 0 to max_cost do
-      List.filter L.grammar ~f:(fun (_, rhs) -> Int.(Gr.Term.size rhs <= cost))
-      |> List.iter ~f:(fun (lhs, rhs) ->
-             let lhs_v = V.State { cost; symbol = lhs }
-             and rhs_v = V.Code { cost; term = rhs } in
-             g := G.add_edge !g lhs_v rhs_v;
+      (* Select the rules that have cheap enough right hand sides. *)
+      let rules =
+        List.filter L.grammar ~f:(fun rule ->
+            Int.(Gr.(Term.size (Rule.rhs rule) <= cost)))
+      in
 
-             let n_holes = Gr.Term.n_holes rhs and size = Gr.Term.size rhs in
-             Combinat.Partition.(
-               iter
-                 Int.(create ~n:(cost - size + n_holes) ~parts:n_holes)
-                 ~f:(fun costs ->
-                   let arg = V.Arg { id = Fresh.int fresh; n_args = n_holes } in
-                   Gr.Term.non_terminals rhs
-                   |> List.iteri ~f:(fun i sym ->
-                          g := G.add_edge !g rhs_v arg;
-                          g :=
-                            G.add_edge !g arg
-                              (V.State { cost = costs.{i}; symbol = sym })))))
+      List.iter rules ~f:(fun rule ->
+          (* Add state and code nodes for the rule's output. *)
+          let lhs = Gr.Rule.lhs rule and rhs = Gr.Rule.rhs rule in
+          let lhs_v = V.State { cost; symbol = lhs }
+          and rhs_v = V.Code { cost; rule } in
+          g := G.add_edge !g lhs_v rhs_v;
+
+          (* Add an arg node for each partition of the argument costs. *)
+          let n_holes = Gr.Term.n_holes rhs and size = Gr.Term.size rhs in
+          Combinat.Partition.(
+            iter
+              Int.(create ~n:(cost - size + n_holes) ~parts:n_holes)
+              ~f:(fun costs ->
+                let arg = V.Arg { id = Fresh.int fresh; n_args = n_holes } in
+                Gr.Term.non_terminals rhs
+                |> List.iteri ~f:(fun i sym ->
+                       g := G.add_edge !g rhs_v arg;
+                       g :=
+                         G.add_edge !g arg
+                           (V.State { cost = costs.{i}; symbol = sym })))))
     done;
     let g = !g in
 
@@ -337,7 +374,8 @@ struct
 
   let fill_code g state code_node =
     let code = V.to_code code_node in
-    let term = code.V.term
+    let rule = code.V.rule in
+    let term = Gr.Rule.rhs code.V.rule
     and symbol = state.V.symbol
     and cost = state.V.cost in
 
@@ -386,21 +424,60 @@ struct
     in
 
     let args = G.succ g code_node in
+    let arg_order = argument_graph @@ (V.to_code code_node).rule in
     if List.is_empty args then [ fill [] ]
     else
-      List.map args ~f:(fun arg_node ->
+      List.mapi arg_order ~f:(fun idx arg_n ->
+          let preds =
+            List.filter_map (Gr.Rule.semantics rule) ~f:(function
+              | Pred { deps; func } ->
+                  let seen = List.take arg_order idx in
+                  if List.for_all deps ~f:(List.mem seen ~equal:Core.Int.( = ))
+                  then Some func
+                  else None
+              | _ -> None)
+          in
+          let prop =
+            List.find_map (Gr.Rule.semantics rule) ~f:(function
+              | Prop { out; deps; func } when Core.Int.(out = idx) ->
+                  let seen = List.take arg_order idx in
+                  if List.for_all deps ~f:(List.mem seen ~equal:Core.Int.( = ))
+                  then Some func
+                  else None
+              | _ -> None)
+          in
+          let arg = List.nth_exn args arg_n in
           let fill =
-            G.succ g arg_node
-            |> List.fold_left ~init:fill ~f:(fun fill node ->
-                   let state = V.to_state node in
-                   let symbol = state.symbol in
-                   let cost = state.cost in
-                   let fill ctx =
-                     cache_iter ~sym:symbol ~size:(int cost)
-                       ~f:(fun v -> fill ((state, v) :: ctx))
-                       (cache.value ())
-                   in
-                   fill)
+            List.fold_left (G.succ g arg) ~init:fill ~f:(fun fill node ->
+                let state = V.to_state node in
+                let symbol = state.symbol in
+                let cost = state.cost in
+                let fill_prop =
+                  match prop with
+                  | Some f ->
+                      fun ctx ->
+                        fill
+                          ((state, f (List.map ctx ~f:(fun (_, v) -> v))) :: ctx)
+                  | None ->
+                      fun ctx ->
+                        cache_iter ~sym:symbol ~size:(int cost)
+                          ~f:(fun v -> fill ((state, v) :: ctx))
+                          (cache.value ())
+                in
+                let fill_pred =
+                  match preds with
+                  | [] -> fill_prop
+                  | ps ->
+                      fun ctx ->
+                        let pred_ctx = List.map ctx ~f:(fun (_, v) -> v) in
+                        let pred =
+                          List.map ps ~f:(fun p -> p pred_ctx)
+                          |> List.fold_left ~init:(S.Bool.bool false)
+                               ~f:S.Bool.( && )
+                        in
+                        S.ite pred (fun () -> fill ctx) (fun () -> S.unit)
+                in
+                fill_pred)
           in
           fill [])
 

@@ -23,7 +23,7 @@ let main () =
   end in
   let open Synth.Make (Sketch) (Code) (Cad.Lang) (Cad.Cache) in
   let g = search_graph 10 in
-  Out_channel.with_file "search.dot" ~f:(fun ch -> Synth.G.output_graph ch g);
+  Out_channel.with_file "search.dot" ~f:(fun ch -> G.output_graph ch g);
   let synth = enumerate 10 in
   print_endline (Code.to_string synth)
 

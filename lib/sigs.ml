@@ -58,7 +58,7 @@ module type LANG = sig
     val sexp_of : t -> sexp code
   end
 
-  val grammar : Grammar.t
+  val grammar : (Value.t, bool code) Semantics.t Grammar.t
 
   val eval : Value.t Map.M(String).t -> [ `Closed ] Grammar.Term.t -> Value.t
 end

@@ -114,7 +114,7 @@ struct
 
     type 'a code = 'a C.t
 
-    let grammar : Grammar.t =
+    let grammar : (Value.t, bool code) Semantics.t Grammar.t =
       let open Grammar in
       let open Grammar.Term in
       let nt x = nonterm x in
@@ -156,7 +156,7 @@ struct
         ("FIII", id "min");
         ("FIII", id "max");
       ]
-      |> inline "FII" |> inline "FIB" |> inline "FIII"
+      |> Grammar.of_list |> inline "FII" |> inline "FIB" |> inline "FIII"
 
     open Value
 

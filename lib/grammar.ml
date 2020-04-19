@@ -45,10 +45,8 @@ module Untyped_term = struct
     let t' = rename t in
     (t', !holes)
 
-  let rec map ?(nonterm = fun x -> Nonterm x) ?(app = fun n ts -> App (n, ts)) t
-      =
-    (* print_endline (to_string t); *)
-    match t with
+  let rec map ?(nonterm = fun x -> Nonterm x) ?(app = fun n ts -> App (n, ts)) =
+    function
     | Nonterm t -> nonterm t
     | App (n, ts) ->
         let ts = List.map ts ~f:(map ~nonterm ~app) in
@@ -77,16 +75,35 @@ module Term = struct
   let map = map
 end
 
-type t = (nonterm * Untyped_term.t) list [@@deriving compare, sexp]
+module Rule = struct
+  type 's t = {
+    lhs : nonterm;
+    rhs : Untyped_term.t;
+    sem : 's list; [@sexp.omit_nil]
+  }
+  [@@deriving compare, hash, sexp]
+
+  let lhs { lhs; _ } = lhs
+
+  let rhs { rhs; _ } = rhs
+
+  let semantics { sem; _ } = sem
+
+  let of_tuple (lhs, rhs) = { lhs; rhs; sem = [] }
+end
+
+type 's t = 's Rule.t list [@@deriving compare, sexp]
 
 open Untyped_term
 
+let of_list = List.map ~f:Rule.of_tuple
+
 let rhs g s =
-  List.filter_map g ~f:(fun (s', t) -> if String.(s = s') then Some t else None)
+  List.filter_map g ~f:(fun r ->
+      if String.(s = Rule.lhs r) then Some (Rule.rhs r) else None)
 
 let non_terminals g =
-  List.map g ~f:(fun (x, _) -> x)
-  |> List.dedup_and_sort ~compare:[%compare: nonterm]
+  List.map g ~f:Rule.lhs |> List.dedup_and_sort ~compare:[%compare: nonterm]
 
 let rec product = function
   | [] -> []
@@ -96,25 +113,19 @@ let rec product = function
       |> List.concat_map ~f:(fun xs -> List.map s ~f:(fun x -> x :: xs))
 
 let inline sym g =
-  let rhs =
-    List.filter_map g ~f:(fun (s, r) ->
-        if [%compare.equal: nonterm] sym s then Some r else None)
-  in
+  let rh_sides = rhs g sym in
   let rec subst_all = function
-    | Nonterm x as t -> if [%compare.equal: nonterm] sym x then rhs else [ t ]
+    | Nonterm x as t ->
+        if [%compare.equal: nonterm] sym x then rh_sides else [ t ]
     | App (_, []) as t -> [ t ]
     | App (f, ts) ->
         List.map ts ~f:subst_all |> product
         |> List.map ~f:(fun ts -> App (f, ts))
   in
-  List.concat_map g ~f:(fun (lhs, rhs) ->
-      subst_all rhs |> List.map ~f:(fun rhs' -> (lhs, rhs')))
+  List.concat_map g ~f:(fun r ->
+      subst_all r.rhs |> List.map ~f:(fun rhs -> { r with rhs }))
 
 let with_holes ?fresh = Term.with_holes ?fresh ~equal:[%compare.equal: nonterm]
-
-let productions g sym =
-  List.filter g ~f:(fun (sym', _) -> [%compare.equal: nonterm] sym sym')
-  |> List.map ~f:(fun (_, prod) -> prod)
 
 let weighted_random ?(state = Random.State.default) l =
   if List.length l <= 0 then failwith "Selecting from an empty list";
@@ -134,7 +145,7 @@ let weighted_random ?(state = Random.State.default) l =
 let sample ?(state = Random.State.default) ?(factor = 0.01) symbol g =
   let rec sample pcount sym =
     let random_prod =
-      productions g sym
+      rhs g sym
       |> List.map ~f:(fun p ->
              let w =
                Map.find pcount p

@@ -14,8 +14,9 @@ let main () =
   let module DeepSynth =
     Synth.Make (Sketch) (Code) (Deepcoder.Lang) (Deepcoder.Cache)
   in
-  let g = DeepSynth.search_graph 10 in
-  Out_channel.with_file "search.dot" ~f:(fun ch -> Synth.G.output_graph ch g);
+  let open DeepSynth in
+  let g = search_graph 10 in
+  Out_channel.with_file "search.dot" ~f:(fun ch -> G.output_graph ch g);
   let synth = DeepSynth.enumerate 10 in
   print_endline (Code.to_string synth)
 

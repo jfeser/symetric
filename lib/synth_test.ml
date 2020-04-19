@@ -8,16 +8,12 @@ let%expect_test "" =
   [%expect {| ((App x ()) (())) |}]
 
 let%expect_test "" =
-  to_contexts
-    (app "access" [ nonterm "I"; nonterm "L" ])
-    [ ({ cost = 1; symbol = "I" }, 0); ({ cost = 1; symbol = "L" }, 1) ]
+  to_contexts (app "access" [ nonterm "I"; nonterm "L" ]) [ ("I", 0); ("L", 1) ]
   |> [%sexp_of: _ t * int Map.M(String).t list] |> print_s;
   [%expect {| ((App access ((App I0 ()) (App L1 ()))) (((I0 0) (L1 1)))) |}]
 
 let%expect_test "" =
-  to_contexts
-    (app "sum" [ nonterm "I"; nonterm "I" ])
-    [ ({ cost = 1; symbol = "I" }, 0); ({ cost = 1; symbol = "I" }, 1) ]
+  to_contexts (app "sum" [ nonterm "I"; nonterm "I" ]) [ ("I", 0); ("I", 1) ]
   |> [%sexp_of: _ t * int Map.M(String).t list] |> print_s;
   [%expect
     {| ((App sum ((App I0 ()) (App I1 ()))) (((I0 0) (I1 1)) ((I0 1) (I1 0)))) |}]
@@ -25,11 +21,7 @@ let%expect_test "" =
 let%expect_test "" =
   to_contexts
     (app "sum3" [ nonterm "I"; nonterm "I"; nonterm "J" ])
-    [
-      ({ cost = 1; symbol = "I" }, 0);
-      ({ cost = 1; symbol = "I" }, 1);
-      ({ cost = 1; symbol = "J" }, 2);
-    ]
+    [ ("I", 0); ("I", 1); ("J", 2) ]
   |> [%sexp_of: _ t * int Map.M(String).t list] |> print_s;
   [%expect
     {|

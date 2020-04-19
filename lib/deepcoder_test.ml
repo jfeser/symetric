@@ -704,7 +704,8 @@ let%expect_test "" =
 let%expect_test "" =
   let module Code = Mlstage.Code in
   let module Deepcoder = Deepcoder.Make (Code.Array) (Code) in
-  let g = ("L", Grammar.Term.app "input" []) :: Deepcoder.Lang.grammar in
+  let open Deepcoder in
+  let g = Grammar.(Rule.of_tuple ("L", Term.app "input" [])) :: Lang.grammar in
   let state = Random.State.make [||] in
   Grammar.sample_seq ~state "L" g
   |> Sequence.filter ~f:(fun t ->
@@ -712,14 +713,12 @@ let%expect_test "" =
          6 <= n && n <= 10)
   |> Sequence.filter_map ~f:(fun t ->
          try
-           let input = Deepcoder.Value.random ~state "L" 5 in
-           let input_str = input |> Deepcoder.Value.sexp_of |> Code.to_string in
+           let input = Value.random ~state "L" 5 in
+           let input_str = input |> Value.sexp_of |> Code.to_string in
 
            let output =
-             Deepcoder.Lang.eval
-               (Map.of_alist_exn (module String) [ ("input", input) ])
-               t
-             |> Deepcoder.Value.sexp_of |> Code.to_string
+             Lang.eval (Map.of_alist_exn (module String) [ ("input", input) ]) t
+             |> Value.sexp_of |> Code.to_string
            in
            Some (t, input_str, output)
          with _ -> None)

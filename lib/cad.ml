@@ -122,18 +122,19 @@ module Make (C : Deps) = struct
 
     type 'a code = 'a C.t
 
-    let grammar : Grammar.t =
+    let grammar : (Value.t, bool code) Semantics.t Grammar.t =
       let open Grammar in
       let open Grammar.Term in
       let nt x = nonterm x in
-      [
-        ("E", app "sphere" [ nt "S"; nt "V" ]);
-        ("E", app "cyl" [ nt "C"; nt "V" ]);
-        (* ("E", App ("cuboid", [ nt "CI" ])); *)
-        ("E", app "union" [ nt "E"; nt "E" ]);
-        ("E", app "inter" [ nt "E"; nt "E" ]);
-        ("E", app "sub" [ nt "E"; nt "E" ]);
-      ]
+      Grammar.of_list
+        [
+          ("E", app "sphere" [ nt "S"; nt "V" ]);
+          ("E", app "cyl" [ nt "C"; nt "V" ]);
+          (* ("E", App ("cuboid", [ nt "CI" ])); *)
+          ("E", app "union" [ nt "E"; nt "E" ]);
+          ("E", app "inter" [ nt "E"; nt "E" ]);
+          ("E", app "sub" [ nt "E"; nt "E" ]);
+        ]
 
     let inverse_rotate (x, y, z) (x', y', z') r =
       (*   float x0 = p.x; float y0 = p.y; float z0 = p.z;
