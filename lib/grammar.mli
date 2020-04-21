@@ -47,6 +47,8 @@ module Term : sig
 
   val with_holes :
     ?fresh:Utils.Fresh.t -> _ t -> [ `Closed ] t * (nonterm * int * string) list
+
+  val bindings : 'a t -> (Bind.t * 'a t) list
 end
 
 module Rule : sig

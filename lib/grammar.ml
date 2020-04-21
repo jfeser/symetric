@@ -21,7 +21,7 @@ type 'n term =
 [@@deriving compare, hash, sexp]
 
 let to_preorder t =
-  let i = ref 0 in
+  let i = ref (-1) in
   let rec conv = function
     | As (t, n) -> As (conv t, n)
     | App (f, ts) -> App (f, List.map ts ~f:conv)
@@ -30,6 +30,11 @@ let to_preorder t =
         Nonterm (n, !i)
   in
   conv t
+
+let rec bindings = function
+  | Nonterm _ -> []
+  | App (_, ts) -> List.concat_map ts ~f:bindings
+  | As (t, n') -> (n', t) :: bindings t
 
 let rec find_binding n = function
   | Nonterm _ -> None
@@ -64,22 +69,31 @@ module Untyped_term = struct
         |> sprintf "%s(%s)" f
     | As (t, n) -> sprintf "%s as %s" (to_string t) n
 
-  let with_holes ?fresh t =
+  let with_holes ?fresh term =
     let fresh = Option.value fresh ~default:(Fresh.create ()) in
+    let term = to_preorder term in
     let holes =
-      to_preorder t |> non_terminals
-      |> List.map ~f:(fun (n, i) -> (n, i, Fresh.name fresh "%d"))
+      non_terminals term
+      |> List.map ~f:(fun (sym, idx) -> (sym, idx, sym ^ Fresh.name fresh "%d"))
     in
+    let module Key = struct
+      module T = struct
+        type t = nonterm * int [@@deriving compare, sexp]
+      end
+
+      include T
+      include Comparator.Make (T)
+    end in
     let holes_ctx =
-      List.map holes ~f:(fun (n, _, x) -> (n, x))
-      |> Map.of_alist_exn (module String)
+      List.map holes ~f:(fun (sym, idx, id) -> ((sym, idx), App (id, [])))
+      |> Map.of_alist_exn (module Key)
     in
     let rec rename = function
-      | Nonterm v -> Nonterm (Map.find_exn holes_ctx v)
+      | Nonterm v -> Map.find_exn holes_ctx v
       | App (f, ts) -> App (f, List.map ts ~f:rename)
       | As (t, n) -> As (rename t, n)
     in
-    (rename t, holes)
+    (rename term, holes)
 
   let rec map ?(nonterm = fun x -> Nonterm x) ?(app = fun n ts -> App (n, ts))
       ?(as_ = fun t n -> As (t, n)) = function
@@ -112,6 +126,8 @@ module Term = struct
   let with_holes = with_holes
 
   let map = map
+
+  let bindings = bindings
 end
 
 module Rule = struct

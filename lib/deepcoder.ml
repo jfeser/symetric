@@ -160,9 +160,13 @@ struct
 
     open Value
 
-    let to_array = function A x -> x | _ -> assert false
+    let err expected x =
+      let got = match x with A _ -> "array" | I _ -> "int" | _ -> "other" in
+      failwith @@ sprintf "Expected %s but got %s" expected got
 
-    let to_int = function I x -> x | _ -> assert false
+    let to_array = function A x -> x | x -> err "array" x
+
+    let to_int = function I x -> x | x -> err "int" x
 
     let to_int_f = function F_int x -> x | _ -> assert false
 

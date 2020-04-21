@@ -236,7 +236,7 @@ let%expect_test "" =
         }
         // end Array.init
 
-        if ((0 || (x65 == x37))) {
+        if ((x65 == x37)) {
           std::cout << "(App reverse ((App L0 ())))" << std::endl;
           reconstruct_L_1(std::make_pair(x36, x62));
           x73 = 0;
@@ -274,7 +274,7 @@ let%expect_test "" =
         }
         // end Array.init
 
-        if ((0 || (x41 == x37))) {
+        if ((x41 == x37)) {
           std::cout << "(App reverse ((App L0 ())))" << std::endl;
           reconstruct_L_1(std::make_pair(x36, *x38));
           x53 = 0;
@@ -323,17 +323,17 @@ let%expect_test "" =
                        ^
                         = 0
     <stdin>:174:30: warning: variable 'x52' is uninitialized when used here [-Wuninitialized]
-             int x52;  int x53 = x52;    std::vector<std::vector<int32_t>> x39 = *x38;
+             int x52;  int x53 = x52;   std::vector<std::vector<int32_t>> x39 = *x38;
                                  ^~~
     <stdin>:174:17: note: initialize the variable 'x52' to silence this warning
-             int x52;  int x53 = x52;    std::vector<std::vector<int32_t>> x39 = *x38;
+             int x52;  int x53 = x52;   std::vector<std::vector<int32_t>> x39 = *x38;
                     ^
                      = 0
     <stdin>:146:24: warning: variable 'x72' is uninitialized when used here [-Wuninitialized]
-       int x72;  int x73 = x72;    std::vector<std::vector<int32_t>> x63 = x62;
+       int x72;  int x73 = x72;   std::vector<std::vector<int32_t>> x63 = x62;
                            ^~~
     <stdin>:146:11: note: initialize the variable 'x72' to silence this warning
-       int x72;  int x73 = x72;    std::vector<std::vector<int32_t>> x63 = x62;
+       int x72;  int x73 = x72;   std::vector<std::vector<int32_t>> x63 = x62;
               ^
                = 0
     <stdin>:144:410: warning: variable 'x74' is uninitialized when used here [-Wuninitialized]
@@ -593,7 +593,7 @@ let%expect_test "" =
         }
         // end Array.init
 
-        if ((0 || (x73 == x43))) {
+        if ((x73 == x43)) {
           std::cout << "(App reverse ((App L0 ())))" << std::endl;
           reconstruct_L_1(std::make_pair(x42, x70));
           x81 = 0;
@@ -632,7 +632,7 @@ let%expect_test "" =
         }
         // end Array.init
 
-        if ((0 || (x47 == x43))) {
+        if ((x47 == x43)) {
           std::cout << "(App reverse ((App L0 ())))" << std::endl;
           reconstruct_L_1(std::make_pair(x42, *x44));
           x59 = 0;
@@ -679,17 +679,17 @@ let%expect_test "" =
                        ^
                         = 0
     <stdin>:174:30: warning: variable 'x58' is uninitialized when used here [-Wuninitialized]
-             int x58;  int x59 = x58;    std::vector<span<int32_t>> x45 = *x44;
+             int x58;  int x59 = x58;   std::vector<span<int32_t>> x45 = *x44;
                                  ^~~
     <stdin>:174:17: note: initialize the variable 'x58' to silence this warning
-             int x58;  int x59 = x58;    std::vector<span<int32_t>> x45 = *x44;
+             int x58;  int x59 = x58;   std::vector<span<int32_t>> x45 = *x44;
                     ^
                      = 0
     <stdin>:146:24: warning: variable 'x80' is uninitialized when used here [-Wuninitialized]
-       int x80;  int x81 = x80;    std::vector<span<int32_t>> x71 = x70;
+       int x80;  int x81 = x80;   std::vector<span<int32_t>> x71 = x70;
                            ^~~
     <stdin>:146:11: note: initialize the variable 'x80' to silence this warning
-       int x80;  int x81 = x80;    std::vector<span<int32_t>> x71 = x70;
+       int x80;  int x81 = x80;   std::vector<span<int32_t>> x71 = x70;
               ^
                = 0
     <stdin>:144:382: warning: variable 'x82' is uninitialized when used here [-Wuninitialized]

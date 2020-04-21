@@ -1,6 +1,7 @@
 open! Core
 module Fresh = Utils.Fresh
 open Utils.Collections
+module Gr = Grammar
 
 module Log = Utils.Make_log (struct
   let src = Logs.Src.create "staged-synth.synth"
@@ -22,32 +23,27 @@ let rec n_cartesian_product = function
       let rest = n_cartesian_product t in
       List.concat (List.map ~f:(fun i -> List.map ~f:(fun r -> i :: r) rest) h)
 
+module Arg = struct
+  type 'a t = { symbol : string; index : int; value : 'a }
+end
+
 let to_contexts term args =
-  let new_term, holes = Grammar.with_holes term in
-  let ctxs =
-    List.group_by (module String) (fun (sym, _) -> sym) args
-    |> List.map ~f:(fun (sym, vals) ->
-           let vals = List.map vals ~f:Tuple.T2.get2
-           and holes =
-             List.filter holes ~f:(fun (sym', _) -> String.(sym = sym'))
-             |> List.map ~f:(fun (_, x) -> x)
-           in
-           Combinat.Permutation.Of_list.(to_list (create vals))
-           |> List.map ~f:(fun vs -> List.zip_exn holes vs))
-    |> n_cartesian_product
-    |> List.map ~f:(fun ctxs ->
-           List.concat ctxs |> Map.of_alist_exn (module String))
+  let term, holes = Grammar.with_holes term in
+  let preorder_names =
+    List.map holes ~f:(fun (sym, idx, id) -> (idx, (id, sym)))
+    |> Map.of_alist_exn (module Int)
   in
-  (* Every context should have a binding for every nonterminal. *)
-  List.iter ctxs ~f:(fun ctx ->
-      [%test_result: int]
-        ~message:
-          ( [%sexp_of: _ Grammar.Term.t * (Grammar.nonterm * _) list]
-              (term, args)
-          |> Sexp.to_string_hum )
-        ~expect:(Grammar.Term.non_terminals term |> List.length)
-        (Map.length ctx));
-  (new_term, ctxs)
+  let ctx =
+    List.map args ~f:(fun (idx, sym, value) ->
+        let id, sym' = Map.find_exn preorder_names idx in
+        if String.(sym' <> sym) then
+          failwith
+          @@ sprintf "In term %s expected a %s at index %d but got %s"
+               (Gr.Term.to_string term) sym' idx sym;
+        (id, value))
+    |> Map.of_alist_exn (module String)
+  in
+  (term, ctx)
 
 module Make
     (Sketch : Sigs.SKETCH)
@@ -55,8 +51,6 @@ module Make
     (L : Sigs.LANG with type 'a code = 'a S.t)
     (C : Sigs.CACHE with type value = L.Value.t and type 'a code = 'a S.t) =
 struct
-  module Gr = Grammar
-
   module V = struct
     type state = { cost : int; symbol : string }
     [@@deriving compare, hash, sexp]
@@ -80,6 +74,12 @@ struct
     let to_code = function Code s -> s | _ -> failwith "Not a code"
 
     let equal = [%compare.equal: t]
+  end
+
+  module E = struct
+    type t = int [@@deriving compare]
+
+    let default = -1
   end
 
   module G = struct
@@ -106,9 +106,10 @@ struct
 
       let default_edge_attributes _ = []
 
-      let edge_attributes _ = []
+      let edge_attributes (_, idx, _) =
+        if idx >= 0 then [ `Label (sprintf "%d" idx) ] else []
 
-      include Graph.Persistent.Digraph.ConcreteBidirectional (V)
+      include Graph.Persistent.Digraph.ConcreteBidirectionalLabeled (V) (E)
     end
 
     include X
@@ -200,54 +201,56 @@ struct
 
   let costs_t = S.Array.mk_type S.Int.type_
 
-  let to_contexts term args =
-    to_contexts term (List.map args ~f:(fun (s, v) -> (s.V.symbol, v)))
-
   module Reconstruct = struct
     type ctx = { graph : G.t; cache : cache code }
 
     let rec of_args ({ cache; _ } as ctx) target term args =
       let cache = C.of_code cache in
       let check_one args =
-        let term, ctxs = to_contexts term args in
-        let found_target =
-          List.fold_until ctxs ~init:(S.Bool.bool false) ~finish:Fun.id
-            ~f:(fun found ctx ->
-              match L.Value.(L.eval ctx term = of_code target) with
-              | `Static true -> Stop (S.Bool.bool true)
-              | `Static false -> Continue found
-              | `Dyn b -> Continue S.Bool.(found || b))
+        let term, eval_ctx =
+          let eval_args =
+            List.map args ~f:(fun (state, idx, v) -> (idx, state.V.symbol, v))
+          in
+          to_contexts term eval_args
         in
-        S.ite found_target
+        let found =
+          match L.Value.(L.eval eval_ctx term = of_code target) with
+          | `Static b -> S.Bool.bool b
+          | `Dyn b -> S.Bool.(b)
+        in
+        S.ite found
           (fun () ->
             S.sseq
               ( S.print ([%sexp_of: _ Gr.Term.t] term |> Sexp.to_string_hum)
-              :: List.map args ~f:(fun (n, v) -> reconstruct ctx v n) ))
+              :: List.map args ~f:(fun (state, _, value) ->
+                     reconstruct ctx value state) ))
           (fun () -> S.unit)
       in
       let check_all =
-        List.fold_left args ~init:check_one ~f:(fun check node ->
-            let state = V.to_state node in
-            let sym = state.V.symbol and size = int state.V.cost in
+        List.fold_left args ~init:check_one ~f:(fun check (arg_idx, arg_node) ->
+            let sym = arg_node.V.symbol and size = int arg_node.V.cost in
             fun ctx ->
               cache_iter ~sym ~size
-                ~f:(fun v -> check ((state, v) :: ctx))
+                ~f:(fun value -> check ((arg_node, arg_idx, value) :: ctx))
                 cache)
       in
       check_all []
 
     (** Reconstruct a target assuming that it was produced by a particular code
       node. *)
-    and of_code ({ graph = g; _ } as ctx) target code_node =
-      let term = Gr.Rule.rhs @@ (V.to_code code_node).rule
-      and args = G.succ g code_node in
+    and of_code ({ graph = g; _ } as ctx) target code =
+      let term = Gr.Rule.rhs @@ code.V.rule and args = G.succ g (V.Code code) in
       if List.is_empty args then of_args ctx target term []
       else
-        List.map args ~f:(fun n -> of_args ctx target term (G.succ g n))
+        List.map args ~f:(fun n ->
+            of_args ctx target term
+              (G.succ_e g n |> List.map ~f:(fun (_, i, v) -> (i, V.to_state v))))
         |> S.sseq
 
     and of_state ({ graph = g; _ } as ctx) state target =
-      G.succ g (State state) |> List.map ~f:(of_code ctx target) |> S.sseq
+      G.succ g (State state)
+      |> List.map ~f:(fun n -> of_code ctx target @@ V.to_code n)
+      |> S.sseq
 
     and reconstruct { graph = g; cache } target state =
       let open S in
@@ -287,9 +290,15 @@ struct
     Gr.find_binding n t
 
   let binding_deps t n =
-    match find_binding n t with
+    match find_binding t n with
     | Some t' -> Gr.non_terminals t' |> List.map ~f:(fun (_, i) -> i)
     | None -> failwith (sprintf "Could not find binding: %s" n)
+
+  let binding_ctx term args =
+    let term, ctx = to_contexts term args in
+    Gr.Term.bindings term
+    |> List.map ~f:(fun (bind, term') -> (bind, L.eval ctx term'))
+    |> Map.of_alist_exn (module Gr.Bind)
 
   let argument_graph rule =
     let module G = Graph.Persistent.Digraph.ConcreteBidirectional (Int) in
@@ -327,19 +336,28 @@ struct
           and rhs_v = V.Code { cost; rule } in
           g := G.add_edge !g lhs_v rhs_v;
 
-          (* Add an arg node for each partition of the argument costs. *)
+          (* Add an arg node for each partition permutation of the argument
+             costs. *)
           let n_holes = Gr.Term.n_holes rhs and size = Gr.Term.size rhs in
-          Combinat.Partition.(
-            iter
-              Int.(create ~n:(cost - size + n_holes) ~parts:n_holes)
-              ~f:(fun costs ->
-                let arg = V.Arg { id = Fresh.int fresh; n_args = n_holes } in
-                Gr.Term.non_terminals rhs
-                |> List.iteri ~f:(fun i sym ->
-                       g := G.add_edge !g rhs_v arg;
-                       g :=
-                         G.add_edge !g arg
-                           (V.State { cost = costs.{i}; symbol = sym })))))
+          let open Combinat in
+          Partition.(
+            to_list @@ Int.(create ~n:(cost - size + n_holes) ~parts:n_holes))
+          |> List.map ~f:(fun part ->
+                 List.init (Bigarray.Array1.dim part) ~f:(fun i -> part.{i}))
+          |> List.concat_map ~f:(fun parts ->
+                 Permutation.(Of_list.(create parts |> to_list)))
+          |> List.dedup_and_sort ~compare:[%compare: int list]
+          |> List.iter ~f:(fun costs ->
+                 let costs = Array.of_list costs in
+                 assert (Int.(Array.length costs = n_holes));
+                 let arg = V.Arg { id = Fresh.int fresh; n_args = n_holes } in
+                 Gr.to_preorder (rhs :> Gr.Untyped_term.t)
+                 |> Gr.non_terminals
+                 |> List.iter ~f:(fun (symbol, arg_idx) ->
+                        let cost = costs.(arg_idx) in
+                        g := G.add_edge !g rhs_v arg;
+                        let edge = (arg, arg_idx, V.State { cost; symbol }) in
+                        g := G.add_edge_e !g edge)))
     done;
     let g = !g in
 
@@ -383,67 +401,60 @@ struct
 
   let vlet v f = S.let_ (L.Value.code_of v) (fun v' -> f (L.Value.of_code v'))
 
-  let fill_code g state code_node =
-    let code = V.to_code code_node in
-    let rule = code.V.rule in
-    let term = Gr.Rule.rhs code.V.rule
-    and symbol = state.V.symbol
-    and cost = state.V.cost in
+  let reconstruct g state value =
+    (* Don't try to reconstruct a value that isn't of the same kind as the
+       expected output. *)
+    if String.(Sketch.output <> state.V.symbol) then S.unit
+    else
+      let reconstruct_code =
+        S.sseq
+          [
+            debug_print "Starting reconstruction";
+            Reconstruct.reconstruct
+              { graph = g; cache = cache.value () |> C.code_of }
+              (output ()) state;
+            S.exit;
+          ]
+      in
+      match L.Value.(value = output ()) with
+      | `Static true -> reconstruct_code
+      | `Dyn eq -> S.ite eq (fun () -> reconstruct_code) (fun () -> S.unit)
+      | `Static false ->
+          Log.debug (fun m -> m "Skipping reconstruction: no equality");
+          S.unit
 
-    let insert value =
-      S.sseq
-        [
-          debug_print
-            (sprintf "Inserting (%s -> %s) cost %d" symbol
-               (Gr.Term.to_string term) cost);
-          put ~sym:symbol ~size:cost (cache.value ()) value;
-        ]
-    in
+  let insert state term value =
+    let sym = state.V.symbol and cost = state.V.cost in
+    S.sseq
+      [
+        debug_print
+          (sprintf "Inserting (%s -> %s) cost %d" sym (Gr.Term.to_string term)
+             cost);
+        put ~sym ~size:cost (cache.value ()) value;
+      ]
 
-    let reconstruct value =
-      (* Don't try to reconstruct a value that isn't of the same kind as the
-         expected output. *)
-      if String.(Sketch.output <> symbol) then (
-        Log.debug (fun m ->
-            m "Skipping reconstruction: (%s <> %s)" Sketch.output symbol);
-        S.unit )
-      else
-        let reconstruct_code =
-          S.sseq
-            [
-              debug_print "Starting reconstruction";
-              Reconstruct.reconstruct
-                { graph = g; cache = cache.value () |> C.code_of }
-                (output ()) state;
-              S.exit;
-            ]
-        in
-        match L.Value.(value = output ()) with
-        | `Static true -> reconstruct_code
-        | `Dyn eq -> S.ite eq (fun () -> reconstruct_code) (fun () -> S.unit)
-        | `Static false ->
-            Log.debug (fun m -> m "Skipping reconstruction: no equality");
-            S.unit
-    in
+  let fill_args g state rule args =
+    let term = Gr.Rule.rhs rule in
 
     let fill args =
-      let term, ctxs = to_contexts term args in
-      List.map ctxs ~f:(fun ctx ->
-          vlet (L.eval ctx term) @@ fun value ->
-          S.seq (reconstruct value) (insert value))
-      |> S.sseq
+      let term, ctx = to_contexts term args in
+      vlet (L.eval ctx term) @@ fun value ->
+      S.seq (reconstruct g state value) (insert state term value)
     in
 
-    let args = G.succ g code_node in
-    let arg_order = argument_graph @@ (V.to_code code_node).rule in
-    if List.is_empty args then [ fill [] ]
-    else
-      let deps_satisfied idx deps =
-        let seen = List.take arg_order idx in
-        List.concat_map deps ~f:(binding_deps (term :> Gr.Untyped_term.t))
-        |> List.for_all ~f:(List.mem seen ~equal:[%compare.equal: int])
-      in
-      List.mapi arg_order ~f:(fun idx arg_n ->
+    let arg_order = argument_graph rule in
+    Log.debug (fun m ->
+        m "Argument order for %s: %a" (Gr.Term.to_string term)
+          (Fmt.Dump.list Fmt.int) arg_order);
+    let deps_satisfied idx deps =
+      let seen = List.take arg_order idx in
+      List.concat_map deps ~f:(binding_deps (term :> Gr.Untyped_term.t))
+      |> List.for_all ~f:(List.mem seen ~equal:[%compare.equal: int])
+    in
+    let fill =
+      List.foldi arg_order ~init:fill ~f:(fun idx fill arg_n ->
+          let arg = args.(arg_n) in
+
           let preds =
             List.filter_map (Gr.Rule.semantics rule) ~f:(function
               | Pred { deps; func } when deps_satisfied idx deps -> Some func
@@ -456,44 +467,53 @@ struct
                   Some func
               | _ -> None)
           in
-          let arg = List.nth_exn args arg_n in
-          let fill =
-            List.fold_left (G.succ g arg) ~init:fill ~f:(fun fill node ->
-                let state = V.to_state node in
-                let symbol = state.symbol in
-                let cost = state.cost in
-                let fill_prop =
-                  match prop with
-                  | Some f ->
-                      fun ctx ->
-                        fill
-                          ((state, f (List.map ctx ~f:(fun (_, v) -> v))) :: ctx)
-                  | None ->
-                      fun ctx ->
-                        cache_iter ~sym:symbol ~size:(int cost)
-                          ~f:(fun v -> fill ((state, v) :: ctx))
-                          (cache.value ())
-                in
-                let fill_pred =
-                  match preds with
-                  | [] -> fill_prop
-                  | ps ->
-                      fun ctx ->
-                        let pred_ctx = List.map ctx ~f:(fun (_, v) -> v) in
-                        let pred =
-                          List.map ps ~f:(fun p -> p pred_ctx)
-                          |> List.fold_left ~init:(S.Bool.bool false)
-                               ~f:S.Bool.( && )
-                        in
-                        S.ite pred (fun () -> fill ctx) (fun () -> S.unit)
-                in
-                fill_pred)
+
+          let fill_prop =
+            match prop with
+            | Some f ->
+                fun args ->
+                  fill ((arg_n, arg.V.symbol, f (binding_ctx term args)) :: args)
+            | None ->
+                fun args ->
+                  cache_iter ~sym:arg.V.symbol ~size:(int arg.V.cost)
+                    (cache.value ()) ~f:(fun v ->
+                      fill ((arg_n, arg.V.symbol, v) :: args))
           in
-          fill [])
+          let fill_pred =
+            match preds with
+            | [] -> fill_prop
+            | ps ->
+                fun args ->
+                  let ctx = binding_ctx term args in
+                  let pred =
+                    List.map ps ~f:(fun p -> p ctx)
+                    |> List.fold_left ~init:(S.Bool.bool false) ~f:S.Bool.( && )
+                  in
+                  S.ite pred (fun () -> fill args) (fun () -> S.unit)
+          in
+          fill_pred)
+    in
+    fill []
+
+  (** Generate code to fill in a state set from a single grammar rule. *)
+  let fill_code g state code =
+    G.succ g (V.Code code)
+    |> List.map ~f:(fun arg_node ->
+           let args =
+             G.succ_e g arg_node
+             |> List.map ~f:(fun (_, idx, node) -> (idx, V.to_state node))
+             |> List.sort ~compare:(fun (i, _) (i', _) -> [%compare: int] i i')
+             |> List.map ~f:(fun (_, state) -> state)
+             |> List.to_array
+           in
+           fill_args g state code.V.rule args)
 
   let fill_state g state =
     Log.debug (fun m -> m "Generating code for %s:%d" state.V.symbol state.cost);
-    G.succ g (V.State state) |> List.concat_map ~f:(fill_code g state) |> S.sseq
+    G.succ g (V.State state)
+    |> List.concat_map ~f:(fun code_node ->
+           fill_code g state @@ V.to_code code_node)
+    |> S.sseq
 
   let enumerate max_cost =
     let g = search_graph max_cost in
