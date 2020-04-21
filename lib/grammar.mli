@@ -1,14 +1,31 @@
 open! Core
 
+module Bind : sig
+  type t = string [@@deriving compare, hash, sexp]
+
+  include Comparator.S with type t := t
+
+  val of_string : string -> t
+end
+
 type nonterm = string [@@deriving compare, sexp]
 
+type 'n term =
+  | Nonterm of 'n
+  | App of string * 'n term list
+  | As of 'n term * Bind.t
+
 module Untyped_term : sig
-  type t = Nonterm of nonterm | App of string * t list
-  [@@deriving compare, sexp]
+  type t = nonterm term [@@deriving compare, sexp]
 
   val to_string : t -> string
 
-  val map : ?nonterm:(nonterm -> t) -> ?app:(string -> t list -> t) -> t -> t
+  val map :
+    ?nonterm:(nonterm -> t) ->
+    ?app:(string -> t list -> t) ->
+    ?as_:(t -> Bind.t -> t) ->
+    t ->
+    t
 end
 
 module Term : sig
@@ -17,6 +34,8 @@ module Term : sig
   val nonterm : nonterm -> [> `Open ] t
 
   val app : nonterm -> ([< `Open | `Closed ] as 's) t list -> 's t
+
+  val as_ : ([< `Open | `Closed ] as 's) t -> Bind.t -> 's t
 
   val size : _ t -> int
 
@@ -27,10 +46,7 @@ module Term : sig
   val to_string : _ t -> string
 
   val with_holes :
-    ?fresh:Utils.Fresh.t ->
-    equal:(string -> string -> bool) ->
-    _ t ->
-    [ `Closed ] t * (nonterm * string) list
+    ?fresh:Utils.Fresh.t -> _ t -> [ `Closed ] t * (nonterm * int * string) list
 end
 
 module Rule : sig
@@ -42,6 +58,8 @@ module Rule : sig
 
   val semantics : 's t -> 's list
 
+  val create : nonterm -> [< `Open | `Closed ] Term.t -> 's list -> 's t
+
   val of_tuple : nonterm * [ `Open | `Closed ] Term.t -> 's t
 end
 
@@ -51,14 +69,14 @@ val of_list : (nonterm * [ `Open | `Closed ] Term.t) list -> 's t
 
 val rhs : _ t -> nonterm -> [ `Open | `Closed ] Term.t list
 
-val non_terminals : _ t -> nonterm list
+val lhs : _ t -> nonterm list
 
 val inline : nonterm -> 's t -> 's t
 
 val with_holes :
   ?fresh:Utils.Fresh.t ->
   [ `Open | `Closed ] Term.t ->
-  [ `Closed ] Term.t * (nonterm * string) list
+  [ `Closed ] Term.t * (nonterm * int * string) list
 
 (* val productions : (nonterm * 'a) list -> nonterm -> 'a list *)
 
@@ -73,3 +91,9 @@ val sample_seq :
   nonterm ->
   _ t ->
   [ `Closed ] Term.t Base.Sequence.t
+
+val to_preorder : 'a term -> ('a * int) term
+
+val find_binding : Bind.t -> 'a term -> 'a term option
+
+val non_terminals : 'a term -> 'a list

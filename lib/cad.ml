@@ -28,7 +28,9 @@ module Make (C : Deps) = struct
       type t =
         | Examples of bool C.Array.t C.t
         | Vectors of (C.Float.t, C.Float.t, C.Float.t) C.Tuple_3.t C.Array.t C.t
-        | Sphere of (C.Float.t, C.Float.t, C.Float.t, C.Float.t) C.Tuple_4.t C.t
+        | Spheres of
+            (C.Float.t, C.Float.t, C.Float.t, C.Float.t) C.Tuple_4.t C.Array.t
+            C.t
         (*    adt CylinderHint {
 	          *    float theta_x;
 	          *   float theta_y;
@@ -48,6 +50,8 @@ module Make (C : Deps) = struct
                 C.Int.t C.Array.t )
               C.Tuple_4.t )
             C.t
+        | Bool of bool C.t
+        | Int of int C.t
 
       let examples_t = C.Array.mk_type C.Bool.type_
 
@@ -56,8 +60,9 @@ module Make (C : Deps) = struct
         @@ C.Tuple_3.mk_type C.Float.type_ C.Float.type_ C.Float.type_
 
       let spheres_t =
-        C.Tuple_4.mk_type C.Float.type_ C.Float.type_ C.Float.type_
-          C.Float.type_
+        C.Array.mk_type
+        @@ C.Tuple_4.mk_type C.Float.type_ C.Float.type_ C.Float.type_
+             C.Float.type_
 
       let examples x = Examples x
 
@@ -66,8 +71,10 @@ module Make (C : Deps) = struct
           match x with
           | Examples _ -> "examples"
           | Vectors _ -> "vectors"
-          | Sphere _ -> "sphere"
+          | Spheres _ -> "sphere"
           | Cyl _ -> "cylinder"
+          | Bool _ -> "bool"
+          | Int _ -> "int"
         in
         failwith @@ sprintf "Expected %s but got %s" expected got
 
@@ -75,13 +82,18 @@ module Make (C : Deps) = struct
 
       let to_vectors = function Vectors x -> x | x -> err "vectors" x
 
-      let to_sphere = function Sphere x -> x | x -> err "sphere" x
+      let to_spheres = function Spheres x -> x | x -> err "sphere" x
+
+      let to_bool = function Bool x -> x | x -> err "bool" x
+
+      let to_int = function Int x -> x | x -> err "int" x
 
       let sexp_of _ = assert false
 
       let of_sexp sym sexp =
         let examples_of_sexp s = C.Array.of_sexp examples_t s C.Bool.of_sexp in
-        let sphere_of_sexp s =
+        let spheres_of_sexp s =
+          C.Array.of_sexp spheres_t s @@ fun s ->
           C.Tuple_4.of_sexp s C.Float.of_sexp C.Float.of_sexp C.Float.of_sexp
             C.Float.of_sexp
         in
@@ -90,7 +102,7 @@ module Make (C : Deps) = struct
           C.Tuple_3.of_sexp s C.Float.of_sexp C.Float.of_sexp C.Float.of_sexp
         in
         if String.(sym = "E") then Examples (examples_of_sexp sexp)
-        else if String.(sym = "S") then Sphere (sphere_of_sexp sexp)
+        else if String.(sym = "S") then Spheres (spheres_of_sexp sexp)
         else if String.(sym = "V") then Vectors (vectors_of_sexp sexp)
         else failwith "Unexpected symbol"
 
@@ -105,14 +117,14 @@ module Make (C : Deps) = struct
       let code_of = function
         | Examples x -> C.add_annot (C.cast x) key `E
         | Vectors x -> C.add_annot (C.cast x) key `V
-        | Sphere x -> C.add_annot (C.cast x) key `S
+        | Spheres x -> C.add_annot (C.cast x) key `S
         | _ -> failwith "Not convertible"
 
       let of_code c =
         match C.find_annot c key with
         | Some `E -> Examples (C.cast c)
         | Some `V -> Vectors (C.cast c)
-        | Some `S -> Sphere (C.cast c)
+        | Some `S -> Spheres (C.cast c)
         | None -> failwith "Not convertible."
     end
 
@@ -122,19 +134,7 @@ module Make (C : Deps) = struct
 
     type 'a code = 'a C.t
 
-    let grammar : (Value.t, bool code) Semantics.t Grammar.t =
-      let open Grammar in
-      let open Grammar.Term in
-      let nt x = nonterm x in
-      Grammar.of_list
-        [
-          ("E", app "sphere" [ nt "S"; nt "V" ]);
-          ("E", app "cyl" [ nt "C"; nt "V" ]);
-          (* ("E", App ("cuboid", [ nt "CI" ])); *)
-          ("E", app "union" [ nt "E"; nt "E" ]);
-          ("E", app "inter" [ nt "E"; nt "E" ]);
-          ("E", app "sub" [ nt "E"; nt "E" ]);
-        ]
+    let fresh = Fresh.create ()
 
     let inverse_rotate (x, y, z) (x', y', z') r =
       (*   float x0 = p.x; float y0 = p.y; float z0 = p.z;
@@ -166,10 +166,13 @@ module Make (C : Deps) = struct
       C.Tuple_3.of_tuple (x3, y3, z3)
 
     let rec eval ctx = function
-      | Grammar.Untyped_term.App ("sphere", [ s; v ]) ->
-          let sphere = to_sphere (eval ctx s) in
+      | Grammar.App ("sphere", [ s; i; v ]) ->
+          let spheres = to_spheres (eval ctx s) in
           let vectors = to_vectors (eval ctx v) in
-          let x, y, z, r = C.Tuple_4.tuple_of sphere in
+          let x, y, z, r =
+            C.Tuple_4.tuple_of
+            @@ C.Array.get spheres (eval ctx i |> Value.to_int)
+          in
           examples
           @@ C.Array.map examples_t vectors ~f:(fun v ->
                  let x', y', z' = C.Tuple_3.tuple_of v in
@@ -204,6 +207,58 @@ module Make (C : Deps) = struct
         let err = of_exn exn in
         tag_arg err "Evaluation failed" expr [%sexp_of: _ Grammar.Term.t]
         |> raise
+
+    let linear_int :
+        _ Grammar.Term.t ->
+        _ Grammar.Term.t ->
+        _ * (Value.t, bool code) Semantics.t Grammar.t =
+     fun lo hi ->
+      let open Grammar in
+      let open Term in
+      let nt = Fresh.name fresh "I%d" in
+      let lo_n = Bind.of_string "lo"
+      and hi_n = Bind.of_string "hi"
+      and v_n = Bind.of_string "v" in
+      ( nt,
+        [
+          Rule.create nt (app "range" [ lo; lo; hi ]) [];
+          Rule.create nt
+            (app "range"
+               [ as_ lo lo_n; as_ (app "incr" [ nonterm nt ]) v_n; as_ hi hi_n ])
+            [
+              Semantics.Pred
+                {
+                  deps = [ lo_n; v_n ];
+                  func =
+                    (fun ctx ->
+                      eval ctx
+                      @@ app "&&"
+                           [
+                             app ">=" [ app v_n []; app lo_n [] ];
+                             app ">=" [ app hi_n []; app v_n [] ];
+                           ]
+                      |> Value.to_bool);
+                };
+            ];
+        ] )
+
+    let grammar : (Value.t, bool code) Semantics.t Grammar.t =
+      let open Grammar in
+      let open Grammar.Term in
+      let nt x = nonterm x in
+      let si, si_grammar =
+        linear_int (app "zero" []) (app "length" [ nt "S" ])
+      in
+      Grammar.of_list
+        [
+          ("E", app "sphere" [ nt "S"; nt si; nt "V" ]);
+          ("E", app "cyl" [ nt "C"; nt "V" ]);
+          (* ("E", App ("cuboid", [ nt "CI" ])); *)
+          ("E", app "union" [ nt "E"; nt "E" ]);
+          ("E", app "inter" [ nt "E"; nt "E" ]);
+          ("E", app "sub" [ nt "E"; nt "E" ]);
+        ]
+      @ si_grammar
   end
 
   module Cache = struct

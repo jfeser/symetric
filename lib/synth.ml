@@ -282,6 +282,15 @@ struct
       g g
     |> G.filter_vertex ~f:(fun v -> match v with State _ -> false | _ -> true)
 
+  let find_binding t n =
+    let t = Gr.to_preorder t in
+    Gr.find_binding n t
+
+  let binding_deps t n =
+    match find_binding n t with
+    | Some t' -> Gr.non_terminals t' |> List.map ~f:(fun (_, i) -> i)
+    | None -> failwith (sprintf "Could not find binding: %s" n)
+
   let argument_graph rule =
     let module G = Graph.Persistent.Digraph.ConcreteBidirectional (Int) in
     let module Topo = Graph.Topological.Make_stable (G) in
@@ -293,7 +302,9 @@ struct
       List.fold_left (Gr.Rule.semantics rule) ~init:indexes_g ~f:(fun g ->
         function
         | Semantics.Prop { deps; out } ->
-            List.fold_left deps ~init:g ~f:(fun g node -> G.add_edge g node out)
+            List.concat_map deps
+              ~f:(binding_deps @@ (Gr.Rule.rhs rule :> Gr.Untyped_term.t))
+            |> List.fold_left ~init:g ~f:(fun g node -> G.add_edge g node out)
         | _ -> g)
     in
     Topo.fold (fun v l -> v :: l) g [] |> List.rev
@@ -427,23 +438,22 @@ struct
     let arg_order = argument_graph @@ (V.to_code code_node).rule in
     if List.is_empty args then [ fill [] ]
     else
+      let deps_satisfied idx deps =
+        let seen = List.take arg_order idx in
+        List.concat_map deps ~f:(binding_deps (term :> Gr.Untyped_term.t))
+        |> List.for_all ~f:(List.mem seen ~equal:[%compare.equal: int])
+      in
       List.mapi arg_order ~f:(fun idx arg_n ->
           let preds =
             List.filter_map (Gr.Rule.semantics rule) ~f:(function
-              | Pred { deps; func } ->
-                  let seen = List.take arg_order idx in
-                  if List.for_all deps ~f:(List.mem seen ~equal:Core.Int.( = ))
-                  then Some func
-                  else None
+              | Pred { deps; func } when deps_satisfied idx deps -> Some func
               | _ -> None)
           in
           let prop =
             List.find_map (Gr.Rule.semantics rule) ~f:(function
-              | Prop { out; deps; func } when Core.Int.(out = idx) ->
-                  let seen = List.take arg_order idx in
-                  if List.for_all deps ~f:(List.mem seen ~equal:Core.Int.( = ))
-                  then Some func
-                  else None
+              | Prop { out; deps; func }
+                when Core.Int.(out = idx) && deps_satisfied idx deps ->
+                  Some func
               | _ -> None)
           in
           let arg = List.nth_exn args arg_n in

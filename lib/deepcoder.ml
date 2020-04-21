@@ -178,7 +178,7 @@ struct
     let rec eval ctx =
       let open Int in
       function
-      | Grammar.Untyped_term.App ("(+1)", []) -> F_int (fun x -> x + int 1)
+      | Grammar.App ("(+1)", []) -> F_int (fun x -> x + int 1)
       | App ("(-1)", []) -> F_int (fun x -> x - int 1)
       | App ("(*2)", []) -> F_int (fun x -> x * int 2)
       | App ("(/2)", []) -> F_int (fun x -> x / int 2)

@@ -1,12 +1,49 @@
 open! Core
 open Utils
 
+module Bind = struct
+  module T = struct
+    type t = string [@@deriving compare, hash, sexp]
+  end
+
+  include T
+  include Comparator.Make (T)
+
+  let of_string = Fun.id
+end
+
 type nonterm = string [@@deriving compare, hash, sexp]
+
+type 'n term =
+  | Nonterm of 'n
+  | App of string * 'n term list
+  | As of 'n term * Bind.t
+[@@deriving compare, hash, sexp]
+
+let to_preorder t =
+  let i = ref 0 in
+  let rec conv = function
+    | As (t, n) -> As (conv t, n)
+    | App (f, ts) -> App (f, List.map ts ~f:conv)
+    | Nonterm n ->
+        incr i;
+        Nonterm (n, !i)
+  in
+  conv t
+
+let rec find_binding n = function
+  | Nonterm _ -> None
+  | App (_, ts) -> List.find_map ts ~f:(find_binding n)
+  | As (t, n') -> if [%compare.equal: Bind.t] n n' then Some t else None
+
+let rec non_terminals = function
+  | Nonterm x -> [ x ]
+  | App (_, ts) -> List.concat_map ~f:non_terminals ts
+  | As (t, _) -> non_terminals t
 
 module Untyped_term = struct
   module T = struct
-    type t = Nonterm of nonterm | App of string * t list
-    [@@deriving compare, hash, sexp]
+    type t = nonterm term [@@deriving compare, hash, sexp]
   end
 
   include T
@@ -15,10 +52,7 @@ module Untyped_term = struct
   let rec size = function
     | Nonterm _ -> 1
     | App (_, ts) -> 1 + List.sum (module Int) ~f:size ts
-
-  let rec non_terminals = function
-    | Nonterm x -> [ x ]
-    | App (_, ts) -> List.concat_map ~f:non_terminals ts
+    | As (t, _) -> size t
 
   let n_holes t = non_terminals t |> List.length
 
@@ -28,29 +62,32 @@ module Untyped_term = struct
     | App (f, xs) ->
         List.map xs ~f:to_string |> String.concat ~sep:", "
         |> sprintf "%s(%s)" f
+    | As (t, n) -> sprintf "%s as %s" (to_string t) n
 
-  let with_holes ?fresh ~equal t =
+  let with_holes ?fresh t =
     let fresh = Option.value fresh ~default:(Fresh.create ()) in
-    let nt = non_terminals t in
-    let holes = ref [] in
-    let rec rename = function
-      | Nonterm v ->
-          if List.mem nt v ~equal then (
-            let v' = v ^ Fresh.name fresh "%d" in
-            holes := (v, v') :: !holes;
-            App (v', []) )
-          else Nonterm v
-      | App (f, ts) -> App (f, List.map ts ~f:rename)
+    let holes =
+      to_preorder t |> non_terminals
+      |> List.map ~f:(fun (n, i) -> (n, i, Fresh.name fresh "%d"))
     in
-    let t' = rename t in
-    (t', !holes)
+    let holes_ctx =
+      List.map holes ~f:(fun (n, _, x) -> (n, x))
+      |> Map.of_alist_exn (module String)
+    in
+    let rec rename = function
+      | Nonterm v -> Nonterm (Map.find_exn holes_ctx v)
+      | App (f, ts) -> App (f, List.map ts ~f:rename)
+      | As (t, n) -> As (rename t, n)
+    in
+    (rename t, holes)
 
-  let rec map ?(nonterm = fun x -> Nonterm x) ?(app = fun n ts -> App (n, ts)) =
-    function
+  let rec map ?(nonterm = fun x -> Nonterm x) ?(app = fun n ts -> App (n, ts))
+      ?(as_ = fun t n -> As (t, n)) = function
     | Nonterm t -> nonterm t
     | App (n, ts) ->
-        let ts = List.map ts ~f:(map ~nonterm ~app) in
+        let ts = List.map ts ~f:(map ~nonterm ~app ~as_) in
         app n ts
+    | As (t, n) -> as_ (map ~nonterm ~app ~as_ t) n
 end
 
 module Term = struct
@@ -61,6 +98,8 @@ module Term = struct
   let nonterm n = Nonterm n
 
   let app n ts = App (n, ts)
+
+  let as_ t n = As (t, n)
 
   let non_terminals = non_terminals
 
@@ -89,7 +128,9 @@ module Rule = struct
 
   let semantics { sem; _ } = sem
 
-  let of_tuple (lhs, rhs) = { lhs; rhs; sem = [] }
+  let create lhs rhs sem = { lhs; rhs; sem }
+
+  let of_tuple (lhs, rhs) = create lhs rhs []
 end
 
 type 's t = 's Rule.t list [@@deriving compare, sexp]
@@ -102,7 +143,7 @@ let rhs g s =
   List.filter_map g ~f:(fun r ->
       if String.(s = Rule.lhs r) then Some (Rule.rhs r) else None)
 
-let non_terminals g =
+let lhs g =
   List.map g ~f:Rule.lhs |> List.dedup_and_sort ~compare:[%compare: nonterm]
 
 let rec product = function
@@ -121,11 +162,12 @@ let inline sym g =
     | App (f, ts) ->
         List.map ts ~f:subst_all |> product
         |> List.map ~f:(fun ts -> App (f, ts))
+    | As (t, n) -> List.map (subst_all t) ~f:(fun t' -> As (t', n))
   in
   List.concat_map g ~f:(fun r ->
       subst_all r.rhs |> List.map ~f:(fun rhs -> { r with rhs }))
 
-let with_holes ?fresh = Term.with_holes ?fresh ~equal:[%compare.equal: nonterm]
+let with_holes ?fresh = Term.with_holes ?fresh
 
 let weighted_random ?(state = Random.State.default) l =
   if List.length l <= 0 then failwith "Selecting from an empty list";
