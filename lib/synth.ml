@@ -8,30 +8,16 @@ end)
 
 let prune = ref true
 
+and debug = ref false
+
 let param =
   let open Command in
   let open Command.Let_syntax in
   [%map_open
-    let no_prune = flag "no-prune" no_arg ~doc:"prune the search graph" in
-    prune := not no_prune]
-
-let for_all a f =
-  let rec loop i =
-    if i >= Bigarray.Array1.dim a then true else f a.{i} && loop (i + 1)
-  in
-  loop 0
-
-let to_list a = List.init (Bigarray.Array1.dim a) ~f:(fun i -> a.{i})
-
-let rec n_cartesian_product = function
-  | [] -> [ [] ]
-  | h :: t ->
-      let rest = n_cartesian_product t in
-      List.concat (List.map ~f:(fun i -> List.map ~f:(fun r -> i :: r) rest) h)
-
-module Arg = struct
-  type 'a t = { symbol : string; index : int; value : 'a }
-end
+    let no_prune = flag "no-prune" no_arg ~doc:"prune the search graph"
+    and debug_p = flag "debug" no_arg ~doc:"enable debug printing" in
+    prune := not no_prune;
+    debug := debug_p]
 
 let to_contexts term args =
   let term, holes = Grammar.with_holes term in
@@ -175,39 +161,15 @@ struct
   let cache_iter ~sym ~size ~f cache =
     let open S in
     let open S.Int in
-    sseq
-      [
-        ite
-          (size = int 1)
-          (fun () ->
-            inputs ()
-            |> List.filter ~f:(fun (sym', _) -> Core.String.(sym = sym'))
-            |> List.map ~f:(fun (_, v) -> f v)
-            |> S.sseq)
-          (fun () -> unit);
-        C.iter ~sym ~size ~f cache;
-      ]
+    match size with
+    | 1 ->
+        inputs ()
+        |> List.filter ~f:(fun (sym', _) -> Core.String.(sym = sym'))
+        |> List.map ~f:(fun (_, v) -> f v)
+        |> S.sseq
+    | size -> C.iter ~sym ~size:(int size) ~f cache
 
-  let debug = false
-
-  let debug_print msg = if debug then S.print msg else S.unit
-
-  let rec of_list = function
-    | [] -> S.unit
-    | [ l ] -> l
-    | l :: ls -> S.seq l (of_list ls)
-
-  let rec case pred default = function
-    | [] -> default
-    | (v, k) :: bs ->
-        S.ite (pred v) (fun () -> k) (fun () -> case pred default bs)
-
-  let rec let_many f = function
-    | [] -> f []
-    | [ x ] -> S.let_ x (fun x -> f [ x ])
-    | x :: xs -> S.let_ x (fun x -> let_many (fun xs -> f (x :: xs)) xs)
-
-  let costs_t = S.Array.mk_type S.Int.type_
+  let debug_print msg = if !debug then S.print msg else S.unit
 
   module Reconstruct = struct
     type ctx = { graph : G.t; cache : cache code }
@@ -236,7 +198,7 @@ struct
       in
       let check_all =
         List.fold_left args ~init:check_one ~f:(fun check (arg_idx, arg_node) ->
-            let sym = arg_node.V.symbol and size = S.Int.int arg_node.V.cost in
+            let sym = arg_node.V.symbol and size = arg_node.V.cost in
             fun ctx ->
               cache_iter ~sym ~size
                 ~f:(fun value -> check ((arg_node, arg_idx, value) :: ctx))
@@ -505,8 +467,8 @@ struct
         in
         k bindings
     | None ->
-        cache_iter ~sym:arg.V.symbol ~size:(S.Int.int arg.V.cost)
-          (cache.value ()) ~f:(fun v ->
+        cache_iter ~sym:arg.V.symbol ~size:arg.V.cost (cache.value ())
+          ~f:(fun v ->
             let bindings = (arg_n, arg.V.symbol, v) :: bindings in
             k bindings)
 
