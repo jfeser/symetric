@@ -49,9 +49,12 @@ module Tuple_3 = struct
 
     val mk_type : 'a ctype -> 'b ctype -> 'c ctype -> ('a, 'b, 'c) t ctype
 
+    val fst : ('a, 'b, 'c) t code -> 'a code
+
     val of_tuple : 'a code * 'b code * 'c code -> ('a, 'b, 'c) t code
 
-    val tuple_of : ('a, 'b, 'c) t code -> 'a code * 'b code * 'c code
+    val tuple_of :
+      ('a, 'b, 'c) t code -> ('a code * 'b code * 'c code -> 'd code) -> 'd code
 
     val of_sexp :
       sexp code ->
@@ -117,7 +120,11 @@ module Tuple_3 = struct
 
     let of_tuple (a, b, c) = create a b c
 
-    let tuple_of t = (fst t, snd t, thd t)
+    let tuple_of t f =
+      C.let_ t @@ fun t ->
+      C.let_ (fst t) @@ fun x1 ->
+      C.let_ (snd t) @@ fun x2 ->
+      C.let_ (thd t) @@ fun x3 -> f (x1, x2, x3)
   end
 end
 
@@ -136,7 +143,9 @@ module Tuple_4 = struct
       'a code * 'b code * 'c code * 'd code -> ('a, 'b, 'c, 'd) t code
 
     val tuple_of :
-      ('a, 'b, 'c, 'd) t code -> 'a code * 'b code * 'c code * 'd code
+      ('a, 'b, 'c, 'd) t code ->
+      ('a code * 'b code * 'c code * 'd code -> 'e code) ->
+      'e code
 
     val of_sexp :
       sexp code ->
@@ -210,7 +219,12 @@ module Tuple_4 = struct
 
     let of_tuple (a, b, c, d) = create a b c d
 
-    let tuple_of t = (fst t, snd t, thd t, fth t)
+    let tuple_of t f =
+      C.let_ t @@ fun t ->
+      C.let_ (fst t) @@ fun x1 ->
+      C.let_ (snd t) @@ fun x2 ->
+      C.let_ (thd t) @@ fun x3 ->
+      C.let_ (fth t) @@ fun x4 -> f (x1, x2, x3, x4)
 
     let sexp_of _ _ _ = failwith "unimplemented"
   end

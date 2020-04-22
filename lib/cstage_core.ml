@@ -373,6 +373,7 @@ module Make () : S = struct
 #include <vector>
 #include <set>
 #include <iostream>
+#include <cmath>
 
 #include "stdlib.hpp"
 #include "sexp.hpp"

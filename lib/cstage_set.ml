@@ -44,17 +44,17 @@ module Set (C : Cstage_core.S) = struct
     let iter_name = fresh_name () in
     let_locus @@ fun () ->
     let body =
-      with_stackmark (fun m ->
-          let arg =
-            {
-              ret = sprintf "*%s" iter_name;
-              ebody = "";
-              etype = elem_type a.etype;
-              efree = [ (iter_name, m) ];
-              eeffect = false;
-            }
-          in
-          let_locus @@ fun () -> f arg)
+      with_stackmark @@ fun m ->
+      let arg =
+        {
+          ret = sprintf "(*%s)" iter_name;
+          ebody = "";
+          etype = elem_type a.etype;
+          efree = [ (iter_name, m) ];
+          eeffect = false;
+        }
+      in
+      let_locus @@ fun () -> f arg
     in
     eformat "0" unit_t
       {|

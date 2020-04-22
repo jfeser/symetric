@@ -1,4 +1,3 @@
-open! Core
 module Fresh = Utils.Fresh
 open Utils.Collections
 module Gr = Grammar
@@ -7,7 +6,14 @@ module Log = Utils.Make_log (struct
   let src = Logs.Src.create "staged-synth.synth"
 end)
 
-let () = Log.set_level None
+let prune = ref true
+
+let param =
+  let open Command in
+  let open Command.Let_syntax in
+  [%map_open
+    let no_prune = flag "no-prune" no_arg ~doc:"prune the search graph" in
+    prune := not no_prune]
 
 let for_all a f =
   let rec loop i =
@@ -69,6 +75,8 @@ struct
     type t = State of state | Code of code | Arg of arg
     [@@deriving compare, hash, sexp]
 
+    let pp fmt v = Sexp.pp_hum fmt @@ [%sexp_of: t] v
+
     let to_state = function State s -> s | _ -> failwith "Not a state"
 
     let to_code = function Code s -> s | _ -> failwith "Not a code"
@@ -128,7 +136,6 @@ struct
       fold_edges (fun v v' g -> add_edge (remove_edge g v v') v' v) g g
   end
 
-  open S.Int
   open C
 
   let cache = C.empty ()
@@ -167,6 +174,7 @@ struct
 
   let cache_iter ~sym ~size ~f cache =
     let open S in
+    let open S.Int in
     sseq
       [
         ite
@@ -228,7 +236,7 @@ struct
       in
       let check_all =
         List.fold_left args ~init:check_one ~f:(fun check (arg_idx, arg_node) ->
-            let sym = arg_node.V.symbol and size = int arg_node.V.cost in
+            let sym = arg_node.V.symbol and size = S.Int.int arg_node.V.cost in
             fun ctx ->
               cache_iter ~sym ~size
                 ~f:(fun value -> check ((arg_node, arg_idx, value) :: ctx))
@@ -294,9 +302,11 @@ struct
     | Some t' -> Gr.non_terminals t' |> List.map ~f:(fun (_, i) -> i)
     | None -> failwith (sprintf "Could not find binding: %s" n)
 
-  let binding_ctx term args =
+  let binding_ctx term binds args =
     let term, ctx = to_contexts term args in
     Gr.Term.bindings term
+    |> List.filter ~f:(fun (b, _) ->
+           List.mem binds ~equal:[%compare.equal: Gr.Bind.t] b)
     |> List.map ~f:(fun (bind, term') -> (bind, L.eval ctx term'))
     |> Map.of_alist_exn (module Gr.Bind)
 
@@ -318,7 +328,7 @@ struct
     in
     Topo.fold (fun v l -> v :: l) g [] |> List.rev
 
-  let search_graph ?(prune = true) max_cost =
+  let search_graph ?(prune = !prune) max_cost =
     (* Compute search graph. *)
     let fresh = Fresh.create () and g = ref G.empty in
 
@@ -340,24 +350,32 @@ struct
              costs. *)
           let n_holes = Gr.Term.n_holes rhs and size = Gr.Term.size rhs in
           let open Combinat in
-          Partition.(
-            to_list @@ Int.(create ~n:(cost - size + n_holes) ~parts:n_holes))
-          |> List.map ~f:(fun part ->
-                 List.init (Bigarray.Array1.dim part) ~f:(fun i -> part.{i}))
-          |> List.concat_map ~f:(fun parts ->
-                 Permutation.(Of_list.(create parts |> to_list)))
-          |> List.dedup_and_sort ~compare:[%compare: int list]
-          |> List.iter ~f:(fun costs ->
-                 let costs = Array.of_list costs in
-                 assert (Int.(Array.length costs = n_holes));
-                 let arg = V.Arg { id = Fresh.int fresh; n_args = n_holes } in
-                 Gr.to_preorder (rhs :> Gr.Untyped_term.t)
-                 |> Gr.non_terminals
-                 |> List.iter ~f:(fun (symbol, arg_idx) ->
-                        let cost = costs.(arg_idx) in
-                        g := G.add_edge !g rhs_v arg;
-                        let edge = (arg, arg_idx, V.State { cost; symbol }) in
-                        g := G.add_edge_e !g edge)))
+          let parts =
+            Partition.(
+              to_list @@ Int.(create ~n:(cost - size + n_holes) ~parts:n_holes))
+          in
+          (* Log.debug (fun m -> m "Parts %a" Fmt.(Dump.(list @@ list int)) parts); *)
+          let permuted =
+            List.concat_map parts ~f:(fun parts ->
+                Permutation.(Of_list.(create parts |> to_list)))
+          in
+          (* Log.debug (fun m ->
+           *     m "Permuted %a" Fmt.(Dump.(list @@ list int)) permuted); *)
+          let deduped =
+            List.dedup_and_sort ~compare:[%compare: int list] permuted
+          in
+          List.iter deduped ~f:(fun costs ->
+              (* Log.debug (fun m -> m "Inserting %a" Fmt.(Dump.(list int)) costs); *)
+              let costs = Array.of_list costs in
+              assert (Int.(Array.length costs = n_holes));
+              let arg = V.Arg { id = Fresh.int fresh; n_args = n_holes } in
+              Gr.to_preorder (rhs :> Gr.Untyped_term.t)
+              |> Gr.non_terminals
+              |> List.iter ~f:(fun (symbol, arg_idx) ->
+                     let cost = costs.(arg_idx) in
+                     g := G.add_edge !g rhs_v arg;
+                     let edge = (arg, arg_idx, V.State { cost; symbol }) in
+                     g := G.add_edge_e !g edge)))
     done;
     let g = !g in
 
@@ -389,7 +407,10 @@ struct
       let g' =
         G.fold_vertex
           (fun v g ->
-            if should_keep g g_trans v then g else G.remove_vertex g v)
+            if should_keep g g_trans v then g
+            else
+              (* Log.debug (fun m -> m "Pruning vertex %a" V.pp v); *)
+              G.remove_vertex g v)
           g g
       in
       if Int.(G.nb_vertex g > G.nb_vertex g' || G.nb_edges g > G.nb_edges g')
@@ -433,11 +454,67 @@ struct
         put ~sym ~size:cost (cache.value ()) value;
       ]
 
+  let deps_satisfied (term : [ `Open | `Closed ] Gr.Term.t) deps bindings =
+    let seen = List.map bindings ~f:(fun (i, _, _) -> i) in
+    Log.debug (fun m -> m "Seen: %a" Fmt.(Dump.list int) seen);
+    let ret =
+      List.concat_map deps ~f:(fun n ->
+          let args = binding_deps (term :> Gr.Untyped_term.t) n in
+          Log.debug (fun m -> m "Deps (%s): %a" n Fmt.(Dump.list int) args);
+          args)
+      |> List.for_all ~f:(List.mem seen ~equal:[%compare.equal: int])
+    in
+    Log.debug (fun m -> m "Sat: %b" ret);
+    ret
+
+  let fill_with_pred rule k bindings =
+    let term = Gr.Rule.rhs rule in
+    let preds =
+      List.filter_map (Gr.Rule.semantics rule) ~f:(function
+        | Semantics.Pred { deps; func } when deps_satisfied term deps bindings
+          ->
+            Some (deps, func)
+        | _ -> None)
+    in
+    let deps = List.concat_map preds ~f:(fun (deps, _) -> deps)
+    and preds = List.map preds ~f:(fun (_, pred) -> pred) in
+    match preds with
+    | [] -> k bindings
+    | ps ->
+        Log.debug (fun m -> m "Inserting predicate.");
+        let ctx = binding_ctx term deps bindings in
+        let pred =
+          List.map ps ~f:(fun p -> p ctx) |> List.reduce_exn ~f:S.Bool.( && )
+        in
+        S.ite pred (fun () -> k bindings) (fun () -> S.unit)
+
+  let fill_with_prop rule arg_n arg k bindings =
+    let term = Gr.Rule.rhs rule in
+    let prop =
+      List.find_map (Gr.Rule.semantics rule) ~f:(function
+        | Semantics.Prop { out; deps; func }
+          when out = arg_n && deps_satisfied term deps bindings ->
+            Some (func, deps)
+        | _ -> None)
+    in
+    match prop with
+    | Some (f, deps) ->
+        Log.debug (fun m -> m "Inserting propagator.");
+        let bindings =
+          (arg_n, arg.V.symbol, f (binding_ctx term deps bindings)) :: bindings
+        in
+        k bindings
+    | None ->
+        cache_iter ~sym:arg.V.symbol ~size:(S.Int.int arg.V.cost)
+          (cache.value ()) ~f:(fun v ->
+            let bindings = (arg_n, arg.V.symbol, v) :: bindings in
+            k bindings)
+
   let fill_args g state rule args =
     let term = Gr.Rule.rhs rule in
 
-    let fill args =
-      let term, ctx = to_contexts term args in
+    let fill_inner bindings =
+      let term, ctx = to_contexts term bindings in
       vlet (L.eval ctx term) @@ fun value ->
       S.seq (reconstruct g state value) (insert state term value)
     in
@@ -446,52 +523,12 @@ struct
     Log.debug (fun m ->
         m "Argument order for %s: %a" (Gr.Term.to_string term)
           (Fmt.Dump.list Fmt.int) arg_order);
-    let deps_satisfied idx deps =
-      let seen = List.take arg_order idx in
-      List.concat_map deps ~f:(binding_deps (term :> Gr.Untyped_term.t))
-      |> List.for_all ~f:(List.mem seen ~equal:[%compare.equal: int])
-    in
+
     let fill =
-      List.foldi arg_order ~init:fill ~f:(fun idx fill arg_n ->
-          let arg = args.(arg_n) in
-
-          let preds =
-            List.filter_map (Gr.Rule.semantics rule) ~f:(function
-              | Pred { deps; func } when deps_satisfied idx deps -> Some func
-              | _ -> None)
-          in
-          let prop =
-            List.find_map (Gr.Rule.semantics rule) ~f:(function
-              | Prop { out; deps; func }
-                when Core.Int.(out = idx) && deps_satisfied idx deps ->
-                  Some func
-              | _ -> None)
-          in
-
-          let fill_prop =
-            match prop with
-            | Some f ->
-                fun args ->
-                  fill ((arg_n, arg.V.symbol, f (binding_ctx term args)) :: args)
-            | None ->
-                fun args ->
-                  cache_iter ~sym:arg.V.symbol ~size:(int arg.V.cost)
-                    (cache.value ()) ~f:(fun v ->
-                      fill ((arg_n, arg.V.symbol, v) :: args))
-          in
-          let fill_pred =
-            match preds with
-            | [] -> fill_prop
-            | ps ->
-                fun args ->
-                  let ctx = binding_ctx term args in
-                  let pred =
-                    List.map ps ~f:(fun p -> p ctx)
-                    |> List.fold_left ~init:(S.Bool.bool false) ~f:S.Bool.( && )
-                  in
-                  S.ite pred (fun () -> fill args) (fun () -> S.unit)
-          in
-          fill_pred)
+      List.fold_left arg_order
+        ~init:(fill_with_pred rule @@ fill_inner)
+        ~f:(fun fill arg_n ->
+          fill_with_pred rule @@ fill_with_prop rule arg_n args.(arg_n) @@ fill)
     in
     fill []
 

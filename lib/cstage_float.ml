@@ -87,7 +87,8 @@ module Make (C : Cstage_core.S) = struct
   let sin x = unop "std::sin(%s)" type_ x
 
   let of_sexp x =
-    eformat "std::atof(((atom*)$(x))->get_body())" type_ "" [ ("x", C x) ]
+    eformat "std::atof(((atom*)$(x))->get_body().c_str())" type_ ""
+      [ ("x", C x) ]
 
   let sexp_of x =
     eformat "atom(std::to_string($(x)))" Sexp.type_ "" [ ("x", C x) ]
