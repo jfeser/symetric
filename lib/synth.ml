@@ -44,22 +44,27 @@ module Make
     (C : Sigs.CACHE with type value = L.Value.t and type 'a code = 'a S.t) =
 struct
   module V = struct
-    type state = { cost : int; symbol : string }
-    [@@deriving compare, hash, sexp]
+    module T = struct
+      type state = { cost : int; symbol : string }
+      [@@deriving compare, hash, sexp]
 
-    type code = {
-      cost : int;
-      rule :
-        ((L.Value.t, bool S.t) Semantics.t
-        [@compare.ignore] [@sexp.opaque])
-        Gr.Rule.t;
-    }
-    [@@deriving compare, hash, sexp]
+      type code = {
+        cost : int;
+        rule :
+          ((L.Value.t, bool S.t) Semantics.t
+          [@compare.ignore] [@sexp.opaque])
+          Gr.Rule.t;
+      }
+      [@@deriving compare, hash, sexp]
 
-    type arg = { id : int; n_args : int } [@@deriving compare, hash, sexp]
+      type arg = { id : int; n_args : int } [@@deriving compare, hash, sexp]
 
-    type t = State of state | Code of code | Arg of arg
-    [@@deriving compare, hash, sexp]
+      type t = State of state | Code of code | Arg of arg
+      [@@deriving compare, hash, sexp]
+    end
+
+    include T
+    include Comparator.Make (T)
 
     let pp fmt v = Sexp.pp_hum fmt @@ [%sexp_of: t] v
 
@@ -110,6 +115,49 @@ struct
     include Graph.Graphviz.Dot (X)
     include Graph.Traverse.Dfs (X)
     include Graph.Oper.P (X)
+
+    module Reachability =
+      Graph.Fixpoint.Make
+        (X)
+        (struct
+          type vertex = E.vertex
+
+          type edge = E.t
+
+          type g = t
+
+          type data = bool
+
+          let direction = Graph.Fixpoint.Forward
+
+          let equal = Bool.( = )
+
+          let join = ( || )
+
+          let analyze _ x = x
+        end)
+
+    module Reverse_reachability =
+      Graph.Fixpoint.Make
+        (X)
+        (struct
+          type vertex = E.vertex
+
+          type edge = E.t
+
+          type g = t
+
+          type data = bool
+
+          let direction = Graph.Fixpoint.Backward
+
+          let equal = Bool.( = )
+
+          let join = ( || )
+
+          let analyze _ x = x
+        end)
+
     module Topo = Graph.Topological.Make_stable (X)
 
     let filter_vertex g ~f =
@@ -294,6 +342,16 @@ struct
     (* Compute search graph. *)
     let fresh = Fresh.create () and g = ref G.empty in
 
+    let module Key = struct
+      type t = (int * V.state) list [@@deriving compare, hash, sexp]
+    end in
+    let arg_multiedges = Hashtbl.create (module Key) in
+    let norm k =
+      List.sort ~compare:(fun (i, _) (i', _) -> [%compare: int] i i') k
+    in
+    let find_arg k = Hashtbl.find arg_multiedges @@ norm k
+    and add_arg k v = Hashtbl.set arg_multiedges ~key:(norm k) ~data:v in
+
     for cost = 0 to max_cost do
       (* Select the rules that have cheap enough right hand sides. *)
       let rules =
@@ -330,14 +388,22 @@ struct
               (* Log.debug (fun m -> m "Inserting %a" Fmt.(Dump.(list int)) costs); *)
               let costs = Array.of_list costs in
               assert (Int.(Array.length costs = n_holes));
-              let arg = V.Arg { id = Fresh.int fresh; n_args = n_holes } in
-              Gr.to_preorder (rhs :> Gr.Untyped_term.t)
-              |> Gr.non_terminals
-              |> List.iter ~f:(fun (symbol, arg_idx) ->
-                     let cost = costs.(arg_idx) in
-                     g := G.add_edge !g rhs_v arg;
-                     let edge = (arg, arg_idx, V.State { cost; symbol }) in
-                     g := G.add_edge_e !g edge)))
+
+              let deps =
+                Gr.to_preorder (rhs :> Gr.Untyped_term.t)
+                |> Gr.non_terminals
+                |> List.map ~f:(fun (symbol, arg_idx) ->
+                       (arg_idx, { V.cost = costs.(arg_idx); symbol }))
+              in
+              match find_arg deps with
+              | Some arg -> g := G.add_edge !g rhs_v arg
+              | None ->
+                  let arg = V.Arg { id = Fresh.int fresh; n_args = n_holes } in
+                  g := G.add_edge !g rhs_v arg;
+                  List.iter deps ~f:(fun (arg_idx, state) ->
+                      let edge = (arg, arg_idx, V.State state) in
+                      g := G.add_edge_e !g edge);
+                  add_arg deps arg))
     done;
     let g = !g in
 
@@ -346,30 +412,33 @@ struct
       List.filter vertices ~f:(function
         | State { symbol; _ } -> String.(symbol = Sketch.output)
         | _ -> false)
+      |> Set.of_list (module V)
     and sources =
       List.filter vertices ~f:(function
         | State { symbol; cost = 1 } ->
             List.mem Sketch.inputs symbol ~equal:[%compare.equal: string]
         | _ -> false)
+      |> Set.of_list (module V)
     in
 
     (* Prune nodes that the sinks don't depend on and nodes that can't reach a
        source. *)
-    let should_keep g g_trans v =
-      let open V in
-      ( List.mem sinks v ~equal
-      || List.exists sinks ~f:(fun v' -> G.mem_edge g_trans v' v) )
-      && ( List.mem sources v ~equal
-         || List.exists sources ~f:(fun v' -> G.mem_edge g_trans v v') )
-      && match v with Arg x -> Int.(x.n_args = G.out_degree g v) | _ -> true
-    in
-
     let rec prune_loop g =
-      let g_trans = G.transitive_closure g in
+      let sink_reachable = G.Reachability.analyze (Set.mem sinks) g
+      and source_reachable =
+        G.Reverse_reachability.analyze (Set.mem sources) g
+      in
       let g' =
         G.fold_vertex
           (fun v g ->
-            if should_keep g g_trans v then g
+            let should_keep =
+              sink_reachable v && source_reachable v
+              &&
+              match v with
+              | Arg x -> Int.(x.n_args = G.out_degree g v)
+              | _ -> true
+            in
+            if should_keep then g
             else
               (* Log.debug (fun m -> m "Pruning vertex %a" V.pp v); *)
               G.remove_vertex g v)
