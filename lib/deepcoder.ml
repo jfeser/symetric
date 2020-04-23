@@ -87,11 +87,9 @@ struct
 
     let of_sexp symbol s =
       let array_of_sexp examples =
-        let int_t = C.Int.type_ in
-        C.Array.of_sexp array_t examples (fun array ->
-            A.of_sexp (A.mk_type int_t) array C.Int.of_sexp)
+        C.Array.of_sexp examples (fun array -> A.of_sexp array C.Int.of_sexp)
       in
-      let int_of_sexp examples = C.Array.of_sexp int_t examples C.Int.of_sexp in
+      let int_of_sexp examples = C.Array.of_sexp examples C.Int.of_sexp in
 
       if String.(symbol = "L") then A (array_of_sexp s) else I (int_of_sexp s)
 
@@ -213,7 +211,7 @@ struct
       | App ("head", [ e ]) ->
           I
             ( let_ (eval ctx e |> to_array) @@ fun a ->
-              C.Array.map Value.int_t a ~f:(fun a ->
+              C.Array.map a ~f:(fun a ->
                   ite
                     (length a > int 0)
                     (fun () -> get a (int 0))
@@ -221,7 +219,7 @@ struct
       | App ("last", [ e ]) ->
           I
             ( let_ (eval ctx e |> to_array) @@ fun a ->
-              C.Array.map Value.int_t a ~f:(fun a ->
+              C.Array.map a ~f:(fun a ->
                   let_ (length a) (fun l ->
                       ite
                         (l > int 0)
@@ -231,18 +229,17 @@ struct
           A
             ( let_ (eval ctx e |> to_array) @@ fun a ->
               let_ (eval ctx n |> to_int) @@ fun n ->
-              C.Array.map2 Value.array_t a n ~f:(fun a n -> sub a (int 0) n) )
+              C.Array.map2 a n ~f:(fun a n -> sub a (int 0) n) )
       | App ("drop", [ n; e ]) ->
           A
             ( let_ (eval ctx e |> to_array) @@ fun a ->
               let_ (eval ctx n |> to_int) @@ fun n ->
-              C.Array.map2 Value.array_t a n ~f:(fun a n ->
-                  sub a n (length a - int 1)) )
+              C.Array.map2 a n ~f:(fun a n -> sub a n (length a - int 1)) )
       | App ("access", [ n; e ]) ->
           I
             ( let_ (eval ctx e |> to_array) @@ fun a ->
               let_ (eval ctx n |> to_int) @@ fun n ->
-              C.Array.map2 Value.int_t a n ~f:(fun a n ->
+              C.Array.map2 a n ~f:(fun a n ->
                   ite
                     Bool.(n >= int 0 && n < length a)
                     (fun () -> get a n)
@@ -250,7 +247,7 @@ struct
       | App ("minimum", [ e ]) ->
           I
             ( let_ (eval ctx e |> to_array) @@ fun a ->
-              C.Array.map Value.int_t a ~f:(fun a ->
+              C.Array.map a ~f:(fun a ->
                   fold
                     ~init:(int Int32.(max_value |> to_int_exn))
                     ~f:(fun acc x ->
@@ -259,7 +256,7 @@ struct
       | App ("maximum", [ e ]) ->
           I
             ( let_ (eval ctx e |> to_array) @@ fun a ->
-              C.Array.map Value.int_t a ~f:(fun a ->
+              C.Array.map a ~f:(fun a ->
                   fold
                     ~init:(int Int32.(min_value |> to_int_exn))
                     ~f:(fun acc x ->
@@ -268,26 +265,24 @@ struct
       | App ("reverse", [ e ]) ->
           A
             ( let_ (eval ctx e |> to_array) @@ fun a ->
-              C.Array.map Value.array_t a ~f:(fun a ->
+              C.Array.map a ~f:(fun a ->
                   let_ (length a) (fun l ->
-                      init int_array l (fun i -> get a (l - i - int 1)))) )
+                      init l (fun i -> get a (l - i - int 1)))) )
       | App ("sum", [ e ]) ->
           I
             ( let_ (eval ctx e |> to_array) @@ fun a ->
-              C.Array.map Value.int_t a ~f:(fun a ->
-                  fold ~init:(int 0) ~f:( + ) a) )
+              C.Array.map a ~f:(fun a -> fold ~init:(int 0) ~f:( + ) a) )
       | App ("map", [ f; e ]) ->
           let f = eval ctx f |> to_int_f in
           A
             ( let_ (eval ctx e |> to_array) @@ fun a ->
-              C.Array.map Value.array_t a ~f:(fun a ->
-                  let_ a (fun a ->
-                      init int_array (length a) (fun i -> f (get a i)))) )
+              C.Array.map a ~f:(fun a ->
+                  let_ a (fun a -> init (length a) (fun i -> f (get a i)))) )
       | App ("count", [ f; e ]) ->
           let f = eval ctx f |> to_bool_f in
           I
             ( let_ (eval ctx e |> to_array) @@ fun a ->
-              C.Array.map Value.int_t a ~f:(fun a ->
+              C.Array.map a ~f:(fun a ->
                   fold ~init:(int 0)
                     ~f:(fun acc x ->
                       ite (f x) (fun () -> acc + int 1) (fun () -> acc))
@@ -297,8 +292,8 @@ struct
           A
             ( let_ (eval ctx e |> to_array) @@ fun a ->
               let_ (eval ctx e' |> to_array) @@ fun a' ->
-              C.Array.map2 Value.array_t a a' ~f:(fun a a' ->
-                  init int_array
+              C.Array.map2 a a' ~f:(fun a a' ->
+                  init
                     (min (length a) (length a'))
                     (fun i -> f (get a i) (get a' i))) )
       | e ->
@@ -334,7 +329,7 @@ struct
     let empty () =
       let mk_type t = Array.mk_type @@ Set.mk_type t in
       let mk_empty t =
-        Array.init t (Int.int max_size) (fun _ -> Set.empty (Array.elem_type t))
+        Array.init (Int.int max_size) (fun _ -> Set.empty (Array.elem_type t))
       in
       let i_cache_t = mk_type Value.int_t in
       let a_cache_t = mk_type Value.array_t in

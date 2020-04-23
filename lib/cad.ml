@@ -127,7 +127,7 @@ module Make (C : Deps) = struct
       let sexp_of _ = assert false
 
       let of_sexp sym sexp =
-        let examples_of_sexp s = C.Array.of_sexp examples_t s C.Bool.of_sexp in
+        let examples_of_sexp s = C.Array.of_sexp s C.Bool.of_sexp in
         let sphere_of_sexp s =
           C.Tuple_4.of_sexp s C.Float.of_sexp C.Float.of_sexp C.Float.of_sexp
             C.Float.of_sexp
@@ -140,7 +140,7 @@ module Make (C : Deps) = struct
             (fun s -> C.Tuple.of_sexp s C.Float.of_sexp C.Float.of_sexp)
         in
         let vectors_of_sexp s =
-          C.Array.of_sexp vectors_t s @@ fun s ->
+          C.Array.of_sexp s @@ fun s ->
           C.Tuple_3.of_sexp s C.Float.of_sexp C.Float.of_sexp C.Float.of_sexp
         in
         let offset_of_sexp s =
@@ -212,7 +212,7 @@ module Make (C : Deps) = struct
           let vectors = to_vectors (eval ctx v) in
           examples @@ C.Tuple_4.tuple_of sphere
           @@ fun (x, y, z, r) ->
-          C.Array.map examples_t vectors ~f:(fun v ->
+          C.Array.map vectors ~f:(fun v ->
               C.Tuple_3.tuple_of v @@ fun (x', y', z') ->
               C.Float.(
                 ((x - x') ** float 2.0)
@@ -229,7 +229,7 @@ module Make (C : Deps) = struct
           C.Tuple_4.tuple_of disc @@ fun (theta_x, theta_y, theta_z, radius) ->
           C.let_ (C.Tuple.fst center) @@ fun c_y ->
           C.let_ (C.Tuple.snd center) @@ fun c_z ->
-          C.Array.map examples_t vectors ~f:(fun v ->
+          C.Array.map vectors ~f:(fun v ->
               let open C.Float in
               let open C.Bool in
               C.Tuple_3.tuple_of v @@ fun (x, y, z) ->
@@ -245,16 +245,15 @@ module Make (C : Deps) = struct
       | App ("inter", [ e1; e2 ]) ->
           let v1 = eval ctx e1 |> to_examples
           and v2 = eval ctx e2 |> to_examples in
-          examples @@ C.Array.map2 examples_t v1 v2 ~f:C.Bool.( && )
+          examples @@ C.Array.map2 v1 v2 ~f:C.Bool.( && )
       | App ("union", [ e1; e2 ]) ->
           let v1 = eval ctx e1 |> to_examples
           and v2 = eval ctx e2 |> to_examples in
-          examples @@ C.Array.map2 examples_t v1 v2 ~f:C.Bool.( || )
+          examples @@ C.Array.map2 v1 v2 ~f:C.Bool.( || )
       | App ("sub", [ e1; e2 ]) ->
           let v1 = eval ctx e1 |> to_examples
           and v2 = eval ctx e2 |> to_examples in
-          examples
-          @@ C.Array.map2 examples_t v1 v2 ~f:C.Bool.(fun x1 x2 -> x1 && not x2)
+          examples @@ C.Array.map2 v1 v2 ~f:C.Bool.(fun x1 x2 -> x1 && not x2)
       | App (var, []) -> (
           match Map.find ctx var with
           | Some x -> x
@@ -387,9 +386,9 @@ module Make (C : Deps) = struct
       and ints_t = Array.mk_type @@ Set.mk_type @@ Int.type_ in
       Nonlocal_let.let_ let_ (fun () ->
           Tuple.create
-            (Array.init examples_t (Int.int max_size) (fun _ ->
+            (Array.init (Int.int max_size) (fun _ ->
                  Set.empty (Array.elem_type examples_t)))
-            (Array.init ints_t (Int.int max_size) (fun _ ->
+            (Array.init (Int.int max_size) (fun _ ->
                  Set.empty (Array.elem_type ints_t))))
 
     let put ~sym ~size tbl v =

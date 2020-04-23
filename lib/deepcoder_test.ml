@@ -18,6 +18,7 @@ let%expect_test "" =
   [%expect
     {|
     #include <array>
+    #include <cmath>
     #include <iostream>
     #include <set>
     #include <vector>
@@ -65,142 +66,117 @@ let%expect_test "" =
             std::pair<std::vector<std::set<std::vector<int32_t>>>,
                       std::vector<std::set<std::vector<std::vector<int32_t>>>>>,
             std::vector<std::vector<int32_t>>>
-            x49);
+            x95);
     int reconstruct_L_2(
         std::pair<
             std::pair<std::vector<std::set<std::vector<int32_t>>>,
                       std::vector<std::set<std::vector<std::vector<int32_t>>>>>,
             std::vector<std::vector<int32_t>>>
-            x35);
+            x76);
     int main();
-    std::vector<sexp *> x25;
-    std::vector<std::vector<int32_t>> x34;
-    std::vector<std::vector<int32_t>> x62;
+    std::vector<sexp *> x15;
+    std::vector<std::vector<std::vector<int32_t>>> x45;
+    std::vector<std::vector<int32_t>> x75;
     int main() {
-      std::set<std::vector<std::vector<int32_t>>> x5;
-      std::set<std::vector<int32_t>> x10;
+      std::set<std::vector<std::vector<int32_t>>> x2;
+      std::set<std::vector<std::vector<int32_t>>> x6;
+      std::set<std::vector<int32_t>> x8;
+      std::set<std::vector<int32_t>> x12;
       // begin Array.init
-      std::vector<std::set<std::vector<int32_t>>> x7(100);
-      std::vector<std::set<std::vector<int32_t>>> x8 = x7;
-      for (int x9 = 0; x9 < 100; x9 += 1) {
-        x8[x9] = x10;
+      std::vector<std::set<std::vector<int32_t>>> x9(100);
+      std::vector<std::set<std::vector<int32_t>>> x10 = x9;
+      for (int x11 = 0; x11 < 100; x11 += 1) {
+        x10[x11] = x12;
       }
       // end Array.init
-      std::vector<std::set<std::vector<int32_t>>> x11 = x8;
+      std::vector<std::set<std::vector<int32_t>>> x13 = x10;
       // begin Array.init
-      std::vector<std::set<std::vector<std::vector<int32_t>>>> x2(100);
-      std::vector<std::set<std::vector<std::vector<int32_t>>>> x3 = x2;
-      for (int x4 = 0; x4 < 100; x4 += 1) {
-        x3[x4] = x5;
+      std::vector<std::set<std::vector<std::vector<int32_t>>>> x3(100);
+      std::vector<std::set<std::vector<std::vector<int32_t>>>> x4 = x3;
+      for (int x5 = 0; x5 < 100; x5 += 1) {
+        x4[x5] = x6;
       }
       // end Array.init
-      std::vector<std::set<std::vector<std::vector<int32_t>>>> x6 = x3;
-      sexp *x24 = sexp::load(std::cin);
-      x25 = ((list *)x24)->get_body();
-      std::vector<sexp *> x26 = ((list *)(x25)[1])->get_body();
+      std::vector<std::set<std::vector<std::vector<int32_t>>>> x7 = x4;
+      sexp *x14 = sexp::load(std::cin);
+      x15 = ((list *)x14)->get_body();
+      std::vector<sexp *> x63 = ((list *)(x15)[1])->get_body();
       // begin Array.init
-      std::vector<std::vector<int32_t>> x27((int)((x26).size()));
-      std::vector<std::vector<int32_t>> x28 = x27;
-      for (int x29 = 0; x29 < (int)((x26).size()); x29 += 1) {
-        std::vector<sexp *> x30 = ((list *)(x26)[x29])->get_body();
+      std::vector<std::vector<int32_t>> x68((int)((x63).size()));
+      std::vector<std::vector<int32_t>> x69 = x68;
+      for (int x70 = 0; x70 < (int)((x63).size()); x70 += 1) {
+        std::vector<sexp *> x71 = ((list *)(x63)[x70])->get_body();
         // begin Array.init
-        std::vector<int32_t> x31((int)((x30).size()));
-        std::vector<int32_t> x32 = x31;
-        for (int x33 = 0; x33 < (int)((x30).size()); x33 += 1) {
-          x32[x33] = std::stoi(((atom *)(x30)[x33])->get_body());
+        std::vector<int32_t> x72((int)((x71).size()));
+        std::vector<int32_t> x73 = x72;
+        for (int x74 = 0; x74 < (int)((x71).size()); x74 += 1) {
+          x73[x74] = std::stoi(((atom *)(x71)[x74])->get_body());
         }
         // end Array.init
-        x28[x29] = x32;
+        x69[x70] = x73;
       }
       // end Array.init
-      x34 = x28;
-      std::vector<sexp *> x54 = ((list *)(x25)[0])->get_body();
+      x75 = x69;
+      std::vector<sexp *> x16 = ((list *)(x15)[0])->get_body();
+      int x17 = (int)((x16).size());
       // begin Array.init
-      std::vector<std::vector<int32_t>> x55((int)((x54).size()));
-      std::vector<std::vector<int32_t>> x56 = x55;
-      for (int x57 = 0; x57 < (int)((x54).size()); x57 += 1) {
-        std::vector<sexp *> x58 = ((list *)(x54)[x57])->get_body();
+      std::vector<std::vector<std::vector<int32_t>>> x30(x17);
+      std::vector<std::vector<std::vector<int32_t>>> x31 = x30;
+      for (int x32 = 0; x32 < x17; x32 += 1) {
+        std::vector<sexp *> x33 = ((list *)(x16)[x32])->get_body();
         // begin Array.init
-        std::vector<int32_t> x59((int)((x58).size()));
-        std::vector<int32_t> x60 = x59;
-        for (int x61 = 0; x61 < (int)((x58).size()); x61 += 1) {
-          x60[x61] = std::stoi(((atom *)(x58)[x61])->get_body());
-        }
-        // end Array.init
-        x56[x57] = x60;
-      }
-      // end Array.init
-      x62 = x56;
-      int x90;
-      int x91 = x90;
-      if ((1 == 1)) {
-        std::vector<std::vector<int32_t>> x78 = x62;
-        // begin Array.init
-        std::vector<std::vector<int32_t>> x79(((int)((x78).size())));
-        std::vector<std::vector<int32_t>> x80 = x79;
-        for (int x81 = 0; x81 < ((int)((x78).size())); x81 += 1) {
-          std::vector<int32_t> x82 = (x78[x81]);
-          int32_t x83 = ((int)((x82).size()));
+        std::vector<std::vector<int32_t>> x38((int)((x33).size()));
+        std::vector<std::vector<int32_t>> x39 = x38;
+        for (int x40 = 0; x40 < (int)((x33).size()); x40 += 1) {
+          std::vector<sexp *> x41 = ((list *)(x33)[x40])->get_body();
           // begin Array.init
-          std::vector<int32_t> x84(x83);
-          std::vector<int32_t> x85 = x84;
-          for (int x86 = 0; x86 < x83; x86 += 1) {
-            x85[x86] = (x82[((x83 - x86) - 1)]);
+          std::vector<int32_t> x42((int)((x41).size()));
+          std::vector<int32_t> x43 = x42;
+          for (int x44 = 0; x44 < (int)((x41).size()); x44 += 1) {
+            x43[x44] = std::stoi(((atom *)(x41)[x44])->get_body());
           }
           // end Array.init
-          x80[x81] = x85;
+          x39[x40] = x43;
         }
         // end Array.init
-        std::vector<std::vector<int32_t>> x87 = x80;
-        int x88;
-        int x89 = x88;
-        if ((x87 == x34)) {
-          reconstruct_L_2(std::make_pair(std::make_pair(x11, x6), x34));
-          exit(0);
-          x89 = 0;
-        } else {
-
-          x89 = 0;
-        }
-        (x6[2]).insert(x87);
-        x91 = 0;
-      } else {
-
-        x91 = 0;
+        x31[x32] = x39;
       }
-
-      for (auto x12 = (x6[1]).begin(); x12 != (x6[1]).end(); ++x12) {
-        std::vector<std::vector<int32_t>> x13 = *x12;
+      // end Array.init
+      x45 = x31;
+      // begin Array.iter
+      int32_t x46 = ((int)((x45).size()));
+      for (int x47 = 0; x47 < x46; x47 += 1) {
+        std::vector<std::vector<int32_t>> x48 = (x45[x47]);
         // begin Array.init
-        std::vector<std::vector<int32_t>> x14(((int)((x13).size())));
-        std::vector<std::vector<int32_t>> x15 = x14;
-        for (int x16 = 0; x16 < ((int)((x13).size())); x16 += 1) {
-          std::vector<int32_t> x17 = (x13[x16]);
-          int32_t x18 = ((int)((x17).size()));
+        std::vector<std::vector<int32_t>> x54(((int)((x48).size())));
+        std::vector<std::vector<int32_t>> x55 = x54;
+        for (int x56 = 0; x56 < ((int)((x48).size())); x56 += 1) {
+          std::vector<int32_t> x57 = (x48[x56]);
+          int32_t x58 = ((int)((x57).size()));
           // begin Array.init
-          std::vector<int32_t> x19(x18);
-          std::vector<int32_t> x20 = x19;
-          for (int x21 = 0; x21 < x18; x21 += 1) {
-            int32_t x22 = (x17[((x18 - x21) - 1)]);
-            x20[x21] = x22;
+          std::vector<int32_t> x59(x58);
+          std::vector<int32_t> x60 = x59;
+          for (int x61 = 0; x61 < x58; x61 += 1) {
+            x60[x61] = (x57[((x58 - x61) - 1)]);
           }
           // end Array.init
-          x15[x16] = x20;
+          x55[x56] = x60;
         }
         // end Array.init
-        std::vector<std::vector<int32_t>> x23 = x15;
-        int x76;
-        int x77 = x76;
-        if ((x23 == x34)) {
-          reconstruct_L_2(std::make_pair(std::make_pair(x11, x6), x34));
+        std::vector<std::vector<int32_t>> x62 = x55;
+        int x100;
+        int x101 = x100;
+        if ((x62 == x75)) {
+          reconstruct_L_2(std::make_pair(std::make_pair(x13, x7), x75));
           exit(0);
-          x77 = 0;
+          x101 = 0;
         } else {
 
-          x77 = 0;
+          x101 = 0;
         }
-        (x6[2]).insert(x23);
+        (x7[2]).insert(x62);
       }
+      // end Array.iter
       return 0;
     }
     int reconstruct_L_2(
@@ -208,81 +184,44 @@ let%expect_test "" =
             std::pair<std::vector<std::set<std::vector<int32_t>>>,
                       std::vector<std::set<std::vector<std::vector<int32_t>>>>>,
             std::vector<std::vector<int32_t>>>
-            x35) {
+            x76) {
       std::pair<std::vector<std::set<std::vector<int32_t>>>,
                 std::vector<std::set<std::vector<std::vector<int32_t>>>>>
-          x36 = std::get<0>(x35);
-      std::vector<std::vector<int32_t>> x37 = std::get<1>(x35);
-      int x74;
-      int x75 = x74;
-      if ((1 == 1)) {
-        int x72;
-        int x73 = x72;
-        std::vector<std::vector<int32_t>> x63 = x62;
+          x77 = std::get<0>(x76);
+      std::vector<std::vector<int32_t>> x78 = std::get<1>(x76);
+      // begin Array.iter
+      int32_t x79 = ((int)((x45).size()));
+      for (int x80 = 0; x80 < x79; x80 += 1) {
+        int x98;
+        int x99 = x98;
+        std::vector<std::vector<int32_t>> x81 = (x45[x80]);
         // begin Array.init
-        std::vector<std::vector<int32_t>> x64(((int)((x63).size())));
-        std::vector<std::vector<int32_t>> x65 = x64;
-        for (int x66 = 0; x66 < ((int)((x63).size())); x66 += 1) {
-          std::vector<int32_t> x67 = (x63[x66]);
-          int32_t x68 = ((int)((x67).size()));
+        std::vector<std::vector<int32_t>> x87(((int)((x81).size())));
+        std::vector<std::vector<int32_t>> x88 = x87;
+        for (int x89 = 0; x89 < ((int)((x81).size())); x89 += 1) {
+          std::vector<int32_t> x90 = (x81[x89]);
+          int32_t x91 = ((int)((x90).size()));
           // begin Array.init
-          std::vector<int32_t> x69(x68);
-          std::vector<int32_t> x70 = x69;
-          for (int x71 = 0; x71 < x68; x71 += 1) {
-            x70[x71] = (x67[((x68 - x71) - 1)]);
+          std::vector<int32_t> x92(x91);
+          std::vector<int32_t> x93 = x92;
+          for (int x94 = 0; x94 < x91; x94 += 1) {
+            x93[x94] = (x90[((x91 - x94) - 1)]);
           }
           // end Array.init
-          x65[x66] = x70;
+          x88[x89] = x93;
         }
         // end Array.init
 
-        if ((x65 == x37)) {
+        if ((x88 == x78)) {
           std::cout << "(App reverse ((App L0 ())))" << std::endl;
-          reconstruct_L_1(std::make_pair(x36, x62));
-          x73 = 0;
+          reconstruct_L_1(std::make_pair(x77, (x45[x80])));
+          x99 = 0;
         } else {
 
-          x73 = 0;
-        }
-
-        x75 = x73;
-      } else {
-
-        x75 = 0;
-      }
-
-      for (auto x38 = (std::get<1>(x36)[1]).begin();
-           x38 != (std::get<1>(x36)[1]).end(); ++x38) {
-        int x52;
-        int x53 = x52;
-        std::vector<std::vector<int32_t>> x39 = *x38;
-        // begin Array.init
-        std::vector<std::vector<int32_t>> x40(((int)((x39).size())));
-        std::vector<std::vector<int32_t>> x41 = x40;
-        for (int x42 = 0; x42 < ((int)((x39).size())); x42 += 1) {
-          std::vector<int32_t> x43 = (x39[x42]);
-          int32_t x44 = ((int)((x43).size()));
-          // begin Array.init
-          std::vector<int32_t> x45(x44);
-          std::vector<int32_t> x46 = x45;
-          for (int x47 = 0; x47 < x44; x47 += 1) {
-            int32_t x48 = (x43[((x44 - x47) - 1)]);
-            x46[x47] = x48;
-          }
-          // end Array.init
-          x41[x42] = x46;
-        }
-        // end Array.init
-
-        if ((x41 == x37)) {
-          std::cout << "(App reverse ((App L0 ())))" << std::endl;
-          reconstruct_L_1(std::make_pair(x36, *x38));
-          x53 = 0;
-        } else {
-
-          x53 = 0;
+          x99 = 0;
         }
       }
+      // end Array.iter
       return 0;
     }
     int reconstruct_L_1(
@@ -290,60 +229,32 @@ let%expect_test "" =
             std::pair<std::vector<std::set<std::vector<int32_t>>>,
                       std::vector<std::set<std::vector<std::vector<int32_t>>>>>,
             std::vector<std::vector<int32_t>>>
-            x49) {
+            x95) {
       std::pair<std::vector<std::set<std::vector<int32_t>>>,
                 std::vector<std::set<std::vector<std::vector<int32_t>>>>>
-          x50 = std::get<0>(x49);
-      std::vector<std::vector<int32_t>> x51 = std::get<1>(x49);
+          x96 = std::get<0>(x95);
+      std::vector<std::vector<int32_t>> x97 = std::get<1>(x95);
       return 0;
     }
  |}];
   code |> Util.clang_build |> print_endline;
   [%expect
     {|
-    <stdin>:134:68: warning: variable 'x76' is uninitialized when used here [-Wuninitialized]
-      std::vector<std::vector<int32_t>> x23 = x15; int x76;  int x77 = x76;
-                                                                       ^~~
-    <stdin>:134:55: note: initialize the variable 'x76' to silence this warning
-      std::vector<std::vector<int32_t>> x23 = x15; int x76;  int x77 = x76;
-                                                          ^
-                                                           = 0
-    <stdin>:106:68: warning: variable 'x88' is uninitialized when used here [-Wuninitialized]
-      std::vector<std::vector<int32_t>> x87 = x80; int x88;  int x89 = x88;
-                                                                       ^~~
-    <stdin>:106:55: note: initialize the variable 'x88' to silence this warning
-      std::vector<std::vector<int32_t>> x87 = x80; int x88;  int x89 = x88;
-                                                          ^
-                                                           = 0
-    <stdin>:90:33: warning: variable 'x90' is uninitialized when used here [-Wuninitialized]
-     x62 = x56; int x90;  int x91 = x90;
-                                    ^~~
-    <stdin>:90:20: note: initialize the variable 'x90' to silence this warning
-     x62 = x56; int x90;  int x91 = x90;
-                       ^
-                        = 0
-    <stdin>:174:30: warning: variable 'x52' is uninitialized when used here [-Wuninitialized]
-             int x52;  int x53 = x52;   std::vector<std::vector<int32_t>> x39 = *x38;
-                                 ^~~
-    <stdin>:174:17: note: initialize the variable 'x52' to silence this warning
-             int x52;  int x53 = x52;   std::vector<std::vector<int32_t>> x39 = *x38;
-                    ^
-                     = 0
-    <stdin>:146:24: warning: variable 'x72' is uninitialized when used here [-Wuninitialized]
-       int x72;  int x73 = x72;   std::vector<std::vector<int32_t>> x63 = x62;
-                           ^~~
-    <stdin>:146:11: note: initialize the variable 'x72' to silence this warning
-       int x72;  int x73 = x72;   std::vector<std::vector<int32_t>> x63 = x62;
-              ^
-               = 0
-    <stdin>:144:410: warning: variable 'x74' is uninitialized when used here [-Wuninitialized]
-    int reconstruct_L_2(std::pair<std::pair<std::vector<std::set<std::vector<int32_t> >>,std::vector<std::set<std::vector<std::vector<int32_t>> >> >,std::vector<std::vector<int32_t>> > x35) {    std::pair<std::vector<std::set<std::vector<int32_t> >>,std::vector<std::set<std::vector<std::vector<int32_t>> >> > x36 = std::get<0>(x35);  std::vector<std::vector<int32_t>> x37 = std::get<1>(x35); int x74;  int x75 = x74;
-                                                                                                                                                                                                                                                                                                                                                                                                                             ^~~
-    <stdin>:144:397: note: initialize the variable 'x74' to silence this warning
-    int reconstruct_L_2(std::pair<std::pair<std::vector<std::set<std::vector<int32_t> >>,std::vector<std::set<std::vector<std::vector<int32_t>> >> >,std::vector<std::vector<int32_t>> > x35) {    std::pair<std::vector<std::set<std::vector<int32_t> >>,std::vector<std::set<std::vector<std::vector<int32_t>> >> > x36 = std::get<0>(x35);  std::vector<std::vector<int32_t>> x37 = std::get<1>(x35); int x74;  int x75 = x74;
-                                                                                                                                                                                                                                                                                                                                                                                                                ^
-                                                                                                                                                                                                                                                                                                                                                                                                                 = 0
-    6 warnings generated. |}]
+    <stdin>:116:70: warning: variable 'x100' is uninitialized when used here [-Wuninitialized]
+      std::vector<std::vector<int32_t>> x62 = x55; int x100;  int x101 = x100;
+                                                                         ^~~~
+    <stdin>:116:56: note: initialize the variable 'x100' to silence this warning
+      std::vector<std::vector<int32_t>> x62 = x55; int x100;  int x101 = x100;
+                                                           ^
+                                                            = 0
+    <stdin>:131:28: warning: variable 'x98' is uninitialized when used here [-Wuninitialized]
+           int x98;  int x99 = x98;    std::vector<std::vector<int32_t>> x81 = (x45[x80]);
+                               ^~~
+    <stdin>:131:15: note: initialize the variable 'x98' to silence this warning
+           int x98;  int x99 = x98;    std::vector<std::vector<int32_t>> x81 = (x45[x80]);
+                  ^
+                   = 0
+    2 warnings generated. |}]
 
 let%expect_test "" =
   let module Core = Cstage_core.Make () in
@@ -363,6 +274,7 @@ let%expect_test "" =
   [%expect
     {|
     #include <array>
+    #include <cmath>
     #include <iostream>
     #include <set>
     #include <vector>
@@ -409,297 +321,221 @@ let%expect_test "" =
         std::pair<std::pair<std::vector<std::set<std::vector<int32_t>>>,
                             std::vector<std::set<std::vector<span<int32_t>>>>>,
                   std::vector<span<int32_t>>>
-            x55);
+            x119);
     int reconstruct_L_2(
         std::pair<std::pair<std::vector<std::set<std::vector<int32_t>>>,
                             std::vector<std::set<std::vector<span<int32_t>>>>>,
                   std::vector<span<int32_t>>>
-            x41);
+            x96);
     int main();
     std::array<int32_t, 500000> x2;
     int32_t x3;
     std::array<int32_t, 500000> x4;
     int32_t x5;
-    std::vector<sexp *> x29;
-    std::array<int32_t, 500000> x34;
-    int32_t x35;
-    std::vector<span<int32_t>> x40;
-    std::array<int32_t, 500000> x64;
-    int32_t x65;
-    std::vector<span<int32_t>> x70;
+    std::vector<sexp *> x19;
+    std::array<int32_t, 500000> x24;
+    int32_t x25;
+    std::array<int32_t, 500000> x33;
+    int32_t x34;
+    std::array<int32_t, 500000> x43;
+    int32_t x44;
+    std::array<int32_t, 500000> x52;
+    int32_t x53;
+    std::vector<std::vector<span<int32_t>>> x57;
+    std::array<int32_t, 500000> x63;
+    int32_t x64;
+    std::array<int32_t, 500000> x73;
+    int32_t x74;
+    std::array<int32_t, 500000> x81;
+    int32_t x82;
+    std::array<int32_t, 500000> x90;
+    int32_t x91;
+    std::vector<span<int32_t>> x95;
+    std::array<int32_t, 500000> x104;
+    int32_t x105;
+    std::array<int32_t, 500000> x114;
+    int32_t x115;
     int main() {
-      std::set<std::vector<span<int32_t>>> x9;
-      std::set<std::vector<int32_t>> x14;
+      std::set<std::vector<span<int32_t>>> x6;
+      std::set<std::vector<span<int32_t>>> x10;
+      std::set<std::vector<int32_t>> x12;
+      std::set<std::vector<int32_t>> x16;
       // begin Array.init
-      std::vector<std::set<std::vector<int32_t>>> x11(100);
-      std::vector<std::set<std::vector<int32_t>>> x12 = x11;
-      for (int x13 = 0; x13 < 100; x13 += 1) {
-        x12[x13] = x14;
+      std::vector<std::set<std::vector<int32_t>>> x13(100);
+      std::vector<std::set<std::vector<int32_t>>> x14 = x13;
+      for (int x15 = 0; x15 < 100; x15 += 1) {
+        x14[x15] = x16;
       }
       // end Array.init
-      std::vector<std::set<std::vector<int32_t>>> x15 = x12;
+      std::vector<std::set<std::vector<int32_t>>> x17 = x14;
       // begin Array.init
-      std::vector<std::set<std::vector<span<int32_t>>>> x6(100);
-      std::vector<std::set<std::vector<span<int32_t>>>> x7 = x6;
-      for (int x8 = 0; x8 < 100; x8 += 1) {
-        x7[x8] = x9;
+      std::vector<std::set<std::vector<span<int32_t>>>> x7(100);
+      std::vector<std::set<std::vector<span<int32_t>>>> x8 = x7;
+      for (int x9 = 0; x9 < 100; x9 += 1) {
+        x8[x9] = x10;
       }
       // end Array.init
-      std::vector<std::set<std::vector<span<int32_t>>>> x10 = x7;
-      sexp *x28 = sexp::load(std::cin);
-      x29 = ((list *)x28)->get_body();
-      std::vector<sexp *> x30 = ((list *)(x29)[1])->get_body();
+      std::vector<std::set<std::vector<span<int32_t>>>> x11 = x8;
+      sexp *x18 = sexp::load(std::cin);
+      x19 = ((list *)x18)->get_body();
+      std::vector<sexp *> x79 = ((list *)(x19)[1])->get_body();
       // begin Array.init
-      std::vector<span<int32_t>> x31((int)((x30).size()));
-      std::vector<span<int32_t>> x32 = x31;
-      for (int x33 = 0; x33 < (int)((x30).size()); x33 += 1) {
-        std::vector<sexp *> x36 = ((list *)(x30)[x33])->get_body();
+      std::vector<span<int32_t>> x86((int)((x79).size()));
+      std::vector<span<int32_t>> x87 = x86;
+      for (int x88 = 0; x88 < (int)((x79).size()); x88 += 1) {
+        std::vector<sexp *> x89 = ((list *)(x79)[x88])->get_body();
         // begin Array.init
-        span<int32_t> x37 =
-            (span<int32_t>){(x34).data() + x35, (int)((x36).size())};
-        x35 += (int)((x36).size());
-        span<int32_t> x38 = x37;
-        for (int x39 = 0; x39 < (int)((x36).size()); x39 += 1) {
-          x38.ptr[x39] = std::stoi(((atom *)(x36)[x39])->get_body());
+        span<int32_t> x92 =
+            (span<int32_t>){(x90).data() + x91, (int)((x89).size())};
+        x91 += (int)((x89).size());
+        span<int32_t> x93 = x92;
+        for (int x94 = 0; x94 < (int)((x89).size()); x94 += 1) {
+          x93.ptr[x94] = std::stoi(((atom *)(x89)[x94])->get_body());
         }
         // end Array.init
-        x32[x33] = x38;
+        x87[x88] = x93;
       }
       // end Array.init
-      x40 = x32;
-      std::vector<sexp *> x60 = ((list *)(x29)[0])->get_body();
+      x95 = x87;
+      std::vector<sexp *> x20 = ((list *)(x19)[0])->get_body();
+      int x21 = (int)((x20).size());
       // begin Array.init
-      std::vector<span<int32_t>> x61((int)((x60).size()));
-      std::vector<span<int32_t>> x62 = x61;
-      for (int x63 = 0; x63 < (int)((x60).size()); x63 += 1) {
-        std::vector<sexp *> x66 = ((list *)(x60)[x63])->get_body();
+      std::vector<std::vector<span<int32_t>>> x38(x21);
+      std::vector<std::vector<span<int32_t>>> x39 = x38;
+      for (int x40 = 0; x40 < x21; x40 += 1) {
+        std::vector<sexp *> x41 = ((list *)(x20)[x40])->get_body();
         // begin Array.init
-        span<int32_t> x67 =
-            (span<int32_t>){(x64).data() + x65, (int)((x66).size())};
-        x65 += (int)((x66).size());
-        span<int32_t> x68 = x67;
-        for (int x69 = 0; x69 < (int)((x66).size()); x69 += 1) {
-          x68.ptr[x69] = std::stoi(((atom *)(x66)[x69])->get_body());
-        }
-        // end Array.init
-        x62[x63] = x68;
-      }
-      // end Array.init
-      x70 = x62;
-      int x98;
-      int x99 = x98;
-      if ((1 == 1)) {
-        std::vector<span<int32_t>> x86 = x70;
-        // begin Array.init
-        std::vector<span<int32_t>> x87(((int)((x86).size())));
-        std::vector<span<int32_t>> x88 = x87;
-        for (int x89 = 0; x89 < ((int)((x86).size())); x89 += 1) {
-          span<int32_t> x90 = (x86[x89]);
-          int32_t x91 = ((int)((x90).len));
+        std::vector<span<int32_t>> x48((int)((x41).size()));
+        std::vector<span<int32_t>> x49 = x48;
+        for (int x50 = 0; x50 < (int)((x41).size()); x50 += 1) {
+          std::vector<sexp *> x51 = ((list *)(x41)[x50])->get_body();
           // begin Array.init
-          span<int32_t> x92 = (span<int32_t>){(x4).data() + x5, x91};
-          x5 += x91;
-          span<int32_t> x93 = x92;
-          for (int x94 = 0; x94 < x91; x94 += 1) {
-            x93.ptr[x94] = (x90.ptr[((x91 - x94) - 1)]);
+          span<int32_t> x54 =
+              (span<int32_t>){(x52).data() + x53, (int)((x51).size())};
+          x53 += (int)((x51).size());
+          span<int32_t> x55 = x54;
+          for (int x56 = 0; x56 < (int)((x51).size()); x56 += 1) {
+            x55.ptr[x56] = std::stoi(((atom *)(x51)[x56])->get_body());
           }
           // end Array.init
-          x88[x89] = x93;
+          x49[x50] = x55;
         }
         // end Array.init
-        std::vector<span<int32_t>> x95 = x88;
-        int x96;
-        int x97 = x96;
-        if ((x95 == x40)) {
-          reconstruct_L_2(std::make_pair(std::make_pair(x15, x10), x40));
-          exit(0);
-          x97 = 0;
-        } else {
-
-          x97 = 0;
-        }
-        (x10[2]).insert(x95);
-        x99 = 0;
-      } else {
-
-        x99 = 0;
+        x39[x40] = x49;
       }
-
-      for (auto x16 = (x10[1]).begin(); x16 != (x10[1]).end(); ++x16) {
-        std::vector<span<int32_t>> x17 = *x16;
+      // end Array.init
+      x57 = x39;
+      // begin Array.iter
+      int32_t x58 = ((int)((x57).size()));
+      for (int x59 = 0; x59 < x58; x59 += 1) {
+        std::vector<span<int32_t>> x60 = (x57[x59]);
         // begin Array.init
-        std::vector<span<int32_t>> x18(((int)((x17).size())));
-        std::vector<span<int32_t>> x19 = x18;
-        for (int x20 = 0; x20 < ((int)((x17).size())); x20 += 1) {
-          span<int32_t> x21 = (x17[x20]);
-          int32_t x22 = ((int)((x21).len));
+        std::vector<span<int32_t>> x68(((int)((x60).size())));
+        std::vector<span<int32_t>> x69 = x68;
+        for (int x70 = 0; x70 < ((int)((x60).size())); x70 += 1) {
+          span<int32_t> x71 = (x60[x70]);
+          int32_t x72 = ((int)((x71).len));
           // begin Array.init
-          span<int32_t> x23 = (span<int32_t>){(x4).data() + x5, x22};
-          x5 += x22;
-          span<int32_t> x24 = x23;
-          for (int x25 = 0; x25 < x22; x25 += 1) {
-            int32_t x26 = (x21.ptr[((x22 - x25) - 1)]);
-            x24.ptr[x25] = x26;
+          span<int32_t> x75 = (span<int32_t>){(x73).data() + x74, x72};
+          x74 += x72;
+          span<int32_t> x76 = x75;
+          for (int x77 = 0; x77 < x72; x77 += 1) {
+            x76.ptr[x77] = (x71.ptr[((x72 - x77) - 1)]);
           }
           // end Array.init
-          x19[x20] = x24;
+          x69[x70] = x76;
         }
         // end Array.init
-        std::vector<span<int32_t>> x27 = x19;
-        int x84;
-        int x85 = x84;
-        if ((x27 == x40)) {
-          reconstruct_L_2(std::make_pair(std::make_pair(x15, x10), x40));
+        std::vector<span<int32_t>> x78 = x69;
+        int x124;
+        int x125 = x124;
+        if ((x78 == x95)) {
+          reconstruct_L_2(std::make_pair(std::make_pair(x17, x11), x95));
           exit(0);
-          x85 = 0;
+          x125 = 0;
         } else {
 
-          x85 = 0;
+          x125 = 0;
         }
-        (x10[2]).insert(x27);
+        (x11[2]).insert(x78);
       }
+      // end Array.iter
       return 0;
     }
     int reconstruct_L_2(
         std::pair<std::pair<std::vector<std::set<std::vector<int32_t>>>,
                             std::vector<std::set<std::vector<span<int32_t>>>>>,
                   std::vector<span<int32_t>>>
-            x41) {
+            x96) {
       std::pair<std::vector<std::set<std::vector<int32_t>>>,
                 std::vector<std::set<std::vector<span<int32_t>>>>>
-          x42 = std::get<0>(x41);
-      std::vector<span<int32_t>> x43 = std::get<1>(x41);
-      int x82;
-      int x83 = x82;
-      if ((1 == 1)) {
-        int x80;
-        int x81 = x80;
-        std::vector<span<int32_t>> x71 = x70;
+          x97 = std::get<0>(x96);
+      std::vector<span<int32_t>> x98 = std::get<1>(x96);
+      // begin Array.iter
+      int32_t x99 = ((int)((x57).size()));
+      for (int x100 = 0; x100 < x99; x100 += 1) {
+        int x122;
+        int x123 = x122;
+        std::vector<span<int32_t>> x101 = (x57[x100]);
         // begin Array.init
-        std::vector<span<int32_t>> x72(((int)((x71).size())));
-        std::vector<span<int32_t>> x73 = x72;
-        for (int x74 = 0; x74 < ((int)((x71).size())); x74 += 1) {
-          span<int32_t> x75 = (x71[x74]);
-          int32_t x76 = ((int)((x75).len));
+        std::vector<span<int32_t>> x109(((int)((x101).size())));
+        std::vector<span<int32_t>> x110 = x109;
+        for (int x111 = 0; x111 < ((int)((x101).size())); x111 += 1) {
+          span<int32_t> x112 = (x101[x111]);
+          int32_t x113 = ((int)((x112).len));
           // begin Array.init
-          span<int32_t> x77 = (span<int32_t>){(x4).data() + x5, x76};
-          x5 += x76;
-          span<int32_t> x78 = x77;
-          for (int x79 = 0; x79 < x76; x79 += 1) {
-            x78.ptr[x79] = (x75.ptr[((x76 - x79) - 1)]);
+          span<int32_t> x116 = (span<int32_t>){(x114).data() + x115, x113};
+          x115 += x113;
+          span<int32_t> x117 = x116;
+          for (int x118 = 0; x118 < x113; x118 += 1) {
+            x117.ptr[x118] = (x112.ptr[((x113 - x118) - 1)]);
           }
           // end Array.init
-          x73[x74] = x78;
+          x110[x111] = x117;
         }
         // end Array.init
 
-        if ((x73 == x43)) {
+        if ((x110 == x98)) {
           std::cout << "(App reverse ((App L0 ())))" << std::endl;
-          reconstruct_L_1(std::make_pair(x42, x70));
-          x81 = 0;
+          reconstruct_L_1(std::make_pair(x97, (x57[x100])));
+          x123 = 0;
         } else {
 
-          x81 = 0;
-        }
-
-        x83 = x81;
-      } else {
-
-        x83 = 0;
-      }
-
-      for (auto x44 = (std::get<1>(x42)[1]).begin();
-           x44 != (std::get<1>(x42)[1]).end(); ++x44) {
-        int x58;
-        int x59 = x58;
-        std::vector<span<int32_t>> x45 = *x44;
-        // begin Array.init
-        std::vector<span<int32_t>> x46(((int)((x45).size())));
-        std::vector<span<int32_t>> x47 = x46;
-        for (int x48 = 0; x48 < ((int)((x45).size())); x48 += 1) {
-          span<int32_t> x49 = (x45[x48]);
-          int32_t x50 = ((int)((x49).len));
-          // begin Array.init
-          span<int32_t> x51 = (span<int32_t>){(x4).data() + x5, x50};
-          x5 += x50;
-          span<int32_t> x52 = x51;
-          for (int x53 = 0; x53 < x50; x53 += 1) {
-            int32_t x54 = (x49.ptr[((x50 - x53) - 1)]);
-            x52.ptr[x53] = x54;
-          }
-          // end Array.init
-          x47[x48] = x52;
-        }
-        // end Array.init
-
-        if ((x47 == x43)) {
-          std::cout << "(App reverse ((App L0 ())))" << std::endl;
-          reconstruct_L_1(std::make_pair(x42, *x44));
-          x59 = 0;
-        } else {
-
-          x59 = 0;
+          x123 = 0;
         }
       }
+      // end Array.iter
       return 0;
     }
     int reconstruct_L_1(
         std::pair<std::pair<std::vector<std::set<std::vector<int32_t>>>,
                             std::vector<std::set<std::vector<span<int32_t>>>>>,
                   std::vector<span<int32_t>>>
-            x55) {
+            x119) {
       std::pair<std::vector<std::set<std::vector<int32_t>>>,
                 std::vector<std::set<std::vector<span<int32_t>>>>>
-          x56 = std::get<0>(x55);
-      std::vector<span<int32_t>> x57 = std::get<1>(x55);
+          x120 = std::get<0>(x119);
+      std::vector<span<int32_t>> x121 = std::get<1>(x119);
       return 0;
     } |}];
   code |> Util.clang_build |> print_endline;
   [%expect
     {|
-    <stdin>:134:61: warning: variable 'x84' is uninitialized when used here [-Wuninitialized]
-      std::vector<span<int32_t>> x27 = x19; int x84;  int x85 = x84;
-                                                                ^~~
-    <stdin>:134:48: note: initialize the variable 'x84' to silence this warning
-      std::vector<span<int32_t>> x27 = x19; int x84;  int x85 = x84;
-                                                   ^
-                                                    = 0
-    <stdin>:106:61: warning: variable 'x96' is uninitialized when used here [-Wuninitialized]
-      std::vector<span<int32_t>> x95 = x88; int x96;  int x97 = x96;
-                                                                ^~~
-    <stdin>:106:48: note: initialize the variable 'x96' to silence this warning
-      std::vector<span<int32_t>> x95 = x88; int x96;  int x97 = x96;
-                                                   ^
-                                                    = 0
-    <stdin>:90:33: warning: variable 'x98' is uninitialized when used here [-Wuninitialized]
-     x70 = x62; int x98;  int x99 = x98;
-                                    ^~~
-    <stdin>:90:20: note: initialize the variable 'x98' to silence this warning
-     x70 = x62; int x98;  int x99 = x98;
-                       ^
-                        = 0
-    <stdin>:174:30: warning: variable 'x58' is uninitialized when used here [-Wuninitialized]
-             int x58;  int x59 = x58;   std::vector<span<int32_t>> x45 = *x44;
-                                 ^~~
-    <stdin>:174:17: note: initialize the variable 'x58' to silence this warning
-             int x58;  int x59 = x58;   std::vector<span<int32_t>> x45 = *x44;
-                    ^
-                     = 0
-    <stdin>:146:24: warning: variable 'x80' is uninitialized when used here [-Wuninitialized]
-       int x80;  int x81 = x80;   std::vector<span<int32_t>> x71 = x70;
-                           ^~~
-    <stdin>:146:11: note: initialize the variable 'x80' to silence this warning
-       int x80;  int x81 = x80;   std::vector<span<int32_t>> x71 = x70;
-              ^
-               = 0
-    <stdin>:144:382: warning: variable 'x82' is uninitialized when used here [-Wuninitialized]
-    int reconstruct_L_2(std::pair<std::pair<std::vector<std::set<std::vector<int32_t> >>,std::vector<std::set<std::vector<span<int32_t>> >> >,std::vector<span<int32_t>> > x41) {    std::pair<std::vector<std::set<std::vector<int32_t> >>,std::vector<std::set<std::vector<span<int32_t>> >> > x42 = std::get<0>(x41);  std::vector<span<int32_t>> x43 = std::get<1>(x41); int x82;  int x83 = x82;
-                                                                                                                                                                                                                                                                                                                                                                                                 ^~~
-    <stdin>:144:369: note: initialize the variable 'x82' to silence this warning
-    int reconstruct_L_2(std::pair<std::pair<std::vector<std::set<std::vector<int32_t> >>,std::vector<std::set<std::vector<span<int32_t>> >> >,std::vector<span<int32_t>> > x41) {    std::pair<std::vector<std::set<std::vector<int32_t> >>,std::vector<std::set<std::vector<span<int32_t>> >> > x42 = std::get<0>(x41);  std::vector<span<int32_t>> x43 = std::get<1>(x41); int x82;  int x83 = x82;
-                                                                                                                                                                                                                                                                                                                                                                                    ^
-                                                                                                                                                                                                                                                                                                                                                                                     = 0
-    6 warnings generated. |}]
+    <stdin>:116:63: warning: variable 'x124' is uninitialized when used here [-Wuninitialized]
+      std::vector<span<int32_t>> x78 = x69; int x124;  int x125 = x124;
+                                                                  ^~~~
+    <stdin>:116:49: note: initialize the variable 'x124' to silence this warning
+      std::vector<span<int32_t>> x78 = x69; int x124;  int x125 = x124;
+                                                    ^
+                                                     = 0
+    <stdin>:131:30: warning: variable 'x122' is uninitialized when used here [-Wuninitialized]
+           int x122;  int x123 = x122;    std::vector<span<int32_t>> x101 = (x57[x100]);
+                                 ^~~~
+    <stdin>:131:16: note: initialize the variable 'x122' to silence this warning
+           int x122;  int x123 = x122;    std::vector<span<int32_t>> x101 = (x57[x100]);
+                   ^
+                    = 0
+    2 warnings generated. |}]
 
 let%expect_test "" =
   let module Code = Mlstage.Code in

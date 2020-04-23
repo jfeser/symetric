@@ -207,18 +207,18 @@ module Code = struct
     let sub a i i' () =
       Array (to_array a |> Array.(sub ~pos:(to_int i) ~len:(to_int i')))
 
-    let init _ i f () =
+    let init i f () =
       Array (Array.init (to_int i) ~f:(fun i -> f Int.(int i) |> to_value))
 
-    let map _ a ~f () =
+    let map a ~f () =
       Array (Array.map (to_array a) ~f:(fun x -> f (to_code x) |> to_value))
 
-    let map2 _ a a' ~f () =
+    let map2 a a' ~f () =
       Array
         (Array.map2_exn (to_array a) (to_array a') ~f:(fun x x' ->
              f (to_code x) (to_code x') |> to_value))
 
-    let of_sexp _ x elem_of_sexp () =
+    let of_sexp x elem_of_sexp () =
       match to_sexp x with
       | List ls ->
           Array

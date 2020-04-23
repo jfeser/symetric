@@ -31,18 +31,14 @@ module type S = sig
 
   val sub : 'a t code -> int code -> int code -> 'a t code
 
-  val init : 'a t ctype -> int code -> (int code -> 'a code) -> 'a t code
+  val init : int code -> (int code -> 'a code) -> 'a t code
 
-  val map : 'b t ctype -> 'a t code -> f:('a code -> 'b code) -> 'b t code
+  val map : 'a t code -> f:('a code -> 'b code) -> 'b t code
 
   val map2 :
-    'c t ctype ->
-    'a t code ->
-    'b t code ->
-    f:('a code -> 'b code -> 'c code) ->
-    'c t code
+    'a t code -> 'b t code -> f:('a code -> 'b code -> 'c code) -> 'c t code
 
-  val of_sexp : 'a t ctype -> sexp code -> (sexp code -> 'a code) -> 'a t code
+  val of_sexp : sexp code -> (sexp code -> 'a code) -> 'a t code
 
   val sexp_of : 'a t code -> ('a code -> sexp code) -> sexp code
 end
@@ -51,6 +47,8 @@ module type Base = sig
   type typ
 
   type expr
+
+  val mk_type : typ -> typ
 
   val create : typ -> expr -> expr
 
@@ -68,11 +66,11 @@ module type Derived = sig
 
   val const : typ -> expr array -> expr
 
-  val init : typ -> expr -> (expr -> expr) -> expr
+  val init : expr -> (expr -> expr) -> expr
 
-  val map : typ -> expr -> f:(expr -> expr) -> expr
+  val map : expr -> f:(expr -> expr) -> expr
 
-  val map2 : typ -> expr -> expr -> f:(expr -> expr -> expr) -> expr
+  val map2 : expr -> expr -> f:(expr -> expr -> expr) -> expr
 
   val sub : expr -> expr -> expr -> expr
 
@@ -80,7 +78,7 @@ module type Derived = sig
 
   val iter : expr -> f:(expr -> expr) -> expr
 
-  val of_sexp : typ -> expr -> (expr -> expr) -> expr
+  val of_sexp : expr -> (expr -> expr) -> expr
 
   val sexp_of : expr -> (expr -> expr) -> expr
 
@@ -97,8 +95,6 @@ module type S_ = sig
   include Base with type typ := typ and type expr := expr
 
   include Derived with type typ := typ and type expr := expr
-
-  val mk_type : typ -> typ
 
   val elem_type : typ -> typ
 end
@@ -119,7 +115,8 @@ module Derived
       sseq [ List.mapi a ~f:(fun i -> set arr (Int.int i)) |> sseq; arr ] )
     |> no_effect |> with_comment "Array.const"
 
-  let init t len f =
+  let init len f =
+    let t = mk_type @@ type_of @@ f (Int.int 0) in
     ( let_ (create t len) @@ fun a ->
       sseq
         [
@@ -127,11 +124,11 @@ module Derived
         ] )
     |> no_effect |> with_comment "Array.init"
 
-  let map t arr ~f = init t (length arr) (fun i -> let_ (get arr i) f)
+  let map arr ~f = init (length arr) (fun i -> let_ (get arr i) f)
 
-  let map2 t a1 a2 ~f =
+  let map2 a1 a2 ~f =
     let_ (Int.min (length a1) (length a2)) @@ fun n ->
-    init t n (fun i -> f (get a1 i) (get a2 i))
+    init n (fun i -> f (get a1 i) (get a2 i))
 
   let sub a start len =
     let open Int in
@@ -139,8 +136,7 @@ module Derived
     let_ (start + len) @@ fun end_ ->
     let_ (start |> min (n - int 1) |> max (int 0)) @@ fun start ->
     let_ (end_ |> min n |> max start) @@ fun end_ ->
-    let_ (end_ - start) @@ fun len ->
-    init a.etype len (fun i -> get a (start + i))
+    let_ (end_ - start) @@ fun len -> init len (fun i -> get a (start + i))
 
   let fold arr ~init ~f =
     ( let_ (fresh_decl (type_of init) ~init) @@ fun acc ->
@@ -161,9 +157,9 @@ module Derived
       ]
     |> with_comment "Array.iter"
 
-  let of_sexp t x elem_of_sexp =
+  let of_sexp x elem_of_sexp =
     let_ (Sexp.to_list x) @@ fun l ->
-    init t (Sexp.List.length l) (fun i -> elem_of_sexp (Sexp.List.get l i))
+    init (Sexp.List.length l) (fun i -> elem_of_sexp (Sexp.List.get l i))
 
   let sexp_of _ _ = failwith "unimplemented"
 
@@ -186,10 +182,6 @@ module Array (C : Cstage_core.S) = struct
 
   let elem_t = Univ_map.Key.create ~name:"elem_t" [%sexp_of: typ]
 
-  let mk_type e =
-    Type.create ~name:(sprintf "std::vector<%s>" (Type.name e))
-    |> Type.add_exn ~key:elem_t ~data:e
-
   let elem_type t =
     match Univ_map.find t elem_t with
     | Some et -> et
@@ -199,6 +191,10 @@ module Array (C : Cstage_core.S) = struct
     type typ = C.typ
 
     type expr = C.expr
+
+    let mk_type e =
+      Type.create ~name:(sprintf "std::vector<%s>" (Type.name e))
+      |> Type.add_exn ~key:elem_t ~data:e
 
     let create t n = fresh_decl ~init:n t
 
@@ -241,16 +237,6 @@ module ArenaArray (C : Cstage_core.S) = struct
 
   let arena_offset_k = Univ_map.Key.create ~name:"arena_offset" [%sexp_of: expr]
 
-  let mk_type e =
-    let arena_type =
-      Type.create
-        ~name:(sprintf "std::array<%s, %d>" (Type.name e) default_size)
-    in
-    Type.create ~name:(sprintf "span<%s>" (Type.name e))
-    |> Type.add_exn ~key:elem_k ~data:e
-    |> Type.add_exn ~key:arena_k ~data:(fresh_global arena_type)
-    |> Type.add_exn ~key:arena_offset_k ~data:(fresh_global Int.type_)
-
   let elem_type t = Univ_map.find_exn t elem_k
 
   let arena t = Univ_map.find_exn t arena_k
@@ -261,6 +247,16 @@ module ArenaArray (C : Cstage_core.S) = struct
     type typ = C.typ
 
     type expr = C.expr
+
+    let mk_type e =
+      let arena_type =
+        Type.create
+          ~name:(sprintf "std::array<%s, %d>" (Type.name e) default_size)
+      in
+      Type.create ~name:(sprintf "span<%s>" (Type.name e))
+      |> Type.add_exn ~key:elem_k ~data:e
+      |> Type.add_exn ~key:arena_k ~data:(fresh_global arena_type)
+      |> Type.add_exn ~key:arena_offset_k ~data:(fresh_global Int.type_)
 
     let create t l =
       let ctx =
@@ -326,14 +322,14 @@ struct
 
   let arena_offset_k = Univ_map.Key.create ~name:"arena_offset" [%sexp_of: expr]
 
-  let mk_type e = Tuple.mk_type (A.mk_type e) Bool.type_
-
   let elem_type t = Univ_map.find_exn t elem_k
 
   module Base = struct
     type typ = C.typ
 
     type expr = C.expr
+
+    let mk_type e = Tuple.mk_type (A.mk_type e) Bool.type_
 
     let create t l = Tuple.create (A.create t l) (C.Bool.bool false)
 
