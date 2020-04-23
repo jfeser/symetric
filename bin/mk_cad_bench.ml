@@ -1,7 +1,7 @@
 open! Core
 open Staged_synth
 
-let main () =
+let main size =
   Synth.Log.set_level (Some Debug);
   let module Core = Cstage_core.Make () in
   let module Code = Cstage.Code (Core) in
@@ -22,15 +22,15 @@ let main () =
     let output = "E"
   end in
   let open Synth.Make (Sketch) (Code) (Cad.Lang) (Cad.Cache) in
-  let g = search_graph 15 in
+  let g = search_graph size in
   Out_channel.with_file "search.dot" ~f:(fun ch -> G.output_graph ch g);
-  let synth = enumerate 15 in
+  let synth = enumerate size in
   print_endline (Code.to_string synth)
 
 let () =
   let open Command.Let_syntax in
   Command.basic ~summary:"Generate a CAD synthesizer."
     [%map_open
-      let () = Log.param and () = Synth.param in
-      main]
+      let () = Log.param and () = Synth.param and size = anon ("SIZE" %: int) in
+      fun () -> main size]
   |> Command.run
