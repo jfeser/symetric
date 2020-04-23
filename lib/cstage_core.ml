@@ -441,10 +441,10 @@ struct span {
     let type_ = Type.create ~name:"sexp*"
 
     module List = struct
-      let get x i = eformat "($(x))[$(i)]" type_ "" [ ("x", C x); ("i", C i) ]
+      let get x i = eformat "(($(x))[$(i)])" type_ "" [ ("x", C x); ("i", C i) ]
 
       let length x =
-        eformat "(int)(($(x)).size())" (Type.create ~name:"int") ""
+        eformat "((int)(($(x)).size()))" (Type.create ~name:"int") ""
           [ ("x", C x) ]
 
       let type_ = Type.create ~name:"std::vector<sexp*>"
@@ -460,10 +460,10 @@ struct span {
         [ ("name", S (fresh_name ())) ]
 
     let to_list x =
-      eformat "((list*)$(x))->get_body()" List.type_ "" [ ("x", C x) ]
+      eformat "((list*)($(x)))->get_body()" List.type_ "" [ ("x", C x) ]
 
     let to_atom x =
-      eformat "((atom*)$(x))->get_body()" Atom.type_ "" [ ("x", C x) ]
+      eformat "((atom*)($(x)))->get_body()" Atom.type_ "" [ ("x", C x) ]
   end
 
   module Bool = struct
