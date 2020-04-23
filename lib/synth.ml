@@ -83,8 +83,6 @@ struct
 
   module G = struct
     module X = struct
-      open V
-
       let graph_attributes _ = []
 
       let default_vertex_attributes _ = []
@@ -92,12 +90,12 @@ struct
       let vertex_name v = [%sexp_of: V.t] v |> Sexp.to_string |> sprintf "%S"
 
       let vertex_label = function
-        | State v -> sprintf "%s : %d" v.symbol v.cost
+        | V.State v -> sprintf "%s : %d" v.symbol v.cost
         | Code v -> Gr.Term.to_string @@ Gr.Rule.rhs v.rule
         | Arg x -> sprintf "%d" x.n_args
 
       let vertex_attributes v =
-        let shape = match v with Arg _ -> [ `Shape `Circle ] | _ -> [] in
+        let shape = match v with V.Arg _ -> [ `Shape `Circle ] | _ -> [] in
         let label = [ `Label (vertex_label v) ] in
         shape @ label
 
@@ -170,11 +168,9 @@ struct
       fold_edges (fun v v' g -> add_edge (remove_edge g v v') v' v) g g
   end
 
-  open C
-
   let cache = C.empty ()
 
-  let bind_io, inputs, output =
+  let bind_io, iter_inputs, output =
     let io =
       Nonlocal_let.let_ S.let_global @@ fun () ->
       S.Sexp.input () |> S.Sexp.to_list
@@ -183,8 +179,13 @@ struct
       List.mapi Sketch.inputs ~f:(fun idx sym ->
           ( sym,
             Nonlocal_let.let_ S.let_global @@ fun () ->
-            S.Sexp.List.get (io.value ()) (S.Int.int idx)
-            |> L.Value.of_sexp sym |> L.Value.code_of ))
+            S.let_
+              (S.Sexp.List.get (io.value ()) (S.Int.int idx) |> S.Sexp.to_list)
+            @@ fun value_sexps ->
+            S.let_ (S.Sexp.List.length value_sexps) @@ fun len ->
+            S.Array.init len (fun vidx ->
+                S.Sexp.List.get value_sexps vidx
+                |> L.Value.of_sexp sym |> L.Value.code_of) ))
     in
     let output =
       Nonlocal_let.let_ S.let_global @@ fun () ->
@@ -201,26 +202,26 @@ struct
         | [] -> assert false
       in
       bind_all (List.map ~f:(fun (_, v) -> v) inputs)
-    and inputs () =
-      List.map inputs ~f:(fun (sym, i) -> (sym, L.Value.of_code @@ i.value ()))
+    and iter_inputs sym f =
+      List.filter_map inputs ~f:(fun (sym', inputs) ->
+          if String.(sym = sym') then Some (inputs.value ()) else None)
+      |> List.map ~f:(fun inputs ->
+             S.Array.iter inputs ~f:(fun input -> f @@ L.Value.of_code input))
+      |> S.sseq
     and output () = L.Value.of_code @@ output.value () in
-    (bind, inputs, output)
+    (bind, iter_inputs, output)
 
   let cache_iter ~sym ~size ~f cache =
     let open S in
     let open S.Int in
     match size with
-    | 1 ->
-        inputs ()
-        |> List.filter ~f:(fun (sym', _) -> Core.String.(sym = sym'))
-        |> List.map ~f:(fun (_, v) -> f v)
-        |> S.sseq
+    | 1 -> iter_inputs sym f
     | size -> C.iter ~sym ~size:(int size) ~f cache
 
   let debug_print msg = if !debug then S.print msg else S.unit
 
   module Reconstruct = struct
-    type ctx = { graph : G.t; cache : cache code }
+    type ctx = { graph : G.t; cache : C.cache C.code }
 
     let rec of_args ({ cache; _ } as ctx) target term args =
       let cache = C.of_code cache in
@@ -482,7 +483,7 @@ struct
         debug_print
           (sprintf "Inserting (%s -> %s) cost %d" sym (Gr.Term.to_string term)
              cost);
-        put ~sym ~size:cost (cache.value ()) value;
+        C.put ~sym ~size:cost (cache.value ()) value;
       ]
 
   let deps_satisfied (term : [ `Open | `Closed ] Gr.Term.t) deps bindings =
