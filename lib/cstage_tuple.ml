@@ -162,6 +162,8 @@ module Tuple_4 = struct
       ('c code -> sexp code) ->
       ('d code -> sexp code) ->
       sexp code
+
+    val fst : ('a, 'b, 'c, 'd) t code -> 'a code
   end
 
   module Make (C : Cstage_core.S) = struct

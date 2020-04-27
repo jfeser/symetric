@@ -25,7 +25,7 @@ module Make (C : Deps) = struct
     module Value = struct
       type value = Value
 
-      type offset = (C.Int.t * C.Float.t) C.t
+      type offset_t = C.Int.t * C.Float.t
 
       type vectors_t =
         (C.Float.t (* x *), C.Float.t (* y *), C.Float.t (* z *)) C.Tuple_3.t
@@ -49,21 +49,23 @@ module Make (C : Deps) = struct
         (* z *) )
         C.Tuple_3.t
 
+      type cuboid_t =
+        ( int (* id *),
+          C.Float.t (* theta_x *),
+          C.Float.t (* theta_y *),
+          C.Float.t (* theta_z *) )
+        C.Tuple_4.t
+
       type t =
         | Examples of bool C.Array.t C.t
         | Vectors of vectors_t C.t
         | Sphere of sphere_t C.t
         | Cylinder of cylinder_t C.t
-        | Cylinder_offset of offset
-        | Cuboid of
-            ( int (* id *),
-              C.Float.t (* theta_x *),
-              C.Float.t (* theta_y *),
-              C.Float.t (* theta_z *) )
-            C.Tuple_4.t
-        | Cuboid_x_offset of offset
-        | Cuboid_y_offset of offset
-        | Cuboid_z_offset of offset
+        | Cylinder_offset of offset_t C.t
+        | Cuboid of cuboid_t C.t
+        | Cuboid_x_offset of offset_t C.t
+        | Cuboid_y_offset of offset_t C.t
+        | Cuboid_z_offset of offset_t C.t
         | Bool of bool C.t
         | Int of int C.t
 
@@ -112,6 +114,8 @@ module Make (C : Deps) = struct
 
       let to_cylinder = function Cylinder x -> x | x -> err "cylinder" x
 
+      let to_cuboid = function Cuboid x -> x | x -> err "cuboid" x
+
       let to_bool = function Bool x -> x | x -> err "bool" x
 
       let to_int = function Int x -> x | x -> err "int" x
@@ -123,6 +127,16 @@ module Make (C : Deps) = struct
         | Cuboid_z_offset x ->
             x
         | x -> err "offset" x
+
+      let to_id = function
+        | Cylinder_offset x
+        | Cuboid_x_offset x
+        | Cuboid_y_offset x
+        | Cuboid_z_offset x ->
+            C.Tuple.fst x
+        | Cylinder x -> C.Tuple_3.fst x
+        | Cuboid x -> C.Tuple_4.fst x
+        | x -> err "has id" x
 
       let sexp_of _ = assert false
 
@@ -205,15 +219,58 @@ module Make (C : Deps) = struct
       C.let_ ((sin (-x') * y2) + (cos (-x') * z2)) @@ fun z3 ->
       C.Tuple_3.of_tuple (x3, y3, z3)
 
+    (*
+       generator bit getCuboid(Vector p, int id) {
+	CuboidHint c = cuboidHints[id];
+	assert(c != null);
+	Vector p_rotated = inverse_rotate(p, c.theta_x, c.theta_y, c.theta_z);
+	
+	float xl = getOffset(c.xlist);
+	float yl = getOffset(c.ylist);
+	float zl = getOffset(c.zlist);
+	
+	float xu = getOffset(c.xlist);
+	float yu = getOffset(c.ylist);
+	float zu = getOffset(c.zlist);
+	
+	assert(xl < xu);
+	assert(yl < yu);
+	assert(zl < zu);
+	print("Cuboid("); printInt(id); print(",Vector("); printfloat(c.theta_x); print(","); printfloat(c.theta_y); print(","); printfloat(c.theta_z);
+	print("),Vector("); printfloat(xl); print(","); printfloat(yl); print(","); printfloat(zl); 
+	print("),Vector("); printfloat(xu - xl); print(","); printfloat(yu - yl); print(","); printfloat(zu - zl); print("))");
+	
+	bit x_in_range = p_rotated.x >= xl && p_rotated.x <= xu;
+    bit y_in_range = p_rotated.y >= yl && p_rotated.y <= yu;
+    bit z_in_range = p_rotated.z >= zl && p_rotated.z <= zu;
+    return x_in_range && y_in_range && z_in_range;
+}
+*)
+
+    module C2 = C.Tuple
+    module C3 = C.Tuple_3
+    module C4 = C.Tuple_4
+
+    let eval_cuboid cuboid_hint x_lo x_hi y_lo y_hi z_lo z_hi vectors =
+      C4.tuple_of cuboid_hint @@ fun (id, theta_x, theta_y, theta_z) ->
+      C.Array.map vectors ~f:(fun v ->
+          C3.tuple_of v @@ fun (x, y, z) ->
+          C3.tuple_of (inverse_rotate (x, y, z) (theta_x, theta_y, theta_z))
+          @@ fun (rot_x, rot_y, rot_z) ->
+          let open C.Float in
+          let open C.Bool in
+          rot_x >= x_lo && rot_x <= x_hi && rot_y >= y_lo && rot_y <= y_hi
+          && rot_z >= z_lo && rot_z <= z_hi)
+
     let rec eval ctx = function
       | Grammar.As (t, _) -> eval ctx t
       | App ("sphere", [ s; v ]) ->
-          let sphere = to_sphere (eval ctx s) in
-          let vectors = to_vectors (eval ctx v) in
-          examples @@ C.Tuple_4.tuple_of sphere
+          let sphere = to_sphere (eval ctx s)
+          and vectors = to_vectors (eval ctx v) in
+          examples @@ C4.tuple_of sphere
           @@ fun (x, y, z, r) ->
           C.Array.map vectors ~f:(fun v ->
-              C.Tuple_3.tuple_of v @@ fun (x', y', z') ->
+              C3.tuple_of v @@ fun (x', y', z') ->
               C.Float.(
                 ((x - x') ** float 2.0)
                 + ((y - y') ** float 2.0)
@@ -221,38 +278,41 @@ module Make (C : Deps) = struct
                 < r ** float 2.0))
       | App ("cyl", [ c; lo; hi; v ]) ->
           let cyl = to_cylinder @@ eval ctx c
-          and lo = to_offset @@ eval ctx lo |> C.Tuple.snd
-          and hi = to_offset @@ eval ctx hi |> C.Tuple.snd
+          and lo = eval_offset ctx lo
+          and hi = eval_offset ctx hi
           and vectors = to_vectors @@ eval ctx v in
-          examples @@ C.Tuple_3.tuple_of cyl
+          examples @@ C3.tuple_of cyl
           @@ fun (_, disc, center) ->
-          C.Tuple_4.tuple_of disc @@ fun (theta_x, theta_y, theta_z, radius) ->
-          C.let_ (C.Tuple.fst center) @@ fun c_y ->
-          C.let_ (C.Tuple.snd center) @@ fun c_z ->
+          C4.tuple_of disc @@ fun (theta_x, theta_y, theta_z, radius) ->
+          C.let_ (C2.fst center) @@ fun c_y ->
+          C.let_ (C2.snd center) @@ fun c_z ->
           C.Array.map vectors ~f:(fun v ->
               let open C.Float in
               let open C.Bool in
-              C.Tuple_3.tuple_of v @@ fun (x, y, z) ->
-              C.Tuple_3.tuple_of
-                (inverse_rotate (x, y, z) (theta_x, theta_y, theta_z))
+              C3.tuple_of v @@ fun (x, y, z) ->
+              C3.tuple_of (inverse_rotate (x, y, z) (theta_x, theta_y, theta_z))
               @@ fun (rot_x, rot_y, rot_z) ->
               C.let_
                 ( ((rot_y - c_y) ** float 2.0) + ((rot_z - c_z) ** float 2.0)
                 < radius ** float 2.0 )
               @@ fun in_radius ->
               C.let_ (rot_x >= lo && rot_x <= hi) @@ fun in_height ->
-              C.Bool.(in_radius && in_height))
+              in_radius && in_height)
+      | App ("cuboid", [ c; xl; xh; yl; yh; zl; zh; v ]) ->
+          examples
+          @@ eval_cuboid
+               (eval ctx c |> to_cuboid)
+               (eval_offset ctx xl) (eval_offset ctx xh) (eval_offset ctx yl)
+               (eval_offset ctx yh) (eval_offset ctx zl) (eval_offset ctx zh)
+               (eval ctx v |> to_vectors)
       | App ("inter", [ e1; e2 ]) ->
-          let v1 = eval ctx e1 |> to_examples
-          and v2 = eval ctx e2 |> to_examples in
+          let v1 = eval_examples ctx e1 and v2 = eval_examples ctx e2 in
           examples @@ C.Array.map2 v1 v2 ~f:C.Bool.( && )
       | App ("union", [ e1; e2 ]) ->
-          let v1 = eval ctx e1 |> to_examples
-          and v2 = eval ctx e2 |> to_examples in
+          let v1 = eval_examples ctx e1 and v2 = eval_examples ctx e2 in
           examples @@ C.Array.map2 v1 v2 ~f:C.Bool.( || )
       | App ("sub", [ e1; e2 ]) ->
-          let v1 = eval ctx e1 |> to_examples
-          and v2 = eval ctx e2 |> to_examples in
+          let v1 = eval_examples ctx e1 and v2 = eval_examples ctx e2 in
           examples @@ C.Array.map2 v1 v2 ~f:C.Bool.(fun x1 x2 -> x1 && not x2)
       | App (var, []) -> (
           match Map.find ctx var with
@@ -267,6 +327,10 @@ module Make (C : Deps) = struct
             [%sexp_of: Grammar.Untyped_term.t]
           |> Error.raise
 
+    and eval_examples ctx x = eval ctx x |> to_examples
+
+    and eval_offset ctx x = eval ctx x |> to_offset |> C2.snd
+
     let eval ctx expr =
       try eval ctx (expr : [ `Closed ] Grammar.Term.t :> Grammar.Untyped_term.t)
       with exn ->
@@ -275,89 +339,67 @@ module Make (C : Deps) = struct
         tag_arg err "Evaluation failed" expr [%sexp_of: _ Grammar.Term.t]
         |> raise
 
-    let linear_int :
-        _ ->
-        _ Grammar.Term.t ->
-        _ Grammar.Term.t ->
-        (Value.t, bool code) Semantics.t Grammar.t =
-     fun sym lo hi ->
-      let open Grammar in
-      let open Term in
-      let lo_n = Bind.of_string "lo"
-      and hi_n = Bind.of_string "hi"
-      and v_n = Bind.of_string "v" in
-      [
-        Rule.create sym (app "range" [ lo; lo; hi ]) [];
-        Rule.create sym
-          (app "range"
-             [ as_ lo lo_n; as_ (app "incr" [ nonterm sym ]) v_n; as_ hi hi_n ])
-          [
-            Semantics.Pred
-              {
-                deps = [ lo_n; hi_n; v_n ];
-                func =
-                  (fun ctx ->
-                    eval ctx
-                    @@ app "&&"
-                         [
-                           app ">=" [ app v_n []; app lo_n [] ];
-                           app ">=" [ app hi_n []; app v_n [] ];
-                         ]
-                    |> Value.to_bool);
-              };
-          ];
-      ]
-
     let grammar : (Value.t, bool code) Semantics.t Grammar.t =
       let open Grammar in
       let open Grammar.Term in
       let nt x = nonterm x in
+
+      let id_matches x y =
+        let func ctx =
+          let id = Map.find_exn ctx x |> Value.to_id
+          and id' = Map.find_exn ctx y |> Value.to_id in
+          C.Int.(id = id')
+        in
+        Semantics.Pred { deps = [ x; y ]; func }
+      in
+
+      let offset_lt lo hi =
+        let func ctx =
+          let v = Map.find_exn ctx lo |> Value.to_offset |> C2.snd
+          and v' = Map.find_exn ctx hi |> Value.to_offset |> C2.snd in
+          C.Float.(v < v')
+        in
+        Semantics.Pred { deps = [ lo; hi ]; func }
+      in
+
       let cylinder_rule =
         let cylinder = Bind.of_string "cylinder"
-        and lo_offset = Bind.of_string "lo_offset"
-        and hi_offset = Bind.of_string "hi_offset" in
-        let id_matches offset =
-          Semantics.Pred
-            {
-              deps = [ offset; cylinder ];
-              func =
-                (fun ctx ->
-                  let id =
-                    Map.find_exn ctx cylinder |> Value.to_cylinder
-                    |> C.Tuple_3.fst
-                  and id' =
-                    Map.find_exn ctx offset |> Value.to_offset |> C.Tuple.fst
-                  in
-                  C.Int.(id = id'));
-            }
-        in
+        and lo = Bind.of_string "lo"
+        and hi = Bind.of_string "hi" in
         Rule.create "E"
           (app "cyl"
              [
-               as_ (nt "C") cylinder;
-               as_ (nt "CO") lo_offset;
-               as_ (nt "CO") hi_offset;
+               as_ (nt "C") cylinder; as_ (nt "CO") lo; as_ (nt "CO") hi; nt "V";
+             ])
+          [ id_matches cylinder lo; id_matches cylinder hi; offset_lt lo hi ]
+      and cuboid_rule =
+        let cuboid = Bind.of_string "cuboid"
+        and x_lo = Bind.of_string "x_lo"
+        and y_lo = Bind.of_string "y_lo"
+        and z_lo = Bind.of_string "z_lo"
+        and x_hi = Bind.of_string "x_hi"
+        and y_hi = Bind.of_string "y_hi"
+        and z_hi = Bind.of_string "z_hi" in
+        let preds =
+          List.map [ x_lo; x_hi; y_lo; y_hi; z_lo; z_hi ] ~f:(id_matches cuboid)
+          @ [ offset_lt x_lo x_hi; offset_lt y_lo y_hi; offset_lt z_lo z_hi ]
+        in
+
+        Rule.create "E"
+          (app "cuboid"
+             [
+               as_ (nt "U") cuboid;
+               as_ (nt "UOX") x_lo;
+               as_ (nt "UOX") x_hi;
+               as_ (nt "UOY") y_lo;
+               as_ (nt "UOY") y_hi;
+               as_ (nt "UOZ") z_lo;
+               as_ (nt "UOZ") z_hi;
                nt "V";
              ])
-          [
-            Semantics.Pred
-              {
-                deps = [ lo_offset; hi_offset ];
-                func =
-                  (fun ctx ->
-                    let v =
-                      Map.find_exn ctx lo_offset |> Value.to_offset
-                      |> C.Tuple.snd
-                    and v' =
-                      Map.find_exn ctx hi_offset |> Value.to_offset
-                      |> C.Tuple.snd
-                    in
-                    C.Float.(v < v'));
-              };
-            id_matches lo_offset;
-            id_matches hi_offset;
-          ]
+          preds
       in
+
       Grammar.of_list
         [
           ("E", app "sphere" [ nt "S"; nt "V" ]);
@@ -365,7 +407,7 @@ module Make (C : Deps) = struct
           ("E", app "inter" [ nt "E"; nt "E" ]);
           ("E", app "sub" [ nt "E"; nt "E" ]);
         ]
-      @ [ cylinder_rule ]
+      @ [ cylinder_rule; cuboid_rule ]
   end
 
   module Cache = struct
@@ -377,7 +419,7 @@ module Make (C : Deps) = struct
 
     type t = cache C.t
 
-    let max_size = 10
+    let max_size = 50
 
     open C
 
