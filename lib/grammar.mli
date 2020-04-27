@@ -18,6 +18,8 @@ type 'n term =
 module Untyped_term : sig
   type t = nonterm term [@@deriving compare, sexp]
 
+  val pp : t Fmt.t
+
   val to_string : t -> string
 
   val map :
@@ -53,6 +55,8 @@ end
 
 module Rule : sig
   type 's t [@@deriving compare, hash, sexp]
+
+  val pp : _ t Fmt.t
 
   val lhs : _ t -> nonterm
 

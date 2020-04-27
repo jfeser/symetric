@@ -361,6 +361,7 @@ struct
       in
 
       List.iter rules ~f:(fun rule ->
+          Log.debug (fun m -> m "Adding %a at cost %d." Gr.Rule.pp rule cost);
           (* Add state and code nodes for the rule's output. *)
           let lhs = Gr.Rule.lhs rule and rhs = Gr.Rule.rhs rule in
           let lhs_v = V.State { cost; symbol = lhs }

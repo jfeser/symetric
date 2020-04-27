@@ -54,6 +54,13 @@ module Untyped_term = struct
   include T
   include Comparator.Make (T)
 
+  let rec pp fmt = function
+    | Nonterm x -> Fmt.fmt "%s" fmt x
+    | App (func, args) -> Fmt.fmt "@[<hov 2>%s(%a)@]" fmt func pp_args args
+    | As (term, name) -> Fmt.fmt "@[%a as %s@]" fmt pp term name
+
+  and pp_args args = Fmt.(iter ~sep:comma (fun f l -> List.iter ~f l) pp args)
+
   let rec size = function
     | Nonterm _ -> 1
     | App (_, ts) -> 1 + List.sum (module Int) ~f:size ts
@@ -137,6 +144,9 @@ module Rule = struct
     sem : 's list; [@sexp.omit_nil]
   }
   [@@deriving compare, hash, sexp]
+
+  let pp fmt { lhs; rhs; _ } =
+    Fmt.fmt "@[<hov 2>@[%s@]@ ->@ @[%a@]@]" fmt lhs Untyped_term.pp rhs
 
   let lhs { lhs; _ } = lhs
 
