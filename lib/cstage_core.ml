@@ -372,6 +372,7 @@ module Make () : S = struct
 #include <array>
 #include <vector>
 #include <set>
+#include <unordered_set>
 #include <iostream>
 #include <cmath>
 
@@ -413,6 +414,20 @@ struct span {
         return !(this < rhs);
   }
 };
+
+namespace std {
+    template <>
+    struct hash<std::vector<int>> {
+        size_t operator()(const vector<int>& v) const {
+           std::hash<int> hasher;
+           size_t seed = 0;
+           for (int i : v) {
+             seed ^= hasher(i) + 0x9e3779b9 + (seed<<6) + (seed>>2);
+           }
+           return seed;
+        }
+    };
+}
 
 |}
     and forward_decls =

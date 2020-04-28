@@ -10,6 +10,7 @@ let main size =
 
     include Core
     include Cstage.Code (Core)
+    module Set = Cstage_set.Hash_set (Core)
     module Array = Cstage_array.Array (Core)
     module Float = Cstage_float.Make (Core)
     module Tuple_3 = Cstage_tuple.Tuple_3.Make (Core)
@@ -17,7 +18,7 @@ let main size =
   end in
   let module Cad = Cad.Make (Code) in
   let module Sketch = struct
-    let inputs = [ "S"; "V"; "C"; "CO" ]
+    let inputs = [ "S"; "V"; "C"; "CO"; "U"; "UOX"; "UOY"; "UOZ" ]
 
     let output = "E"
   end in

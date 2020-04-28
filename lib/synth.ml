@@ -215,7 +215,7 @@ struct
     let open S in
     let open S.Int in
     match size with
-    | 1 -> iter_inputs sym f
+    | 0 -> iter_inputs sym f
     | size -> C.iter ~sym ~size:(int size) ~f cache
 
   let debug_print msg = if !debug then S.print msg else S.unit
@@ -353,33 +353,54 @@ struct
     let find_arg k = Hashtbl.find arg_multiedges @@ norm k
     and add_arg k v = Hashtbl.set arg_multiedges ~key:(norm k) ~data:v in
 
+    let sources =
+      List.map Sketch.inputs ~f:(fun symbol -> V.State { symbol; cost = 0 })
+      |> Set.of_list (module V)
+    in
+
+    (* Add initial states. *)
+    g := Set.fold sources ~init:!g ~f:G.add_vertex;
+
     for cost = 0 to max_cost do
       (* Select the rules that have cheap enough right hand sides. *)
       let rules =
         List.filter L.grammar ~f:(fun rule ->
-            Int.(Gr.(Term.size (Rule.rhs rule) <= cost)))
+            let rhs = Gr.Rule.rhs rule in
+            let size = Gr.Term.size rhs and n_holes = Gr.Term.n_holes rhs in
+            size - n_holes <= cost)
       in
 
       List.iter rules ~f:(fun rule ->
           Log.debug (fun m -> m "Adding %a at cost %d." Gr.Rule.pp rule cost);
           (* Add state and code nodes for the rule's output. *)
-          let lhs = Gr.Rule.lhs rule and rhs = Gr.Rule.rhs rule in
-          let lhs_v = V.State { cost; symbol = lhs }
-          and rhs_v = V.Code { cost; rule } in
-          g := G.add_edge !g lhs_v rhs_v;
+          let rhs_v = V.Code { cost; rule } in
 
           (* Add an arg node for each partition permutation of the argument
              costs. *)
-          let n_holes = Gr.Term.n_holes rhs and size = Gr.Term.size rhs in
+          let term = Gr.Rule.rhs rule in
+          let non_terminals =
+            Gr.to_preorder (term :> Gr.Untyped_term.t)
+            |> Gr.non_terminals
+            |> List.sort ~compare:(fun (_, i) (_, i') -> [%compare: int] i i')
+            |> List.map ~f:(fun (x, _) -> x)
+            |> Array.of_list
+          in
+          let n_holes = Array.length non_terminals
+          and size = Gr.Term.size term in
           let open Combinat in
           let parts =
-            Partition.(
-              to_list @@ Int.(create ~n:(cost - size + n_holes) ~parts:n_holes))
+            Partition.With_zeros.(
+              to_list @@ create ~n:(cost - (size - n_holes)) ~parts:n_holes)
           in
-          (* Log.debug (fun m -> m "Parts %a" Fmt.(Dump.(list @@ list int)) parts); *)
+          Log.debug (fun m -> m "Parts %a" Fmt.(Dump.(list @@ list int)) parts);
           let permuted =
+            let filter costs =
+              List.for_alli costs ~f:(fun i cost ->
+                  G.mem_vertex !g (V.State { symbol = non_terminals.(i); cost }))
+            in
             List.concat_map parts ~f:(fun parts ->
-                Permutation.(Of_list.(create parts |> to_list)))
+                Permutation.Restricted.(
+                  Of_list.(create parts filter |> to_list)))
           in
           (* Log.debug (fun m ->
            *     m "Permuted %a" Fmt.(Dump.(list @@ list int)) permuted); *)
@@ -389,10 +410,10 @@ struct
           List.iter deduped ~f:(fun costs ->
               (* Log.debug (fun m -> m "Inserting %a" Fmt.(Dump.(list int)) costs); *)
               let costs = Array.of_list costs in
-              assert (Int.(Array.length costs = n_holes));
+              assert (Array.length costs = n_holes);
 
               let deps =
-                Gr.to_preorder (rhs :> Gr.Untyped_term.t)
+                Gr.to_preorder (term :> Gr.Untyped_term.t)
                 |> Gr.non_terminals
                 |> List.map ~f:(fun (symbol, arg_idx) ->
                        (arg_idx, { V.cost = costs.(arg_idx); symbol }))
@@ -400,45 +421,42 @@ struct
               match find_arg deps with
               | Some arg -> g := G.add_edge !g rhs_v arg
               | None ->
-                  let arg = V.Arg { id = Fresh.int fresh; n_args = n_holes } in
-                  g := G.add_edge !g rhs_v arg;
-                  List.iter deps ~f:(fun (arg_idx, state) ->
-                      let edge = (arg, arg_idx, V.State state) in
-                      g := G.add_edge_e !g edge);
-                  add_arg deps arg))
+                  let all_deps_exist =
+                    List.for_all deps ~f:(fun (_, v) ->
+                        G.mem_vertex !g (V.State v))
+                  in
+                  if all_deps_exist then (
+                    let arg =
+                      V.Arg { id = Fresh.int fresh; n_args = n_holes }
+                    in
+                    g := G.add_edge !g rhs_v arg;
+                    List.iter deps ~f:(fun (arg_idx, state) ->
+                        let edge = (arg, arg_idx, V.State state) in
+                        g := G.add_edge_e !g edge);
+                    add_arg deps arg ));
+
+          if G.mem_vertex !g rhs_v then
+            let lhs_v = V.State { cost; symbol = Gr.Rule.lhs rule } in
+            g := G.add_edge !g lhs_v rhs_v)
     done;
     let g = !g in
-
-    let vertices = G.fold_vertex (fun v vs -> v :: vs) g [] in
-    let sinks =
-      List.filter vertices ~f:(function
-        | State { symbol; _ } -> String.(symbol = Sketch.output)
-        | _ -> false)
-      |> Set.of_list (module V)
-    and sources =
-      List.filter vertices ~f:(function
-        | State { symbol; cost = 1 } ->
-            List.mem Sketch.inputs symbol ~equal:[%compare.equal: string]
-        | _ -> false)
-      |> Set.of_list (module V)
-    in
 
     (* Prune nodes that the sinks don't depend on and nodes that can't reach a
        source. *)
     let rec prune_loop g =
-      let sink_reachable = G.Reachability.analyze (Set.mem sinks) g
-      and source_reachable =
-        G.Reverse_reachability.analyze (Set.mem sources) g
+      let is_source = Set.mem sources
+      and is_sink = function
+        | V.State { symbol } -> String.(symbol = Sketch.output)
+        | _ -> false
       in
+      let sink_reachable = G.Reachability.analyze is_sink g
+      and source_reachable = G.Reverse_reachability.analyze is_source g in
       let g' =
         G.fold_vertex
           (fun v g ->
             let should_keep =
               sink_reachable v && source_reachable v
-              &&
-              match v with
-              | Arg x -> Int.(x.n_args = G.out_degree g v)
-              | _ -> true
+              && match v with Arg x -> x.n_args = G.out_degree g v | _ -> true
             in
             if should_keep then g
             else
@@ -446,8 +464,8 @@ struct
               G.remove_vertex g v)
           g g
       in
-      if Int.(G.nb_vertex g > G.nb_vertex g' || G.nb_edges g > G.nb_edges g')
-      then prune_loop g'
+      if G.nb_vertex g > G.nb_vertex g' || G.nb_edges g > G.nb_edges g' then
+        prune_loop g'
       else g'
     in
 
@@ -479,13 +497,7 @@ struct
 
   let insert state term value =
     let sym = state.V.symbol and cost = state.V.cost in
-    S.sseq
-      [
-        debug_print
-          (sprintf "Inserting (%s -> %s) cost %d" sym (Gr.Term.to_string term)
-             cost);
-        C.put ~sym ~size:cost (cache.value ()) value;
-      ]
+    C.put ~sym ~size:cost (cache.value ()) value
 
   let deps_satisfied (term : [ `Open | `Closed ] Gr.Term.t) deps bindings =
     let seen = List.map bindings ~f:(fun (i, _, _) -> i) in
@@ -580,10 +592,14 @@ struct
 
   let fill_state g state =
     Log.debug (fun m -> m "Generating code for %s:%d" state.V.symbol state.cost);
-    G.succ g (V.State state)
-    |> List.concat_map ~f:(fun code_node ->
-           fill_code g state @@ V.to_code code_node)
-    |> S.sseq
+    S.sseq
+      [
+        debug_print (sprintf "Filling %s at cost %d" state.V.symbol state.cost);
+        G.succ g (V.State state)
+        |> List.concat_map ~f:(fun code_node ->
+               fill_code g state @@ V.to_code code_node)
+        |> S.sseq;
+      ]
 
   let enumerate max_cost =
     let g = search_graph max_cost in

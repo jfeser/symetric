@@ -308,6 +308,8 @@ struct
         let err = of_exn exn in
         tag_arg err "Evaluation failed" expr [%sexp_of: _ Grammar.Term.t]
         |> raise
+
+    let cost _ = 1
   end
 
   module Cache = struct

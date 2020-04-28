@@ -3,6 +3,9 @@ open Types
 module type Deps = sig
   include Sigs.CODE
 
+  module Set :
+    Cstage_set.S with type 'a code := 'a t and type 'a ctype := 'a ctype
+
   module Array :
     Cstage_array.S with type 'a code := 'a t and type 'a ctype := 'a ctype
 
@@ -68,6 +71,7 @@ module Make (C : Deps) = struct
         | Cuboid_z_offset of offset_t C.t
         | Bool of bool C.t
         | Int of int C.t
+      [@@deriving variants]
 
       let pp fmt = function
         | Examples _ -> Fmt.pf fmt "examples"
@@ -153,6 +157,10 @@ module Make (C : Deps) = struct
                 C.Float.of_sexp C.Float.of_sexp)
             (fun s -> C.Tuple.of_sexp s C.Float.of_sexp C.Float.of_sexp)
         in
+        let cuboid_of_sexp s =
+          C.Tuple_4.of_sexp s C.Int.of_sexp C.Float.of_sexp C.Float.of_sexp
+            C.Float.of_sexp
+        in
         let vectors_of_sexp s =
           C.Array.of_sexp s @@ fun s ->
           C.Tuple_3.of_sexp s C.Float.of_sexp C.Float.of_sexp C.Float.of_sexp
@@ -165,6 +173,10 @@ module Make (C : Deps) = struct
         else if String.(sym = "V") then Vectors (vectors_of_sexp sexp)
         else if String.(sym = "C") then Cylinder (cylinder_of_sexp sexp)
         else if String.(sym = "CO") then Cylinder_offset (offset_of_sexp sexp)
+        else if String.(sym = "U") then Cuboid (cuboid_of_sexp sexp)
+        else if String.(sym = "UOX") then Cuboid_x_offset (offset_of_sexp sexp)
+        else if String.(sym = "UOY") then Cuboid_y_offset (offset_of_sexp sexp)
+        else if String.(sym = "UOZ") then Cuboid_z_offset (offset_of_sexp sexp)
         else failwith "Unexpected symbol"
 
       let ( = ) v v' =
@@ -173,27 +185,27 @@ module Make (C : Deps) = struct
         | Int x, Int x' -> `Dyn C.Int.(x = x')
         | _ -> failwith "Cannot compare"
 
-      let key =
-        Univ_map.Key.create ~name:"cad.value"
-          [%sexp_of: [ `E | `V | `S | `I | `C | `CO ]]
+      module Key = struct
+        type value = t
 
-      let code_of = function
-        | Examples x -> C.add_annot (C.cast x) key `E
-        | Vectors x -> C.add_annot (C.cast x) key `V
-        | Sphere x -> C.add_annot (C.cast x) key `S
-        | Int x -> C.add_annot (C.cast x) key `I
-        | Cylinder x -> C.add_annot (C.cast x) key `C
-        | Cylinder_offset x -> C.add_annot (C.cast x) key `CO
-        | _ -> failwith "Not convertible"
+        type t = K : (_ C.t -> value) Variant.t -> t
+
+        let sexp_of_t (K _) = assert false
+
+        let key = Univ_map.Key.create ~name:"cad.value" [%sexp_of: t]
+      end
+
+      let code_of v =
+        let conv variant value =
+          C.add_annot (C.cast value) Key.key (Key.K variant)
+        in
+        Variants.map ~examples:conv ~vectors:conv ~sphere:conv ~cylinder:conv
+          ~cylinder_offset:conv ~cuboid:conv ~cuboid_x_offset:conv
+          ~cuboid_y_offset:conv ~cuboid_z_offset:conv ~bool:conv ~int:conv v
 
       let of_code c =
-        match C.find_annot c key with
-        | Some `E -> Examples (C.cast c)
-        | Some `V -> Vectors (C.cast c)
-        | Some `S -> Sphere (C.cast c)
-        | Some `I -> Int (C.cast c)
-        | Some `C -> Cylinder (C.cast c)
-        | Some `CO -> Cylinder_offset (C.cast c)
+        match C.find_annot c Key.key with
+        | Some (Key.K v) -> v.Variant.constructor @@ C.cast c
         | None -> failwith "Not convertible."
     end
 
@@ -218,34 +230,6 @@ module Make (C : Deps) = struct
       C.let_ ((cos (-x') * y2) - (sin (-x') * z2)) @@ fun y3 ->
       C.let_ ((sin (-x') * y2) + (cos (-x') * z2)) @@ fun z3 ->
       C.Tuple_3.of_tuple (x3, y3, z3)
-
-    (*
-       generator bit getCuboid(Vector p, int id) {
-	CuboidHint c = cuboidHints[id];
-	assert(c != null);
-	Vector p_rotated = inverse_rotate(p, c.theta_x, c.theta_y, c.theta_z);
-	
-	float xl = getOffset(c.xlist);
-	float yl = getOffset(c.ylist);
-	float zl = getOffset(c.zlist);
-	
-	float xu = getOffset(c.xlist);
-	float yu = getOffset(c.ylist);
-	float zu = getOffset(c.zlist);
-	
-	assert(xl < xu);
-	assert(yl < yu);
-	assert(zl < zu);
-	print("Cuboid("); printInt(id); print(",Vector("); printfloat(c.theta_x); print(","); printfloat(c.theta_y); print(","); printfloat(c.theta_z);
-	print("),Vector("); printfloat(xl); print(","); printfloat(yl); print(","); printfloat(zl); 
-	print("),Vector("); printfloat(xu - xl); print(","); printfloat(yu - yl); print(","); printfloat(zu - zl); print("))");
-	
-	bit x_in_range = p_rotated.x >= xl && p_rotated.x <= xu;
-    bit y_in_range = p_rotated.y >= yl && p_rotated.y <= yu;
-    bit z_in_range = p_rotated.z >= zl && p_rotated.z <= zu;
-    return x_in_range && y_in_range && z_in_range;
-}
-*)
 
     module C2 = C.Tuple
     module C3 = C.Tuple_3
@@ -408,6 +392,10 @@ module Make (C : Deps) = struct
           ("E", app "sub" [ nt "E"; nt "E" ]);
         ]
       @ [ cylinder_rule; cuboid_rule ]
+
+    let cost = function
+      | "sphere" | "cuboid" | "cyl" | "union" | "inter" | "sub" -> 1
+      | sym -> failwith @@ "Unknown symbol: " ^ sym
   end
 
   module Cache = struct

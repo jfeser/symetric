@@ -25,15 +25,21 @@ module type S = sig
   val sexp_of : 'a set code -> ('a code -> sexp code) -> sexp code
 end
 
-module Set (C : Cstage_core.S) = struct
+module Base_set
+    (C : Cstage_core.S) (T : sig
+      val mk_type : 'a C.ctype -> 'a set C.ctype
+
+      val elem_type : 'a set C.ctype -> 'a C.ctype
+    end) =
+struct
+  let mk_type = T.mk_type
+
+  let elem_type = T.elem_type
+
   module Int = Cstage_int.Int (C)
   open C
 
   type 'a t
-
-  let elem_t = Univ_map.Key.create ~name:"elem_t" [%sexp_of: typ]
-
-  let elem_type t = Univ_map.find_exn t elem_t
 
   let empty typ =
     let set = fresh_name () in
@@ -78,10 +84,6 @@ for(auto $(iter) = $(set).begin(); $(iter) != $(set).end(); ++$(iter)) {
     eformat ~has_effect:true "0" unit_t "$(name).insert($(val));"
       [ ("name", C a); ("val", C x) ]
 
-  let mk_type e =
-    Type.create ~name:(sprintf "std::set<%s >" (Type.name e))
-    |> Type.add_exn ~key:elem_t ~data:e
-
   let of_sexp type_ sexp elem_of_sexp =
     let_ (empty type_) @@ fun set ->
     let_ (Sexp.to_list sexp) @@ fun sexp ->
@@ -90,3 +92,33 @@ for(auto $(iter) = $(set).begin(); $(iter) != $(set).end(); ++$(iter)) {
 
   let sexp_of _ _ = failwith "unimplemented"
 end
+
+module Ordered_set (C : Cstage_core.S) =
+  Base_set
+    (C)
+    (struct
+      open C
+
+      let elem_t = Univ_map.Key.create ~name:"elem_t" [%sexp_of: typ]
+
+      let elem_type t = Univ_map.find_exn t elem_t
+
+      let mk_type e =
+        Type.create ~name:(sprintf "std::set<%s >" (Type.name e))
+        |> Type.add_exn ~key:elem_t ~data:e
+    end)
+
+module Hash_set (C : Cstage_core.S) =
+  Base_set
+    (C)
+    (struct
+      open C
+
+      let elem_t = Univ_map.Key.create ~name:"elem_t" [%sexp_of: typ]
+
+      let elem_type t = Univ_map.find_exn t elem_t
+
+      let mk_type e =
+        Type.create ~name:(sprintf "std::unordered_set<%s >" (Type.name e))
+        |> Type.add_exn ~key:elem_t ~data:e
+    end)
