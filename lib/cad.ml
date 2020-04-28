@@ -168,7 +168,7 @@ module Make (C : Deps) = struct
         let offset_of_sexp s =
           C.Tuple.of_sexp s C.Int.of_sexp C.Float.of_sexp
         in
-        if String.(sym = "E") then Examples (examples_of_sexp sexp)
+        if Char.(sym.[0] = 'E') then Examples (examples_of_sexp sexp)
         else if String.(sym = "S") then Sphere (sphere_of_sexp sexp)
         else if String.(sym = "V") then Vectors (vectors_of_sexp sexp)
         else if String.(sym = "C") then Cylinder (cylinder_of_sexp sexp)
@@ -386,6 +386,7 @@ module Make (C : Deps) = struct
 
       Grammar.of_list
         [
+          ("E0", app "union" [ app "union" [ nt "E"; nt "E" ]; nt "E" ]);
           ("E", app "sphere" [ nt "S"; nt "V" ]);
           ("E", app "union" [ nt "E"; nt "E" ]);
           ("E", app "inter" [ nt "E"; nt "E" ]);

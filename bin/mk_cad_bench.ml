@@ -20,7 +20,7 @@ let main size =
   let module Sketch = struct
     let inputs = [ "S"; "V"; "C"; "CO"; "U"; "UOX"; "UOY"; "UOZ" ]
 
-    let output = "E"
+    let output = "E0"
   end in
   let open Synth.Make (Sketch) (Code) (Cad.Lang) (Cad.Cache) in
   let g = search_graph size in
