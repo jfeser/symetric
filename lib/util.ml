@@ -102,7 +102,7 @@ end
 let input_sketch ch =
   let inputs, output = Sexp.input_sexp ch |> [%of_sexp: string list * string] in
   ( module struct
-    let inputs = inputs
+    let background = inputs
 
     let output = output
   end : Sigs.SKETCH )

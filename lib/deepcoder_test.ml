@@ -6,7 +6,7 @@ let%expect_test "" =
   let module Array = Cstage_array.Array (Core) in
   let module Deepcoder = Deepcoder.Make (Array) (Code) in
   let module Sketch = struct
-    let inputs = [ "L" ]
+    let background = [ "L" ]
 
     let output = "L"
   end in
@@ -262,7 +262,7 @@ let%expect_test "" =
   let module Array = Cstage_array.ArenaArray (Core) in
   let module Deepcoder = Deepcoder.Make (Array) (Code) in
   let module Sketch = struct
-    let inputs = [ "L" ]
+    let background = [ "L" ]
 
     let output = "L"
   end in

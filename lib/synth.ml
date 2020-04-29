@@ -175,8 +175,8 @@ struct
       Nonlocal_let.let_ S.let_global @@ fun () ->
       S.Sexp.input () |> S.Sexp.to_list
     in
-    let inputs =
-      List.mapi Sketch.inputs ~f:(fun idx sym ->
+    let background =
+      List.mapi Sketch.background ~f:(fun idx sym ->
           ( sym,
             Nonlocal_let.let_ S.let_global @@ fun () ->
             S.let_
@@ -189,7 +189,7 @@ struct
     in
     let output =
       Nonlocal_let.let_ S.let_global @@ fun () ->
-      S.Sexp.List.get (io.value ()) (S.Int.int (List.length Sketch.inputs))
+      S.Sexp.List.get (io.value ()) (S.Int.int (List.length Sketch.background))
       |> L.Value.of_sexp Sketch.output
       |> L.Value.code_of
     in
@@ -201,9 +201,9 @@ struct
         | x :: xs -> x.bind @@ fun () -> bind_all xs
         | [] -> assert false
       in
-      bind_all (List.map ~f:(fun (_, v) -> v) inputs)
+      bind_all (List.map ~f:(fun (_, v) -> v) background)
     and iter_inputs sym f =
-      List.filter_map inputs ~f:(fun (sym', inputs) ->
+      List.filter_map background ~f:(fun (sym', inputs) ->
           if String.(sym = sym') then Some (inputs.value ()) else None)
       |> List.map ~f:(fun inputs ->
              S.Array.iter inputs ~f:(fun input -> f @@ L.Value.of_code input))
@@ -282,7 +282,8 @@ struct
 
     and of_state ({ graph = g; _ } as ctx) state target =
       match G.succ g (State state) with
-      | [] -> L.Value.of_code target |> L.Value.sexp_of |> S.Sexp.print
+      | [] when String.(state.V.symbol <> "V") ->
+          L.Value.of_code target |> L.Value.sexp_of |> S.Sexp.print
       | deps ->
           List.map deps ~f:(fun n -> of_code ctx target @@ V.to_code n)
           |> S.sseq
@@ -370,7 +371,7 @@ struct
     and add_arg k v = Hashtbl.set arg_multiedges ~key:(norm k) ~data:v in
 
     let sources =
-      List.map Sketch.inputs ~f:(fun symbol -> V.State { symbol; cost = 0 })
+      List.map Sketch.background ~f:(fun symbol -> V.State { symbol; cost = 0 })
       |> Set.of_list (module V)
     in
 

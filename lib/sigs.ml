@@ -13,7 +13,7 @@ module type SKETCH = sig
   (* TODO *)
   (* val body : Grammar.t *)
 
-  val inputs : Grammar.nonterm list
+  val background : Grammar.nonterm list
 
   val output : Grammar.nonterm
 end

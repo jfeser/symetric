@@ -18,7 +18,7 @@ let main size =
   end in
   let module Cad = Cad.Make (Code) in
   let module Sketch = struct
-    let inputs = [ "S"; "V"; "C"; "CO"; "U"; "UOX"; "UOY"; "UOZ" ]
+    let background = [ "S"; "V"; "C"; "CO"; "U"; "UOX"; "UOY"; "UOZ" ]
 
     let output = "E0"
   end in

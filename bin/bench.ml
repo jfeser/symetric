@@ -32,7 +32,7 @@ module Bench (Dsl : LANG with type 'a code = 'a Mlstage.Code.t) = struct
   let generate_bench ?(state = Random.State.default) spec =
     let module Sketch = (val spec.sketch) in
     let grammar =
-      List.mapi Sketch.inputs ~f:(fun i kind ->
+      List.mapi Sketch.background ~f:(fun i kind ->
           Grammar.(Rule.of_tuple (kind, Term.app (sprintf "input%d" i) [])))
       @ Dsl.grammar
     in
@@ -41,7 +41,7 @@ module Bench (Dsl : LANG with type 'a code = 'a Mlstage.Code.t) = struct
     |> Sequence.filter_map ~f:(fun t ->
            try
              let inputs =
-               List.mapi Sketch.inputs ~f:(fun i kind ->
+               List.mapi Sketch.background ~f:(fun i kind ->
                    (sprintf "input%d" i, Dsl.Value.random ~state kind 5))
              in
              let ctx = Map.of_alist_exn (module String) inputs in
