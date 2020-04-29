@@ -122,7 +122,7 @@ module Int (C : Cstage_core.S) = struct
     eformat "std::stoi(((atom*)$(x))->get_body())" type_ "" [ ("x", C x) ]
 
   let sexp_of x =
-    eformat "atom(std::to_string($(x)))" Sexp.type_ "" [ ("x", C x) ]
+    eformat "(new atom(std::to_string($(x))))" Sexp.type_ "" [ ("x", C x) ]
 end
 
 module Int16 (C : Cstage_core.S) = struct

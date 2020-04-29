@@ -36,7 +36,8 @@ module Tuple (C : Cstage_core.S) = struct
 
   let to_tuple t = (fst t, snd t)
 
-  let sexp_of _ _ _ = failwith "unimplemented"
+  let sexp_of x sexp_of_t1 sexp_of_t2 =
+    Sexp.List.const [| sexp_of_t1 @@ fst x; sexp_of_t2 @@ snd x |]
 end
 
 module Tuple_3 = struct
@@ -116,7 +117,9 @@ module Tuple_3 = struct
 
     let thd t = eformat "std::get<2>($(t))" (thd_type t.etype) "" [ ("t", C t) ]
 
-    let sexp_of _ _ _ = failwith "unimplemented"
+    let sexp_of x sexp_of_t1 sexp_of_t2 sexp_of_t3 =
+      Sexp.List.const
+        [| sexp_of_t1 @@ fst x; sexp_of_t2 @@ snd x; sexp_of_t3 @@ thd x |]
 
     let of_tuple (a, b, c) = create a b c
 
@@ -219,6 +222,15 @@ module Tuple_4 = struct
 
     let fth t = eformat "std::get<3>($(t))" (fth_type t.etype) "" [ ("t", C t) ]
 
+    let sexp_of x sexp_of_t1 sexp_of_t2 sexp_of_t3 sexp_of_t4 =
+      Sexp.List.const
+        [|
+          sexp_of_t1 @@ fst x;
+          sexp_of_t2 @@ snd x;
+          sexp_of_t3 @@ thd x;
+          sexp_of_t4 @@ fth x;
+        |]
+
     let of_tuple (a, b, c, d) = create a b c d
 
     let tuple_of t f =
@@ -227,7 +239,5 @@ module Tuple_4 = struct
       C.let_ (snd t) @@ fun x2 ->
       C.let_ (thd t) @@ fun x3 ->
       C.let_ (fth t) @@ fun x4 -> f (x1, x2, x3, x4)
-
-    let sexp_of _ _ _ = failwith "unimplemented"
   end
 end

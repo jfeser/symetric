@@ -161,7 +161,8 @@ module Derived
     let_ (Sexp.to_list x) @@ fun l ->
     init (Sexp.List.length l) (fun i -> elem_of_sexp (Sexp.List.get l i))
 
-  let sexp_of _ _ = failwith "unimplemented"
+  let sexp_of x sexp_of_elem =
+    Sexp.List.init (length x) @@ fun i -> sexp_of_elem @@ get x i
 
   module O = struct
     let ( = ) a a' = binop "(%s == %s)" Bool.type_ a a'

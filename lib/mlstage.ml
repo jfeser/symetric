@@ -64,6 +64,10 @@ module Code = struct
 
     let input () () = Sexp (Sexp.input_sexp In_channel.stdin)
 
+    let print x () =
+      print_s @@ to_sexp x;
+      Unit
+
     module List = struct
       let get s i () =
         match to_sexp s with
@@ -330,6 +334,8 @@ module Code = struct
   let print s () =
     print_endline s;
     Unit
+
+  let eprint = print
 
   let to_func x = match to_value x with Func x -> x | _ -> assert false
 

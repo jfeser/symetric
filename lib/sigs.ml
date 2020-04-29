@@ -150,6 +150,8 @@ module type CODE = sig
 
     val input : unit -> sexp t
 
+    val print : sexp t -> unit t
+
     val to_list : sexp t -> sexp list t
 
     module List : sig
@@ -174,6 +176,8 @@ module type CODE = sig
 
   (* Utility *)
   val print : string -> unit t
+
+  val eprint : string -> unit t
 
   val exit : unit t
 end

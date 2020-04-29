@@ -218,13 +218,23 @@ struct
     | 0 -> iter_inputs sym f
     | size -> C.iter ~sym ~size:(int size) ~f cache
 
-  let debug_print msg = if !debug then S.print msg else S.unit
+  let debug_print msg = if !debug then S.eprint msg else S.unit
 
   module Reconstruct = struct
     type ctx = { graph : G.t; cache : C.cache C.code }
 
+    let rec print_term print_nt = function
+      | Gr.Nonterm nt -> print_nt nt
+      | App (func, args) ->
+          S.print (sprintf "(%s " func)
+          :: List.concat_map args ~f:(fun arg ->
+                 print_term print_nt arg @ [ S.print " " ])
+          @ [ S.print ")" ]
+      | As (t, _) -> print_term print_nt t
+
     let rec of_args ({ cache; _ } as ctx) target term args =
       let cache = C.of_code cache in
+      let pterm = Gr.to_preorder (term : _ Gr.Term.t :> Gr.Untyped_term.t) in
       let check_one args =
         let term, eval_ctx =
           let eval_args =
@@ -240,9 +250,13 @@ struct
         S.ite found
           (fun () ->
             S.sseq
-              ( S.print ([%sexp_of: _ Gr.Term.t] term |> Sexp.to_string_hum)
-              :: List.map args ~f:(fun (state, _, value) ->
-                     reconstruct ctx value state) ))
+            @@ print_term
+                 (fun (_, idx) ->
+                   let state, _, value =
+                     List.find_exn args ~f:(fun (_, idx', _) -> idx = idx')
+                   in
+                   [ reconstruct ctx value state ])
+                 pterm)
           (fun () -> S.unit)
       in
       let check_all =
@@ -263,13 +277,15 @@ struct
       else
         List.map args ~f:(fun n ->
             of_args ctx target term
-              (G.succ_e g n |> List.map ~f:(fun (_, i, v) -> (i, V.to_state v))))
+            @@ (G.succ_e g n |> List.map ~f:(fun (_, i, v) -> (i, V.to_state v))))
         |> S.sseq
 
     and of_state ({ graph = g; _ } as ctx) state target =
-      G.succ g (State state)
-      |> List.map ~f:(fun n -> of_code ctx target @@ V.to_code n)
-      |> S.sseq
+      match G.succ g (State state) with
+      | [] -> L.Value.of_code target |> L.Value.sexp_of |> S.Sexp.print
+      | deps ->
+          List.map deps ~f:(fun n -> of_code ctx target @@ V.to_code n)
+          |> S.sseq
 
     and reconstruct { graph = g; cache } target state =
       let open S in

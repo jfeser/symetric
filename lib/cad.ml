@@ -142,7 +142,30 @@ module Make (C : Deps) = struct
         | Cuboid x -> C.Tuple_4.fst x
         | x -> err "has id" x
 
-      let sexp_of _ = assert false
+      let sexp_of = function
+        | Sphere x ->
+            C.Tuple_4.sexp_of x C.Float.sexp_of C.Float.sexp_of C.Float.sexp_of
+              C.Float.sexp_of
+        | Vectors x ->
+            C.Array.sexp_of x @@ fun s ->
+            C.Tuple_3.sexp_of s C.Float.sexp_of C.Float.sexp_of C.Float.sexp_of
+        | Cylinder x ->
+            C.Tuple_3.sexp_of x C.Int.sexp_of
+              (fun s ->
+                C.Tuple_4.sexp_of s C.Float.sexp_of C.Float.sexp_of
+                  C.Float.sexp_of C.Float.sexp_of)
+              (fun s -> C.Tuple.sexp_of s C.Float.sexp_of C.Float.sexp_of)
+        | Cuboid x ->
+            C.Tuple_4.sexp_of x C.Int.sexp_of C.Float.sexp_of C.Float.sexp_of
+              C.Float.sexp_of
+        | Examples x -> C.Array.sexp_of x C.Bool.sexp_of
+        | Cylinder_offset x
+        | Cuboid_x_offset x
+        | Cuboid_y_offset x
+        | Cuboid_z_offset x ->
+            C.Tuple.sexp_of x C.Int.sexp_of C.Float.sexp_of
+        | Bool x -> C.Bool.sexp_of x
+        | Int x -> C.Int.sexp_of x
 
       let of_sexp sym sexp =
         let examples_of_sexp s = C.Array.of_sexp s C.Bool.of_sexp in

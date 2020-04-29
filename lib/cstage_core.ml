@@ -105,6 +105,10 @@ module type S = sig
 
       val length : expr -> expr
 
+      val const : expr array -> expr
+
+      val init : expr -> (expr -> expr) -> expr
+
       val type_ : typ
     end
 
@@ -113,6 +117,8 @@ module type S = sig
     end
 
     val input : unit -> expr
+
+    val print : expr -> expr
 
     val to_list : expr -> expr
 
@@ -162,6 +168,8 @@ module type S = sig
   val assign : expr -> to_:expr -> expr
 
   val print : string -> expr
+
+  val eprint : string -> expr
 
   val exit : expr
 
@@ -452,53 +460,6 @@ namespace std {
       type_ ""
       [ ("arg1", C x); ("arg2", C x') ]
 
-  module Sexp = struct
-    let type_ = Type.create ~name:"sexp*"
-
-    module List = struct
-      let get x i = eformat "(($(x))[$(i)])" type_ "" [ ("x", C x); ("i", C i) ]
-
-      let length x =
-        eformat "((int)(($(x)).size()))" (Type.create ~name:"int") ""
-          [ ("x", C x) ]
-
-      let type_ = Type.create ~name:"std::vector<sexp*>"
-    end
-
-    module Atom = struct
-      let type_ = Type.create ~name:"std::string"
-    end
-
-    let input () =
-      eformat ~has_effect:false "$(name)" type_
-        "sexp *$(name) = sexp::load(std::cin);"
-        [ ("name", S (fresh_name ())) ]
-
-    let to_list x =
-      eformat "((list*)($(x)))->get_body()" List.type_ "" [ ("x", C x) ]
-
-    let to_atom x =
-      eformat "((atom*)($(x)))->get_body()" Atom.type_ "" [ ("x", C x) ]
-  end
-
-  module Bool = struct
-    let type_ = Type.create ~name:"int"
-
-    let bool x = eformat (if x then "1" else "0") type_ "" []
-
-    let ( && ) x y = binop "(%s && %s)" type_ x y
-
-    let ( || ) x y = binop "(%s || %s)" type_ x y
-
-    let not x = unop "(!%s)" type_ x
-
-    let of_sexp x =
-      eformat "std::stoi(((atom*)$(x))->get_body())" type_ "" [ ("x", C x) ]
-
-    let sexp_of x =
-      eformat "(new atom(std::to_string($(x))))" Sexp.type_ "" [ ("x", C x) ]
-  end
-
   let fresh_var etype m =
     let name = Fresh.name prog.fresh "x%d" in
     { ret = name; etype; efree = [ (name, m) ]; ebody = ""; eeffect = false }
@@ -619,6 +580,10 @@ for(int $(i) = $(lo); $(i) < $(hi); $(i) += $(step)) {
     eformat ~has_effect:true "0" unit_t "std::cout << $(str) << std::endl;"
       [ ("str", S (sprintf "%S" s)) ]
 
+  let eprint s =
+    eformat ~has_effect:true "0" unit_t "std::cerr << $(str) << std::endl;"
+      [ ("str", S (sprintf "%S" s)) ]
+
   let exit = eformat ~has_effect:true "0" unit_t "exit(0);" []
 
   let with_comment s e =
@@ -630,4 +595,78 @@ for(int $(i) = $(lo); $(i) < $(hi); $(i) += $(step)) {
   let add_annot e k v = { e with etype = Univ_map.set e.etype k v }
 
   let find_annot e k = Univ_map.find e.etype k
+
+  let int x = eformat (sprintf "%d" x) (Type.create ~name:"int") "" []
+
+  module Sexp = struct
+    let type_ = Type.create ~name:"sexp*"
+
+    module List = struct
+      let get x i = eformat "(($(x))[$(i)])" type_ "" [ ("x", C x); ("i", C i) ]
+
+      let length x =
+        eformat "((int)(($(x)).size()))" (Type.create ~name:"int") ""
+          [ ("x", C x) ]
+
+      let type_ = Type.create ~name:"std::vector<sexp*>"
+
+      let to_list a = eformat "(new list($(a)))" type_ "" [ ("a", C a) ]
+
+      let set a i x =
+        eformat ~has_effect:true "0" unit_t "$(a)[$(i)] = $(x);"
+          [ ("a", C a); ("i", C i); ("x", C x) ]
+
+      let const a =
+        let a = Array.to_list a in
+        let_ (fresh_decl ~init:(int @@ List.length a) type_) @@ fun arr ->
+        sseq [ List.mapi a ~f:(fun i -> set arr (int i)) |> sseq; to_list arr ]
+
+      let init len f =
+        let_ (fresh_decl type_ ~init:len) @@ fun a ->
+        sseq
+          [
+            for_ (int 0) (int 1) len (fun i -> set a i (genlet (f i)));
+            to_list a;
+          ]
+    end
+
+    module Atom = struct
+      let type_ = Type.create ~name:"std::string"
+
+      let of_string = Fun.id
+    end
+
+    let input () =
+      eformat ~has_effect:false "$(name)" type_
+        "sexp *$(name) = sexp::load(std::cin);"
+        [ ("name", S (fresh_name ())) ]
+
+    let print x =
+      eformat ~has_effect:false "0" type_ "($(x))->print(std::cout);"
+        [ ("x", C x) ]
+
+    let to_list x =
+      eformat "((list*)($(x)))->get_body()" List.type_ "" [ ("x", C x) ]
+
+    let to_atom x =
+      eformat "((atom*)($(x)))->get_body()" Atom.type_ "" [ ("x", C x) ]
+  end
+
+  module Bool = struct
+    let type_ = Type.create ~name:"int"
+
+    let bool x = eformat (if x then "1" else "0") type_ "" []
+
+    let ( && ) x y = binop "(%s && %s)" type_ x y
+
+    let ( || ) x y = binop "(%s || %s)" type_ x y
+
+    let not x = unop "(!%s)" type_ x
+
+    let of_sexp x =
+      eformat "std::stoi(((atom*)$(x))->get_body())" type_ "" [ ("x", C x) ]
+
+    let sexp_of x =
+      eformat "(new atom(std::to_string($(x))))" Sexp.type_ "" [ ("x", C x) ]
+  end
 end
