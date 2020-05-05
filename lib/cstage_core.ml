@@ -180,6 +180,8 @@ module type S = sig
   val add_annot : expr -> 'b Univ_map.Key.t -> 'b -> expr
 
   val find_annot : expr -> 'b Univ_map.Key.t -> 'b option
+
+  val return : expr
 end
 
 module Make () : S = struct
@@ -577,12 +579,14 @@ for(int $(i) = $(lo); $(i) < $(hi); $(i) += $(step)) {
     }
 
   let print s =
-    eformat ~has_effect:true "0" unit_t "std::cout << $(str) << std::endl;"
+    eformat ~has_effect:true "0" unit_t "std::cout << $(str);"
       [ ("str", S (sprintf "%S" s)) ]
 
   let eprint s =
-    eformat ~has_effect:true "0" unit_t "std::cerr << $(str) << std::endl;"
+    eformat ~has_effect:true "0" unit_t "std::cerr << $(str);"
       [ ("str", S (sprintf "%S" s)) ]
+
+  let return = eformat ~has_effect:true "0" unit_t "return 0;" []
 
   let exit = eformat ~has_effect:true "0" unit_t "exit(0);" []
 

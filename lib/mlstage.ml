@@ -10,10 +10,13 @@ module Code = struct
       | Bool of bool
       | Array of t array
       | Tuple of (t * t)
+      | Tuple_3 of (t * t * t)
       | Set of t Set.Poly.t ref
       | Func of ((t -> t)[@compare.ignore])
       | Sexp of Sexp.t
       | String of string
+      | Float of float
+      | Tuple_4 of (t * t * t * t)
     [@@deriving compare, sexp_of]
   end
 
@@ -32,6 +35,8 @@ module Code = struct
   let let_locus f = f ()
 
   let to_int x = match x () with Int x -> x | _ -> assert false
+
+  let to_float x = match x () with Float x -> x | _ -> assert false
 
   let to_bool x = match x () with Bool x -> x | _ -> assert false
 
@@ -61,6 +66,8 @@ module Code = struct
 
   module Sexp = struct
     let type_ = ()
+
+    let sexp s () = Sexp s
 
     let input () () = Sexp (Sexp.input_sexp In_channel.stdin)
 
@@ -140,7 +147,7 @@ module Code = struct
 
     let not x () = Bool (not (to_bool x))
 
-    let of_sexp x () = Bool ([%of_sexp: bool] (to_sexp x))
+    let of_sexp x () = Bool ([%of_sexp: int] (to_sexp x) = 1)
 
     let sexp_of x () = Sexp ([%sexp_of: bool] (to_bool x))
   end
@@ -309,6 +316,153 @@ module Code = struct
            ])
   end
 
+  module Tuple_3 = struct
+    type (_, _, _) t
+
+    let mk_type _ _ _ = ()
+
+    let to_tuple x = match to_value x with Tuple_3 x -> x | _ -> assert false
+
+    let create x y z () = Tuple_3 (to_value x, to_value y, to_value z)
+
+    let fst x () =
+      let x, _, _ = to_tuple x in
+      x
+
+    let snd x () =
+      let _, x, _ = to_tuple x in
+      x
+
+    let thd x () =
+      let _, _, x = to_tuple x in
+      x
+
+    let tuple_of x f = f (fst x, snd x, thd x)
+
+    let of_tuple (x, y, z) = create x y z
+
+    let of_sexp x t1_of_sexp t2_of_sexp t3_of_sexp () =
+      match to_sexp x with
+      | List [ t1; t2; t3 ] ->
+          Tuple_3
+            ( t1_of_sexp (fun () -> Sexp t1) |> to_value,
+              t2_of_sexp (fun () -> Sexp t2) |> to_value,
+              t3_of_sexp (fun () -> Sexp t3) |> to_value )
+      | _ -> failwith "Expected a list."
+
+    let sexp_of x sexp_of_t1 sexp_of_t2 sexp_of_t3 () =
+      let t1, t2, t3 = to_tuple x in
+      Sexp
+        (Core.Sexp.List
+           [
+             sexp_of_t1 (to_code t1) |> to_sexp;
+             sexp_of_t2 (to_code t2) |> to_sexp;
+             sexp_of_t3 (to_code t3) |> to_sexp;
+           ])
+  end
+
+  module Tuple_4 = struct
+    type (_, _, _, _) t
+
+    let mk_type _ _ _ _ = ()
+
+    let to_tuple x = match to_value x with Tuple_4 x -> x | _ -> assert false
+
+    let create x y z a () =
+      Tuple_4 (to_value x, to_value y, to_value z, to_value a)
+
+    let fst x () =
+      let x, _, _, _ = to_tuple x in
+      x
+
+    let snd x () =
+      let _, x, _, _ = to_tuple x in
+      x
+
+    let thd x () =
+      let _, _, x, _ = to_tuple x in
+      x
+
+    let fth x () =
+      let _, _, _, x = to_tuple x in
+      x
+
+    let tuple_of x f = f (fst x, snd x, thd x, fth x)
+
+    let of_tuple (x, y, z, a) = create x y z a
+
+    let of_sexp x t1_of_sexp t2_of_sexp t3_of_sexp t4_of_sexp () =
+      match to_sexp x with
+      | List [ t1; t2; t3; t4 ] ->
+          Tuple_4
+            ( t1_of_sexp (fun () -> Sexp t1) |> to_value,
+              t2_of_sexp (fun () -> Sexp t2) |> to_value,
+              t3_of_sexp (fun () -> Sexp t3) |> to_value,
+              t4_of_sexp (fun () -> Sexp t4) |> to_value )
+      | _ -> failwith "Expected a list."
+
+    let sexp_of x sexp_of_t1 sexp_of_t2 sexp_of_t3 sexp_of_t4 () =
+      let t1, t2, t3, t4 = to_tuple x in
+      Sexp
+        (Core.Sexp.List
+           [
+             sexp_of_t1 (to_code t1) |> to_sexp;
+             sexp_of_t2 (to_code t2) |> to_sexp;
+             sexp_of_t3 (to_code t3) |> to_sexp;
+             sexp_of_t4 (to_code t4) |> to_sexp;
+           ])
+  end
+
+  module Float = struct
+    type t = float
+
+    let type_ = ()
+
+    let float x () = Float x
+
+    let float_unop f x () = Float (f (to_float x))
+
+    let float_binop f x x' () = Float (f (to_float x) (to_float x'))
+
+    let cmp_binop f x x' () = Bool (f (to_float x) (to_float x'))
+
+    let of_sexp x () = Float ([%of_sexp: float] (to_sexp x))
+
+    let sexp_of x () = Sexp ([%sexp_of: float] (to_float x))
+
+    open Float
+
+    let ( ~- ) = float_unop ( ~- )
+
+    let sin = float_unop sin
+
+    let cos = float_unop cos
+
+    let ( + ) = float_binop ( + )
+
+    let ( - ) = float_binop ( - )
+
+    let ( * ) = float_binop ( * )
+
+    let ( / ) = float_binop ( / )
+
+    let ( ** ) = float_binop ( ** )
+
+    let min = float_binop min
+
+    let max = float_binop max
+
+    let ( > ) = cmp_binop ( > )
+
+    let ( >= ) = cmp_binop ( >= )
+
+    let ( < ) = cmp_binop ( < )
+
+    let ( <= ) = cmp_binop ( <= )
+
+    let ( = ) = cmp_binop ( = )
+  end
+
   let for_ l s h f () =
     let lo = to_int l in
     let step = to_int s in
@@ -330,6 +484,8 @@ module Code = struct
   let sseq = List.fold_left ~init:unit ~f:seq
 
   let exit () = raise Exit
+
+  let return () = assert false
 
   let print s () =
     print_endline s;

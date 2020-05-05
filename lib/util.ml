@@ -101,8 +101,13 @@ end
 
 let input_sketch ch =
   let inputs, output = Sexp.input_sexp ch |> [%of_sexp: string list * string] in
+  let input, background =
+    match List.rev inputs with [] -> assert false | x :: xs -> (x, List.rev xs)
+  in
   ( module struct
-    let background = inputs
+    let background = background
+
+    let input = input
 
     let output = output
   end : Sigs.SKETCH )

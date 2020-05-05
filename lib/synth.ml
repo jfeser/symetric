@@ -20,7 +20,7 @@ let param =
     debug := debug_p]
 
 let to_contexts term args =
-  let term, holes = Grammar.with_holes term in
+  let term, holes = Grammar.Term.with_holes term in
   let preorder_names =
     List.map holes ~f:(fun (sym, idx, id) -> (idx, (id, sym)))
     |> Map.of_alist_exn (module Int)
@@ -218,7 +218,7 @@ struct
     | 0 -> iter_inputs sym f
     | size -> C.iter ~sym ~size:(int size) ~f cache
 
-  let debug_print msg = if !debug then S.eprint msg else S.unit
+  let debug_print msg = if !debug then S.eprint (msg ^ "\n") else S.unit
 
   module Reconstruct = struct
     type ctx = { graph : G.t; cache : C.cache C.code }
@@ -226,13 +226,13 @@ struct
     let rec print_term print_nt = function
       | Gr.Nonterm nt -> print_nt nt
       | App (func, args) ->
-          S.print (sprintf "(%s " func)
+          S.print (sprintf "(App %s (" func)
           :: List.concat_map args ~f:(fun arg ->
                  print_term print_nt arg @ [ S.print " " ])
-          @ [ S.print ")" ]
+          @ [ S.print "))\n" ]
       | As (t, _) -> print_term print_nt t
 
-    let rec of_args ({ cache; _ } as ctx) target term args =
+    let rec of_args ({ cache; _ } as ctx) target term args k =
       let cache = C.of_code cache in
       let pterm = Gr.to_preorder (term : _ Gr.Term.t :> Gr.Untyped_term.t) in
       let check_one args =
@@ -243,20 +243,28 @@ struct
           to_contexts term eval_args
         in
         let found =
-          match L.Value.(L.eval eval_ctx term = of_code target) with
+          match
+            L.Value.(
+              L.eval eval_ctx (term : _ Gr.Term.t :> Gr.Untyped_term.t)
+              = of_code target)
+          with
           | `Static b -> S.Bool.bool b
           | `Dyn b -> S.Bool.(b)
         in
         S.ite found
           (fun () ->
             S.sseq
-            @@ print_term
-                 (fun (_, idx) ->
-                   let state, _, value =
-                     List.find_exn args ~f:(fun (_, idx', _) -> idx = idx')
-                   in
-                   [ reconstruct ctx value state ])
-                 pterm)
+              [
+                S.sseq
+                @@ print_term
+                     (fun (_, idx) ->
+                       let state, _, value =
+                         List.find_exn args ~f:(fun (_, idx', _) -> idx = idx')
+                       in
+                       [ reconstruct ctx value state ])
+                     pterm;
+                k ();
+              ])
           (fun () -> S.unit)
       in
       let check_all =
@@ -271,21 +279,29 @@ struct
 
     (** Reconstruct a target assuming that it was produced by a particular code
       node. *)
-    and of_code ({ graph = g; _ } as ctx) target code =
+    and of_code ({ graph = g; _ } as ctx) target code k =
       let term = Gr.Rule.rhs @@ code.V.rule and args = G.succ g (V.Code code) in
-      if List.is_empty args then of_args ctx target term []
+      if List.is_empty args then of_args ctx target term [] k
       else
         List.map args ~f:(fun n ->
             of_args ctx target term
-            @@ (G.succ_e g n |> List.map ~f:(fun (_, i, v) -> (i, V.to_state v))))
+              (G.succ_e g n |> List.map ~f:(fun (_, i, v) -> (i, V.to_state v)))
+              k)
         |> S.sseq
 
-    and of_state ({ graph = g; _ } as ctx) state target =
+    and of_state ({ graph = g; _ } as ctx) state target k =
       match G.succ g (State state) with
       | [] when String.(state.V.symbol <> "V") ->
-          L.Value.of_code target |> L.Value.sexp_of |> S.Sexp.print
+          S.sseq
+            [
+              S.print @@ sprintf "(Nonterm %s " state.symbol;
+              L.Value.of_code target |> L.Value.sexp_of |> S.Sexp.print;
+              S.print ")";
+              k ();
+            ]
+      | [] -> S.sseq [ S.print "Input"; k () ]
       | deps ->
-          List.map deps ~f:(fun n -> of_code ctx target @@ V.to_code n)
+          List.map deps ~f:(fun n -> of_code ctx target (V.to_code n) k)
           |> S.sseq
 
     and reconstruct { graph = g; cache } target state =
@@ -302,7 +318,12 @@ struct
             let_ (Tuple.fst args) @@ fun cache ->
             let_ (Tuple.snd args) @@ fun target ->
             Log.debug (fun m -> m "Building %s." func_name);
-            of_state { graph = g; cache } state target)
+            S.sseq
+              [
+                S.print "(Choose (";
+                ( of_state { graph = g; cache } state target @@ fun () ->
+                  S.sseq [ S.print "))\n"; S.return ] );
+              ])
       in
       Func.apply func (Tuple.create cache (L.Value.code_of target))
   end
@@ -335,7 +356,8 @@ struct
     Gr.Term.bindings term
     |> List.filter ~f:(fun (b, _) ->
            List.mem binds ~equal:[%compare.equal: Gr.Bind.t] b)
-    |> List.map ~f:(fun (bind, term') -> (bind, L.eval ctx term'))
+    |> List.map ~f:(fun (bind, term') ->
+           (bind, L.eval ctx (term' : _ Gr.Term.t :> Gr.Untyped_term.t)))
     |> Map.of_alist_exn (module Gr.Bind)
 
   let argument_graph rule =
@@ -577,7 +599,8 @@ struct
 
     let fill_inner bindings =
       let term, ctx = to_contexts term bindings in
-      vlet (L.eval ctx term) @@ fun value ->
+      vlet (L.eval ctx (term : _ Gr.Term.t :> Gr.Untyped_term.t))
+      @@ fun value ->
       S.seq (reconstruct g state value) (insert state term value)
     in
 

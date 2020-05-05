@@ -15,6 +15,8 @@ module type SKETCH = sig
 
   val background : Grammar.nonterm list
 
+  val input : Grammar.nonterm
+
   val output : Grammar.nonterm
 end
 
@@ -62,7 +64,7 @@ module type LANG = sig
 
   val grammar : (Value.t, bool code) Semantics.t Grammar.t
 
-  val eval : Value.t Map.M(String).t -> [ `Closed ] Grammar.Term.t -> Value.t
+  val eval : Value.t Map.M(String).t -> Grammar.Untyped_term.t -> Value.t
 end
 
 module type CODE = sig
@@ -180,4 +182,6 @@ module type CODE = sig
   val eprint : string -> unit t
 
   val exit : unit t
+
+  val return : unit t
 end

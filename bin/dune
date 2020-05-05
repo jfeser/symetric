@@ -1,28 +1,30 @@
 (executable
  (name mk_bench)
- (modes byte)
  (modules mk_bench)
  (libraries core staged_synth)
  (preprocess (pps ppx_let)))
 
 (executable
  (name mk_cad_bench)
- ; (modes byte)
  (modules mk_cad_bench)
  (libraries core staged_synth)
  (preprocess (pps ppx_let)))
 
 (executable
  (name bench)
- (modes byte)
  (modules bench)
  (libraries core staged_synth)
  (preprocess (pps ppx_compare ppx_let)))
 
 (executable
  (name synth)
- (modes byte)
  (modules synth)
  (libraries core staged_synth)
  (preprocess (pps ppx_let)))
+
+(executable
+ (name cegis)
+ (modules cegis)
+ (libraries core staged_synth)
+ (preprocess (pps ppx_let ppx_sexp_conv)))
 

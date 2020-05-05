@@ -15,6 +15,9 @@ type 'n term =
   | App of string * 'n term list
   | As of 'n term * Bind.t
 
+val with_holes :
+  ?fresh:Utils.Fresh.t -> 'a term -> nonterm term * ('a * int * string) list
+
 module Untyped_term : sig
   type t = nonterm term [@@deriving compare, sexp]
 
@@ -48,7 +51,9 @@ module Term : sig
   val to_string : _ t -> string
 
   val with_holes :
-    ?fresh:Utils.Fresh.t -> _ t -> [ `Closed ] t * (nonterm * int * string) list
+    ?fresh:Utils.Fresh.t ->
+    [ `Open | `Closed ] t ->
+    [ `Closed ] t * (nonterm * int * string) list
 
   val bindings : 'a t -> (Bind.t * 'a t) list
 end
@@ -78,11 +83,6 @@ val rhs : _ t -> nonterm -> [ `Open | `Closed ] Term.t list
 val lhs : _ t -> nonterm list
 
 val inline : nonterm -> 's t -> 's t
-
-val with_holes :
-  ?fresh:Utils.Fresh.t ->
-  [ `Open | `Closed ] Term.t ->
-  [ `Closed ] Term.t * (nonterm * int * string) list
 
 (* val productions : (nonterm * 'a) list -> nonterm -> 'a list *)
 

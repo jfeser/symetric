@@ -339,11 +339,11 @@ module Make (C : Deps) = struct
     and eval_offset ctx x = eval ctx x |> to_offset |> C2.snd
 
     let eval ctx expr =
-      try eval ctx (expr : [ `Closed ] Grammar.Term.t :> Grammar.Untyped_term.t)
+      try eval ctx expr
       with exn ->
         let open Error in
         let err = of_exn exn in
-        tag_arg err "Evaluation failed" expr [%sexp_of: _ Grammar.Term.t]
+        tag_arg err "Evaluation failed" expr [%sexp_of: Grammar.Untyped_term.t]
         |> raise
 
     let grammar : (Value.t, bool code) Semantics.t Grammar.t =

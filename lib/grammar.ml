@@ -46,6 +46,24 @@ let rec non_terminals = function
   | App (_, ts) -> List.concat_map ~f:non_terminals ts
   | As (t, _) -> non_terminals t
 
+let with_holes ?fresh term =
+  let fresh = Option.value fresh ~default:(Fresh.create ()) in
+  let term = to_preorder term in
+  let holes =
+    non_terminals term
+    |> List.map ~f:(fun (sym, idx) -> (sym, idx, Fresh.name fresh "x%d"))
+  in
+  let holes_ctx =
+    List.map holes ~f:(fun (sym, idx, id) -> (idx, App (id, [])))
+    |> Map.of_alist_exn (module Int)
+  in
+  let rec rename = function
+    | Nonterm (_, idx) -> Map.find_exn holes_ctx idx
+    | App (f, ts) -> App (f, List.map ts ~f:rename)
+    | As (t, n) -> As (rename t, n)
+  in
+  (rename term, holes)
+
 module Untyped_term = struct
   module T = struct
     type t = nonterm term [@@deriving compare, hash, sexp]
@@ -75,32 +93,6 @@ module Untyped_term = struct
         List.map xs ~f:to_string |> String.concat ~sep:", "
         |> sprintf "%s(%s)" f
     | As (t, n) -> sprintf "%s as %s" (to_string t) n
-
-  let with_holes ?fresh term =
-    let fresh = Option.value fresh ~default:(Fresh.create ()) in
-    let term = to_preorder term in
-    let holes =
-      non_terminals term
-      |> List.map ~f:(fun (sym, idx) -> (sym, idx, sym ^ Fresh.name fresh "%d"))
-    in
-    let module Key = struct
-      module T = struct
-        type t = nonterm * int [@@deriving compare, sexp]
-      end
-
-      include T
-      include Comparator.Make (T)
-    end in
-    let holes_ctx =
-      List.map holes ~f:(fun (sym, idx, id) -> ((sym, idx), App (id, [])))
-      |> Map.of_alist_exn (module Key)
-    in
-    let rec rename = function
-      | Nonterm v -> Map.find_exn holes_ctx v
-      | App (f, ts) -> App (f, List.map ts ~f:rename)
-      | As (t, n) -> As (rename t, n)
-    in
-    (rename term, holes)
 
   let rec map ?(nonterm = fun x -> Nonterm x) ?(app = fun n ts -> App (n, ts))
       ?(as_ = fun t n -> As (t, n)) = function
@@ -192,8 +184,6 @@ let inline sym g =
   in
   List.concat_map g ~f:(fun r ->
       subst_all r.rhs |> List.map ~f:(fun rhs -> { r with rhs }))
-
-let with_holes ?fresh = Term.with_holes ?fresh
 
 let weighted_random ?(state = Random.State.default) l =
   if List.length l <= 0 then failwith "Selecting from an empty list";

@@ -20,6 +20,8 @@ let main size =
   let module Sketch = struct
     let background = [ "S"; "V"; "C"; "CO"; "U"; "UOX"; "UOY"; "UOZ" ]
 
+    let input = "V"
+
     let output = "E0"
   end in
   let open Synth.Make (Sketch) (Code) (Cad.Lang) (Cad.Cache) in
