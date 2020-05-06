@@ -28,3 +28,9 @@
  (libraries core staged_synth)
  (preprocess (pps ppx_let ppx_sexp_conv)))
 
+(executable
+ (name lazy_cegis)
+ (modules lazy_cegis)
+ (libraries core staged_synth)
+ (preprocess (pps ppx_compare ppx_hash ppx_sexp_conv)))
+
