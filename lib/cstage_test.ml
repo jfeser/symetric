@@ -19,6 +19,7 @@ let%expect_test "" =
     #include <cmath>
     #include <iostream>
     #include <set>
+    #include <unordered_set>
     #include <vector>
 
     #include "sexp.hpp"
@@ -58,6 +59,19 @@ let%expect_test "" =
       bool operator>(const span<T> &rhs) const { return !(this <= rhs); }
       bool operator>=(const span<T> &rhs) const { return !(this < rhs); }
     };
+
+    namespace std {
+    template <> struct hash<std::vector<int>> {
+      size_t operator()(const vector<int> &v) const {
+        std::hash<int> hasher;
+        size_t seed = 0;
+        for (int i : v) {
+          seed ^= hasher(i) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+        }
+        return seed;
+      }
+    };
+    } // namespace std
 
     int main();
     int main() {
@@ -100,6 +114,7 @@ let%expect_test "" =
     #include <cmath>
     #include <iostream>
     #include <set>
+    #include <unordered_set>
     #include <vector>
 
     #include "sexp.hpp"
@@ -139,6 +154,19 @@ let%expect_test "" =
       bool operator>(const span<T> &rhs) const { return !(this <= rhs); }
       bool operator>=(const span<T> &rhs) const { return !(this < rhs); }
     };
+
+    namespace std {
+    template <> struct hash<std::vector<int>> {
+      size_t operator()(const vector<int> &v) const {
+        std::hash<int> hasher;
+        size_t seed = 0;
+        for (int i : v) {
+          seed ^= hasher(i) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+        }
+        return seed;
+      }
+    };
+    } // namespace std
 
     int32_t g(int32_t x3);
     int32_t f(int32_t x2);
@@ -167,6 +195,7 @@ let%expect_test "" =
     #include <cmath>
     #include <iostream>
     #include <set>
+    #include <unordered_set>
     #include <vector>
 
     #include "sexp.hpp"
@@ -206,6 +235,19 @@ let%expect_test "" =
       bool operator>(const span<T> &rhs) const { return !(this <= rhs); }
       bool operator>=(const span<T> &rhs) const { return !(this < rhs); }
     };
+
+    namespace std {
+    template <> struct hash<std::vector<int>> {
+      size_t operator()(const vector<int> &v) const {
+        std::hash<int> hasher;
+        size_t seed = 0;
+        for (int i : v) {
+          seed ^= hasher(i) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+        }
+        return seed;
+      }
+    };
+    } // namespace std
 
     int32_t f(std::vector<int32_t> x2);
     int main();
@@ -247,6 +289,7 @@ let%expect_test "" =
     #include <cmath>
     #include <iostream>
     #include <set>
+    #include <unordered_set>
     #include <vector>
 
     #include "sexp.hpp"
@@ -286,6 +329,19 @@ let%expect_test "" =
       bool operator>(const span<T> &rhs) const { return !(this <= rhs); }
       bool operator>=(const span<T> &rhs) const { return !(this < rhs); }
     };
+
+    namespace std {
+    template <> struct hash<std::vector<int>> {
+      size_t operator()(const vector<int> &v) const {
+        std::hash<int> hasher;
+        size_t seed = 0;
+        for (int i : v) {
+          seed ^= hasher(i) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+        }
+        return seed;
+      }
+    };
+    } // namespace std
 
     int main();
     int main() {
@@ -331,28 +387,28 @@ let%expect_test "" =
   code |> Util.clang_build |> print_endline;
   [%expect
     {|
-    <stdin>:63:24: error: redefinition of 'x6'
+    <stdin>:78:24: error: redefinition of 'x6'
       std::vector<int32_t> x6 (10);  std::vector<int32_t> x7 = x6;
                            ^
-    <stdin>:49:24: note: previous definition is here
+    <stdin>:64:24: note: previous definition is here
       std::vector<int32_t> x6 (10);  std::vector<int32_t> x7 = x6;
                            ^
-    <stdin>:63:55: error: redefinition of 'x7'
-      std::vector<int32_t> x6 (10);  std::vector<int32_t> x7 = x6;
-                                                          ^
-    <stdin>:49:55: note: previous definition is here
+    <stdin>:78:55: error: redefinition of 'x7'
       std::vector<int32_t> x6 (10);  std::vector<int32_t> x7 = x6;
                                                           ^
-    <stdin>:70:24: error: redefinition of 'x2'
+    <stdin>:64:55: note: previous definition is here
+      std::vector<int32_t> x6 (10);  std::vector<int32_t> x7 = x6;
+                                                          ^
+    <stdin>:85:24: error: redefinition of 'x2'
       std::vector<int32_t> x2 (10);  std::vector<int32_t> x3 = x2;
                            ^
-    <stdin>:56:24: note: previous definition is here
+    <stdin>:71:24: note: previous definition is here
       std::vector<int32_t> x2 (10);  std::vector<int32_t> x3 = x2;
                            ^
-    <stdin>:70:55: error: redefinition of 'x3'
+    <stdin>:85:55: error: redefinition of 'x3'
       std::vector<int32_t> x2 (10);  std::vector<int32_t> x3 = x2;
                                                           ^
-    <stdin>:56:55: note: previous definition is here
+    <stdin>:71:55: note: previous definition is here
       std::vector<int32_t> x2 (10);  std::vector<int32_t> x3 = x2;
                                                           ^
     4 errors generated. |}]
@@ -382,6 +438,7 @@ let%expect_test "" =
     #include <cmath>
     #include <iostream>
     #include <set>
+    #include <unordered_set>
     #include <vector>
 
     #include "sexp.hpp"
@@ -422,6 +479,19 @@ let%expect_test "" =
       bool operator>=(const span<T> &rhs) const { return !(this < rhs); }
     };
 
+    namespace std {
+    template <> struct hash<std::vector<int>> {
+      size_t operator()(const vector<int> &v) const {
+        std::hash<int> hasher;
+        size_t seed = 0;
+        for (int i : v) {
+          seed ^= hasher(i) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+        }
+        return seed;
+      }
+    };
+    } // namespace std
+
     int main();
     int32_t x4;
     int main() {
@@ -444,7 +514,7 @@ let%expect_test "" =
   code |> Util.clang_build |> print_endline;
   [%expect
     {|
-    <stdin>:54:11: warning: unused variable 'x7' [-Wunused-variable]
+    <stdin>:69:11: warning: unused variable 'x7' [-Wunused-variable]
       int32_t x7 = x5; return 0; }
               ^
     1 warning generated. |}]
@@ -477,6 +547,7 @@ let%expect_test "" =
     #include <cmath>
     #include <iostream>
     #include <set>
+    #include <unordered_set>
     #include <vector>
 
     #include "sexp.hpp"
@@ -516,6 +587,19 @@ let%expect_test "" =
       bool operator>(const span<T> &rhs) const { return !(this <= rhs); }
       bool operator>=(const span<T> &rhs) const { return !(this < rhs); }
     };
+
+    namespace std {
+    template <> struct hash<std::vector<int>> {
+      size_t operator()(const vector<int> &v) const {
+        std::hash<int> hasher;
+        size_t seed = 0;
+        for (int i : v) {
+          seed ^= hasher(i) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+        }
+        return seed;
+      }
+    };
+    } // namespace std
 
     int main();
     int32_t x4;
@@ -540,7 +624,7 @@ let%expect_test "" =
   code |> Util.clang_build |> print_endline;
   [%expect
     {|
-    <stdin>:54:11: warning: unused variable 'x8' [-Wunused-variable]
+    <stdin>:69:11: warning: unused variable 'x8' [-Wunused-variable]
       int32_t x8 = x5; return 0; }
               ^
     1 warning generated. |}]
@@ -565,6 +649,7 @@ let%expect_test "" =
     #include <cmath>
     #include <iostream>
     #include <set>
+    #include <unordered_set>
     #include <vector>
 
     #include "sexp.hpp"
@@ -604,6 +689,19 @@ let%expect_test "" =
       bool operator>(const span<T> &rhs) const { return !(this <= rhs); }
       bool operator>=(const span<T> &rhs) const { return !(this < rhs); }
     };
+
+    namespace std {
+    template <> struct hash<std::vector<int>> {
+      size_t operator()(const vector<int> &v) const {
+        std::hash<int> hasher;
+        size_t seed = 0;
+        for (int i : v) {
+          seed ^= hasher(i) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+        }
+        return seed;
+      }
+    };
+    } // namespace std
 
     int main();
     int main() {
@@ -628,6 +726,7 @@ let%expect_test "" =
     #include <cmath>
     #include <iostream>
     #include <set>
+    #include <unordered_set>
     #include <vector>
 
     #include "sexp.hpp"
@@ -668,6 +767,19 @@ let%expect_test "" =
       bool operator>=(const span<T> &rhs) const { return !(this < rhs); }
     };
 
+    namespace std {
+    template <> struct hash<std::vector<int>> {
+      size_t operator()(const vector<int> &v) const {
+        std::hash<int> hasher;
+        size_t seed = 0;
+        for (int i : v) {
+          seed ^= hasher(i) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+        }
+        return seed;
+      }
+    };
+    } // namespace std
+
     int main();
     int main() {
       int32_t x2;
@@ -685,10 +797,10 @@ let%expect_test "" =
   code |> Util.clang_build |> print_endline;
   [%expect
     {|
-    <stdin>:47:53: warning: variable 'x2' is uninitialized when used here [-Wuninitialized]
+    <stdin>:62:53: warning: variable 'x2' is uninitialized when used here [-Wuninitialized]
     int main();int main() {   int32_t x2;  int32_t x3 = x2;
                                                         ^~
-    <stdin>:47:37: note: initialize the variable 'x2' to silence this warning
+    <stdin>:62:37: note: initialize the variable 'x2' to silence this warning
     int main();int main() {   int32_t x2;  int32_t x3 = x2;
                                         ^
                                          = 0
@@ -710,6 +822,7 @@ let%expect_test "" =
     #include <cmath>
     #include <iostream>
     #include <set>
+    #include <unordered_set>
     #include <vector>
 
     #include "sexp.hpp"
@@ -750,12 +863,25 @@ let%expect_test "" =
       bool operator>=(const span<T> &rhs) const { return !(this < rhs); }
     };
 
+    namespace std {
+    template <> struct hash<std::vector<int>> {
+      size_t operator()(const vector<int> &v) const {
+        std::hash<int> hasher;
+        size_t seed = 0;
+        for (int i : v) {
+          seed ^= hasher(i) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+        }
+        return seed;
+      }
+    };
+    } // namespace std
+
     int main();
     int main() {
       int x2;
       int x3 = x2;
       if (1) {
-        std::cout << "test" << std::endl;
+        std::cout << "test";
         exit(0);
         x3 = 0;
       } else {
@@ -768,10 +894,10 @@ let%expect_test "" =
   code |> Util.clang_build |> print_endline;
   [%expect
     {|
-    <stdin>:47:45: warning: variable 'x2' is uninitialized when used here [-Wuninitialized]
+    <stdin>:62:45: warning: variable 'x2' is uninitialized when used here [-Wuninitialized]
     int main();int main() {   int x2;  int x3 = x2;
                                                 ^~
-    <stdin>:47:33: note: initialize the variable 'x2' to silence this warning
+    <stdin>:62:33: note: initialize the variable 'x2' to silence this warning
     int main();int main() {   int x2;  int x3 = x2;
                                     ^
                                      = 0
@@ -798,6 +924,7 @@ let%expect_test "" =
     #include <cmath>
     #include <iostream>
     #include <set>
+    #include <unordered_set>
     #include <vector>
 
     #include "sexp.hpp"
@@ -837,6 +964,19 @@ let%expect_test "" =
       bool operator>(const span<T> &rhs) const { return !(this <= rhs); }
       bool operator>=(const span<T> &rhs) const { return !(this < rhs); }
     };
+
+    namespace std {
+    template <> struct hash<std::vector<int>> {
+      size_t operator()(const vector<int> &v) const {
+        std::hash<int> hasher;
+        size_t seed = 0;
+        for (int i : v) {
+          seed ^= hasher(i) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+        }
+        return seed;
+      }
+    };
+    } // namespace std
 
     int main();
     int main() {
@@ -856,10 +996,10 @@ let%expect_test "" =
   code |> Util.clang_build |> print_endline;
   [%expect
     {|
-    <stdin>:47:71: warning: variable 'x3' is uninitialized when used here [-Wuninitialized]
+    <stdin>:62:71: warning: variable 'x3' is uninitialized when used here [-Wuninitialized]
     int main();int main() {    int32_t x2 = 10; int32_t x3;  int32_t x4 = x3;
                                                                           ^~
-    <stdin>:47:55: note: initialize the variable 'x3' to silence this warning
+    <stdin>:62:55: note: initialize the variable 'x3' to silence this warning
     int main();int main() {    int32_t x2 = 10; int32_t x3;  int32_t x4 = x3;
                                                           ^
                                                            = 0
@@ -879,6 +1019,7 @@ let%expect_test "" =
     #include <cmath>
     #include <iostream>
     #include <set>
+    #include <unordered_set>
     #include <vector>
 
     #include "sexp.hpp"
@@ -919,10 +1060,23 @@ let%expect_test "" =
       bool operator>=(const span<T> &rhs) const { return !(this < rhs); }
     };
 
+    namespace std {
+    template <> struct hash<std::vector<int>> {
+      size_t operator()(const vector<int> &v) const {
+        std::hash<int> hasher;
+        size_t seed = 0;
+        for (int i : v) {
+          seed ^= hasher(i) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+        }
+        return seed;
+      }
+    };
+    } // namespace std
+
     int main();
     int main() {
       for (int x2 = 0; x2 < 10; x2 += 1) {
-        std::cout << "test" << std::endl;
+        std::cout << "test";
         exit(0);
       }
       return 0;
@@ -950,6 +1104,7 @@ let%expect_test "" =
     #include <cmath>
     #include <iostream>
     #include <set>
+    #include <unordered_set>
     #include <vector>
 
     #include "sexp.hpp"
@@ -989,6 +1144,19 @@ let%expect_test "" =
       bool operator>(const span<T> &rhs) const { return !(this <= rhs); }
       bool operator>=(const span<T> &rhs) const { return !(this < rhs); }
     };
+
+    namespace std {
+    template <> struct hash<std::vector<int>> {
+      size_t operator()(const vector<int> &v) const {
+        std::hash<int> hasher;
+        size_t seed = 0;
+        for (int i : v) {
+          seed ^= hasher(i) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+        }
+        return seed;
+      }
+    };
+    } // namespace std
 
     int main();
     int main() {
@@ -1039,6 +1207,7 @@ let%expect_test "" =
     #include <cmath>
     #include <iostream>
     #include <set>
+    #include <unordered_set>
     #include <vector>
 
     #include "sexp.hpp"
@@ -1078,6 +1247,19 @@ let%expect_test "" =
       bool operator>(const span<T> &rhs) const { return !(this <= rhs); }
       bool operator>=(const span<T> &rhs) const { return !(this < rhs); }
     };
+
+    namespace std {
+    template <> struct hash<std::vector<int>> {
+      size_t operator()(const vector<int> &v) const {
+        std::hash<int> hasher;
+        size_t seed = 0;
+        for (int i : v) {
+          seed ^= hasher(i) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+        }
+        return seed;
+      }
+    };
+    } // namespace std
 
     int main();
     int main() {
@@ -1130,16 +1312,16 @@ let%expect_test "" =
   code |> Util.clang_build |> print_endline;
   [%expect
     {|
-    <stdin>:64:24: error: redefinition of 'x2'
+    <stdin>:79:24: error: redefinition of 'x2'
       std::vector<int32_t> x2 (3);  std::vector<int32_t> x3 = x2;  x3[0] = 0;  x3[1] = 1;  x3[2] = 2;// end Array.const
                            ^
-    <stdin>:51:24: note: previous definition is here
+    <stdin>:66:24: note: previous definition is here
       std::vector<int32_t> x2 (3);  std::vector<int32_t> x3 = x2;  x3[0] = 0;  x3[1] = 1;  x3[2] = 2;// end Array.const
                            ^
-    <stdin>:64:54: error: redefinition of 'x3'
+    <stdin>:79:54: error: redefinition of 'x3'
       std::vector<int32_t> x2 (3);  std::vector<int32_t> x3 = x2;  x3[0] = 0;  x3[1] = 1;  x3[2] = 2;// end Array.const
                                                          ^
-    <stdin>:51:54: note: previous definition is here
+    <stdin>:66:54: note: previous definition is here
       std::vector<int32_t> x2 (3);  std::vector<int32_t> x3 = x2;  x3[0] = 0;  x3[1] = 1;  x3[2] = 2;// end Array.const
                                                          ^
     2 errors generated. |}]
@@ -1165,6 +1347,7 @@ let%expect_test "" =
     #include <cmath>
     #include <iostream>
     #include <set>
+    #include <unordered_set>
     #include <vector>
 
     #include "sexp.hpp"
@@ -1204,6 +1387,19 @@ let%expect_test "" =
       bool operator>(const span<T> &rhs) const { return !(this <= rhs); }
       bool operator>=(const span<T> &rhs) const { return !(this < rhs); }
     };
+
+    namespace std {
+    template <> struct hash<std::vector<int>> {
+      size_t operator()(const vector<int> &v) const {
+        std::hash<int> hasher;
+        size_t seed = 0;
+        for (int i : v) {
+          seed ^= hasher(i) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+        }
+        return seed;
+      }
+    };
+    } // namespace std
 
     int main();
     int main() {
@@ -1258,6 +1454,7 @@ let%expect_test "" =
     #include <cmath>
     #include <iostream>
     #include <set>
+    #include <unordered_set>
     #include <vector>
 
     #include "sexp.hpp"
@@ -1297,6 +1494,19 @@ let%expect_test "" =
       bool operator>(const span<T> &rhs) const { return !(this <= rhs); }
       bool operator>=(const span<T> &rhs) const { return !(this < rhs); }
     };
+
+    namespace std {
+    template <> struct hash<std::vector<int>> {
+      size_t operator()(const vector<int> &v) const {
+        std::hash<int> hasher;
+        size_t seed = 0;
+        for (int i : v) {
+          seed ^= hasher(i) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+        }
+        return seed;
+      }
+    };
+    } // namespace std
 
     int main();
     int main() {
@@ -1357,6 +1567,7 @@ let%expect_test "" =
     #include <cmath>
     #include <iostream>
     #include <set>
+    #include <unordered_set>
     #include <vector>
 
     #include "sexp.hpp"
@@ -1396,6 +1607,19 @@ let%expect_test "" =
       bool operator>(const span<T> &rhs) const { return !(this <= rhs); }
       bool operator>=(const span<T> &rhs) const { return !(this < rhs); }
     };
+
+    namespace std {
+    template <> struct hash<std::vector<int>> {
+      size_t operator()(const vector<int> &v) const {
+        std::hash<int> hasher;
+        size_t seed = 0;
+        for (int i : v) {
+          seed ^= hasher(i) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+        }
+        return seed;
+      }
+    };
+    } // namespace std
 
     int main();
     int main() {
@@ -1448,16 +1672,16 @@ let%expect_test "" =
   code |> Util.clang_build |> print_endline;
   [%expect
     {|
-    <stdin>:64:24: error: redefinition of 'x2'
+    <stdin>:79:24: error: redefinition of 'x2'
       std::vector<int32_t> x2 (3);  std::vector<int32_t> x3 = x2;  x3[0] = 0;  x3[1] = 1;  x3[2] = 2;// end Array.const
                            ^
-    <stdin>:51:24: note: previous definition is here
+    <stdin>:66:24: note: previous definition is here
       std::vector<int32_t> x2 (3);  std::vector<int32_t> x3 = x2;  x3[0] = 0;  x3[1] = 1;  x3[2] = 2;// end Array.const
                            ^
-    <stdin>:64:54: error: redefinition of 'x3'
+    <stdin>:79:54: error: redefinition of 'x3'
       std::vector<int32_t> x2 (3);  std::vector<int32_t> x3 = x2;  x3[0] = 0;  x3[1] = 1;  x3[2] = 2;// end Array.const
                                                          ^
-    <stdin>:51:54: note: previous definition is here
+    <stdin>:66:54: note: previous definition is here
       std::vector<int32_t> x2 (3);  std::vector<int32_t> x3 = x2;  x3[0] = 0;  x3[1] = 1;  x3[2] = 2;// end Array.const
                                                          ^
     2 errors generated. |}]
@@ -1484,6 +1708,7 @@ let%expect_test "" =
     #include <cmath>
     #include <iostream>
     #include <set>
+    #include <unordered_set>
     #include <vector>
 
     #include "sexp.hpp"
@@ -1523,6 +1748,19 @@ let%expect_test "" =
       bool operator>(const span<T> &rhs) const { return !(this <= rhs); }
       bool operator>=(const span<T> &rhs) const { return !(this < rhs); }
     };
+
+    namespace std {
+    template <> struct hash<std::vector<int>> {
+      size_t operator()(const vector<int> &v) const {
+        std::hash<int> hasher;
+        size_t seed = 0;
+        for (int i : v) {
+          seed ^= hasher(i) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+        }
+        return seed;
+      }
+    };
+    } // namespace std
 
     int main();
     int main() {
@@ -1573,6 +1811,7 @@ let%expect_test "" =
     #include <cmath>
     #include <iostream>
     #include <set>
+    #include <unordered_set>
     #include <vector>
 
     #include "sexp.hpp"
@@ -1613,16 +1852,29 @@ let%expect_test "" =
       bool operator>=(const span<T> &rhs) const { return !(this < rhs); }
     };
 
+    namespace std {
+    template <> struct hash<std::vector<int>> {
+      size_t operator()(const vector<int> &v) const {
+        std::hash<int> hasher;
+        size_t seed = 0;
+        for (int i : v) {
+          seed ^= hasher(i) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+        }
+        return seed;
+      }
+    };
+    } // namespace std
+
     int main();
     int main() {
       sexp *x2 = sexp::load(std::cin);
       sexp *x3 = x2;
-      std::vector<sexp *> x4 = ((list *)x3)->get_body();
+      std::vector<sexp *> x4 = ((list *)(x3))->get_body();
       // begin Array.init
-      std::vector<std::string> x5((int)((x4).size()));
+      std::vector<std::string> x5(((int)((x4).size())));
       std::vector<std::string> x6 = x5;
-      for (int x7 = 0; x7 < (int)((x4).size()); x7 += 1) {
-        std::string x8 = ((atom *)(x4)[x7])->get_body();
+      for (int x7 = 0; x7 < ((int)((x4).size())); x7 += 1) {
+        std::string x8 = ((atom *)(((x4)[x7])))->get_body();
         x6[x7] = x8;
       }
       // end Array.init
@@ -1665,6 +1917,7 @@ let%expect_test "" =
     #include <cmath>
     #include <iostream>
     #include <set>
+    #include <unordered_set>
     #include <vector>
 
     #include "sexp.hpp"
@@ -1705,6 +1958,19 @@ let%expect_test "" =
       bool operator>=(const span<T> &rhs) const { return !(this < rhs); }
     };
 
+    namespace std {
+    template <> struct hash<std::vector<int>> {
+      size_t operator()(const vector<int> &v) const {
+        std::hash<int> hasher;
+        size_t seed = 0;
+        for (int i : v) {
+          seed ^= hasher(i) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+        }
+        return seed;
+      }
+    };
+    } // namespace std
+
     int main();
     std::array<int32_t, 500000> x2;
     int32_t x3;
@@ -1740,10 +2006,10 @@ let%expect_test "" =
   out#exe_output |> print_endline;
   [%expect
     {|
-    main.cpp:53:46: warning: variable 'x10' is uninitialized when used here [-Wuninitialized]
+    main.cpp:68:46: warning: variable 'x10' is uninitialized when used here [-Wuninitialized]
       span<int32_t> x9 = x8; int x10;  int x11 = x10;
                                                  ^~~
-    main.cpp:53:33: note: initialize the variable 'x10' to silence this warning
+    main.cpp:68:33: note: initialize the variable 'x10' to silence this warning
       span<int32_t> x9 = x8; int x10;  int x11 = x10;
                                     ^
                                      = 0
