@@ -1,4 +1,5 @@
-open! Staged_synth.Lazy_cegis
+open! Core
+open Staged_synth.Lazy_cegis
 
 let () =
   let conv l =

@@ -27,6 +27,13 @@ module Abs_state = struct
         Map.to_alist m |> List.map ~f:(fun (k, v) -> (Bool.to_int v, k)))
     @@ Fmt.list ~sep:(Fmt.any " ")
     @@ Fmt.pair ~sep:Fmt.nop Fmt.int (Fmt.fmt "_%d")
+
+  let is_subset_a s ~of_:s' =
+    Map.for_alli s ~f:(fun ~key ~data:x ->
+        match Map.find s' key with Some x' -> Bool.(x = x') | None -> false)
+
+  let is_superset_c s ~of_:s' =
+    Map.for_alli s ~f:(fun ~key:i ~data:v -> Bool.(s'.(i) = v))
 end
 
 module Op = struct
@@ -44,8 +51,33 @@ module Op = struct
     Fmt.pf fmt "%s" str
 end
 
-module Node = struct
-  type t = { id : int; state : Abs_state.t; op : Op.t; cost : int }
+module Node0 = struct
+  let time = ref 0
+
+  type t = {
+    id : int;
+    op : Op.t;
+    cost : int;
+    mutable state : Abs_state.t;
+    mutable covered : bool;
+    mutable last_mod_time : int;
+  }
+
+  let hash n = n.id
+
+  let hash_fold_t state n = [%hash_fold: int] state (hash n)
+
+  let set_state n s = n.state <- s
+
+  let cover n =
+    incr time;
+    n.covered <- true;
+    n.last_mod_time <- !time
+
+  let uncover n =
+    incr time;
+    n.covered <- false;
+    n.last_mod_time <- !time
 
   let pp fmt ({ state; op; _ } : t) =
     Fmt.pf fmt "%a %a" Op.pp op Abs_state.pp state
@@ -53,8 +85,6 @@ module Node = struct
   let equal n n' = [%compare.equal: int] n.id n'.id
 
   let compare n n' = [%compare: int] n.id n'.id
-
-  let hash n = [%hash: int] n.id
 end
 
 let union =
@@ -92,15 +122,15 @@ end
 
 module G = struct
   module G = struct
-    include Graph.Imperative.Digraph.ConcreteBidirectionalLabeled (Node) (E)
+    include Graph.Imperative.Digraph.ConcreteBidirectionalLabeled (Node0) (E)
 
     let graph_attributes _ = []
 
     let default_vertex_attributes _ = []
 
-    let vertex_name n = Fmt.str "%d" n.Node.id
+    let vertex_name n = Fmt.str "%d" n.Node0.id
 
-    let vertex_attributes n = [ `HtmlLabel (Fmt.str "%a" Node.pp n) ]
+    let vertex_attributes n = [ `HtmlLabel (Fmt.str "%a" Node0.pp n) ]
 
     let get_subgraph _ = None
 
@@ -111,6 +141,28 @@ module G = struct
 
   include G
   include Graph.Graphviz.Dot (G)
+
+  let filter_vertex g ~f =
+    fold_vertex (fun x xs -> if f x then x :: xs else xs) g []
+
+  let exists_vertex g ~f = fold_vertex (fun x xs -> f x || xs) g false
+end
+
+module Node = struct
+  include Node0
+
+  let create ?(covered = false) ~state ~cost ~op graph children =
+    let id = [%hash: t list * int * Op.t] (children, cost, op) in
+    incr time;
+    let node = { id; op; cost; state; covered; last_mod_time = !time } in
+    if G.mem_vertex graph node then None
+    else (
+      G.add_vertex graph node;
+      List.iteri children ~f:(fun i x -> G.add_edge_e graph (node, i, x));
+      Some node )
+
+  let create_exn ?covered ~state ~cost ~op graph children =
+    Option.value_exn (create ?covered ~state ~cost ~op graph children)
 end
 
 exception
@@ -156,58 +208,67 @@ let%expect_test "" =
   |> Fmt.pr "%a" @@ Fmt.Dump.list Abs_state.pp;
   [%expect {| [1_0 0_1; 1_0 0_1] |}]
 
-let fill graph cache fresh cost =
-  let arg_cost = cost - 1 in
-  let module Part = Combinat.Partition in
-  let module Perm = Combinat.Permutation.Of_list in
-  Part.create ~n:arg_cost ~parts:2
-  |> Part.iter ~f:(fun arg_costs ->
-         let arg_costs =
-           List.init (Bigarray.Array1.dim arg_costs) ~f:(fun i -> arg_costs.{i})
-         in
-         Perm.(create arg_costs |> to_list)
-         |> List.dedup_and_sort ~compare:[%compare: int list]
-         |> List.iter ~f:(fun arg_costs ->
-                match arg_costs with
-                | [ c; c' ] ->
-                    Hashtbl.find_multi cache c
-                    |> List.iter ~f:(fun a ->
-                           Hashtbl.find_multi cache c'
-                           |> List.iter ~f:(fun a' ->
-                                  List.iter [ `Union; `Inter; `Sub ]
-                                    ~f:(fun op ->
-                                      let state =
-                                        match op with
-                                        | `Union ->
-                                            union a.Node.state a'.Node.state
-                                        | `Inter -> inter a.state a'.state
-                                        | `Sub -> sub a.state a'.state
-                                      in
-                                      let node =
-                                        Node.
-                                          {
-                                            id = Fresh.int fresh;
-                                            state;
-                                            cost;
-                                            op = (op :> Op.t);
-                                          }
-                                      in
-                                      G.add_vertex graph node;
-                                      G.add_edge_e graph (node, 0, a);
-                                      G.add_edge_e graph (node, 1, a'))))
-                | _ -> failwith "Unexpected costs"))
+let rec fill graph cost =
+  if cost <= 1 then false
+  else if fill graph (cost - 1) then true
+  else
+    let arg_cost = cost - 1 in
+    let module Part = Combinat.Partition in
+    let module Perm = Combinat.Permutation.Of_list in
+    let of_cost c =
+      G.filter_vertex ~f:(fun v -> (not v.Node.covered) && v.cost = c) graph
+    in
+    let of_cost = Memo.general of_cost in
 
-let rec to_program graph node =
-  `Apply (node.Node.op, G.succ graph node |> List.map ~f:(to_program graph))
+    let added = ref false in
+    Part.create ~n:arg_cost ~parts:2
+    |> Part.iter ~f:(fun arg_costs ->
+           let arg_costs =
+             List.init (Bigarray.Array1.dim arg_costs) ~f:(fun i ->
+                 arg_costs.{i})
+           in
+           Perm.(create arg_costs |> to_list)
+           |> List.dedup_and_sort ~compare:[%compare: int list]
+           |> List.iter ~f:(fun arg_costs ->
+                  match arg_costs with
+                  | [ c; c' ] ->
+                      of_cost c
+                      |> List.iter ~f:(fun a ->
+                             of_cost c'
+                             |> List.iter ~f:(fun a' ->
+                                    List.iter [ `Union; `Inter; `Sub ]
+                                      ~f:(fun op ->
+                                        let state =
+                                          match op with
+                                          | `Union ->
+                                              union a.Node.state a'.Node.state
+                                          | `Inter -> inter a.state a'.state
+                                          | `Sub -> sub a.state a'.state
+                                        in
+                                        added :=
+                                          !added
+                                          || Node.create ~state ~cost
+                                               ~op:(op :> Op.t)
+                                               graph [ a; a' ]
+                                             |> Option.is_some)))
+                  | _ -> failwith "Unexpected costs"));
+    !added
 
-let rec conc_eval = function
-  | `Apply (`Input x, _) -> x
-  | `Apply (`Union, [ x; y ]) ->
-      Array.map2_exn (conc_eval x) (conc_eval y) ~f:( || )
-  | `Apply (`Inter, [ x; y ]) ->
-      Array.map2_exn (conc_eval x) (conc_eval y) ~f:( && )
-  | `Apply (`Sub, [ x; y ]) ->
-      Array.map2_exn (conc_eval x) (conc_eval y) ~f:(fun a b -> a && not b)
+module Program = struct
+  type t = [ `Apply of Op.t * t list ] [@@deriving sexp]
+
+  let rec to_program graph node : t =
+    `Apply (node.Node.op, G.succ graph node |> List.map ~f:(to_program graph))
+end
+
+let rec ceval g v =
+  let args = G.succ g v in
+  match (v.op, args) with
+  | `Input x, _ -> x
+  | `Union, [ x; y ] -> Array.map2_exn (ceval g x) (ceval g y) ~f:( || )
+  | `Inter, [ x; y ] -> Array.map2_exn (ceval g x) (ceval g y) ~f:( && )
+  | `Sub, [ x; y ] ->
+      Array.map2_exn (ceval g x) (ceval g y) ~f:(fun a b -> a && not b)
   | _ -> assert false
 
 let eval g v =
@@ -232,15 +293,21 @@ let update_state g v state =
   v'
 
 let prune g node =
+  G.iter_vertex
+    (fun v -> if v.last_mod_time > node.Node.last_mod_time then Node.uncover v)
+    g;
+
   let rec process = function
     | v :: vs ->
         let worklist =
           ( G.pred g v
           |> List.filter_map ~f:(fun v' ->
-                 let old_state = v'.Node.state in
-                 let new_state = eval g v' in
-                 if [%compare.equal: Abs_state.t] old_state new_state then None
-                 else Some (update_state g v' new_state)) )
+                 let old = v'.Node.state in
+                 let new_ = eval g v' in
+                 if [%compare.equal: Abs_state.t] old new_ then None
+                 else (
+                   Node.set_state v' new_;
+                   Some v' )) )
           @ vs
         in
         process worklist
@@ -251,8 +318,7 @@ let prune g node =
 let rec strengthen graph node bad_out =
   assert (contains node.Node.state bad_out);
   let inputs = G.succ graph node in
-  let conc_inputs =
-    List.map ~f:(to_program graph) inputs |> List.map ~f:conc_eval
+  let conc_inputs = List.map inputs ~f:(ceval graph)
   and abs_inputs = List.map inputs ~f:(fun n -> n.Node.state) in
   let f =
     match node.op with
@@ -263,73 +329,37 @@ let rec strengthen graph node bad_out =
   in
   let refined_inputs = refine_children conc_inputs abs_inputs bad_out f in
   List.iter2_exn inputs refined_inputs ~f:(fun input_node refined_state ->
-      if not ([%compare.equal: Abs_state.t] input_node.state refined_state) then
-        prune graph @@ update_state graph input_node refined_state)
+      if not ([%compare.equal: Abs_state.t] input_node.state refined_state) then (
+        input_node.state <- refined_state;
+        prune graph input_node ))
 
-let%expect_test "" =
+let test_graph () =
   let g = G.create () in
   let v1 =
-    Node.
-      {
-        id = 0;
-        state = Map.singleton (module Int) 0 true;
-        op = `Input [| true; true |];
-        cost = 1;
-      }
+    Node.create_exn
+      ~state:(Map.singleton (module Int) 0 true)
+      ~op:(`Input [| true; true |])
+      ~cost:1 g []
   and v2 =
-    Node.
-      {
-        id = 1;
-        state = Map.singleton (module Int) 1 true;
-        op = `Input [| true; true |];
-        cost = 1;
-      }
-  and v3 =
-    Node.{ id = 3; state = Map.empty (module Int); op = `Inter; cost = 1 }
+    Node.create_exn
+      ~state:(Map.singleton (module Int) 1 true)
+      ~op:(`Input [| true; true |])
+      ~cost:1 g []
   in
-  G.add_edge_e g (v3, 0, v1);
-  G.add_edge_e g (v3, 1, v2);
-  replace_vertex g v3 { v3 with op = `Union };
-  G.output_graph stdout g;
-  [%expect {|
-    digraph G {
-      0 [label=<in 1_0>, ];
-      1 [label=<in 1_1>, ];
-      3 [label=<or >, ];
-
-
-      3 -> 0 [label="0", ];
-      3 -> 1 [label="1", ];
-
-      } |}]
+  let v3 =
+    Node.create_exn
+      ~state:(Map.empty (module Int))
+      ~op:`Inter ~cost:1 g [ v1; v2 ]
+  in
+  (g, v1, v2, v3)
 
 let%expect_test "" =
-  let g = G.create () in
-  let v1 =
-    Node.
-      {
-        id = 0;
-        state = Map.singleton (module Int) 0 true;
-        op = `Input [| true; true |];
-        cost = 1;
-      }
-  and v2 =
-    Node.
-      {
-        id = 1;
-        state = Map.singleton (module Int) 1 true;
-        op = `Input [| true; true |];
-        cost = 1;
-      }
-  and v3 =
-    Node.{ id = 3; state = Map.empty (module Int); op = `Inter; cost = 1 }
-  in
-  G.add_edge_e g (v3, 0, v1);
-  G.add_edge_e g (v3, 1, v2);
+  let g, v1, v2, v3 = test_graph () in
   strengthen g v3 [| false; false |];
   Out_channel.flush stdout;
   G.output_graph stdout g;
-  [%expect {|
+  [%expect
+    {|
     digraph G {
       0 [label=<in 1_0>, ];
       1 [label=<in 1_0 1_1>, ];
@@ -341,33 +371,59 @@ let%expect_test "" =
 
       } |}]
 
+let%expect_test "" =
+  let g, _, _, _ = test_graph () in
+  G.filter_vertex ~f:(fun v -> (not v.Node.covered) && v.cost = 1) g
+  |> List.iter ~f:(Fmt.pr "%a\n" Node.pp);
+  [%expect {|
+    and
+    in 1_1
+    in 1_0 |}]
+
 let synth inputs output =
-  let graph = G.create ()
-  and cache = Hashtbl.create (module Int)
-  and fresh = Fresh.create () in
+  let graph = G.create () and step = ref 0 in
+
+  let dump () =
+    if !step >= 20 then exit 1;
+    Out_channel.with_file (sprintf "out%d.dot" !step) ~f:(fun ch ->
+        G.output_graph ch graph);
+    Out_channel.flush stdout;
+    incr step
+  in
+
+  let rec loop cost =
+    let uncovered = G.filter_vertex graph ~f:(fun v -> not v.covered) in
+    Fmt.pr "%d uncovered\n" (List.length uncovered);
+    List.iter uncovered ~f:(fun v ->
+        if contains v.Node.state output then
+          if [%compare.equal: State.t] (ceval graph v) output then
+            failwith "sat"
+          else (
+            Fmt.pr "Refuting: %a\n" Sexp.pp_hum
+              ([%sexp_of: Program.t] (Program.to_program graph v));
+            strengthen graph v output )
+        else if
+          G.exists_vertex graph ~f:(fun v' ->
+              (not v'.covered) && v'.cost <= v.cost
+              && (not ([%compare.equal: Node.t] v v'))
+              && Abs_state.is_subset_a v.state ~of_:v'.state)
+        then (
+          Fmt.pr "Covering: %a\n" Node.pp v;
+          Node.cover v ));
+
+    let changed = fill graph cost in
+    Fmt.pr "Changed: %b Cost: %d\n" changed cost;
+    dump ();
+    let cost = if changed then cost else cost + 1 in
+    loop cost
+  in
 
   (* Add inputs to the state space graph. *)
   List.iter inputs ~f:(fun input ->
       if State.O.(input = output) then raise @@ Done (`Input input)
       else
         let state = refine input Abs_state.top output in
-        let node =
-          Node.{ id = Fresh.int fresh; state; cost = 1; op = `Input input }
-        in
-        G.add_vertex graph node;
-        Hashtbl.add_multi cache ~key:1 ~data:node);
+        Node.create ~state ~cost:1 ~op:(`Input input) graph [] |> ignore);
+  dump ();
 
-  (* Test filling *)
-  fill graph cache fresh 3;
-
-  Fmt.pr "%a" G.fprint_graph graph
-
-let () =
-  let conv l =
-    List.map l ~f:(fun i -> if i = 0 then false else true) |> Array.of_list
-  in
-  let inputs =
-    List.map ~f:conv [ [ 0; 1; 1; 0 ]; [ 1; 1; 0; 0 ]; [ 0; 0; 0; 1 ] ]
-  in
-  let output = conv [ 0; 1; 0; 1 ] in
-  synth inputs output
+  loop 1
