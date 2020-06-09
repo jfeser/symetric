@@ -1,5 +1,7 @@
 open! Core
 
+let enable_dump = false
+
 module State = struct
   module T = struct
     type t = bool array [@@deriving compare, sexp]
@@ -111,11 +113,9 @@ let inter =
 let sub =
   Map.merge ~f:(fun ~key:_ ->
     function
-    | `Both (true, false) -> Some true
-    | `Both (true, true) -> Some false
-    | `Both (false, _) -> Some false
+    | `Both (x, x') -> Some (x && not x')
     | `Left false | `Right true -> Some false
-    | _ -> None)
+    | `Left true | `Right false -> None)
 
 let contains a c = Map.for_alli a ~f:(fun ~key:i ~data:v -> Bool.(c.(i) = v))
 
@@ -153,6 +153,11 @@ module G = struct
     fold_vertex (fun x xs -> if f x then x :: xs else xs) g []
 
   let exists_vertex g ~f = fold_vertex (fun x xs -> f x || xs) g false
+
+  let succ g v =
+    succ_e g v
+    |> List.sort ~compare:(fun (_, x, _) (_, x', _) -> [%compare: int] x x')
+    |> List.map ~f:(fun (_, _, v) -> v)
 end
 
 module Program = struct
@@ -168,12 +173,7 @@ module Node = struct
   include Node0
 
   let rec to_program graph node =
-    `Apply
-      ( node.op,
-        G.succ_e graph node
-        |> List.sort ~compare:(fun (_, x, _) (_, x', _) -> [%compare: int] x x')
-        |> List.map ~f:(fun (_, _, v) -> v)
-        |> List.map ~f:(to_program graph) )
+    `Apply (node.op, G.succ graph node |> List.map ~f:(to_program graph))
 
   let create ?(covered = false) ~state ~cost ~op graph children =
     let prog = `Apply (op, List.map children ~f:(to_program graph)) in
@@ -243,8 +243,6 @@ let rec fill graph cost =
                                             graph [ a; a' ]
                                           |> Option.is_some
                                         in
-                                        (* Fmt.pr "%a %a %a %b\n" Op.pp op Node.pp
-                                         *   a Node.pp a' did_add; *)
                                         added := !added || did_add)))
                   | _ -> failwith "Unexpected costs"));
     !added
@@ -268,108 +266,116 @@ let eval g v =
   | `Sub, [ v'; v'' ] -> sub v'.state v''.state
   | _ -> failwith "Unexpected args"
 
-let replace_vertex g ~old ~new_ =
-  let in_edges = G.pred_e g old and out_edges = G.succ_e g old in
-  G.remove_vertex g old;
-  G.add_vertex g new_;
-  List.iter in_edges ~f:(fun (v, x, _) -> G.add_edge_e g (v, x, new_));
-  List.iter out_edges ~f:(fun (_, x, v) -> G.add_edge_e g (new_, x, v))
-
-let update_state g v state =
-  let v' = Node.{ v with state } in
-  replace_vertex g ~old:v ~new_:v';
-  v'
-
-let prune g node =
+let prune g (nodes : Node.t list) =
+  let min_mod_time =
+    Option.value_exn
+      ( List.map nodes ~f:(fun n -> n.last_mod_time)
+      |> List.min_elt ~compare:[%compare: int] )
+  in
   G.iter_vertex
-    (fun v -> if v.last_mod_time > node.Node.last_mod_time then Node.uncover v)
+    (fun v -> if v.last_mod_time > min_mod_time then Node.uncover v)
     g;
 
   let rec process = function
     | v :: vs ->
-        let worklist =
-          ( G.pred g v
+        let work =
+          G.pred g v
           |> List.filter_map ~f:(fun v' ->
-                 let old = v'.Node.state in
-                 let new_ = eval g v' in
+                 let old = v'.Node.state and new_ = eval g v' in
+
+                 Fmt.pr "Prune old: %a new: %a %a\n" Abs_state.pp old
+                   Abs_state.pp new_ Node.pp v';
+                 assert (Abs_state.is_subset_a old ~of_:new_);
                  if [%compare.equal: Abs_state.t] old new_ then None
                  else (
                    Node.set_state v' new_;
-                   Some v' )) )
-          @ vs
+                   Some v' ))
         in
-        process worklist
+        process (work @ vs)
     | [] -> ()
   in
-  process [ node ]
+  process nodes
 
 let refine graph node bad =
-  let conc = ceval graph node in
+  let conc = ceval graph node and old = node.state in
+
+  (* The bad behavior should not be the same as the concrete behavior, the
+     initial state should abstract the bad behavior and the concrete behavior.
+  *)
   assert (
     (not ([%compare.equal: State.t] bad conc))
-    && contains node.state bad && contains node.state conc );
+    && contains old bad && contains old conc );
+
   let len = Array.length conc in
   let rec loop i =
     if i >= len then failwith "Could not refine"
-    else if Bool.(conc.(i) <> bad.(i)) then (
-      try Map.add_exn node.state ~key:i ~data:conc.(i)
-      with _ ->
-        Fmt.pr "%a %a %a\n" Node.pp node State.pp conc State.pp bad;
-        exit 1 )
+    else if Bool.(conc.(i) <> bad.(i)) then
+      Map.add_exn node.state ~key:i ~data:conc.(i)
     else loop (i + 1)
   in
-  Node.set_state node (loop 0);
+  let new_ = loop 0 in
+
+  (* Check that the new state refines the old one, does not contain the bad
+     state, and still abstracts the concrete behavior. *)
+  assert (
+    Abs_state.is_subset_a old ~of_:new_
+    && (not (contains new_ bad))
+    && contains new_ conc );
+
+  Node.set_state node new_;
   [ node ]
 
-let refine_children graph node f =
-  let input_nodes = G.succ graph node in
-  if List.is_empty input_nodes then []
+let rec refine_children graph node =
+  let input_nodes = G.succ graph node |> List.to_array in
+  if Array.is_empty input_nodes then []
   else
-    let conc_inputs = List.map input_nodes ~f:(ceval graph) |> Array.of_list
-    and abs_inputs =
-      List.map input_nodes ~f:(fun n -> n.Node.state) |> Array.of_list
-    in
-    let n_inputs = Array.length conc_inputs in
-    let len_inputs = Array.length conc_inputs.(0) in
+    let conc_inputs = Array.map input_nodes ~f:(ceval graph)
+    and old_inputs = Array.map input_nodes ~f:(fun n -> n.Node.state) in
+
+    let n = Array.length conc_inputs and k = Array.length conc_inputs.(0) in
+
+    Array.iteri old_inputs ~f:(fun i old ->
+        (* The old state contains the concrete behavior. *)
+        assert (contains old conc_inputs.(i)));
+
+    let changed = Array.create n false in
     let rec loop i j =
-      if i >= n_inputs || j >= len_inputs then failwith "Could not refine"
-      else (
-        abs_inputs.(i) <-
-          Map.set abs_inputs.(i) ~key:j ~data:conc_inputs.(i).(j);
-        if not (Abs_state.is_subset_a node.state ~of_:(f abs_inputs)) then
-          if j = len_inputs - 1 then loop (i + 1) 0 else loop i (j + 1) )
+      if i >= n || j >= k then failwith "Could not refine";
+
+      Node.set_state input_nodes.(i)
+        (Map.set input_nodes.(i).state ~key:j ~data:conc_inputs.(i).(j));
+      changed.(i) <- true;
+
+      if not (Abs_state.is_subset_a node.state ~of_:(eval graph node)) then
+        if j = k - 1 then loop (i + 1) 0 else loop i (j + 1)
     in
     loop 0 0;
-    List.map2_exn (Array.to_list abs_inputs) input_nodes ~f:(fun s v ->
-        if not ([%compare.equal: Abs_state.t] v.Node.state s) then (
-          Node.set_state v s;
-          Some v )
-        else None)
-    |> List.filter_map ~f:Fun.id
 
-(* let%expect_test "" =
- *   let t = true and f = false in
- *   refine_children [ [| t; f |]; [| t; f |] ]
- *     [
- *       Map.of_alist_exn (module Int) [ (0, t) ]; Map.of_alist_exn (module Int) [];
- *     ]
- *     (Map.of_alist_exn (module Int) [ (0, t); (1, t) ])
- *     (function [| x; y |] -> union x y | _ -> assert false)
- *   |> Fmt.pr "%a" @@ Fmt.Dump.list Abs_state.pp;
- *   [%expect {| [1_0 0_1; 1_0 0_1] |}] *)
+    (* The new input states produce an output that refines the abstract output.
+       *)
+    assert (Abs_state.is_subset_a node.state ~of_:(eval graph node));
+
+    Array.iteri input_nodes ~f:(fun i node ->
+        let old = old_inputs.(i)
+        and conc = conc_inputs.(i)
+        and new_ = node.state in
+        (* The new state refines the old state. *)
+        assert (Abs_state.is_subset_a old ~of_:new_);
+
+        (* The new state contains the concrete behavior. *)
+        assert (contains new_ conc));
+
+    Array.filter_mapi changed ~f:(fun i c ->
+        if c then Some input_nodes.(i) else None)
+    |> Array.to_list
+    |> List.concat_map ~f:(refine_children graph)
 
 let rec strengthen graph node bad_out =
   assert (contains node.Node.state bad_out);
-  let f =
-    match node.op with
-    | `Union -> fun args -> union args.(0) args.(1)
-    | `Inter -> fun args -> inter args.(0) args.(1)
-    | `Sub -> fun args -> sub args.(0) args.(1)
-    | `Input s -> fun _ -> Abs_state.lift s
-  in
   let to_prune = refine graph node bad_out in
-  let to_prune' = refine_children graph node f in
-  List.iter (to_prune @ to_prune') ~f:(prune graph)
+  let to_prune' = refine_children graph node in
+  assert (not (contains node.state bad_out));
+  to_prune @ to_prune'
 
 let test_graph () =
   let g = G.create () in
@@ -496,7 +502,7 @@ let%expect_test "" =
     in 1_1
     in 1_0 |}]
 
-let synth inputs output =
+let synth ?(max_cost = 20) inputs output =
   let graph = G.create () and step = ref 0 in
 
   let module Viz = Graph.Graphviz.Dot (struct
@@ -521,14 +527,16 @@ let synth inputs output =
     let edge_attributes (_, i, _) = [ `Label (sprintf "%d" i) ]
   end) in
   let dump () =
-    if !step >= 100 then exit 1;
-    Out_channel.with_file (sprintf "out%d.dot" !step) ~f:(fun ch ->
-        Viz.output_graph ch graph);
-    Out_channel.flush stdout;
-    incr step
+    if enable_dump then (
+      if !step >= 100 then exit 1;
+      Out_channel.with_file (sprintf "out%d.dot" !step) ~f:(fun ch ->
+          Viz.output_graph ch graph);
+      Out_channel.flush stdout;
+      incr step )
   in
 
   let rec loop cost =
+    if cost > max_cost then failwith "unsat";
     let rec iloop () =
       G.filter_vertex graph ~f:(fun v -> not v.covered)
       |> List.iter ~f:(fun (v : Node.t) ->
@@ -551,7 +559,10 @@ let synth inputs output =
                else (
                  Fmt.pr "Refuting: %a\n" Sexp.pp_hum
                    ([%sexp_of: Program.t] (Node.to_program graph v));
-                 strengthen graph v output;
+                 let to_prune = strengthen graph v output in
+                 dump ();
+                 prune graph to_prune;
+                 dump ();
                  did_strengthen := true ));
       dump ();
       if !did_strengthen then iloop ()
