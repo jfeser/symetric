@@ -1,6 +1,6 @@
 open! Core
 
-let enable_dump = false
+let enable_dump = ref false
 
 module State = struct
   module T = struct
@@ -152,6 +152,8 @@ module G = struct
   let filter_vertex g ~f =
     fold_vertex (fun x xs -> if f x then x :: xs else xs) g []
 
+  let map_vertex g ~f = fold_vertex (fun x xs -> f x :: xs) g []
+
   let exists_vertex g ~f = fold_vertex (fun x xs -> f x || xs) g false
 
   let succ g v =
@@ -283,7 +285,7 @@ let prune g (nodes : Node.t list) =
           |> List.filter_map ~f:(fun v' ->
                  let old = v'.Node.state and new_ = eval g v' in
 
-                 Fmt.pr "Prune old: %a new: %a %a\n" Abs_state.pp old
+                 Fmt.epr "Prune old: %a new: %a %a\n" Abs_state.pp old
                    Abs_state.pp new_ Node.pp v';
                  assert (Abs_state.is_subset_a old ~of_:new_);
                  if [%compare.equal: Abs_state.t] old new_ then None
@@ -496,13 +498,27 @@ let%expect_test "" =
 let%expect_test "" =
   let g, _, _, _ = test_graph () in
   G.filter_vertex ~f:(fun v -> (not v.Node.covered) && v.cost = 1) g
-  |> List.iter ~f:(Fmt.pr "%a\n" Node.pp);
+  |> List.iter ~f:(Fmt.epr "%a\n" Node.pp);
   [%expect {|
     and
     in 1_1
     in 1_0 |}]
 
-let synth ?(max_cost = 20) inputs output =
+module Stats = struct
+  type t = {
+    n_nodes : int;
+    n_covered : int;
+    n_refuted : int;
+    min_width : int;
+    max_width : int;
+    median_width : int;
+    sat : bool;
+  }
+end
+
+exception Done of [ `Sat | `Unsat ]
+
+let synth ?(max_cost = 20) ?(no_abstraction = false) inputs output =
   let graph = G.create () and step = ref 0 in
 
   let module Viz = Graph.Graphviz.Dot (struct
@@ -527,7 +543,7 @@ let synth ?(max_cost = 20) inputs output =
     let edge_attributes (_, i, _) = [ `Label (sprintf "%d" i) ]
   end) in
   let dump () =
-    if enable_dump then (
+    if !enable_dump then (
       if !step >= 100 then exit 1;
       Out_channel.with_file (sprintf "out%d.dot" !step) ~f:(fun ch ->
           Viz.output_graph ch graph);
@@ -535,8 +551,10 @@ let synth ?(max_cost = 20) inputs output =
       incr step )
   in
 
+  let n_refuted = ref 0 in
+
   let rec loop cost =
-    if cost > max_cost then failwith "unsat";
+    if cost > max_cost then raise (Done `Unsat);
     let rec iloop () =
       G.filter_vertex graph ~f:(fun v -> not v.covered)
       |> List.iter ~f:(fun (v : Node.t) ->
@@ -546,7 +564,7 @@ let synth ?(max_cost = 20) inputs output =
                    && (not ([%compare.equal: Node.t] v v'))
                    && Abs_state.is_subset_a v'.state ~of_:v.state)
              then (
-               Fmt.pr "Covering: %a\n" Node.pp v;
+               Fmt.epr "Covering: %a\n" Node.pp v;
                Node.cover v ));
       dump ();
 
@@ -555,9 +573,10 @@ let synth ?(max_cost = 20) inputs output =
       |> List.iter ~f:(fun v ->
              if contains v.Node.state output then
                if [%compare.equal: State.t] (ceval graph v) output then
-                 failwith "sat"
+                 raise (Done `Sat)
                else (
-                 Fmt.pr "Refuting: %a\n" Sexp.pp_hum
+                 incr n_refuted;
+                 Fmt.epr "Refuting: %a\n" Sexp.pp_hum
                    ([%sexp_of: Program.t] (Node.to_program graph v));
                  let to_prune = strengthen graph v output in
                  dump ();
@@ -571,7 +590,7 @@ let synth ?(max_cost = 20) inputs output =
     iloop ();
 
     let changed = fill graph cost in
-    Fmt.pr "Changed: %b Cost: %d\n" changed cost;
+    Fmt.epr "Changed: %b Cost: %d\n" changed cost;
     if changed then dump ();
     let cost = if changed then cost else cost + 1 in
     loop cost
@@ -579,10 +598,27 @@ let synth ?(max_cost = 20) inputs output =
 
   (* Add inputs to the state space graph. *)
   List.iter inputs ~f:(fun input ->
-      Node.create
-        ~state:(Map.empty (module Int))
-        ~cost:1 ~op:(`Input input) graph []
-      |> ignore);
+      let state =
+        if no_abstraction then Abs_state.lift input else Map.empty (module Int)
+      in
+      Node.create ~state ~cost:1 ~op:(`Input input) graph [] |> ignore);
   dump ();
 
-  loop 1
+  try loop 1
+  with Done status ->
+    let widths =
+      G.map_vertex graph ~f:(fun v -> Map.length v.Node.state)
+      |> List.sort ~compare:[%compare: int]
+      |> Array.of_list
+    in
+    Stats.
+      {
+        n_nodes = G.nb_vertex graph;
+        n_covered =
+          G.filter_vertex graph ~f:(fun v -> v.Node.covered) |> List.length;
+        n_refuted = !n_refuted;
+        min_width = widths.(0);
+        max_width = widths.(Array.length widths - 1);
+        median_width = widths.(Array.length widths / 2);
+        sat = (match status with `Sat -> true | `Unsat -> false);
+      }
