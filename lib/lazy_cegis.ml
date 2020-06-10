@@ -67,14 +67,11 @@ module Node0 = struct
     id : int;
     op : Op.t;
     cost : int;
+    cstate : State.t;
     mutable state : Abs_state.t;
     mutable covered : bool;
     mutable last_mod_time : int;
   }
-
-  let hash n = n.id
-
-  let hash_fold_t state n = [%hash_fold: int] state (hash n)
 
   let set_state n s = n.state <- s
 
@@ -91,9 +88,13 @@ module Node0 = struct
   let pp fmt ({ state; op; _ } : t) =
     Fmt.pf fmt "%a %a" Op.pp op Abs_state.pp state
 
-  let equal n n' = [%compare.equal: int] n.id n'.id
+  let hash n = [%hash: State.t] n.cstate
 
-  let compare n n' = [%compare: int] n.id n'.id
+  let hash_fold_t state n = [%hash_fold: State.t] state n.cstate
+
+  let equal n n' = [%compare.equal: State.t] n.cstate n'.cstate
+
+  let compare n n' = [%compare: State.t] n.cstate n'.cstate
 end
 
 let union =
@@ -162,6 +163,26 @@ module G = struct
     |> List.map ~f:(fun (_, _, v) -> v)
 end
 
+let ceval' op args =
+  match (op, args) with
+  | `Input x, _ -> x
+  | `Union, [ x; y ] -> Array.map2_exn x.Node0.cstate y.cstate ~f:( || )
+  | `Inter, [ x; y ] -> Array.map2_exn x.cstate y.cstate ~f:( && )
+  | `Sub, [ x; y ] ->
+      Array.map2_exn x.cstate y.cstate ~f:(fun a b -> a && not b)
+  | _ -> assert false
+
+let rec ceval g v = ceval' v.Node0.op @@ G.succ g v
+
+let eval g v =
+  let args = G.succ g v in
+  match (v.op, args) with
+  | `Input _, _ -> v.Node0.state
+  | `Union, [ v'; v'' ] -> union v'.state v''.state
+  | `Inter, [ v'; v'' ] -> inter v'.state v''.state
+  | `Sub, [ v'; v'' ] -> sub v'.state v''.state
+  | _ -> failwith "Unexpected args"
+
 module Program = struct
   module T = struct
     type t = [ `Apply of Op.t * t list ] [@@deriving compare, hash, sexp]
@@ -178,10 +199,10 @@ module Node = struct
     `Apply (node.op, G.succ graph node |> List.map ~f:(to_program graph))
 
   let create ?(covered = false) ~state ~cost ~op graph children =
-    let prog = `Apply (op, List.map children ~f:(to_program graph)) in
+    let cstate = ceval' op children in
     if
       G.exists_vertex graph ~f:(fun v ->
-          [%compare.equal: Program.t] prog (to_program graph v))
+          [%compare.equal: State.t] v.cstate cstate)
     then None
     else (
       incr time;
@@ -191,6 +212,7 @@ module Node = struct
           op;
           cost;
           state;
+          cstate;
           covered;
           last_mod_time = !time;
         }
@@ -248,25 +270,6 @@ let rec fill graph cost =
                                         added := !added || did_add)))
                   | _ -> failwith "Unexpected costs"));
     !added
-
-let rec ceval g v =
-  let args = G.succ g v in
-  match (v.op, args) with
-  | `Input x, _ -> x
-  | `Union, [ x; y ] -> Array.map2_exn (ceval g x) (ceval g y) ~f:( || )
-  | `Inter, [ x; y ] -> Array.map2_exn (ceval g x) (ceval g y) ~f:( && )
-  | `Sub, [ x; y ] ->
-      Array.map2_exn (ceval g x) (ceval g y) ~f:(fun a b -> a && not b)
-  | _ -> assert false
-
-let eval g v =
-  let args = G.succ g v in
-  match (v.op, args) with
-  | `Input _, _ -> v.state
-  | `Union, [ v'; v'' ] -> union v'.state v''.state
-  | `Inter, [ v'; v'' ] -> inter v'.state v''.state
-  | `Sub, [ v'; v'' ] -> sub v'.state v''.state
-  | _ -> failwith "Unexpected args"
 
 let prune g (nodes : Node.t list) =
   let min_mod_time =
