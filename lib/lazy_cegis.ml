@@ -18,7 +18,7 @@ module State = struct
     include Comparable.Make (T)
   end
 
-  let pp = Fmt.(array bool)
+  let pp = Fmt.(array ~sep:(any " ") bool)
 end
 
 module Abs_state = struct
@@ -157,6 +157,11 @@ module G = struct
 
   let exists_vertex g ~f = fold_vertex (fun x xs -> f x || xs) g false
 
+  let find_vertex g ~f =
+    fold_vertex
+      (fun x acc -> if Option.is_none acc && f x then Some x else acc)
+      g None
+
   let succ g v =
     succ_e g v
     |> List.sort ~compare:(fun (_, x, _) (_, x', _) -> [%compare: int] x x')
@@ -187,6 +192,15 @@ module Program = struct
   module T = struct
     type t = [ `Apply of Op.t * t list ] [@@deriving compare, hash, sexp]
   end
+
+  let rec ceval (`Apply (op, args)) =
+    match (op, args) with
+    | `Input x, _ -> x
+    | `Union, [ x; y ] -> Array.map2_exn (ceval x) (ceval y) ~f:( || )
+    | `Inter, [ x; y ] -> Array.map2_exn (ceval x) (ceval y) ~f:( && )
+    | `Sub, [ x; y ] ->
+        Array.map2_exn (ceval x) (ceval y) ~f:(fun a b -> a && not b)
+    | _ -> assert false
 
   include T
   include Comparator.Make (T)
@@ -614,14 +628,70 @@ let synth ?(max_cost = 20) ?(no_abstraction = false) inputs output =
       |> List.sort ~compare:[%compare: int]
       |> Array.of_list
     in
-    Stats.
-      {
-        n_nodes = G.nb_vertex graph;
-        n_covered =
-          G.filter_vertex graph ~f:(fun v -> v.Node.covered) |> List.length;
-        n_refuted = !n_refuted;
-        min_width = widths.(0);
-        max_width = widths.(Array.length widths - 1);
-        median_width = widths.(Array.length widths / 2);
-        sat = (match status with `Sat -> true | `Unsat -> false);
-      }
+    ( graph,
+      Stats.
+        {
+          n_nodes = G.nb_vertex graph;
+          n_covered =
+            G.filter_vertex graph ~f:(fun v -> v.Node.covered) |> List.length;
+          n_refuted = !n_refuted;
+          min_width = widths.(0);
+          max_width = widths.(Array.length widths - 1);
+          median_width = widths.(Array.length widths / 2);
+          sat = (match status with `Sat -> true | `Unsat -> false);
+        } )
+
+let sample ?(state = Random.State.default) inputs =
+  let open Grammar in
+  let named_inputs = List.mapi inputs ~f:(fun i x -> (sprintf "i%d" i, x)) in
+  let input_rules =
+    List.map named_inputs ~f:(fun (n, _) -> Rule.create "p" (Term.app n []) [])
+  in
+  let g =
+    input_rules
+    @ [
+        Rule.create "p"
+          (Term.app "and" [ Term.nonterm "p"; Term.nonterm "p" ])
+          [];
+        Rule.create "p"
+          (Term.app "or" [ Term.nonterm "p"; Term.nonterm "p" ])
+          [];
+        Rule.create "p"
+          (Term.app "diff" [ Term.nonterm "p"; Term.nonterm "p" ])
+          [];
+      ]
+  in
+  let term = Grammar.sample ~state "p" g in
+  let rec to_prog = function
+    | App (func, args) ->
+        let op =
+          match func with
+          | "and" -> `Inter
+          | "or" -> `Union
+          | "diff" -> `Sub
+          | _ -> (
+              match
+                List.Assoc.find ~equal:[%compare.equal: string] named_inputs
+                  func
+              with
+              | Some i -> `Input i
+              | None -> failwith "unexpected function" )
+        in
+        let args = List.map args ~f:to_prog in
+        `Apply (op, args)
+    | _ -> failwith "unexpected term"
+  in
+  to_prog (term :> Untyped_term.t)
+
+let check_search_space ?(n = 100_000) inputs graph =
+  let rec loop i =
+    if i > n then Ok ()
+    else
+      let prog = sample inputs in
+      let cstate = Program.ceval prog in
+      match G.find_vertex graph ~f:(fun v -> contains v.state cstate) with
+      | Some v -> loop (i + 1)
+      | None -> Error cstate
+  in
+
+  loop 0

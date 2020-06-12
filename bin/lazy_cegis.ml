@@ -12,10 +12,10 @@ let _inputs, _output =
   (inputs, output)
 
 let main ~n ~enable_graph_output ~seed ~max_cost ~k ~print_header ~abstraction
-    () =
+    ~check () =
   if print_header then (
     Fmt.pr
-      "k,n,seed,max_cost,abstraction,n_nodes,n_covered,n_refuted,min_width,max_width,median_width,sat\n";
+      "k,n,seed,max_cost,abstraction,n_nodes,n_covered,n_refuted,min_width,max_width,median_width,check,sat\n";
     exit 0 );
 
   let no_abstraction = abstraction = 0 in
@@ -27,11 +27,17 @@ let main ~n ~enable_graph_output ~seed ~max_cost ~k ~print_header ~abstraction
     List.init n ~f:(fun _ -> Array.init k ~f:(fun _ -> Random.State.bool state))
   in
   let output = Array.init k ~f:(fun _ -> Random.State.bool state) in
-  let stats = synth ~max_cost ~no_abstraction inputs output in
-
-  Fmt.pr "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n" k n seed max_cost abstraction
-    stats.Stats.n_nodes stats.Stats.n_covered stats.Stats.n_refuted
+  let graph, stats = synth ~max_cost ~no_abstraction inputs output in
+  let check_output =
+    if check then Some (check_search_space inputs graph) else None
+  in
+  Fmt.pr "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d\n" k n seed max_cost
+    abstraction stats.Stats.n_nodes stats.Stats.n_covered stats.Stats.n_refuted
     stats.Stats.min_width stats.Stats.max_width stats.Stats.median_width
+    ( match check_output with
+    | Some (Ok ()) -> "1"
+    | Some (Error _) -> "0"
+    | None -> "" )
     (if stats.Stats.sat then 1 else 0)
 
 let () =
@@ -55,6 +61,11 @@ let () =
         flag "abstraction"
           (optional_with_default 1 int)
           ~doc:" set to 0 to disable abstraction refinement"
+      and check =
+        flag "check" no_arg
+          ~doc:" check the search space by sampling random programs"
       in
-      main ~n ~enable_graph_output ~seed ~max_cost ~k ~print_header ~abstraction]
+
+      main ~n ~enable_graph_output ~seed ~max_cost ~k ~print_header ~abstraction
+        ~check]
   |> Command.run
