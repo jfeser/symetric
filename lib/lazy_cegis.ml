@@ -32,6 +32,12 @@ module Abs_state = struct
     @@ Fmt.list ~sep:(Fmt.any " ")
     @@ Fmt.pair ~sep:Fmt.nop Fmt.int (Fmt.fmt "_%d")
 
+  let graphviz_pp =
+    Fmt.using (fun m ->
+        Map.to_alist m |> List.map ~f:(fun (k, v) -> (Bool.to_int v, k)))
+    @@ Fmt.list ~sep:(Fmt.any " ")
+    @@ Fmt.pair ~sep:Fmt.nop Fmt.int (Fmt.fmt "<sub>%d</sub>")
+
   let is_subset_a s ~of_:s' =
     Map.for_alli s ~f:(fun ~key ~data:x ->
         match Map.find s' key with Some x' -> Bool.(x = x') | None -> false)
@@ -76,17 +82,22 @@ module Node0 = struct
   let set_state n s = n.state <- s
 
   let cover n =
-    incr time;
-    n.covered <- true;
-    n.last_mod_time <- !time
+    if not n.covered then (
+      incr time;
+      n.covered <- true;
+      n.last_mod_time <- !time )
 
   let uncover n =
-    incr time;
-    n.covered <- false;
-    n.last_mod_time <- !time
+    if n.covered then (
+      incr time;
+      n.covered <- false;
+      n.last_mod_time <- !time )
 
   let pp fmt ({ state; op; _ } : t) =
     Fmt.pf fmt "%a %a" Op.pp op Abs_state.pp state
+
+  let graphviz_pp fmt ({ state; op; last_mod_time; _ } : t) =
+    Fmt.pf fmt "%a %a %d" Op.pp op Abs_state.graphviz_pp state last_mod_time
 
   let hash n = [%hash: State.t] n.cstate
 
@@ -202,6 +213,8 @@ module Program = struct
         Array.map2_exn (ceval x) (ceval y) ~f:(fun a b -> a && not b)
     | _ -> assert false
 
+  let rec size (`Apply (op, args)) = 1 + List.sum (module Int) args ~f:size
+
   include T
   include Comparator.Make (T)
 end
@@ -286,6 +299,7 @@ let rec fill graph cost =
     !added
 
 let prune g (nodes : Node.t list) =
+  Fmt.epr "Pruning %d nodes.\n" (List.length nodes);
   let min_mod_time =
     Option.value_exn
       ( List.map nodes ~f:(fun n -> n.last_mod_time)
@@ -294,26 +308,27 @@ let prune g (nodes : Node.t list) =
   G.iter_vertex
     (fun v -> if v.last_mod_time > min_mod_time then Node.uncover v)
     g;
+  Fmt.epr "Prune: min mod time %d.\n" min_mod_time
 
-  let rec process = function
-    | v :: vs ->
-        let work =
-          G.pred g v
-          |> List.filter_map ~f:(fun v' ->
-                 let old = v'.Node.state and new_ = eval g v' in
-
-                 Fmt.epr "Prune old: %a new: %a %a\n" Abs_state.pp old
-                   Abs_state.pp new_ Node.pp v';
-                 assert (Abs_state.is_subset_a old ~of_:new_);
-                 if [%compare.equal: Abs_state.t] old new_ then None
-                 else (
-                   Node.set_state v' new_;
-                   Some v' ))
-        in
-        process (work @ vs)
-    | [] -> ()
-  in
-  process nodes
+(* let rec process = function
+ *   | v :: vs ->
+ *       let work =
+ *         G.pred g v
+ *         |> List.filter_map ~f:(fun v' ->
+ *                let old = v'.Node.state and new_ = eval g v' in
+ * 
+ *                Fmt.epr "Prune old: %a new: %a %a\n" Abs_state.pp old
+ *                  Abs_state.pp new_ Node.pp v';
+ *                assert (Abs_state.is_subset_a old ~of_:new_);
+ *                if [%compare.equal: Abs_state.t] old new_ then None
+ *                else (
+ *                  Node.set_state v' new_;
+ *                  Some v' ))
+ *       in
+ *       process (work @ vs)
+ *   | [] -> ()
+ * in
+ * process nodes *)
 
 let refine graph node bad =
   let conc = ceval graph node and old = node.state in
@@ -384,10 +399,12 @@ let rec refine_children graph node =
         (* The new state contains the concrete behavior. *)
         assert (contains new_ conc));
 
-    Array.filter_mapi changed ~f:(fun i c ->
-        if c then Some input_nodes.(i) else None)
-    |> Array.to_list
-    |> List.concat_map ~f:(refine_children graph)
+    let to_prune =
+      Array.filter_mapi changed ~f:(fun i c ->
+          if c then Some input_nodes.(i) else None)
+      |> Array.to_list
+    in
+    to_prune @ List.concat_map to_prune ~f:(refine_children graph)
 
 let rec strengthen graph node bad_out =
   assert (contains node.Node.state bad_out);
@@ -548,7 +565,7 @@ let synth ?(max_cost = 20) ?(no_abstraction = false) inputs output =
     let vertex_name n = Fmt.str "%d" n.Node0.id
 
     let vertex_attributes n =
-      [ `HtmlLabel (Fmt.str "%a" Node0.pp n) ]
+      [ `HtmlLabel (Fmt.str "%a" Node0.graphviz_pp n) ]
       @
       if n.covered then [ `Style `Dotted ]
       else [] @ if contains n.state output then [ `Style `Bold ] else []
@@ -561,7 +578,6 @@ let synth ?(max_cost = 20) ?(no_abstraction = false) inputs output =
   end) in
   let dump () =
     if !enable_dump then (
-      if !step >= 100 then exit 1;
       Out_channel.with_file (sprintf "out%d.dot" !step) ~f:(fun ch ->
           Viz.output_graph ch graph);
       Out_channel.flush stdout;
@@ -691,7 +707,11 @@ let check_search_space ?(n = 100_000) inputs graph =
       let cstate = Program.ceval prog in
       match G.find_vertex graph ~f:(fun v -> contains v.state cstate) with
       | Some v -> loop (i + 1)
-      | None -> Error cstate
+      | None ->
+          Fmt.epr "Missed program %a with size %d and state %a\n" Sexp.pp
+            ([%sexp_of: Program.t] prog)
+            (Program.size prog) State.pp cstate;
+          Error cstate
   in
 
   loop 0

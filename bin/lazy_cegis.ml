@@ -29,7 +29,8 @@ let main ~n ~enable_graph_output ~seed ~max_cost ~k ~print_header ~abstraction
   let output = Array.init k ~f:(fun _ -> Random.State.bool state) in
   let graph, stats = synth ~max_cost ~no_abstraction inputs output in
   let check_output =
-    if check then Some (check_search_space inputs graph) else None
+    if check && not stats.sat then Some (check_search_space inputs graph)
+    else None
   in
   Fmt.pr "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d\n" k n seed max_cost
     abstraction stats.Stats.n_nodes stats.Stats.n_covered stats.Stats.n_refuted
@@ -49,7 +50,7 @@ let () =
           (optional_with_default 2 int)
           ~doc:" number of function inputs"
       and enable_graph_output =
-        flag "enable-graph-output" no_arg ~doc:" enable output of dot graphs"
+        flag "output-graph" no_arg ~doc:" enable output of dot graphs"
       and seed = flag "seed" (optional_with_default 0 int) ~doc:" random seed"
       and max_cost =
         flag "max-cost"
