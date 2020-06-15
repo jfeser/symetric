@@ -38,6 +38,14 @@ module Abs_state = struct
     @@ Fmt.list ~sep:(Fmt.any " ")
     @@ Fmt.pair ~sep:Fmt.nop Fmt.int (Fmt.fmt "<sub>%d</sub>")
 
+  let union =
+    Map.merge ~f:(fun ~key:_ ->
+      function
+      | `Left x | `Right x -> Some x
+      | `Both (x, x') ->
+          assert (Bool.(x = x'));
+          Some x)
+
   let is_subset_a s ~of_:s' =
     Map.for_alli s ~f:(fun ~key ~data:x ->
         match Map.find s' key with Some x' -> Bool.(x = x') | None -> false)
@@ -99,13 +107,13 @@ module Node0 = struct
   let graphviz_pp fmt ({ state; op; last_mod_time; _ } : t) =
     Fmt.pf fmt "%a %a %d" Op.pp op Abs_state.graphviz_pp state last_mod_time
 
-  let hash n = [%hash: State.t] n.cstate
+  let hash n = [%hash: int] n.id
 
-  let hash_fold_t state n = [%hash_fold: State.t] state n.cstate
+  let hash_fold_t state n = [%hash_fold: int] state n.id
 
-  let equal n n' = [%compare.equal: State.t] n.cstate n'.cstate
+  let equal n n' = [%compare.equal: int] n.id n'.id
 
-  let compare n n' = [%compare: State.t] n.cstate n'.cstate
+  let compare n n' = [%compare: int] n.id n'.id
 end
 
 let union =
@@ -177,6 +185,10 @@ module G = struct
     succ_e g v
     |> List.sort ~compare:(fun (_, x, _) (_, x', _) -> [%compare: int] x x')
     |> List.map ~f:(fun (_, _, v) -> v)
+
+  let ensure_vertex g v = if not (mem_vertex g v) then add_vertex g v
+
+  let ensure_edge_e g e = if not (mem_edge_e g e) then add_edge_e g e
 end
 
 let ceval' op args =
@@ -219,6 +231,82 @@ module Program = struct
   include Comparator.Make (T)
 end
 
+let prune g (nodes : Node0.t list) =
+  Fmt.epr "Pruning %d nodes.\n" (List.length nodes);
+  let min_mod_time =
+    Option.value_exn
+      ( List.map nodes ~f:(fun n -> n.last_mod_time)
+      |> List.min_elt ~compare:[%compare: int] )
+  in
+  G.iter_vertex
+    (fun v -> if v.last_mod_time > min_mod_time then Node0.uncover v)
+    g;
+  Fmt.epr "Prune: min mod time %d.\n" min_mod_time;
+
+  let rec process = function
+    | v :: vs ->
+        let work =
+          G.pred g v
+          |> List.filter_map ~f:(fun v' ->
+                 let old = v'.Node0.state and new_ = eval g v' in
+                 assert (Abs_state.is_subset_a old ~of_:new_);
+                 if [%compare.equal: Abs_state.t] old new_ then None
+                 else (
+                   Node0.set_state v' new_;
+                   Some v' ))
+        in
+        process (work @ vs)
+    | [] -> ()
+  in
+  process nodes
+
+let rec refine_children graph node =
+  let input_nodes = G.succ graph node |> List.to_array in
+  if Array.is_empty input_nodes then []
+  else
+    let conc_inputs = Array.map input_nodes ~f:(ceval graph)
+    and old_inputs = Array.map input_nodes ~f:(fun n -> n.Node0.state) in
+
+    let n = Array.length conc_inputs and k = Array.length conc_inputs.(0) in
+
+    Array.iteri old_inputs ~f:(fun i old ->
+        (* The old state contains the concrete behavior. *)
+        assert (contains old conc_inputs.(i)));
+
+    let changed = Array.create n false in
+    let rec loop i j =
+      if i >= n || j >= k then failwith "Could not refine";
+
+      Node0.set_state input_nodes.(i)
+        (Map.set input_nodes.(i).state ~key:j ~data:conc_inputs.(i).(j));
+      changed.(i) <- true;
+
+      if not (Abs_state.is_subset_a node.state ~of_:(eval graph node)) then
+        if j = k - 1 then loop (i + 1) 0 else loop i (j + 1)
+    in
+    loop 0 0;
+
+    (* The new input states produce an output that refines the abstract output.
+       *)
+    assert (Abs_state.is_subset_a node.state ~of_:(eval graph node));
+
+    Array.iteri input_nodes ~f:(fun i node ->
+        let old = old_inputs.(i)
+        and conc = conc_inputs.(i)
+        and new_ = node.state in
+        (* The new state refines the old state. *)
+        assert (Abs_state.is_subset_a old ~of_:new_);
+
+        (* The new state contains the concrete behavior. *)
+        assert (contains new_ conc));
+
+    let to_prune =
+      Array.filter_mapi changed ~f:(fun i c ->
+          if c then Some input_nodes.(i) else None)
+      |> Array.to_list
+    in
+    to_prune @ List.concat_map to_prune ~f:(refine_children graph)
+
 module Node = struct
   include Node0
 
@@ -227,10 +315,29 @@ module Node = struct
 
   let create ?(covered = false) ~state ~cost ~op graph children =
     let cstate = ceval' op children in
+
+    (* ( match
+     *     G.find_vertex graph ~f:(fun v ->
+     *         [%compare.equal: State.t] v.cstate cstate)
+     *   with
+     * | Some v ->
+     *     Fmt.epr "Found equivalent program %a (my state %a, my cost %d)\n"
+     *       Node0.pp v Abs_state.pp state cost
+     * | None -> () ); *)
     if
       G.exists_vertex graph ~f:(fun v ->
-          [%compare.equal: State.t] v.cstate cstate)
-    then None
+          [%compare.equal: State.t] v.cstate cstate && v.cost <= cost)
+    then (
+      let updated =
+        G.filter_vertex graph ~f:(fun v ->
+            [%compare.equal: State.t] v.cstate cstate)
+      in
+      List.iter ~f:(fun v -> v.state <- Abs_state.union v.state state);
+      let updated =
+        updated @ List.concat_map updated ~f:(refine_children graph)
+      in
+      prune graph updated;
+      None )
     else (
       incr time;
       let node =
@@ -244,8 +351,8 @@ module Node = struct
           last_mod_time = !time;
         }
       in
-      G.add_vertex graph node;
-      List.iteri children ~f:(fun i x -> G.add_edge_e graph (node, i, x));
+      G.ensure_vertex graph node;
+      List.iteri children ~f:(fun i x -> G.ensure_edge_e graph (node, i, x));
       Some node )
 
   let create_exn ?covered ~state ~cost ~op graph children =
@@ -298,38 +405,6 @@ let rec fill graph cost =
                   | _ -> failwith "Unexpected costs"));
     !added
 
-let prune g (nodes : Node.t list) =
-  Fmt.epr "Pruning %d nodes.\n" (List.length nodes);
-  let min_mod_time =
-    Option.value_exn
-      ( List.map nodes ~f:(fun n -> n.last_mod_time)
-      |> List.min_elt ~compare:[%compare: int] )
-  in
-  G.iter_vertex
-    (fun v -> if v.last_mod_time > min_mod_time then Node.uncover v)
-    g;
-  Fmt.epr "Prune: min mod time %d.\n" min_mod_time
-
-(* let rec process = function
- *   | v :: vs ->
- *       let work =
- *         G.pred g v
- *         |> List.filter_map ~f:(fun v' ->
- *                let old = v'.Node.state and new_ = eval g v' in
- * 
- *                Fmt.epr "Prune old: %a new: %a %a\n" Abs_state.pp old
- *                  Abs_state.pp new_ Node.pp v';
- *                assert (Abs_state.is_subset_a old ~of_:new_);
- *                if [%compare.equal: Abs_state.t] old new_ then None
- *                else (
- *                  Node.set_state v' new_;
- *                  Some v' ))
- *       in
- *       process (work @ vs)
- *   | [] -> ()
- * in
- * process nodes *)
-
 let refine graph node bad =
   let conc = ceval graph node and old = node.state in
 
@@ -358,53 +433,6 @@ let refine graph node bad =
 
   Node.set_state node new_;
   [ node ]
-
-let rec refine_children graph node =
-  let input_nodes = G.succ graph node |> List.to_array in
-  if Array.is_empty input_nodes then []
-  else
-    let conc_inputs = Array.map input_nodes ~f:(ceval graph)
-    and old_inputs = Array.map input_nodes ~f:(fun n -> n.Node.state) in
-
-    let n = Array.length conc_inputs and k = Array.length conc_inputs.(0) in
-
-    Array.iteri old_inputs ~f:(fun i old ->
-        (* The old state contains the concrete behavior. *)
-        assert (contains old conc_inputs.(i)));
-
-    let changed = Array.create n false in
-    let rec loop i j =
-      if i >= n || j >= k then failwith "Could not refine";
-
-      Node.set_state input_nodes.(i)
-        (Map.set input_nodes.(i).state ~key:j ~data:conc_inputs.(i).(j));
-      changed.(i) <- true;
-
-      if not (Abs_state.is_subset_a node.state ~of_:(eval graph node)) then
-        if j = k - 1 then loop (i + 1) 0 else loop i (j + 1)
-    in
-    loop 0 0;
-
-    (* The new input states produce an output that refines the abstract output.
-       *)
-    assert (Abs_state.is_subset_a node.state ~of_:(eval graph node));
-
-    Array.iteri input_nodes ~f:(fun i node ->
-        let old = old_inputs.(i)
-        and conc = conc_inputs.(i)
-        and new_ = node.state in
-        (* The new state refines the old state. *)
-        assert (Abs_state.is_subset_a old ~of_:new_);
-
-        (* The new state contains the concrete behavior. *)
-        assert (contains new_ conc));
-
-    let to_prune =
-      Array.filter_mapi changed ~f:(fun i c ->
-          if c then Some input_nodes.(i) else None)
-      |> Array.to_list
-    in
-    to_prune @ List.concat_map to_prune ~f:(refine_children graph)
 
 let rec strengthen graph node bad_out =
   assert (contains node.Node.state bad_out);
