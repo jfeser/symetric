@@ -82,7 +82,7 @@ let mk_id =
     incr ctr;
     !ctr
 
-module Args_node = struct
+module Args_node0 = struct
   type t = { id : int; op : Op.t } [@@deriving compare, hash, sexp]
 
   let graphviz_pp fmt { op; _ } = Op.pp fmt op
@@ -128,8 +128,8 @@ module State_node0 = struct
 
   let pp fmt { state; _ } = Abs_state.pp fmt state
 
-  let graphviz_pp fmt { state; last_mod_time; _ } =
-    Fmt.pf fmt "%a %d" Abs_state.graphviz_pp state last_mod_time
+  let graphviz_pp fmt { state; cost; _ } =
+    Fmt.pf fmt "%a %d" Abs_state.graphviz_pp state cost
 
   let hash n = [%hash: int] n.id
 
@@ -141,12 +141,12 @@ module State_node0 = struct
 end
 
 module Node = struct
-  type t = Args of Args_node.t | State of State_node0.t
+  type t = Args of Args_node0.t | State of State_node0.t
   [@@deriving compare, hash]
 
   let equal = [%compare.equal: t]
 
-  let id = function Args x -> Args_node.id x | State x -> State_node0.id x
+  let id = function Args x -> Args_node0.id x | State x -> State_node0.id x
 
   let to_args = function Args x -> x | _ -> failwith "expected an args node"
 end
@@ -226,11 +226,14 @@ module G = struct
       (fun x acc -> if Option.is_none acc && f x then Some x else acc)
       g None
 
+  let find_map_vertex g ~f =
+    fold_vertex (fun x acc -> if Option.is_none acc then f x else acc) g None
+
   let children g v =
     succ g (State v)
     |> List.map ~f:(fun v' ->
            let a = Node.to_args v' in
-           let op = Args_node.op a in
+           let op = Args_node0.op a in
            let args =
              succ_e g v'
              |> List.sort ~compare:(fun (_, x, _) (_, x', _) ->
@@ -292,43 +295,41 @@ end
 
 let prune g (nodes : State_node0.t list) =
   let open State_node0 in
-  Fmt.epr "Pruning %d nodes.\n" (List.length nodes);
-  let min_mod_time =
-    Option.value_exn
-      ( List.map nodes ~f:(fun n -> n.last_mod_time)
-      |> List.min_elt ~compare:[%compare: int] )
-  in
-  G.iter_state_vertex
-    ~f:(fun v -> if v.last_mod_time > min_mod_time then uncover v)
-    g;
-  Fmt.epr "Prune: min mod time %d.\n" min_mod_time;
+  if not (List.is_empty nodes) then (
+    let min_mod_time =
+      Option.value_exn
+        ( List.map nodes ~f:(fun n -> n.last_mod_time)
+        |> List.min_elt ~compare:[%compare: int] )
+    in
+    G.iter_state_vertex
+      ~f:(fun v -> if v.last_mod_time > min_mod_time then uncover v)
+      g;
+    Fmt.epr "Prune: min mod time %d.\n" min_mod_time;
 
-  let rec process = function
-    | v :: vs ->
-        let work =
-          List.filter_map (G.depends g v) ~f:(fun v' ->
-              let old = v'.State_node0.state
-              and new_ =
-                List.map (G.children g v') ~f:(fun (op, args) ->
-                    eval op (List.map args ~f:State_node0.state))
-                |> List.reduce_exn ~f:Abs_state.meet
-              in
-              [%test_pred: Abs_state.t * Abs_state.t]
-                (fun (old, new_) -> Abs_state.is_subset_a old ~of_:new_)
-                (old, new_);
-              if [%compare.equal: Abs_state.t] old new_ then None
-              else (
-                set_state v' new_;
-                Some v' ))
-        in
-        process (work @ vs)
-    | [] -> ()
-  in
-  process nodes
+    let rec process = function
+      | v :: vs ->
+          let work =
+            List.filter_map (G.depends g v) ~f:(fun v' ->
+                let old = v'.State_node0.state
+                and new_ =
+                  List.map (G.children g v') ~f:(fun (op, args) ->
+                      eval op (List.map args ~f:State_node0.state))
+                  |> List.reduce_exn ~f:Abs_state.meet
+                in
+                [%test_pred: Abs_state.t * Abs_state.t]
+                  (fun (old, new_) -> Abs_state.is_subset_a old ~of_:new_)
+                  (old, new_);
+                if [%compare.equal: Abs_state.t] old new_ then None
+                else (
+                  set_state v' new_;
+                  Some v' ))
+          in
+          process (work @ vs)
+      | [] -> ()
+    in
+    process nodes )
 
 let rec refine_child graph node op children =
-  Fmt.epr "Children of %a\n" State_node0.pp node;
-
   let open State_node0 in
   let input_nodes = List.to_array children in
   if Array.is_empty input_nodes then []
@@ -388,6 +389,26 @@ and refine_children graph node =
   G.children graph node
   |> List.concat_map ~f:(fun (op, args) -> refine_child graph node op args)
 
+module Args_node = struct
+  include Args_node0
+
+  let create ~op graph args =
+    match
+      G.find_vertex graph ~f:(function
+        | Args v ->
+            [%compare.equal: Op.t] v.op op
+            && List.for_alli args ~f:(fun i state ->
+                   G.mem_edge_e graph (Node.Args v, i, Node.State state))
+        | _ -> false)
+    with
+    | Some v -> v
+    | None ->
+        let args_v = Node.Args { op; id = mk_id () } in
+        List.iteri args ~f:(fun i v ->
+            G.ensure_edge_e graph (args_v, i, Node.State v));
+        args_v
+end
+
 module State_node = struct
   include State_node0
 
@@ -400,30 +421,22 @@ module State_node = struct
     let cstate = ceval' op children in
 
     let mk_args state op children =
-      let args = Node.Args (Args_node.create op) in
-      G.ensure_vertex graph args;
-      G.ensure_edge_e graph (state, -1, args);
-      List.iteri children ~f:(fun i x ->
-          G.ensure_edge_e graph (args, i, Node.State x));
-      Some state
+      let args = Args_node.create ~op graph children in
+      G.ensure_edge_e graph (state, -1, args)
     in
 
-    match
-      G.find_vertex graph ~f:(function
-        | State v -> [%compare.equal: State.t] v.cstate cstate
-        | Args _ -> false)
-    with
-    | Some state ->
-        let args = Node.Args (Args_node.create op) in
-        G.ensure_vertex graph args;
-        G.ensure_edge_e graph (state, -1, args);
-        List.iteri children ~f:(fun i x ->
-            G.ensure_edge_e graph (args, i, Node.State x));
-        Some state
-    | None ->
-        incr time;
-        let state =
-          Node.State
+    let state_v, did_add =
+      match
+        G.find_map_vertex graph ~f:(function
+          | State v when [%compare.equal: State.t] v.cstate cstate -> Some v
+          | _ -> None)
+      with
+      | Some v ->
+          refine_child graph v op children |> prune graph;
+          (v, false)
+      | None ->
+          incr time;
+          let v =
             {
               id = mk_id ();
               cost;
@@ -432,16 +445,11 @@ module State_node = struct
               covered;
               last_mod_time = !time;
             }
-        and args = Node.Args (Args_node.create op) in
-        G.ensure_vertex graph state;
-        G.ensure_vertex graph args;
-        G.ensure_edge_e graph (state, -1, args);
-        List.iteri children ~f:(fun i x ->
-            G.ensure_edge_e graph (args, i, Node.State x));
-        Some state
-
-  let create_exn ?covered ~state ~cost ~op graph children =
-    Option.value_exn (create ?covered ~state ~cost ~op graph children)
+          in
+          (v, true)
+    in
+    mk_args (Node.State state_v) op children;
+    (state, did_add)
 end
 
 let rec fill graph cost =
@@ -482,11 +490,10 @@ let rec fill graph cost =
                                           | `Inter -> inter a.state a'.state
                                           | `Sub -> sub a.state a'.state
                                         in
-                                        let did_add =
+                                        let _, did_add =
                                           State_node.create ~state ~cost
                                             ~op:(op :> Op.t)
                                             graph [ a; a' ]
-                                          |> Option.is_some
                                         in
                                         added := !added || did_add)))
                   | _ -> failwith "Unexpected costs"));
@@ -530,12 +537,12 @@ let rec strengthen graph (node : State_node.t) bad_out =
 
 let%expect_test "" =
   let g = G.create () in
-  State_node.create_exn
+  State_node.create
     ~state:(Map.singleton (module Int) 0 true)
     ~op:(`Input [| true; true |])
     ~cost:1 g []
   |> ignore;
-  State_node.create_exn
+  State_node.create
     ~state:(Map.singleton (module Int) 1 true)
     ~op:(`Input [| true; false |])
     ~cost:1 g []
