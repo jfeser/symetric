@@ -1,5 +1,22 @@
-((nil . ((eval .
-               (progn
-                 (add-to-list 'exec-path
-                              (concat (locate-dominating-file default-directory dir-locals-file) "_opam/bin"))))))
+((tuareg-mode
+  . ((ocp-indent-path
+      . "/home/feser/ocaml-workspace/staged-synth/_opam/bin/ocp-indent")
+
+     (ocamlformat-command
+      . "/home/feser/ocaml-workspace/staged-synth/_opam/bin/ocamlformat")
+
+     (eval
+      . (lsp-register-client
+         (make-lsp-client
+          :new-connection
+          (lsp-stdio-connection
+           (lambda () "/home/feser/ocaml-workspace/staged-synth/_opam/bin/ocamllsp"))
+          :major-modes '(caml-mode tuareg-mode)
+          :priority 10
+          :server-id 'ocaml-lsp-server-staged-synth)))
+
+     (lsp-enabled-clients . ('ocaml-lsp-server-staged-synth))
+     )
+  )
  )
+
