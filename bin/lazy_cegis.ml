@@ -12,13 +12,18 @@ let _inputs, _output =
   (inputs, output)
 
 let main ~n ~enable_graph_output ~seed ~max_cost ~k ~print_header ~abstraction
-    ~check () =
+    ~check ~refine () =
   if print_header then (
     Fmt.pr
-      "k,n,seed,max_cost,abstraction,n_state_nodes,n_arg_nodes,n_covered,n_refuted,min_width,max_width,median_width,check,sat\n";
+      "k,n,seed,max_cost,abstraction,n_state_nodes,n_arg_nodes,n_covered,n_refuted,min_width,max_width,median_width,check,sat,refine\n";
     exit 0 );
 
   let no_abstraction = abstraction = 0 in
+  (refine_strategy :=
+     match refine with
+     | "first" -> `First
+     | "random" -> `Random
+     | _ -> failwith @@ Fmt.str "unknown refinement strategy: %s" refine);
 
   enable_dump := enable_graph_output;
 
@@ -34,7 +39,7 @@ let main ~n ~enable_graph_output ~seed ~max_cost ~k ~print_header ~abstraction
     if check && not stats.sat then Some (check_search_space inputs graph)
     else None
   in
-  Fmt.pr "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d\n" k n seed max_cost
+  Fmt.pr "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d,%s\n" k n seed max_cost
     abstraction stats.Stats.n_state_nodes stats.Stats.n_arg_nodes
     stats.Stats.n_covered stats.Stats.n_refuted stats.Stats.min_width
     stats.Stats.max_width stats.Stats.median_width
@@ -43,6 +48,7 @@ let main ~n ~enable_graph_output ~seed ~max_cost ~k ~print_header ~abstraction
     | Some (Error _) -> "0"
     | None -> "" )
     (if stats.Stats.sat then 1 else 0)
+    refine
 
 let () =
   let open Command.Let_syntax in
@@ -68,8 +74,12 @@ let () =
       and check =
         flag "check" no_arg
           ~doc:" check the search space by sampling random programs"
+      and refine =
+        flag "refine"
+          (optional_with_default "first" string)
+          ~doc:" refinement strategy"
       in
 
       main ~n ~enable_graph_output ~seed ~max_cost ~k ~print_header ~abstraction
-        ~check]
+        ~check ~refine]
   |> Command.run

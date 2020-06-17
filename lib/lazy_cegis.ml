@@ -8,6 +8,8 @@ end
 
 let enable_dump = ref false
 
+let refine_strategy : [ `First | `Random ] ref = ref `First
+
 let value_exn x = Option.value_exn x
 
 module State = struct
@@ -391,7 +393,10 @@ let refine_random ?(state = Random.State.default) strong_enough abs conc =
     in
     refine ()
 
-let refine_many = refine_random
+let refine_many () =
+  match !refine_strategy with
+  | `First -> refine_ordered
+  | `Random -> refine_random ~state:(Random.State.make [||])
 
 let rec refine_child graph node op children =
   let open State_node0 in
@@ -409,7 +414,7 @@ let rec refine_child graph node op children =
       Abs_state.is_subset_a node.state ~of_:(eval' op args)
     in
 
-    let new_inputs = refine_many strong_enough old_inputs conc_inputs in
+    let new_inputs = refine_many () strong_enough old_inputs conc_inputs in
 
     (* The new state refines the old state. *)
     assert (
