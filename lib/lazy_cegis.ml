@@ -265,13 +265,23 @@ let ceval' op args =
       Array.map2_exn x.cstate y.cstate ~f:(fun a b -> a && not b)
   | _ -> assert false
 
-let eval op args =
+let eval' op args =
   match (op, args) with
   | `Input state, _ -> Abs_state.lift state
   | `Union, [ x; y ] -> union x y
   | `Inter, [ x; y ] -> inter x y
   | `Sub, [ x; y ] -> sub x y
   | _ -> failwith "Unexpected args"
+
+let eval g a =
+  let args =
+    G.succ_e g (Node.Args a)
+    |> List.sort ~compare:(fun (_, i, _) (_, i', _) -> [%compare: int] i i')
+    |> List.map ~f:(function
+         | _, _, Node.State v -> v.state
+         | _ -> failwith "expected a state node")
+  in
+  eval' a.op args
 
 module Program = struct
   module T = struct
@@ -309,20 +319,23 @@ let prune g (nodes : State_node0.t list) =
     let rec process = function
       | v :: vs ->
           let work =
-            List.filter_map (G.depends g v) ~f:(fun v' ->
-                let old = v'.State_node0.state
-                and new_ =
-                  List.map (G.children g v') ~f:(fun (op, args) ->
-                      eval op (List.map args ~f:State_node0.state))
-                  |> List.reduce_exn ~f:Abs_state.meet
-                in
-                [%test_pred: Abs_state.t * Abs_state.t]
-                  (fun (old, new_) -> Abs_state.is_subset_a old ~of_:new_)
-                  (old, new_);
-                if [%compare.equal: Abs_state.t] old new_ then None
-                else (
-                  set_state v' new_;
-                  Some v' ))
+            (* Select the arg nodes that depend on this state. *)
+            G.pred g (Node.State v)
+            |> List.concat_map ~f:(function
+                 | Node.Args a ->
+                     let state = eval g a in
+                     List.filter_map (G.pred g (Args a)) ~f:(function
+                       | State v' ->
+                           let old = v'.state in
+                           let new_ = Abs_state.meet old state in
+                           Fmt.epr "%a old:%a new:%a\n" Op.pp a.op Abs_state.pp
+                             old Abs_state.pp state;
+                           if [%compare.equal: Abs_state.t] old new_ then None
+                           else (
+                             set_state v' new_;
+                             Some v' )
+                       | Args _ -> failwith "expected a state node")
+                 | State _ -> failwith "expected an args node")
           in
           process (work @ vs)
       | [] -> ()
@@ -345,7 +358,7 @@ let rec refine_child graph node op children =
 
     let strong_enough () =
       Abs_state.is_subset_a node.state
-        ~of_:(eval op @@ List.map children ~f:State_node0.state)
+        ~of_:(eval' op @@ List.map children ~f:State_node0.state)
     in
 
     let changed = Array.create n false in
