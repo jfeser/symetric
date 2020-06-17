@@ -15,7 +15,7 @@ let main ~n ~enable_graph_output ~seed ~max_cost ~k ~print_header ~abstraction
     ~check () =
   if print_header then (
     Fmt.pr
-      "k,n,seed,max_cost,abstraction,n_nodes,n_covered,n_refuted,min_width,max_width,median_width,check,sat\n";
+      "k,n,seed,max_cost,abstraction,n_state_nodes,n_arg_nodes,n_covered,n_refuted,min_width,max_width,median_width,check,sat\n";
     exit 0 );
 
   let no_abstraction = abstraction = 0 in
@@ -34,9 +34,10 @@ let main ~n ~enable_graph_output ~seed ~max_cost ~k ~print_header ~abstraction
     if check && not stats.sat then Some (check_search_space inputs graph)
     else None
   in
-  Fmt.pr "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d\n" k n seed max_cost
-    abstraction stats.Stats.n_nodes stats.Stats.n_covered stats.Stats.n_refuted
-    stats.Stats.min_width stats.Stats.max_width stats.Stats.median_width
+  Fmt.pr "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d\n" k n seed max_cost
+    abstraction stats.Stats.n_state_nodes stats.Stats.n_arg_nodes
+    stats.Stats.n_covered stats.Stats.n_refuted stats.Stats.min_width
+    stats.Stats.max_width stats.Stats.median_width
     ( match check_output with
     | Some (Ok ()) -> "1"
     | Some (Error _) -> "0"

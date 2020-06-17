@@ -610,7 +610,8 @@ let%expect_test "" =
 
 module Stats = struct
   type t = {
-    n_nodes : int;
+    n_state_nodes : int;
+    n_arg_nodes : int;
     n_covered : int;
     n_refuted : int;
     min_width : int;
@@ -733,11 +734,16 @@ let synth ?(max_cost = 20) ?(no_abstraction = false) inputs output =
     ( graph,
       Stats.
         {
-          n_nodes = G.nb_vertex graph;
+          n_state_nodes =
+            G.filter_vertex graph ~f:(function State v -> true | _ -> false)
+            |> List.length;
+          n_arg_nodes =
+            G.filter_vertex graph ~f:(function Args v -> true | _ -> false)
+            |> List.length;
           n_covered =
-            G.filter_map_vertex graph ~f:(function
-              | State v when v.covered -> Some ()
-              | _ -> None)
+            G.filter_vertex graph ~f:(function
+              | State v -> v.covered
+              | _ -> false)
             |> List.length;
           n_refuted = !n_refuted;
           min_width = widths.(0);
@@ -795,9 +801,9 @@ let check_search_space ?(n = 100_000) inputs graph =
       let prog = sample inputs in
       let cstate = Program.ceval prog in
       match
-        G.find_vertex graph ~f:(function
-          | State v -> contains v.state cstate
-          | _ -> false)
+        G.find_map_vertex graph ~f:(function
+          | State v when contains v.state cstate -> Some v
+          | _ -> None)
       with
       | Some v -> loop (i + 1)
       | None ->
