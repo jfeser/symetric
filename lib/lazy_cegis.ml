@@ -1,5 +1,11 @@
 open! Core
 
+module Seq = struct
+  include Sequence
+
+  let of_array a = init (Array.length a) ~f:(fun i -> a.(i))
+end
+
 let enable_dump = ref false
 
 let value_exn x = Option.value_exn x
@@ -342,59 +348,87 @@ let prune g (nodes : State_node0.t list) =
     in
     process nodes )
 
+let refine_ordered strong_enough abs conc =
+  let open State_node0 in
+  let abs = Array.of_list abs and conc = Array.of_list conc in
+  let n = Array.length conc and k = Array.length conc.(0) in
+  let rec loop i j =
+    if i >= n || j >= k then failwith "Could not refine";
+
+    if not (Map.mem abs.(i) j) then
+      abs.(i) <- Map.add_exn abs.(i) ~key:j ~data:conc.(i).(j);
+
+    if not (strong_enough @@ Array.to_list abs) then
+      if j = k - 1 then loop (i + 1) 0 else loop i (j + 1)
+  in
+  loop 0 0;
+  Array.to_list abs
+
+let refine_random ?(state = Random.State.default) strong_enough abs conc =
+  if strong_enough abs then abs
+  else
+    let abs = Array.of_list abs and conc = Array.of_list conc in
+    let n = Array.length conc and k = Array.length conc.(0) in
+    let choices =
+      List.init n ~f:(fun i ->
+          List.init k ~f:(fun j ->
+              if Map.mem abs.(i) j then None else Some (i, j))
+          |> List.filter_map ~f:Fun.id)
+      |> List.concat
+      |> List.permute ~random_state:state
+      |> Queue.of_list
+    in
+    let rec refine () =
+      let i, j =
+        match Queue.dequeue choices with
+        | Some x -> x
+        | None ->
+            failwith Fmt.(str "cannot refine %a" (Dump.array Abs_state.pp) abs)
+      in
+      abs.(i) <- Map.add_exn abs.(i) ~key:j ~data:conc.(i).(j);
+      let abs_list = Array.to_list abs in
+      if strong_enough abs_list then abs_list else refine ()
+    in
+    refine ()
+
+let refine_many = refine_random
+
 let rec refine_child graph node op children =
   let open State_node0 in
-  let input_nodes = List.to_array children in
-  if Array.is_empty input_nodes then []
+  if List.is_empty children then []
   else
-    let conc_inputs = Array.map input_nodes ~f:cstate
-    and old_inputs = Array.map input_nodes ~f:state in
-    let n = Array.length conc_inputs and k = Array.length conc_inputs.(0) in
+    let conc_inputs = List.map children ~f:cstate
+    and old_inputs = List.map children ~f:state in
 
     (* The old state contains the concrete behavior. *)
     assert (
-      Array.for_alli old_inputs ~f:(fun i old -> contains old conc_inputs.(i))
-    );
+      List.zip_exn old_inputs conc_inputs
+      |> List.for_all ~f:(fun (old, conc) -> contains old conc) );
 
-    let strong_enough () =
-      Abs_state.is_subset_a node.state
-        ~of_:(eval' op @@ List.map children ~f:State_node0.state)
+    let strong_enough args =
+      Abs_state.is_subset_a node.state ~of_:(eval' op args)
     in
 
-    let changed = Array.create n false in
-    let rec loop i j =
-      if i >= n || j >= k then failwith "Could not refine";
-
-      if not (Map.mem input_nodes.(i).state j) then (
-        set_state input_nodes.(i)
-          (Map.add_exn input_nodes.(i).state ~key:j ~data:conc_inputs.(i).(j));
-        changed.(i) <- true );
-
-      if not (strong_enough ()) then
-        if j = k - 1 then loop (i + 1) 0 else loop i (j + 1)
-    in
-    loop 0 0;
-
-    (* The new input states produce an output that refines the abstract output.
-       *)
-    assert (strong_enough ());
+    let new_inputs = refine_many strong_enough old_inputs conc_inputs in
 
     (* The new state refines the old state. *)
     assert (
-      Array.for_alli old_inputs ~f:(fun i old ->
-          let new_ = input_nodes.(i).state in
-          Abs_state.is_subset_a old ~of_:new_) );
+      List.zip_exn old_inputs new_inputs
+      |> List.for_all ~f:(fun (old, new_) ->
+             Abs_state.is_subset_a old ~of_:new_) );
 
     (* The new state contains the concrete behavior. *)
     assert (
-      Array.for_alli conc_inputs ~f:(fun i conc ->
-          let new_ = input_nodes.(i).state in
-          contains new_ conc) );
+      List.zip_exn conc_inputs new_inputs
+      |> List.for_all ~f:(fun (conc, new_) -> contains new_ conc) );
 
     let to_prune =
-      Array.filter_mapi changed ~f:(fun i c ->
-          if c then Some input_nodes.(i) else None)
-      |> Array.to_list
+      List.zip_exn children @@ List.zip_exn old_inputs new_inputs
+      |> List.filter_map ~f:(fun (node, (old, new_)) ->
+             if [%compare.equal: Abs_state.t] old new_ then None
+             else (
+               set_state node new_;
+               Some node ))
     in
     to_prune @ List.concat_map to_prune ~f:(refine_children graph)
 
