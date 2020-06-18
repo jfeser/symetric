@@ -23,18 +23,19 @@ let main ~n ~enable_graph_output ~seed ~max_cost ~k ~print_header ~abstraction
      match refine with
      | "first" -> `First
      | "random" -> `Random
+     | "pareto" -> `Pareto
      | _ -> failwith @@ Fmt.str "unknown refinement strategy: %s" refine);
 
   enable_dump := enable_graph_output;
+  max_size := max_cost;
 
   let state = Random.State.make [| seed |] in
-  let inputs =
-    List.init n ~f:(fun _ -> Array.init k ~f:(fun _ -> Random.State.bool state))
-  in
-  let output = Array.init k ~f:(fun _ -> Random.State.bool state) in
-  List.iteri inputs ~f:(fun i v -> Fmt.epr "Input %d: %a\n" i State.pp v);
-  Fmt.epr "Output: %a\n" State.pp output;
-  let graph, stats = synth ~max_cost ~no_abstraction inputs output in
+  let inputs, output = random_io ~state ~n ~k in
+  List.iteri inputs ~f:(fun i v -> Fmt.epr "Input %d: %a\n" i Conc.pp v);
+  Fmt.epr "Output: %a\n" Conc.pp output;
+
+  let graph, stats = synth ~no_abstraction inputs output in
+
   let check_output =
     if check && not stats.sat then Some (check_search_space inputs graph)
     else None

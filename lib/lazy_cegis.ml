@@ -6,13 +6,15 @@ module Seq = struct
   let of_array a = init (Array.length a) ~f:(fun i -> a.(i))
 end
 
-let enable_dump = ref false
-
-let refine_strategy : [ `First | `Random ] ref = ref `First
-
 let value_exn x = Option.value_exn x
 
-module State = struct
+let enable_dump = ref false
+
+let refine_strategy : [ `First | `Random | `Pareto ] ref = ref `First
+
+let max_size = ref 10
+
+module Conc = struct
   module T = struct
     type t = bool array [@@deriving compare, sexp]
 
@@ -31,7 +33,39 @@ module State = struct
   let pp = Fmt.(array ~sep:(any " ") bool)
 end
 
-module Abs_state = struct
+module Abs : sig
+  type t [@@deriving compare]
+
+  val top : t
+
+  val pp : t Fmt.t
+
+  val graphviz_pp : t Fmt.t
+
+  val meet : t -> t -> t
+
+  val is_subset_a : t -> of_:t -> bool
+
+  val is_superset_c : t -> of_:Conc.t -> bool
+
+  val lift : Conc.t -> t
+
+  val union : t -> t -> t
+
+  val inter : t -> t -> t
+
+  val sub : t -> t -> t
+
+  val mem : t -> int -> bool
+
+  val add_exn : t -> int -> bool -> t
+
+  val contains : t -> Conc.t -> bool
+
+  val width : t -> int
+
+  val of_list_exn : (int * bool) list -> t
+end = struct
   type t = bool Map.M(Int).t [@@deriving compare, hash, sexp]
 
   let top = Map.empty (module Int)
@@ -67,10 +101,41 @@ module Abs_state = struct
     Array.mapi s ~f:(fun i x -> (i, x))
     |> Array.to_list
     |> Map.of_alist_exn (module Int)
+
+  let union =
+    Map.merge ~f:(fun ~key:_ ->
+      function
+      | `Both (x, x') -> Some (x || x')
+      | `Left true | `Right true -> Some true
+      | `Left false | `Right false -> None)
+
+  let inter =
+    Map.merge ~f:(fun ~key:_ ->
+      function
+      | `Both (x, x') -> Some (x && x')
+      | `Left false | `Right false -> Some false
+      | `Left true | `Right true -> None)
+
+  let sub =
+    Map.merge ~f:(fun ~key:_ ->
+      function
+      | `Both (x, x') -> Some (x && not x')
+      | `Left false | `Right true -> Some false
+      | `Left true | `Right false -> None)
+
+  let mem v i = Map.mem v i
+
+  let add_exn m k v = Map.add_exn m ~key:k ~data:v
+
+  let contains a c = Map.for_alli a ~f:(fun ~key:i ~data:v -> Bool.(c.(i) = v))
+
+  let width = Map.length
+
+  let of_list_exn l = Map.of_alist_exn (module Int) l
 end
 
 module Op = struct
-  type t = [ `Input of State.t | `Union | `Inter | `Sub ]
+  type t = [ `Input of Conc.t | `Union | `Inter | `Sub ]
   [@@deriving compare, hash, sexp]
 
   let pp fmt op =
@@ -107,9 +172,9 @@ module State_node0 = struct
 
   type t = {
     id : int;
-    cost : int;
-    cstate : State.t;
-    mutable state : Abs_state.t;
+    cstate : Conc.t;
+    mutable cost : int;
+    mutable state : Abs.t;
     mutable covered : bool;
     mutable last_mod_time : int;
   }
@@ -134,10 +199,10 @@ module State_node0 = struct
       n.covered <- false;
       n.last_mod_time <- !time )
 
-  let pp fmt { state; _ } = Abs_state.pp fmt state
+  let pp fmt { state; _ } = Abs.pp fmt state
 
   let graphviz_pp fmt { state; cost; _ } =
-    Fmt.pf fmt "%a %d" Abs_state.graphviz_pp state cost
+    Fmt.pf fmt "%a %d" Abs.graphviz_pp state cost
 
   let hash n = [%hash: int] n.id
 
@@ -158,27 +223,6 @@ module Node = struct
 
   let to_args = function Args x -> x | _ -> failwith "expected an args node"
 end
-
-let union =
-  Map.merge ~f:(fun ~key:_ ->
-    function
-    | `Both (x, x') -> Some (x || x')
-    | `Left true | `Right true -> Some true
-    | `Left false | `Right false -> None)
-
-let inter =
-  Map.merge ~f:(fun ~key:_ ->
-    function
-    | `Both (x, x') -> Some (x && x')
-    | `Left false | `Right false -> Some false
-    | `Left true | `Right true -> None)
-
-let sub =
-  Map.merge ~f:(fun ~key:_ ->
-    function
-    | `Both (x, x') -> Some (x && not x')
-    | `Left false | `Right true -> Some false
-    | `Left true | `Right false -> None)
 
 let contains a c = Map.for_alli a ~f:(fun ~key:i ~data:v -> Bool.(c.(i) = v))
 
@@ -275,10 +319,10 @@ let ceval' op args =
 
 let eval' op args =
   match (op, args) with
-  | `Input state, _ -> Abs_state.lift state
-  | `Union, [ x; y ] -> union x y
-  | `Inter, [ x; y ] -> inter x y
-  | `Sub, [ x; y ] -> sub x y
+  | `Input state, _ -> Abs.lift state
+  | `Union, [ x; y ] -> Abs.union x y
+  | `Inter, [ x; y ] -> Abs.inter x y
+  | `Sub, [ x; y ] -> Abs.sub x y
   | _ -> failwith "Unexpected args"
 
 let eval g a =
@@ -335,10 +379,10 @@ let prune g (nodes : State_node0.t list) =
                      List.filter_map (G.pred g (Args a)) ~f:(function
                        | State v' ->
                            let old = v'.state in
-                           let new_ = Abs_state.meet old state in
-                           Fmt.epr "%a old:%a new:%a\n" Op.pp a.op Abs_state.pp
-                             old Abs_state.pp state;
-                           if [%compare.equal: Abs_state.t] old new_ then None
+                           let new_ = Abs.meet old state in
+                           Fmt.epr "%a old:%a new:%a\n" Op.pp a.op Abs.pp old
+                             Abs.pp state;
+                           if [%compare.equal: Abs.t] old new_ then None
                            else (
                              set_state v' new_;
                              Some v' )
@@ -357,8 +401,8 @@ let refine_ordered strong_enough abs conc =
   let rec loop i j =
     if i >= n || j >= k then failwith "Could not refine";
 
-    if not (Map.mem abs.(i) j) then
-      abs.(i) <- Map.add_exn abs.(i) ~key:j ~data:conc.(i).(j);
+    if not (Abs.mem abs.(i) j) then
+      abs.(i) <- Abs.add_exn abs.(i) j conc.(i).(j);
 
     if not (strong_enough @@ Array.to_list abs) then
       if j = k - 1 then loop (i + 1) 0 else loop i (j + 1)
@@ -374,7 +418,7 @@ let refine_random ?(state = Random.State.default) strong_enough abs conc =
     let choices =
       List.init n ~f:(fun i ->
           List.init k ~f:(fun j ->
-              if Map.mem abs.(i) j then None else Some (i, j))
+              if Abs.mem abs.(i) j then None else Some (i, j))
           |> List.filter_map ~f:Fun.id)
       |> List.concat
       |> List.permute ~random_state:state
@@ -384,19 +428,48 @@ let refine_random ?(state = Random.State.default) strong_enough abs conc =
       let i, j =
         match Queue.dequeue choices with
         | Some x -> x
-        | None ->
-            failwith Fmt.(str "cannot refine %a" (Dump.array Abs_state.pp) abs)
+        | None -> failwith Fmt.(str "cannot refine %a" (Dump.array Abs.pp) abs)
       in
-      abs.(i) <- Map.add_exn abs.(i) ~key:j ~data:conc.(i).(j);
+      abs.(i) <- Abs.add_exn abs.(i) j conc.(i).(j);
       let abs_list = Array.to_list abs in
       if strong_enough abs_list then abs_list else refine ()
     in
     refine ()
 
+let refine_pareto strong_enough abs conc =
+  if strong_enough abs then abs
+  else
+    let abs_a = Array.of_list abs and conc = Array.of_list conc in
+    let n = Array.length conc and k = Array.length conc.(0) in
+    let choices =
+      List.init n ~f:(fun i ->
+          List.init k ~f:(fun j ->
+              if Abs.mem abs_a.(i) j then None else Some (i, j))
+          |> List.filter_map ~f:Fun.id)
+      |> List.concat
+    in
+    let rec refine n_choices =
+      if n_choices > List.length choices then failwith "cannot refine";
+      match
+        Combinat.Combination.Of_list.(
+          create choices n_choices
+          |> find_map ~f:(fun cs ->
+                 let abs = Array.of_list abs in
+                 List.iter cs ~f:(fun (i, j) ->
+                     abs.(i) <- Abs.add_exn abs.(i) j conc.(i).(j));
+                 let abs = Array.to_list abs in
+                 if strong_enough abs then Some abs else None))
+      with
+      | Some abs -> abs
+      | None -> refine (n_choices + 1)
+    in
+    refine 1
+
 let refine_many () =
   match !refine_strategy with
   | `First -> refine_ordered
   | `Random -> refine_random ~state:(Random.State.make [||])
+  | `Pareto -> refine_pareto
 
 let rec refine_child graph node op children =
   let open State_node0 in
@@ -408,29 +481,26 @@ let rec refine_child graph node op children =
     (* The old state contains the concrete behavior. *)
     assert (
       List.zip_exn old_inputs conc_inputs
-      |> List.for_all ~f:(fun (old, conc) -> contains old conc) );
+      |> List.for_all ~f:(fun (old, conc) -> Abs.contains old conc) );
 
-    let strong_enough args =
-      Abs_state.is_subset_a node.state ~of_:(eval' op args)
-    in
+    let strong_enough args = Abs.is_subset_a node.state ~of_:(eval' op args) in
 
     let new_inputs = refine_many () strong_enough old_inputs conc_inputs in
 
     (* The new state refines the old state. *)
     assert (
       List.zip_exn old_inputs new_inputs
-      |> List.for_all ~f:(fun (old, new_) ->
-             Abs_state.is_subset_a old ~of_:new_) );
+      |> List.for_all ~f:(fun (old, new_) -> Abs.is_subset_a old ~of_:new_) );
 
     (* The new state contains the concrete behavior. *)
     assert (
       List.zip_exn conc_inputs new_inputs
-      |> List.for_all ~f:(fun (conc, new_) -> contains new_ conc) );
+      |> List.for_all ~f:(fun (conc, new_) -> Abs.contains new_ conc) );
 
     let to_prune =
       List.zip_exn children @@ List.zip_exn old_inputs new_inputs
       |> List.filter_map ~f:(fun (node, (old, new_)) ->
-             if [%compare.equal: Abs_state.t] old new_ then None
+             if [%compare.equal: Abs.t] old new_ then None
              else (
                set_state node new_;
                Some node ))
@@ -440,6 +510,20 @@ let rec refine_child graph node op children =
 and refine_children graph node =
   G.children graph node
   |> List.concat_map ~f:(fun (op, args) -> refine_child graph node op args)
+
+let update_covers graph =
+  let uncovered =
+    G.filter_map_vertex graph ~f:(function
+      | State v when not v.covered -> Some v
+      | _ -> None)
+  in
+  List.iter uncovered ~f:(fun v ->
+      if
+        List.exists uncovered ~f:(fun v' ->
+            (not v'.covered) && v'.cost <= v.cost
+            && (not ([%compare.equal: State_node0.t] v v'))
+            && Abs.is_subset_a v'.state ~of_:v.state)
+      then State_node0.cover v)
 
 module Args_node = struct
   include Args_node0
@@ -480,11 +564,13 @@ module State_node = struct
     let state_v, did_add =
       match
         G.find_map_vertex graph ~f:(function
-          | State v when [%compare.equal: State.t] v.cstate cstate -> Some v
+          | State v when [%compare.equal: Conc.t] v.cstate cstate -> Some v
           | _ -> None)
       with
       | Some v ->
+          v.cost <- Int.min v.cost cost;
           refine_child graph v op children |> prune graph;
+          update_covers graph;
           (v, false)
       | None ->
           incr time;
@@ -538,9 +624,9 @@ let rec fill graph cost =
                                       ~f:(fun op ->
                                         let state =
                                           match op with
-                                          | `Union -> union a.state a'.state
-                                          | `Inter -> inter a.state a'.state
-                                          | `Sub -> sub a.state a'.state
+                                          | `Union -> Abs.union a.state a'.state
+                                          | `Inter -> Abs.inter a.state a'.state
+                                          | `Sub -> Abs.sub a.state a'.state
                                         in
                                         let _, did_add =
                                           State_node.create ~state ~cost
@@ -558,14 +644,13 @@ let refine graph (node : State_node.t) bad =
      initial state should abstract the bad behavior and the concrete behavior.
   *)
   assert (
-    (not ([%compare.equal: State.t] bad conc))
-    && contains old bad && contains old conc );
+    (not ([%compare.equal: Conc.t] bad conc))
+    && Abs.contains old bad && Abs.contains old conc );
 
   let len = Array.length conc in
   let rec loop i =
     if i >= len then failwith "Could not refine"
-    else if Bool.(conc.(i) <> bad.(i)) then
-      Map.add_exn node.state ~key:i ~data:conc.(i)
+    else if Bool.(conc.(i) <> bad.(i)) then Abs.add_exn node.state i conc.(i)
     else loop (i + 1)
   in
   let new_ = loop 0 in
@@ -573,29 +658,30 @@ let refine graph (node : State_node.t) bad =
   (* Check that the new state refines the old one, does not contain the bad
      state, and still abstracts the concrete behavior. *)
   assert (
-    Abs_state.is_subset_a old ~of_:new_
-    && (not (contains new_ bad))
-    && contains new_ conc );
+    Abs.(
+      is_subset_a old ~of_:new_
+      && (not (contains new_ bad))
+      && contains new_ conc) );
 
   State_node.set_state node new_;
   [ node ]
 
 let rec strengthen graph (node : State_node.t) bad_out =
-  assert (contains node.state bad_out);
+  assert (Abs.contains node.state bad_out);
   let to_prune = refine graph node bad_out in
   let to_prune' = refine_children graph node in
-  assert (not (contains node.state bad_out));
+  assert (not (Abs.contains node.state bad_out));
   to_prune @ to_prune'
 
 let%expect_test "" =
   let g = G.create () in
   State_node.create
-    ~state:(Map.singleton (module Int) 0 true)
+    ~state:(Abs.of_list_exn [ (0, true) ])
     ~op:(`Input [| true; true |])
     ~cost:1 g []
   |> ignore;
   State_node.create
-    ~state:(Map.singleton (module Int) 1 true)
+    ~state:(Abs.of_list_exn [ (1, true) ])
     ~op:(`Input [| true; false |])
     ~cost:1 g []
   |> ignore;
@@ -662,7 +748,7 @@ end
 
 exception Done of [ `Sat | `Unsat ]
 
-let synth ?(max_cost = 20) ?(no_abstraction = false) inputs output =
+let synth ?(no_abstraction = false) inputs output =
   let graph = G.create () and step = ref 0 in
 
   let module Viz = Graph.Graphviz.Dot (struct
@@ -679,7 +765,7 @@ let synth ?(max_cost = 20) ?(no_abstraction = false) inputs output =
           [ `HtmlLabel (Fmt.str "%a" State_node.graphviz_pp n) ]
           @
           if n.covered then [ `Style `Dotted ]
-          else [] @ if contains n.state output then [ `Style `Bold ] else []
+          else [] @ if Abs.contains n.state output then [ `Style `Bold ] else []
       | Args n ->
           [ `HtmlLabel (Fmt.str "%a" Args_node.graphviz_pp n); `Shape `Box ]
 
@@ -700,31 +786,14 @@ let synth ?(max_cost = 20) ?(no_abstraction = false) inputs output =
 
   let n_refuted = ref 0 in
 
-  let update_covers () =
-    G.filter_map_vertex graph ~f:(function
-      | State v when not v.covered -> Some v
-      | _ -> None)
-    |> List.iter ~f:(fun (v : State_node.t) ->
-           if
-             G.exists_vertex graph ~f:(function
-               | State v' ->
-                   (not v'.covered) && v'.cost <= v.cost
-                   && (not ([%compare.equal: State_node.t] v v'))
-                   && Abs_state.is_subset_a v'.state ~of_:v.state
-               | _ -> false)
-           then (
-             Fmt.epr "Covering: %a\n" State_node.pp v;
-             State_node.cover v ))
-  in
-
   let refute () =
-    let contains_output =
-      G.filter_map_vertex graph ~f:(function
-        | State v when (not v.covered) && contains v.state output -> Some v
+    match
+      G.find_map_vertex graph ~f:(function
+        | State v when (not v.covered) && Abs.contains v.state output -> Some v
         | _ -> None)
-    in
-    List.iter contains_output ~f:(fun (v : State_node.t) ->
-        if [%compare.equal: State.t] v.cstate output then raise (Done `Sat)
+    with
+    | Some v ->
+        if [%compare.equal: Conc.t] v.cstate output then raise (Done `Sat)
         else (
           incr n_refuted;
           (* Fmt.epr "Refuting: %a\n" Sexp.pp_hum
@@ -732,14 +801,15 @@ let synth ?(max_cost = 20) ?(no_abstraction = false) inputs output =
           let to_prune = strengthen graph v output in
           dump ();
           prune graph to_prune;
-          dump () ));
-    not (List.is_empty contains_output)
+          dump () );
+        true
+    | None -> false
   in
 
   let rec loop cost =
-    if cost > max_cost then raise (Done `Unsat);
+    if cost > !max_size then raise (Done `Unsat);
     let rec strengthen_and_cover () =
-      update_covers ();
+      update_covers graph;
       dump ();
       let did_strengthen = refute () in
       if did_strengthen then strengthen_and_cover ()
@@ -755,9 +825,7 @@ let synth ?(max_cost = 20) ?(no_abstraction = false) inputs output =
 
   (* Add inputs to the state space graph. *)
   List.iter inputs ~f:(fun input ->
-      let state =
-        if no_abstraction then Abs_state.lift input else Map.empty (module Int)
-      in
+      let state = if no_abstraction then Abs.lift input else Abs.top in
       State_node.create ~state ~cost:1 ~op:(`Input input) graph [] |> ignore);
   dump ();
 
@@ -765,7 +833,7 @@ let synth ?(max_cost = 20) ?(no_abstraction = false) inputs output =
   with Done status ->
     let widths =
       G.filter_map_vertex graph ~f:(function
-        | State v -> Some (Map.length v.state)
+        | State v -> Some (Abs.width v.state)
         | _ -> None)
       |> List.sort ~compare:[%compare: int]
       |> Array.of_list
@@ -811,7 +879,6 @@ let sample ?(state = Random.State.default) inputs =
           [];
       ]
   in
-  let term = Grammar.sample ~state "p" g in
   let rec to_prog = function
     | App (func, args) ->
         let op =
@@ -831,7 +898,11 @@ let sample ?(state = Random.State.default) inputs =
         `Apply (op, args)
     | _ -> failwith "unexpected term"
   in
-  to_prog (term :> Untyped_term.t)
+  let rec sample_prog () =
+    let p = to_prog (Grammar.sample ~state "p" g :> Untyped_term.t) in
+    if Program.size p > !max_size then sample_prog () else p
+  in
+  sample_prog ()
 
 let check_search_space ?(n = 100_000) inputs graph =
   let rec loop i =
@@ -841,14 +912,32 @@ let check_search_space ?(n = 100_000) inputs graph =
       let cstate = Program.ceval prog in
       match
         G.find_map_vertex graph ~f:(function
-          | State v when contains v.state cstate -> Some v
+          | State v when Abs.contains v.state cstate -> Some v
           | _ -> None)
       with
       | Some v -> loop (i + 1)
       | None ->
           Fmt.epr "Missed program %a with size %d and state %a\n" Sexp.pp
             ([%sexp_of: Program.t] prog)
-            (Program.size prog) State.pp cstate;
+            (Program.size prog) Conc.pp cstate;
           Error cstate
   in
   loop 0
+
+let random_likely_unsat ?(state = Random.State.default) n k =
+  let inputs =
+    List.init n ~f:(fun _ -> Array.init k ~f:(fun _ -> Random.State.bool state))
+  in
+  let output = Array.init k ~f:(fun _ -> Random.State.bool state) in
+  (inputs, output)
+
+let random_sat ?(state = Random.State.default) n k =
+  let inputs =
+    List.init n ~f:(fun _ -> Array.init k ~f:(fun _ -> Random.State.bool state))
+  in
+  let output = sample ~state inputs |> Program.ceval in
+  (inputs, output)
+
+let random_io ?(state = Random.State.default) ~n ~k =
+  if Random.State.bool state then random_sat ~state n k
+  else random_likely_unsat ~state n k
