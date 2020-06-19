@@ -33,7 +33,7 @@ module Conc = struct
   let pp = Fmt.(array ~sep:(any " ") bool)
 end
 
-module Abs : sig
+module type ABS = sig
   type t [@@deriving compare]
 
   val top : t
@@ -45,8 +45,6 @@ module Abs : sig
   val meet : t -> t -> t
 
   val is_subset_a : t -> of_:t -> bool
-
-  val is_superset_c : t -> of_:Conc.t -> bool
 
   val lift : Conc.t -> t
 
@@ -65,7 +63,9 @@ module Abs : sig
   val width : t -> int
 
   val of_list_exn : (int * bool) list -> t
-end = struct
+end
+
+module Map_abs : ABS = struct
   type t = bool Map.M(Int).t [@@deriving compare, hash, sexp]
 
   let top = Map.empty (module Int)
@@ -93,9 +93,6 @@ end = struct
   let is_subset_a s ~of_:s' =
     Map.for_alli s ~f:(fun ~key ~data:x ->
         match Map.find s' key with Some x' -> Bool.(x = x') | None -> false)
-
-  let is_superset_c s ~of_:s' =
-    Map.for_alli s ~f:(fun ~key:i ~data:v -> Bool.(s'.(i) = v))
 
   let lift s =
     Array.mapi s ~f:(fun i x -> (i, x))
@@ -133,6 +130,90 @@ end = struct
 
   let of_list_exn l = Map.of_alist_exn (module Int) l
 end
+
+module Array_abs : ABS = struct
+  type t = int array [@@deriving compare]
+
+  let top = [||]
+
+  let pp =
+    Fmt.using (fun m ->
+        Array.filter_mapi m ~f:(fun i x -> if x >= 0 then Some (x, i) else None))
+    @@ Fmt.array ~sep:(Fmt.any " ")
+    @@ Fmt.pair ~sep:Fmt.nop Fmt.int (Fmt.fmt "_%d")
+
+  let graphviz_pp =
+    Fmt.using (fun m ->
+        Array.filter_mapi m ~f:(fun i x -> if x >= 0 then Some (x, i) else None))
+    @@ Fmt.array ~sep:(Fmt.any " ")
+    @@ Fmt.pair ~sep:Fmt.nop Fmt.int (Fmt.fmt "<sub>%d</sub>")
+
+  let get a i = if i >= Array.length a then -1 else a.(i) [@@inline always]
+
+  let init a i = if i >= Array.length a then -1 else a.(i)
+
+  let map2 a a' ~f =
+    Array.init
+      (Int.max (Array.length a) (Array.length a'))
+      ~f:(fun i -> f (get a i) (get a' i))
+
+  let for_all2 a a' ~f =
+    let rec for_all i =
+      if i >= Array.length a || i >= Array.length a' then true
+      else if f (get a i) (get a' i) then for_all (i + 1)
+      else false
+    in
+    for_all 0
+
+  let meet v v' =
+    map2 v v' ~f:(fun x x' ->
+        if x < 0 then x'
+        else if x' < 0 then x
+        else (
+          assert (x = x');
+          x ))
+
+  let is_subset_a s ~of_:s' =
+    for_all2 s s' ~f:(fun x x' -> if x' >= 0 then x = x' else false)
+
+  let lift s = Array.mapi s ~f:(fun i x -> if x then 1 else 0)
+
+  let union v v' =
+    map2 v v' ~f:(fun x x' ->
+        if x >= 0 && x' >= 0 then Int.min 1 (x + x')
+        else if x = 1 || x' = 1 then 1
+        else -1)
+
+  let inter v v' =
+    map2 v v' ~f:(fun x x' ->
+        if x >= 0 && x' >= 0 then Int.max 0 (x + x' - 1)
+        else if x = 0 || x' = 0 then 0
+        else -1)
+
+  let sub v v' =
+    map2 v v' ~f:(fun x x' ->
+        if x >= 0 && x' >= 0 then Int.max 0 (x - x')
+        else if x = 0 || x' = 1 then 0
+        else -1)
+
+  let mem v i = get v i >= 0
+
+  let add_exn m k v =
+    let m' = Array.create ~len:(Int.max (Array.length m) (k + 1)) (-1) in
+    Array.blit ~src:m ~src_pos:0 ~dst:m' ~dst_pos:0 ~len:(Array.length m);
+    m'.(k) <- (if v then 1 else 0);
+    m'
+
+  let contains a c =
+    Array.for_alli c ~f:(fun i x -> get a i < 0 || Bool.to_int x = get a i)
+
+  let width = Array.length
+
+  let of_list_exn l =
+    List.fold_left l ~init:top ~f:(fun acc (i, x) -> add_exn acc i x)
+end
+
+module Abs = Map_abs
 
 module Op = struct
   type t = [ `Input of Conc.t | `Union | `Inter | `Sub ]
@@ -657,11 +738,9 @@ let refine graph (node : State_node.t) bad =
 
   (* Check that the new state refines the old one, does not contain the bad
      state, and still abstracts the concrete behavior. *)
-  assert (
-    Abs.(
-      is_subset_a old ~of_:new_
-      && (not (contains new_ bad))
-      && contains new_ conc) );
+  assert (Abs.is_subset_a old ~of_:new_);
+  assert (Abs.(not (contains new_ bad)));
+  assert (Abs.contains new_ conc);
 
   State_node.set_state node new_;
   [ node ]
@@ -817,7 +896,7 @@ let synth ?(no_abstraction = false) inputs output =
     strengthen_and_cover ();
 
     let changed = fill graph cost in
-    Fmt.epr "Changed: %b Cost: %d\n" changed cost;
+    Fmt.epr "Changed: %b Cost: %d\n%!" changed cost;
     if changed then dump ();
     let cost = if changed then cost else cost + 1 in
     loop cost
