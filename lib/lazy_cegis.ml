@@ -278,13 +278,13 @@ module State_node0 = struct
 
   type t = {
     id : int;
-    cstate : Conc.t; [@compare.ignore]
-    mutable cost : int; [@compare.ignore]
-    mutable state : Abs.t; [@compare.ignore]
-    mutable covered : bool; [@compare.ignore]
-    mutable last_mod_time : int; [@compare.ignore]
+    cstate : Conc.t;
+    mutable cost : int;
+    mutable state : Abs.t;
+    mutable covered : bool;
+    mutable last_mod_time : int;
   }
-  [@@deriving compare, hash, sexp]
+  [@@deriving sexp]
 
   let id { id; _ } = id
 
@@ -462,43 +462,6 @@ module Program = struct
   include Comparator.Make (T)
 end
 
-let prune g (nodes : State_node0.t list) =
-  let open State_node0 in
-  if not (List.is_empty nodes) then (
-    let min_mod_time =
-      Option.value_exn
-        ( List.map nodes ~f:(fun n -> n.last_mod_time)
-        |> List.min_elt ~compare:[%compare: int] )
-    in
-    G.iter_state_vertex
-      ~f:(fun v -> if v.last_mod_time > min_mod_time then uncover v)
-      g;
-    Fmt.epr "Prune: min mod time %d.\n" min_mod_time;
-
-    let rec process = function
-      | v :: vs ->
-          let work =
-            (* Select the arg nodes that depend on this state. *)
-            G.pred g (Node.State v)
-            |> List.concat_map ~f:(function
-                 | Node.Args a ->
-                     let state = eval g a in
-                     List.filter_map (G.pred g (Args a)) ~f:(function
-                       | State v' ->
-                           let old = v'.state in
-                           let new_ = Abs.meet old state in
-                           if [%compare.equal: Abs.t] old new_ then None
-                           else (
-                             set_state v' new_;
-                             Some v' )
-                       | Args _ -> failwith "expected a state node")
-                 | State _ -> failwith "expected an args node")
-          in
-          process (work @ vs)
-      | [] -> ()
-    in
-    process nodes )
-
 let refine_ordered strong_enough abs conc =
   let open State_node0 in
   let abs = Array.of_list abs and conc = Array.of_list conc in
@@ -646,6 +609,45 @@ and refine_children graph node =
   G.children graph node
   |> List.concat_map ~f:(fun (op, args) -> refine_child graph node op args)
 
+let prune g (nodes : State_node0.t list) =
+  let open State_node0 in
+  if not (List.is_empty nodes) then (
+    let min_mod_time =
+      Option.value_exn
+        ( List.map nodes ~f:(fun n -> n.last_mod_time)
+        |> List.min_elt ~compare:[%compare: int] )
+    in
+    G.iter_state_vertex
+      ~f:(fun v -> if v.last_mod_time > min_mod_time then uncover v)
+      g;
+    Fmt.epr "Prune: min mod time %d.\n" min_mod_time;
+
+    let rec process = function
+      | v :: vs ->
+          let work =
+            (* Select the arg nodes that depend on this state. *)
+            G.pred g (Node.State v)
+            |> List.concat_map ~f:(function
+                 | Node.Args a ->
+                     let state = eval g a in
+
+                     (* Push the state update forward through the args nodes. *)
+                     List.concat_map (G.pred g (Args a)) ~f:(function
+                       | State v' ->
+                           let old = v'.state in
+                           let new_ = Abs.meet old state in
+                           if [%compare.equal: Abs.t] old new_ then []
+                           else (
+                             set_state v' new_;
+                             v' :: refine_children g v' )
+                       | Args _ -> failwith "expected a state node")
+                 | State _ -> failwith "expected an args node")
+          in
+          process (work @ vs)
+      | [] -> ()
+    in
+    process nodes )
+
 let update_covers graph =
   let uncovered =
     G.filter_map_vertex graph ~f:(function
@@ -681,7 +683,7 @@ module Args_node = struct
         let args_v = Node.Args { op; id = mk_id () } in
         List.iteri args ~f:(fun i v ->
             G.ensure_edge_e graph (args_v, i, Node.State v));
-        Hashtbl.add_exn args_tbl (op, args) args_v;
+        Hashtbl.set args_tbl (op, args) args_v;
         Some args_v
 
   (* match
@@ -711,37 +713,34 @@ module State_node = struct
     | _ -> failwith "expected arguments"
 
   let create ?(covered = false) ~state ~cost ~op graph children =
-    let cstate = ceval' op children in
-
-    let mk_args state op children =
-      let args = Args_node.create ~op graph children in
-      G.ensure_edge_e graph (state, -1, args)
-    in
-
-    let state_v, did_add =
-      match Hashtbl.find state_tbl cstate with
-      | Some v ->
-          v.cost <- Int.min v.cost cost;
-          refine_child graph v op children |> prune graph;
-          update_covers graph;
-          (v, false)
-      | None ->
-          incr time;
-          let v =
-            {
-              id = mk_id ();
-              cost;
-              state;
-              cstate;
-              covered;
-              last_mod_time = !time;
-            }
-          in
-          Hashtbl.add_exn state_tbl cstate v;
-          (v, true)
-    in
-    mk_args (Node.State state_v) op children;
-    (state, did_add)
+    match Args_node.create ~op graph children with
+    | Some args_v ->
+        let cstate = ceval' op children in
+        let state_v, did_add =
+          match Hashtbl.find state_tbl cstate with
+          | Some v ->
+              v.cost <- Int.min v.cost cost;
+              refine_child graph v op children |> prune graph;
+              update_covers graph;
+              (v, true)
+          | None ->
+              incr time;
+              let v =
+                {
+                  id = mk_id ();
+                  cost;
+                  state;
+                  cstate;
+                  covered;
+                  last_mod_time = !time;
+                }
+              in
+              Hashtbl.add_exn state_tbl cstate v;
+              (v, true)
+        in
+        G.ensure_edge_e graph (Node.State state_v, -1, args_v);
+        did_add
+    | None -> false
 end
 
 let rec fill graph cost =
