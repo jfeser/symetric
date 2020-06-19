@@ -34,7 +34,7 @@ module Conc = struct
 end
 
 module type ABS = sig
-  type t [@@deriving compare]
+  type t [@@deriving compare, sexp]
 
   val top : t
 
@@ -91,8 +91,18 @@ module Map_abs : ABS = struct
           Some x)
 
   let is_subset_a s ~of_:s' =
-    Map.for_alli s ~f:(fun ~key ~data:x ->
-        match Map.find s' key with Some x' -> Bool.(x = x') | None -> false)
+    if Map.length s > Map.length s' then false
+    else
+      Map.fold2 s s' ~init:true ~f:(fun ~key ~data acc ->
+          acc
+          &&
+          match data with
+          | `Left _ -> false
+          | `Right _ -> true
+          | `Both (x, x') -> Bool.(x = x'))
+
+  (* Map.for_alli s ~f:(fun ~key ~data:x ->
+   *     match Map.find s' key with Some x' -> Bool.(x = x') | None -> false) *)
 
   let lift s =
     Array.mapi s ~f:(fun i x -> (i, x))
@@ -132,7 +142,7 @@ module Map_abs : ABS = struct
 end
 
 module Array_abs : ABS = struct
-  type t = int array [@@deriving compare]
+  type t = int array [@@deriving compare, sexp]
 
   let top = [||]
 
@@ -253,12 +263,13 @@ module State_node0 = struct
 
   type t = {
     id : int;
-    cstate : Conc.t;
-    mutable cost : int;
-    mutable state : Abs.t;
-    mutable covered : bool;
-    mutable last_mod_time : int;
+    cstate : Conc.t; [@compare.ignore]
+    mutable cost : int; [@compare.ignore]
+    mutable state : Abs.t; [@compare.ignore]
+    mutable covered : bool; [@compare.ignore]
+    mutable last_mod_time : int; [@compare.ignore]
   }
+  [@@deriving compare, hash, sexp]
 
   let id { id; _ } = id
 
@@ -461,8 +472,6 @@ let prune g (nodes : State_node0.t list) =
                        | State v' ->
                            let old = v'.state in
                            let new_ = Abs.meet old state in
-                           Fmt.epr "%a old:%a new:%a\n" Op.pp a.op Abs.pp old
-                             Abs.pp state;
                            if [%compare.equal: Abs.t] old new_ then None
                            else (
                              set_state v' new_;
@@ -609,25 +618,47 @@ let update_covers graph =
 module Args_node = struct
   include Args_node0
 
+  module Key = struct
+    module T = struct
+      type t = Op.t * State_node0.t list [@@deriving compare, hash, sexp]
+    end
+
+    include T
+    include Comparator.Make (T)
+  end
+
+  let args_tbl = Hashtbl.create (module Key)
+
   let create ~op graph args =
-    match
-      G.find_vertex graph ~f:(function
-        | Args v ->
-            [%compare.equal: Op.t] v.op op
-            && List.for_alli args ~f:(fun i state ->
-                   G.mem_edge_e graph (Node.Args v, i, Node.State state))
-        | _ -> false)
-    with
+    match Hashtbl.find args_tbl (op, args) with
     | Some v -> v
     | None ->
         let args_v = Node.Args { op; id = mk_id () } in
         List.iteri args ~f:(fun i v ->
             G.ensure_edge_e graph (args_v, i, Node.State v));
+        Hashtbl.add_exn args_tbl (op, args) args_v;
         args_v
+
+  (* match
+   *   G.find_vertex graph ~f:(function
+   *     | Args v ->
+   *         [%compare.equal: Op.t] v.op op
+   *         && List.for_alli args ~f:(fun i state ->
+   *                G.mem_edge_e graph (Node.Args v, i, Node.State state))
+   *     | _ -> false)
+   * with
+   * | Some v -> v
+   * | None ->
+   *     let args_v = Node.Args { op; id = mk_id () } in
+   *     List.iteri args ~f:(fun i v ->
+   *         G.ensure_edge_e graph (args_v, i, Node.State v));
+   *     args_v *)
 end
 
 module State_node = struct
   include State_node0
+
+  let state_tbl = Hashtbl.create (module Conc)
 
   let rec choose_program graph node =
     match G.children graph node with
@@ -643,11 +674,7 @@ module State_node = struct
     in
 
     let state_v, did_add =
-      match
-        G.find_map_vertex graph ~f:(function
-          | State v when [%compare.equal: Conc.t] v.cstate cstate -> Some v
-          | _ -> None)
-      with
+      match Hashtbl.find state_tbl cstate with
       | Some v ->
           v.cost <- Int.min v.cost cost;
           refine_child graph v op children |> prune graph;
@@ -665,6 +692,7 @@ module State_node = struct
               last_mod_time = !time;
             }
           in
+          Hashtbl.add_exn state_tbl cstate v;
           (v, true)
     in
     mk_args (Node.State state_v) op children;
