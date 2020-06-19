@@ -66,7 +66,12 @@ module type ABS = sig
 end
 
 module Map_abs : ABS = struct
-  type t = bool Map.M(Int).t [@@deriving compare, hash, sexp]
+  module T = struct
+    type t = bool Map.M(Int).t [@@deriving compare, hash, sexp]
+  end
+
+  include T
+  include Comparator.Make (T)
 
   let top = Map.empty (module Int)
 
@@ -101,8 +106,18 @@ module Map_abs : ABS = struct
           | `Right _ -> true
           | `Both (x, x') -> Bool.(x = x'))
 
-  (* Map.for_alli s ~f:(fun ~key ~data:x ->
-   *     match Map.find s' key with Some x' -> Bool.(x = x') | None -> false) *)
+  (* let is_subset_a =
+   *   let hashable =
+   *     let module V = struct
+   *       type nonrec t = t * t [@@deriving compare, hash, sexp]
+   *     end in
+   *     Base.Hashable.of_key (module V)
+   *   in
+   *   let func = Memo.general ~hashable (fun (s, s') -> is_subset_a s ~of_:s') in
+   *   fun s ~of_:s' -> func (s, s')
+   * 
+   * (\* Map.for_alli s ~f:(fun ~key ~data:x ->
+   *  *     match Map.find s' key with Some x' -> Bool.(x = x') | None -> false) *\) *)
 
   let lift s =
     Array.mapi s ~f:(fun i x -> (i, x))
@@ -555,11 +570,41 @@ let refine_pareto strong_enough abs conc =
     in
     refine 1
 
+let refine_hybrid strong_enough abs conc =
+  if strong_enough abs then abs
+  else
+    let abs_a = Array.of_list abs and conc_a = Array.of_list conc in
+    let n = Array.length conc_a and k = Array.length conc_a.(0) in
+    let choices =
+      List.init n ~f:(fun i ->
+          List.init k ~f:(fun j ->
+              if Abs.mem abs_a.(i) j then None else Some (i, j))
+          |> List.filter_map ~f:Fun.id)
+      |> List.concat
+    in
+    let rec refine n_choices =
+      if n_choices > 4 then refine_ordered strong_enough abs conc
+      else
+        match
+          Combinat.Combination.Of_list.(
+            create choices n_choices
+            |> find_map ~f:(fun cs ->
+                   let abs = Array.of_list abs in
+                   List.iter cs ~f:(fun (i, j) ->
+                       abs.(i) <- Abs.add_exn abs.(i) j conc_a.(i).(j));
+                   let abs = Array.to_list abs in
+                   if strong_enough abs then Some abs else None))
+        with
+        | Some abs -> abs
+        | None -> refine (n_choices + 1)
+    in
+    refine 1
+
 let refine_many () =
   match !refine_strategy with
   | `First -> refine_ordered
   | `Random -> refine_random ~state:(Random.State.make [||])
-  | `Pareto -> refine_pareto
+  | `Pareto -> refine_hybrid
 
 let rec refine_child graph node op children =
   let open State_node0 in
@@ -631,13 +676,13 @@ module Args_node = struct
 
   let create ~op graph args =
     match Hashtbl.find args_tbl (op, args) with
-    | Some v -> v
+    | Some v -> None
     | None ->
         let args_v = Node.Args { op; id = mk_id () } in
         List.iteri args ~f:(fun i v ->
             G.ensure_edge_e graph (args_v, i, Node.State v));
         Hashtbl.add_exn args_tbl (op, args) args_v;
-        args_v
+        Some args_v
 
   (* match
    *   G.find_vertex graph ~f:(function
@@ -737,7 +782,7 @@ let rec fill graph cost =
                                           | `Inter -> Abs.inter a.state a'.state
                                           | `Sub -> Abs.sub a.state a'.state
                                         in
-                                        let _, did_add =
+                                        let did_add =
                                           State_node.create ~state ~cost
                                             ~op:(op :> Op.t)
                                             graph [ a; a' ]
@@ -1046,5 +1091,6 @@ let random_sat ?(state = Random.State.default) n k =
   (inputs, output)
 
 let random_io ?(state = Random.State.default) ~n ~k =
-  if Random.State.bool state then random_sat ~state n k
-  else random_likely_unsat ~state n k
+  (* if Random.State.bool state then random_sat ~state n k
+   * else *)
+  random_likely_unsat ~state n k
