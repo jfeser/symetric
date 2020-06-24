@@ -641,7 +641,7 @@ struct
         |> S.sseq;
       ]
 
-  let enumerate max_cost =
+  let enumerate ?(k = fun () -> S.unit) max_cost =
     let g = search_graph max_cost in
 
     (* Generate a graph that only contains the state nodes. *)
@@ -651,10 +651,12 @@ struct
     cache.bind @@ fun () ->
     bind_io @@ fun () ->
     (* Fold over the state nodes, generating code to fill them. *)
-    G.Topo.fold
-      (fun v code ->
-        let state = V.to_state v in
-        code @ [ fill_state g state ])
-      lhs_g []
-    |> sseq
+    seq
+      ( G.Topo.fold
+          (fun v code ->
+            let state = V.to_state v in
+            code @ [ fill_state g state ])
+          lhs_g []
+      |> sseq )
+      (k ())
 end

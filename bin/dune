@@ -34,3 +34,9 @@
  (libraries core staged_synth)
  (preprocess (pps ppx_compare ppx_hash ppx_sexp_conv ppx_let)))
 
+(executable
+ (name mk_simple_cad_bench)
+ (modules mk_simple_cad_bench)
+ (libraries core staged_synth)
+ (modes (byte exe))
+ (preprocess (pps ppx_let)))
