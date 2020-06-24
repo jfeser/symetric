@@ -177,7 +177,7 @@ struct
     in
     let background =
       List.mapi Sketch.background ~f:(fun idx sym ->
-          ( sym,
+          let value =
             Nonlocal_let.let_ S.let_global @@ fun () ->
             S.let_
               (S.Sexp.List.get (io.value ()) (S.Int.int idx) |> S.Sexp.to_list)
@@ -185,7 +185,9 @@ struct
             S.let_ (S.Sexp.List.length value_sexps) @@ fun len ->
             S.Array.init len (fun vidx ->
                 S.Sexp.List.get value_sexps vidx
-                |> L.Value.of_sexp sym |> L.Value.code_of) ))
+                |> L.Value.of_sexp sym |> L.Value.code_of)
+          in
+          (sym, value))
     in
     let output =
       Nonlocal_let.let_ S.let_global @@ fun () ->
@@ -204,9 +206,11 @@ struct
       bind_all (List.map ~f:(fun (_, v) -> v) background)
     and iter_inputs sym f =
       List.filter_map background ~f:(fun (sym', inputs) ->
-          if String.(sym = sym') then Some (inputs.value ()) else None)
-      |> List.map ~f:(fun inputs ->
-             S.Array.iter inputs ~f:(fun input -> f @@ L.Value.of_code input))
+          if String.(sym = sym') then
+            Option.return
+            @@ S.Array.iter (inputs.value ()) ~f:(fun input ->
+                   f @@ L.Value.of_code input)
+          else None)
       |> S.sseq
     and output () = L.Value.of_code @@ output.value () in
     (bind, iter_inputs, output)
@@ -650,13 +654,15 @@ struct
     let open S in
     cache.bind @@ fun () ->
     bind_io @@ fun () ->
-    (* Fold over the state nodes, generating code to fill them. *)
-    seq
-      ( G.Topo.fold
+    S.sseq
+      [
+        (* Fold over the state nodes, generating code to fill them. *)
+        G.Topo.fold
           (fun v code ->
             let state = V.to_state v in
             code @ [ fill_state g state ])
           lhs_g []
-      |> sseq )
-      (k ())
+        |> sseq;
+        k ();
+      ]
 end

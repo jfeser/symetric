@@ -8,6 +8,7 @@
  (name mk_cad_bench)
  (modules mk_cad_bench)
  (libraries core staged_synth)
+ (modes (byte exe))
  (preprocess (pps ppx_let)))
 
 (executable
