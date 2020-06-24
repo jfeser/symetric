@@ -12,7 +12,7 @@ let _inputs, _output =
   (inputs, output)
 
 let main ~n ~enable_graph_output ~seed ~max_cost ~k ~print_header ~abstraction
-    ~check ~refine () =
+    ~check ~refine ~file () =
   if print_header then (
     Fmt.pr
       "k,n,seed,max_cost,abstraction,n_state_nodes,n_arg_nodes,n_covered,n_refuted,min_width,max_width,median_width,check,sat,refine\n";
@@ -30,9 +30,17 @@ let main ~n ~enable_graph_output ~seed ~max_cost ~k ~print_header ~abstraction
   max_size := max_cost;
 
   let state = Random.State.make [| seed |] in
-  let inputs, output = random_io ~state ~n ~k in
-  List.iteri inputs ~f:(fun i v -> Fmt.epr "Input %d: %a\n" i Conc.pp v);
-  Fmt.epr "Output: %a\n" Conc.pp output;
+  let inputs, output =
+    match file with
+    | Some f -> (
+        let examples =
+          Sexp.load_sexps f
+          |> List.map ~f:[%of_sexp: int array]
+          |> List.map ~f:(Array.map ~f:(fun x -> x > 0))
+        in
+        match examples with o :: is -> (is, o) | [] -> failwith "no examples" )
+    | None -> random_io ~state ~n ~k
+  in
 
   let graph, stats = synth ~no_abstraction inputs output in
 
@@ -79,8 +87,8 @@ let () =
         flag "refine"
           (optional_with_default "first" string)
           ~doc:" refinement strategy"
-      in
+      and file = flag "file" (optional string) ~doc:" input benchmark" in
 
       main ~n ~enable_graph_output ~seed ~max_cost ~k ~print_header ~abstraction
-        ~check ~refine]
+        ~check ~refine ~file]
   |> Command.run
