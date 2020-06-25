@@ -648,6 +648,18 @@ let prune g (nodes : State_node0.t list) =
     in
     process nodes )
 
+(* module Cover_table = struct
+ *   module Key = struct
+ *     include Int
+ * 
+ *     let create pos value = if value then pos else -pos
+ *   end
+ * 
+ *   type t = State_node0.t list Hashtbl.M(Key).t
+ * 
+ *   let 
+ * end *)
+
 let update_covers graph =
   let uncovered =
     G.filter_map_vertex graph ~f:(function

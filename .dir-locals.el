@@ -1,11 +1,5 @@
 ((tuareg-mode
-  . ((ocp-indent-path
-      . "/home/feser/ocaml-workspace/staged-synth/_opam/bin/ocp-indent")
-
-     (ocamlformat-command
-      . "/home/feser/ocaml-workspace/staged-synth/_opam/bin/ocamlformat")
-
-     (eval
+  . ((eval
       . (lsp-register-client
          (make-lsp-client
           :new-connection

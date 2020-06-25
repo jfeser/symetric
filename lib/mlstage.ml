@@ -8,22 +8,23 @@ module Code = struct
       | Unit
       | Int of int
       | Bool of bool
-      | Array of value array
-      | Tuple of (value * value)
-      | Tuple_3 of (value * value * value)
-      | Set of value Set.Poly.t ref
-      | Func of ((value -> value)[@compare.ignore])
+      | Array of t array
+      | Tuple of (t * t)
+      | Tuple_3 of (t * t * t)
+      | Set of t Set.Poly.t ref
+      | Func of ((t -> t)[@compare.ignore])
       | Sexp of Sexp.t
       | String of string
       | Float of float
-      | Tuple_4 of (value * value * value * value)
+      | Tuple_4 of (t * t * t * t)
+
+    and t = { value : value; annot : Univ_map.t [@compare.ignore] }
     [@@deriving compare, sexp_of]
   end
 
   open Value
 
-  type _ t = { annot : Univ_map.t; value : value Lazy.t [@sexp.ignore] }
-  [@@deriving sexp_of]
+  type _ t = Value.t Lazy.t [@@deriving sexp_of]
 
   type _ ctype = unit [@@deriving compare, sexp]
 
@@ -35,7 +36,9 @@ module Code = struct
 
   let let_locus f = f ()
 
-  let to_value x = Lazy.force x.value
+  let to_value x = (Lazy.force x).value
+
+  let to_value' x = Lazy.force x
 
   let to_int x = match to_value x with Int x -> x | _ -> assert false
 
@@ -53,7 +56,7 @@ module Code = struct
 
   let to_set x = match to_value x with Set x -> x | _ -> assert false
 
-  let to_code x = { value = lazy x; annot = Univ_map.empty }
+  let to_code value = lazy value
 
   let to_string x = to_value x |> [%sexp_of: Value.value] |> Sexp.to_string_hum
 
@@ -67,9 +70,11 @@ module Code = struct
 
   let cast x = (x : 'a t :> 'b t)
 
-  let unit = to_code Unit
+  let wrap thunk = lazy { value = thunk (); annot = Univ_map.empty }
 
-  let wrap thunk = { value = Lazy.from_fun thunk; annot = Univ_map.empty }
+  let wrap' = Lazy.from_fun
+
+  let unit = wrap @@ fun () -> Unit
 
   module Sexp = struct
     let type_ = ()
@@ -105,7 +110,7 @@ module Code = struct
 
     let type_ = int_t
 
-    let int x = to_code (Int x)
+    let int x = wrap @@ fun () -> Int x
 
     let ( ~- ) x = wrap @@ fun () -> Int (-to_int x)
 
@@ -207,13 +212,13 @@ module Code = struct
         Bool ([%compare.equal: Value.value] (to_value x) (to_value y))
     end
 
-    let const _ a = wrap @@ fun () -> Array (Array.map a ~f:to_value)
+    let const _ a = wrap @@ fun () -> Array (Array.map a ~f:to_value')
 
-    let get a i = wrap @@ fun () -> (to_array a).(to_int i)
+    let get a i = wrap' @@ fun () -> (to_array a).(to_int i)
 
     let set a i x =
       wrap @@ fun () ->
-      (to_array a).(to_int i) <- to_value x;
+      (to_array a).(to_int i) <- to_value' x;
       Unit
 
     let length a = wrap @@ fun () -> Int (to_array a |> Array.length)
@@ -235,24 +240,24 @@ module Code = struct
 
     let init i f =
       wrap @@ fun () ->
-      Array (Array.init (to_int i) ~f:(fun i -> f Int.(int i) |> to_value))
+      Array (Array.init (to_int i) ~f:(fun i -> f Int.(int i) |> to_value'))
 
     let map a ~f =
       wrap @@ fun () ->
-      Array (Array.map (to_array a) ~f:(fun x -> f @@ to_code x |> to_value))
+      Array (Array.map (to_array a) ~f:(fun x -> f @@ to_code x |> to_value'))
 
     let map2 a a' ~f =
       wrap @@ fun () ->
       Array
         (Array.map2_exn (to_array a) (to_array a') ~f:(fun x x' ->
-             f (to_code x) (to_code x') |> to_value))
+             f (to_code x) (to_code x') |> to_value'))
 
     let of_sexp x elem_of_sexp =
       wrap @@ fun () ->
       match to_sexp x with
       | List ls ->
           Array
-            ( List.map ls ~f:(fun s -> elem_of_sexp @@ Sexp.sexp s |> to_value)
+            ( List.map ls ~f:(fun s -> elem_of_sexp @@ Sexp.sexp s |> to_value')
             |> Array.of_list )
       | _ -> failwith "Expected a list."
 
@@ -275,7 +280,7 @@ module Code = struct
     let add s x =
       wrap @@ fun () ->
       let s = to_set s in
-      s := Set.add !s (to_value x);
+      s := Set.add !s (to_value' x);
       Unit
 
     let iter s f =
@@ -292,7 +297,7 @@ module Code = struct
       match to_sexp x with
       | List ls ->
           Set
-            ( List.map ls ~f:(fun s -> elem_of_sexp @@ Sexp.sexp s |> to_value)
+            ( List.map ls ~f:(fun s -> elem_of_sexp @@ Sexp.sexp s |> to_value')
             |> Set.Poly.of_list |> ref )
       | _ -> failwith "Expected a list."
 
@@ -309,15 +314,15 @@ module Code = struct
 
     let to_tuple x = match to_value x with Tuple x -> x | _ -> assert false
 
-    let create x y = wrap @@ fun () -> Tuple (to_value x, to_value y)
+    let create x y = wrap @@ fun () -> Tuple (to_value' x, to_value' y)
 
     let fst x =
-      wrap @@ fun () ->
+      wrap' @@ fun () ->
       let x, _ = to_tuple x in
       x
 
     let snd x =
-      wrap @@ fun () ->
+      wrap' @@ fun () ->
       let _, x = to_tuple x in
       x
 
@@ -326,8 +331,8 @@ module Code = struct
       match to_sexp x with
       | List [ t1; t2 ] ->
           Tuple
-            ( t1_of_sexp @@ Sexp.sexp t1 |> to_value,
-              t2_of_sexp @@ Sexp.sexp t2 |> to_value )
+            ( t1_of_sexp @@ Sexp.sexp t1 |> to_value',
+              t2_of_sexp @@ Sexp.sexp t2 |> to_value' )
       | _ -> failwith "Expected a list."
 
     let sexp_of x sexp_of_t1 sexp_of_t2 =
@@ -349,20 +354,20 @@ module Code = struct
     let to_tuple x = match to_value x with Tuple_3 x -> x | _ -> assert false
 
     let create x y z =
-      wrap @@ fun () -> Tuple_3 (to_value x, to_value y, to_value z)
+      wrap @@ fun () -> Tuple_3 (to_value' x, to_value' y, to_value' z)
 
     let fst x =
-      wrap @@ fun () ->
+      wrap' @@ fun () ->
       let x, _, _ = to_tuple x in
       x
 
     let snd x =
-      wrap @@ fun () ->
+      wrap' @@ fun () ->
       let _, x, _ = to_tuple x in
       x
 
     let thd x =
-      wrap @@ fun () ->
+      wrap' @@ fun () ->
       let _, _, x = to_tuple x in
       x
 
@@ -375,9 +380,9 @@ module Code = struct
       match to_sexp x with
       | List [ t1; t2; t3 ] ->
           Tuple_3
-            ( t1_of_sexp @@ Sexp.sexp t1 |> to_value,
-              t2_of_sexp @@ Sexp.sexp t2 |> to_value,
-              t3_of_sexp @@ Sexp.sexp t3 |> to_value )
+            ( t1_of_sexp @@ Sexp.sexp t1 |> to_value',
+              t2_of_sexp @@ Sexp.sexp t2 |> to_value',
+              t3_of_sexp @@ Sexp.sexp t3 |> to_value' )
       | _ -> failwith "Expected a list."
 
     let sexp_of x sexp_of_t1 sexp_of_t2 sexp_of_t3 =
@@ -400,25 +405,26 @@ module Code = struct
     let to_tuple x = match to_value x with Tuple_4 x -> x | _ -> assert false
 
     let create x y z a =
-      wrap @@ fun () -> Tuple_4 (to_value x, to_value y, to_value z, to_value a)
+      wrap @@ fun () ->
+      Tuple_4 (to_value' x, to_value' y, to_value' z, to_value' a)
 
     let fst x =
-      wrap @@ fun () ->
+      wrap' @@ fun () ->
       let x, _, _, _ = to_tuple x in
       x
 
     let snd x =
-      wrap @@ fun () ->
+      wrap' @@ fun () ->
       let _, x, _, _ = to_tuple x in
       x
 
     let thd x =
-      wrap @@ fun () ->
+      wrap' @@ fun () ->
       let _, _, x, _ = to_tuple x in
       x
 
     let fth x =
-      wrap @@ fun () ->
+      wrap' @@ fun () ->
       let _, _, _, x = to_tuple x in
       x
 
@@ -431,10 +437,10 @@ module Code = struct
       match to_sexp x with
       | List [ t1; t2; t3; t4 ] ->
           Tuple_4
-            ( t1_of_sexp @@ Sexp.sexp t1 |> to_value,
-              t2_of_sexp @@ Sexp.sexp t2 |> to_value,
-              t3_of_sexp @@ Sexp.sexp t3 |> to_value,
-              t4_of_sexp @@ Sexp.sexp t4 |> to_value )
+            ( t1_of_sexp @@ Sexp.sexp t1 |> to_value',
+              t2_of_sexp @@ Sexp.sexp t2 |> to_value',
+              t3_of_sexp @@ Sexp.sexp t3 |> to_value',
+              t4_of_sexp @@ Sexp.sexp t4 |> to_value' )
       | _ -> failwith "Expected a list."
 
     let sexp_of x sexp_of_t1 sexp_of_t2 sexp_of_t3 sexp_of_t4 =
@@ -516,10 +522,14 @@ module Code = struct
 
   let ite c t e = if to_bool c then t () else e ()
 
+  let force = function
+    | (lazy { value = Unit; _ }) -> ()
+    | _ -> failwith "Expected unit"
+
   let seq x y =
-    wrap @@ fun () ->
-    to_unit x;
-    to_value y
+    wrap' @@ fun () ->
+    force x;
+    to_value' y
 
   let sseq = List.fold_left ~init:unit ~f:seq
 
@@ -539,12 +549,16 @@ module Code = struct
   module Func = struct
     let mk_type _ _ = ()
 
-    let func _ _ f = wrap @@ fun () -> Func (fun x -> f (to_code x) |> to_value)
+    let func _ _ f =
+      wrap @@ fun () -> Func (fun x -> f (to_code x) |> to_value')
 
-    let apply f x = wrap @@ fun () -> (to_func f) (to_value x)
+    let apply f x = wrap' @@ fun () -> (to_func f) (to_value' x)
   end
 
-  let add_annot x k v = { x with annot = Univ_map.set x.annot k v }
+  let add_annot x k v =
+    lazy
+      (let { value; annot } = Lazy.force x in
+       { value; annot = Univ_map.set annot k v })
 
-  let find_annot x k = Univ_map.find x.annot k
+  let find_annot (lazy { annot; _ }) k = Univ_map.find annot k
 end
