@@ -781,24 +781,30 @@ let rec fill graph cost =
            |> List.iter ~f:(fun arg_costs ->
                   match arg_costs with
                   | [ c; c' ] ->
-                      of_cost c
-                      |> List.iter ~f:(fun (a : State_node.t) ->
-                             of_cost c'
-                             |> List.iter ~f:(fun (a' : State_node.t) ->
-                                    List.iter [ `Union; `Inter; `Sub ]
-                                      ~f:(fun op ->
-                                        let state =
-                                          match op with
-                                          | `Union -> Abs.union a.state a'.state
-                                          | `Inter -> Abs.inter a.state a'.state
-                                          | `Sub -> Abs.sub a.state a'.state
-                                        in
-                                        let did_add =
-                                          State_node.create ~state ~cost
-                                            ~op:(op :> Op.t)
-                                            graph [ a; a' ]
-                                        in
-                                        added := !added || did_add)))
+                      let cs = of_cost c and cs' = of_cost c' in
+                      let total = List.length cs * List.length cs' * 3 in
+                      let print_percent i j k =
+                        Fmt.epr "Fill %d%%\r%!"
+                          ( ((i * (List.length cs' * 3)) + (j * 3) + k)
+                          * 100 / total )
+                      in
+                      List.iteri cs ~f:(fun i (a : State_node.t) ->
+                          List.iteri cs' ~f:(fun j (a' : State_node.t) ->
+                              List.iteri [ `Union; `Inter; `Sub ]
+                                ~f:(fun k op ->
+                                  print_percent i j k;
+                                  let state =
+                                    match op with
+                                    | `Union -> Abs.union a.state a'.state
+                                    | `Inter -> Abs.inter a.state a'.state
+                                    | `Sub -> Abs.sub a.state a'.state
+                                  in
+                                  let did_add =
+                                    State_node.create ~state ~cost
+                                      ~op:(op :> Op.t)
+                                      graph [ a; a' ]
+                                  in
+                                  added := !added || did_add)))
                   | _ -> failwith "Unexpected costs"));
     !added
 
