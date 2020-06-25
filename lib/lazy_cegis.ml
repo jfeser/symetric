@@ -665,14 +665,23 @@ let update_covers graph =
     G.filter_map_vertex graph ~f:(function
       | State v when not v.covered -> Some v
       | _ -> None)
+    |> List.sort ~compare:(fun (x : State_node0.t) x' ->
+           [%compare: int] (Abs.width x.state) (Abs.width x'.state))
   in
-  List.iter uncovered ~f:(fun v ->
-      if
-        List.exists uncovered ~f:(fun v' ->
-            (not v'.covered) && v'.cost <= v.cost
-            && (not ([%compare.equal: State_node0.t] v v'))
-            && Abs.is_subset_a v'.state ~of_:v.state)
-      then State_node0.cover v)
+  let rec cover = function
+    | v :: vs ->
+        let vs' =
+          List.filter vs ~f:(fun (v' : State_node0.t) ->
+              if v'.cost <= v.cost && Abs.is_subset_a v'.state ~of_:v.state then
+                State_node0.cover v
+              else if v.cost <= v'.cost && Abs.is_subset_a v.state ~of_:v'.state
+              then State_node0.cover v';
+              not v'.covered)
+        in
+        cover vs'
+    | [] -> ()
+  in
+  cover uncovered
 
 module Args_node = struct
   include Args_node0
