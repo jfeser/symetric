@@ -19,6 +19,14 @@ for s in spheres:
     sp = Sphere(pos=[x, y, z], r=r, alpha=0.5)
     shapes.append(sp)
 
+for p in zip(bench[1][0], bench[8]):
+    x, y, z = tuple(float(x) for x in p[0])
+    in_ = int(p[1])
+    if in_ > 0:
+        shapes.append(Point([x, y, z]))
+    else:
+        shapes.append(Point([x, y, z], c='blue'))
+
 cyls = bench[2]
 cyl_offsets = bench[3]
 for c in cyls:
@@ -40,14 +48,30 @@ cuby = bench[6]
 cubz = bench[7]
 for c in cubs:
     (id_, rot_x, rot_y, rot_z) = fconv(c)
-    for o in cyl_offsets:
+    for o in cubx:
         (id__, x) = (o[0], float(o[1]))
         if id_ == id__:
-            cyl = Plane(pos=[x, y, z], r2=r, alpha=0.5)
-            cyl.rotateX(rot_x)
-            cyl.rotateY(rot_y)
-            cyl.rotateZ(rot_z)
-            shapes.append(cyl)
+            p = Plane(pos=[x, y, z], normal=(1, 0, 0), alpha=0.5)
+            p.rotateZ(rot_z, rad=True)
+            p.rotateY(rot_y, rad=True)
+            p.rotateX(rot_x, rad=True)
+            shapes.append(p)
+    for o in cuby:
+        (id__, y) = (o[0], float(o[1]))
+        if id_ == id__:
+            p = Plane(pos=[x, y, z], normal=(0, 1, 0), alpha=0.5)
+            p.rotateZ(rot_z, rad=True)
+            p.rotateY(rot_y, rad=True)
+            p.rotateX(rot_x, rad=True)
+            shapes.append(p)
+    for o in cubz:
+        (id__, z) = (o[0], float(o[1]))
+        if id_ == id__:
+            p = Plane(pos=[x, y, z], normal=(0, 0, 1), alpha=0.5)
+            p.rotateZ(rot_z, rad=True)
+            p.rotateY(rot_y, rad=True)
+            p.rotateX(rot_x, rad=True)
+            shapes.append(p)
 
 
 # declare the instance of the class
