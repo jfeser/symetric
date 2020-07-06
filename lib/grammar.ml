@@ -114,6 +114,11 @@ module Term = struct
 
   let as_ t n = As (t, n)
 
+  let rec load = function
+    | Sexp.List (Atom f :: args) -> app f @@ List.map args ~f:load
+    | Atom x -> app x []
+    | _ -> failwith "unexpected sexp"
+
   let non_terminals = non_terminals
 
   let size = size

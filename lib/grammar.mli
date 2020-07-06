@@ -56,6 +56,8 @@ module Term : sig
     [ `Closed ] t * (nonterm * int * string) list
 
   val bindings : 'a t -> (Bind.t * 'a t) list
+
+  val load : Sexp.t -> [> `Closed ] t
 end
 
 module Rule : sig

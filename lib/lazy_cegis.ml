@@ -1,5 +1,86 @@
 open! Core
 
+module Cad_bench = struct
+  module Serial = struct
+    type vector_3 = float * float * float [@@deriving sexp]
+
+    type vector_4 = float * float * float * float [@@deriving sexp]
+
+    type offsets = (int * float) list [@@deriving sexp]
+
+    type t =
+      (* spheres *)
+      vector_4 list
+      * (* vectors *)
+      vector_3 list list
+      (* cylinders *)
+      * (int * vector_4 * (float * float)) list
+      (* cylinder offsets *)
+      * offsets (* cuboids *)
+      * (int * float * float * float) list
+      * offsets
+      * offsets
+      * offsets (* output *)
+      * int list
+    [@@deriving sexp]
+  end
+
+  type cylinder = {
+    rot : Vector3.t;
+    r : float;
+    x : float list;
+    y : float;
+    z : float;
+  }
+
+  type cuboid = {
+    rot : Vector3.t;
+    x : float list;
+    y : float list;
+    z : float list;
+  }
+
+  type t = {
+    io : (Vector3.t * bool) list;
+    spheres : (Vector3.t * float) list;
+    cylinders : cylinder list;
+    cuboids : cuboid list;
+  }
+
+  let of_sexp s =
+    let ( spheres,
+          inputs,
+          cylinders,
+          cyl_offsets,
+          cuboids,
+          x_offsets,
+          y_offsets,
+          z_offsets,
+          outputs ) =
+      [%of_sexp: Serial.t] s
+    in
+    let offsets id xs =
+      List.filter_map xs ~f:(fun (id', x) -> if id = id' then Some x else None)
+    in
+    assert (List.length inputs = 1);
+    let inputs = List.hd_exn inputs in
+    {
+      io = List.map2_exn inputs outputs ~f:(fun i o -> (i, o > 0));
+      spheres = List.map spheres ~f:(fun (x, y, z, r) -> ((x, y, z), r));
+      cylinders =
+        List.map cylinders ~f:(fun (id, (x_rot, y_rot, z_rot, r), (y, z)) ->
+            { rot = (x_rot, y_rot, z_rot); r; y; z; x = offsets id cyl_offsets });
+      cuboids =
+        List.map cuboids ~f:(fun (id, x_rot, y_rot, z_rot) ->
+            {
+              rot = (x_rot, y_rot, z_rot);
+              x = offsets id x_offsets;
+              y = offsets id y_offsets;
+              z = offsets id z_offsets;
+            });
+    }
+end
+
 module Seq = struct
   include Sequence
 
@@ -14,25 +95,6 @@ let refine_strategy : [ `First | `Random | `Pareto ] ref = ref `First
 
 let max_size = ref 10
 
-module Conc = struct
-  module T = struct
-    type t = bool array [@@deriving compare, sexp]
-
-    let hash x = [%hash: bool list] (Array.to_list x)
-
-    let hash_fold_t s x = [%hash_fold: bool list] s (Array.to_list x)
-  end
-
-  include T
-
-  module O : Comparable.Infix with type t := t = struct
-    include T
-    include Comparable.Make (T)
-  end
-
-  let pp = Fmt.(array ~sep:(any " ") bool)
-end
-
 module type ABS = sig
   type t [@@deriving compare, sexp]
 
@@ -44,9 +106,7 @@ module type ABS = sig
 
   val meet : t -> t -> t
 
-  val is_subset_a : t -> of_:t -> bool
-
-  val lift : Conc.t -> t
+  val is_subset : t -> of_:t -> bool
 
   val union : t -> t -> t
 
@@ -54,205 +114,126 @@ module type ABS = sig
 
   val sub : t -> t -> t
 
-  val mem : t -> int -> bool
+  val mem : t -> Vector3.t -> bool
 
-  val add_exn : t -> int -> bool -> t
-
-  val contains : t -> Conc.t -> bool
+  val add : t -> Vector3.t -> bool -> t
 
   val width : t -> int
 
-  val of_list_exn : (int * bool) list -> t
+  val of_list : (Vector3.t * bool) list -> t
+
+  val ( ==> ) : t -> t -> bool
+
+  val domain : t -> Set.M(Vector3).t
 end
 
 module Map_abs : ABS = struct
   module T = struct
-    type t = bool Map.M(Int).t [@@deriving compare, hash, sexp]
+    type t = { pos : Set.M(Vector3).t; neg : Set.M(Vector3).t }
+    [@@deriving compare, hash, sexp]
   end
 
   include T
   include Comparator.Make (T)
 
-  let top = Map.empty (module Int)
+  let top =
+    { pos = Set.empty (module Vector3); neg = Set.empty (module Vector3) }
 
-  let pp =
-    Fmt.using (fun m ->
-        Map.to_alist m |> List.map ~f:(fun (k, v) -> (Bool.to_int v, k)))
-    @@ Fmt.list ~sep:(Fmt.any " ")
-    @@ Fmt.pair ~sep:Fmt.nop Fmt.int (Fmt.fmt "_%d")
+  let pp = Fmt.nop
 
-  let graphviz_pp =
-    Fmt.using (fun m ->
-        Map.to_alist m |> List.map ~f:(fun (k, v) -> (Bool.to_int v, k)))
-    @@ Fmt.list ~sep:(Fmt.any " ")
-    @@ Fmt.pair ~sep:Fmt.nop Fmt.int (Fmt.fmt "<sub>%d</sub>")
+  let graphviz_pp = Fmt.nop
 
-  let meet =
-    Map.merge ~f:(fun ~key:_ ->
-      function
-      | `Left x | `Right x -> Some x
-      | `Both (x, x') ->
-          assert (Bool.(x = x'));
-          Some x)
+  let meet { pos = p1; neg = n1 } { pos = p2; neg = n2 } =
+    { pos = Set.inter p1 p2; neg = Set.inter n1 n2 }
 
-  let is_subset_a s ~of_:s' =
-    if Map.length s > Map.length s' then false
-    else
-      Map.fold2 s s' ~init:true ~f:(fun ~key ~data acc ->
-          acc
-          &&
-          match data with
-          | `Left _ -> false
-          | `Right _ -> true
-          | `Both (x, x') -> Bool.(x = x'))
-
-  (* let is_subset_a =
-   *   let hashable =
-   *     let module V = struct
-   *       type nonrec t = t * t [@@deriving compare, hash, sexp]
-   *     end in
-   *     Base.Hashable.of_key (module V)
-   *   in
-   *   let func = Memo.general ~hashable (fun (s, s') -> is_subset_a s ~of_:s') in
-   *   fun s ~of_:s' -> func (s, s')
-   * 
-   * (\* Map.for_alli s ~f:(fun ~key ~data:x ->
-   *  *     match Map.find s' key with Some x' -> Bool.(x = x') | None -> false) *\) *)
+  let is_subset s ~of_:s' = failwith ""
 
   let lift s =
     Array.mapi s ~f:(fun i x -> (i, x))
     |> Array.to_list
     |> Map.of_alist_exn (module Int)
 
-  let union =
-    Map.merge ~f:(fun ~key:_ ->
-      function
-      | `Both (x, x') -> Some (x || x')
-      | `Left true | `Right true -> Some true
-      | `Left false | `Right false -> None)
+  let union { pos = p1; neg = n1 } { pos = p2; neg = n2 } =
+    { pos = Set.union p1 p2; neg = Set.inter n1 n2 }
 
-  let inter =
-    Map.merge ~f:(fun ~key:_ ->
-      function
-      | `Both (x, x') -> Some (x && x')
-      | `Left false | `Right false -> Some false
-      | `Left true | `Right true -> None)
+  let inter { pos = p1; neg = n1 } { pos = p2; neg = n2 } =
+    { pos = Set.inter p1 p2; neg = Set.union n1 n2 }
 
-  let sub =
-    Map.merge ~f:(fun ~key:_ ->
-      function
-      | `Both (x, x') -> Some (x && not x')
-      | `Left false | `Right true -> Some false
-      | `Left true | `Right false -> None)
+  let sub { pos = p1; neg = n1 } { pos = p2; neg = n2 } = failwith ""
 
-  let mem v i = Map.mem v i
+  let mem a i = Set.mem a.pos i || Set.mem a.neg i
 
-  let add_exn m k v = Map.add_exn m ~key:k ~data:v
+  let add a k v =
+    if v then { a with pos = Set.add a.pos k }
+    else { a with neg = Set.add a.neg k }
 
-  let contains a c = Map.for_alli a ~f:(fun ~key:i ~data:v -> Bool.(c.(i) = v))
+  let ( ==> ) s s' = is_subset s ~of_:s'
 
-  let width = Map.length
+  let contains a c = failwith ""
 
-  let of_list_exn l = Map.of_alist_exn (module Int) l
-end
+  let width { pos; neg } = Set.length pos + Set.length neg
 
-module Array_abs : ABS = struct
-  type t = int array [@@deriving compare, sexp]
+  let of_list =
+    List.fold_left ~init:top ~f:(fun a (v, x) ->
+        if x then { a with pos = Set.add a.pos v }
+        else { a with neg = Set.add a.neg v })
 
-  let top = [||]
-
-  let pp =
-    Fmt.using (fun m ->
-        Array.filter_mapi m ~f:(fun i x -> if x >= 0 then Some (x, i) else None))
-    @@ Fmt.array ~sep:(Fmt.any " ")
-    @@ Fmt.pair ~sep:Fmt.nop Fmt.int (Fmt.fmt "_%d")
-
-  let graphviz_pp =
-    Fmt.using (fun m ->
-        Array.filter_mapi m ~f:(fun i x -> if x >= 0 then Some (x, i) else None))
-    @@ Fmt.array ~sep:(Fmt.any " ")
-    @@ Fmt.pair ~sep:Fmt.nop Fmt.int (Fmt.fmt "<sub>%d</sub>")
-
-  let get a i = if i >= Array.length a then -1 else a.(i) [@@inline always]
-
-  let init a i = if i >= Array.length a then -1 else a.(i)
-
-  let map2 a a' ~f =
-    Array.init
-      (Int.max (Array.length a) (Array.length a'))
-      ~f:(fun i -> f (get a i) (get a' i))
-
-  let for_all2 a a' ~f =
-    let rec for_all i =
-      if i >= Array.length a || i >= Array.length a' then true
-      else if f (get a i) (get a' i) then for_all (i + 1)
-      else false
-    in
-    for_all 0
-
-  let meet v v' =
-    map2 v v' ~f:(fun x x' ->
-        if x < 0 then x'
-        else if x' < 0 then x
-        else (
-          assert (x = x');
-          x ))
-
-  let is_subset_a s ~of_:s' =
-    for_all2 s s' ~f:(fun x x' -> if x' >= 0 then x = x' else false)
-
-  let lift s = Array.mapi s ~f:(fun i x -> if x then 1 else 0)
-
-  let union v v' =
-    map2 v v' ~f:(fun x x' ->
-        if x >= 0 && x' >= 0 then Int.min 1 (x + x')
-        else if x = 1 || x' = 1 then 1
-        else -1)
-
-  let inter v v' =
-    map2 v v' ~f:(fun x x' ->
-        if x >= 0 && x' >= 0 then Int.max 0 (x + x' - 1)
-        else if x = 0 || x' = 0 then 0
-        else -1)
-
-  let sub v v' =
-    map2 v v' ~f:(fun x x' ->
-        if x >= 0 && x' >= 0 then Int.max 0 (x - x')
-        else if x = 0 || x' = 1 then 0
-        else -1)
-
-  let mem v i = get v i >= 0
-
-  let add_exn m k v =
-    let m' = Array.create ~len:(Int.max (Array.length m) (k + 1)) (-1) in
-    Array.blit ~src:m ~src_pos:0 ~dst:m' ~dst_pos:0 ~len:(Array.length m);
-    m'.(k) <- (if v then 1 else 0);
-    m'
-
-  let contains a c =
-    Array.for_alli c ~f:(fun i x -> get a i < 0 || Bool.to_int x = get a i)
-
-  let width = Array.length
-
-  let of_list_exn l =
-    List.fold_left l ~init:top ~f:(fun acc (i, x) -> add_exn acc i x)
+  let domain { pos; neg } = Set.union pos neg
 end
 
 module Abs = Map_abs
 
 module Op = struct
-  type t = [ `Input of Conc.t | `Union | `Inter | `Sub ]
+  type cuboid = { id : int; rot : Vector3.t } [@@deriving compare, hash, sexp]
+
+  type dim = X | Y | Z [@@deriving compare, hash, sexp]
+
+  type t =
+    | Union
+    | Inter
+    | Sub
+    | Repeat of Vector3.t
+    | Repeat_n of int
+    | Sphere of (Vector3.t * float)
+    | Cuboid of cuboid
+    | Cuboid_plane of cuboid * dim * float
   [@@deriving compare, hash, sexp]
 
   let pp fmt op =
     let str =
       match op with
-      | `Input _ -> "in"
-      | `Union -> "or"
-      | `Inter -> "and"
-      | `Sub -> "diff"
+      | Union -> "or"
+      | Inter -> "and"
+      | Sub -> "sub"
+      | Repeat _ -> "rep"
+      | Repeat_n _ -> "repn"
+      | Sphere _ -> "sphere"
+      | Cuboid _ -> "cuboid"
+      | Cuboid_plane _ -> "offset"
     in
     Fmt.pf fmt "%s" str
+
+  let num_args = function
+    | Union | Inter | Sub | Repeat _ -> 2
+    | Cuboid _ -> 3
+    | Sphere _ | Cuboid_plane _ | Repeat_n _ -> 0
+
+  let is_shape = function
+    | Union | Inter | Sub | Repeat _ | Sphere _ | Cuboid _ -> true
+    | Repeat_n _ | Cuboid_plane _ -> false
+
+  let valid_args op args =
+    match (op, args) with
+    | (Union | Inter | Sub), [ x; y ] -> is_shape x && is_shape y
+    | Repeat _, [ Repeat_n _; x ] -> is_shape x
+    | ( Cuboid { id; _ },
+        [
+          Cuboid_plane ({ id = id1; _ }, X, _);
+          Cuboid_plane ({ id = id2; _ }, Y, _);
+          Cuboid_plane ({ id = id3; _ }, Z, _);
+        ] ) ->
+        id = id1 && id = id2 && id = id3
+    | _ -> false
 end
 
 let mk_id =
@@ -278,7 +259,6 @@ module State_node0 = struct
 
   type t = {
     id : int;
-    cstate : Conc.t;
     mutable cost : int;
     mutable state : Abs.t;
     mutable covered : bool;
@@ -286,11 +266,18 @@ module State_node0 = struct
   }
   [@@deriving sexp]
 
+  let copy ?cost ?state ?covered ?last_mod_time n =
+    {
+      id = mk_id ();
+      cost = Option.value cost ~default:n.cost;
+      state = Option.value state ~default:n.state;
+      covered = Option.value covered ~default:n.covered;
+      last_mod_time = Option.value last_mod_time ~default:n.last_mod_time;
+    }
+
   let id { id; _ } = id
 
   let state { state; _ } = state
-
-  let cstate { cstate; _ } = cstate
 
   let set_state n s = n.state <- s
 
@@ -322,7 +309,7 @@ end
 
 module Node = struct
   type t = Args of Args_node0.t | State of State_node0.t
-  [@@deriving compare, hash]
+  [@@deriving compare, hash, sexp]
 
   let equal = [%compare.equal: t]
 
@@ -330,8 +317,6 @@ module Node = struct
 
   let to_args = function Args x -> x | _ -> failwith "expected an args node"
 end
-
-let contains a c = Map.for_alli a ~f:(fun ~key:i ~data:v -> Bool.(c.(i) = v))
 
 module E = struct
   type t = int [@@deriving compare]
@@ -413,54 +398,93 @@ module G = struct
   let ensure_vertex g v = if not (mem_vertex g v) then add_vertex g v
 
   let ensure_edge_e g e = if not (mem_edge_e g e) then add_edge_e g e
+
+  let split_vertex g ~orig ~left ~right =
+    iter_pred_e
+      (fun (pred, e, orig') ->
+        [%test_result: Node.t] ~expect:orig orig';
+        add_edge_e g (pred, e, left);
+        add_edge_e g (pred, e, right))
+      g orig;
+    iter_succ_e
+      (fun (orig', e, succ) ->
+        [%test_result: Node.t] ~expect:orig orig';
+        add_edge_e g (left, e, succ);
+        add_edge_e g (right, e, succ))
+      g orig;
+    remove_vertex g orig
 end
-
-let ceval' op args =
-  match (op, args) with
-  | `Input x, _ -> x
-  | `Union, [ x; y ] -> Array.map2_exn x.State_node0.cstate y.cstate ~f:( || )
-  | `Inter, [ x; y ] -> Array.map2_exn x.cstate y.cstate ~f:( && )
-  | `Sub, [ x; y ] ->
-      Array.map2_exn x.cstate y.cstate ~f:(fun a b -> a && not b)
-  | _ -> assert false
-
-let eval' op args =
-  match (op, args) with
-  | `Input state, _ -> Abs.lift state
-  | `Union, [ x; y ] -> Abs.union x y
-  | `Inter, [ x; y ] -> Abs.inter x y
-  | `Sub, [ x; y ] -> Abs.sub x y
-  | _ -> failwith "Unexpected args"
-
-let eval g a =
-  let args =
-    G.succ_e g (Node.Args a)
-    |> List.sort ~compare:(fun (_, i, _) (_, i', _) -> [%compare: int] i i')
-    |> List.map ~f:(function
-         | _, _, Node.State v -> v.state
-         | _ -> failwith "expected a state node")
-  in
-  eval' a.op args
 
 module Program = struct
   module T = struct
-    type t = [ `Apply of Op.t * t list ] [@@deriving compare, hash, sexp]
+    type t = Apply of Op.t * t list [@@deriving compare, hash, sexp]
   end
-
-  let rec ceval (`Apply (op, args)) =
-    match (op, args) with
-    | `Input x, _ -> x
-    | `Union, [ x; y ] -> Array.map2_exn (ceval x) (ceval y) ~f:( || )
-    | `Inter, [ x; y ] -> Array.map2_exn (ceval x) (ceval y) ~f:( && )
-    | `Sub, [ x; y ] ->
-        Array.map2_exn (ceval x) (ceval y) ~f:(fun a b -> a && not b)
-    | _ -> assert false
-
-  let rec size (`Apply (op, args)) = 1 + List.sum (module Int) args ~f:size
 
   include T
   include Comparator.Make (T)
+
+  let eval_open eval term =
+    match (term#op, term#args) with
+    | Op.Sphere (center, radius), [] ->
+        fun v -> Float.(Vector3.l2_dist center v <= radius)
+    | Cuboid { rot; id }, [ xl; xh; yl; yh; zl; zh ] ->
+        let offset t =
+          match (t#op, t#args) with
+          | Op.Cuboid_plane ({ id = id'; _ }, _, x), [] ->
+              assert (id = id');
+              x
+          | _ -> failwith "unexpected offset"
+        in
+        fun v ->
+          let x, y, z = Vector3.inverse_rotate rot v in
+          Float.(
+            offset xl <= x
+            && x <= offset xh
+            && offset yl <= y
+            && y <= offset yh
+            && offset zl <= z
+            && z <= offset zh)
+    | Union, [ x; y ] ->
+        let f = eval x and g = eval y in
+        fun v -> f v || g v
+    | Inter, [ x; y ] ->
+        let f = eval x and g = eval y in
+        fun v -> f v && g v
+    | Sub, [ x; y ] ->
+        let f = eval x and g = eval y in
+        fun v -> f v && not (g v)
+    | _ -> assert false
+
+  let rec eval_program term =
+    let rec to_obj (Apply (op, args)) =
+      object
+        method op = op
+
+        method args = List.map args ~f:to_obj
+      end
+    in
+    let rec eval term = eval_open eval term in
+    eval (to_obj term)
+
+  let rec eval_node graph node =
+    let rec to_obj node =
+      let op, args = G.children graph node |> List.hd_exn in
+      object
+        method op = op
+
+        method args = List.map args ~f:to_obj
+      end
+    in
+    let rec eval term = eval_open eval term in
+    eval (to_obj node)
+
+  let eval_on eval points =
+    List.map points ~f:(fun v -> (v, eval v)) |> Abs.of_list
+
+  let rec size (Apply (op, args)) = 1 + List.sum (module Int) args ~f:size
 end
+
+let contains a c = Map.for_alli a ~f:(fun ~key:i ~data:v -> Bool.(c.(i) = v))
 
 let refine_ordered strong_enough abs conc =
   let open State_node0 in
@@ -648,18 +672,6 @@ let prune g (nodes : State_node0.t list) =
     in
     process nodes )
 
-(* module Cover_table = struct
- *   module Key = struct
- *     include Int
- * 
- *     let create pos value = if value then pos else -pos
- *   end
- * 
- *   type t = State_node0.t list Hashtbl.M(Key).t
- * 
- *   let 
- * end *)
-
 let update_covers graph =
   let uncovered =
     G.filter_map_vertex graph ~f:(function
@@ -672,9 +684,9 @@ let update_covers graph =
     | v :: vs ->
         let vs' =
           List.filter vs ~f:(fun (v' : State_node0.t) ->
-              if v'.cost <= v.cost && Abs.is_subset_a v'.state ~of_:v.state then
+              if v'.cost <= v.cost && Abs.is_subset v'.state ~of_:v.state then
                 State_node0.cover v
-              else if v.cost <= v'.cost && Abs.is_subset_a v.state ~of_:v'.state
+              else if v.cost <= v'.cost && Abs.is_subset v.state ~of_:v'.state
               then State_node0.cover v';
               not v'.covered)
         in
@@ -706,27 +718,10 @@ module Args_node = struct
             G.ensure_edge_e graph (args_v, i, Node.State v));
         Hashtbl.set args_tbl (op, args) args_v;
         Some args_v
-
-  (* match
-   *   G.find_vertex graph ~f:(function
-   *     | Args v ->
-   *         [%compare.equal: Op.t] v.op op
-   *         && List.for_alli args ~f:(fun i state ->
-   *                G.mem_edge_e graph (Node.Args v, i, Node.State state))
-   *     | _ -> false)
-   * with
-   * | Some v -> v
-   * | None ->
-   *     let args_v = Node.Args { op; id = mk_id () } in
-   *     List.iteri args ~f:(fun i v ->
-   *         G.ensure_edge_e graph (args_v, i, Node.State v));
-   *     args_v *)
 end
 
 module State_node = struct
   include State_node0
-
-  let state_tbl = Hashtbl.create (module Conc)
 
   let rec choose_program graph node =
     match G.children graph node with
@@ -736,31 +731,12 @@ module State_node = struct
   let create ?(covered = false) ~state ~cost ~op graph children =
     match Args_node.create ~op graph children with
     | Some args_v ->
-        let cstate = ceval' op children in
-        let state_v, did_add =
-          match Hashtbl.find state_tbl cstate with
-          | Some v ->
-              v.cost <- Int.min v.cost cost;
-              refine_child graph v op children |> prune graph;
-              update_covers graph;
-              (v, true)
-          | None ->
-              incr time;
-              let v =
-                {
-                  id = mk_id ();
-                  cost;
-                  state;
-                  cstate;
-                  covered;
-                  last_mod_time = !time;
-                }
-              in
-              Hashtbl.add_exn state_tbl cstate v;
-              (v, true)
+        let state_v =
+          incr time;
+          { id = mk_id (); cost; state; covered; last_mod_time = !time }
         in
         G.ensure_edge_e graph (Node.State state_v, -1, args_v);
-        did_add
+        true
     | None -> false
 end
 
@@ -779,137 +755,70 @@ let rec fill graph cost =
     in
 
     let added = ref false in
-    Part.create ~n:arg_cost ~parts:2
-    |> Part.iter ~f:(fun arg_costs ->
-           let arg_costs =
-             List.init (Bigarray.Array1.dim arg_costs) ~f:(fun i ->
-                 arg_costs.{i})
-           in
-           Perm.(create arg_costs |> to_list)
-           |> List.dedup_and_sort ~compare:[%compare: int list]
-           |> List.iter ~f:(fun arg_costs ->
-                  match arg_costs with
-                  | [ c; c' ] ->
-                      let cs = of_cost c and cs' = of_cost c' in
-                      let total = List.length cs * List.length cs' * 3 in
-                      let print_percent i j k =
-                        Fmt.epr "Fill %d%%\r%!"
-                          ( ((i * (List.length cs' * 3)) + (j * 3) + k)
-                          * 100 / total )
-                      in
-                      List.iteri cs ~f:(fun i (a : State_node.t) ->
-                          List.iteri cs' ~f:(fun j (a' : State_node.t) ->
-                              List.iteri [ `Union; `Inter; `Sub ]
-                                ~f:(fun k op ->
-                                  print_percent i j k;
-                                  let state =
-                                    match op with
-                                    | `Union -> Abs.union a.state a'.state
-                                    | `Inter -> Abs.inter a.state a'.state
-                                    | `Sub -> Abs.sub a.state a'.state
-                                  in
-                                  let did_add =
-                                    State_node.create ~state ~cost
-                                      ~op:(op :> Op.t)
-                                      graph [ a; a' ]
-                                  in
-                                  added := !added || did_add)))
-                  | _ -> failwith "Unexpected costs"));
+    List.iter [ 2; 3 ] ~f:(fun parts ->
+        Part.create ~n:arg_cost ~parts
+        |> Part.iter ~f:(fun arg_costs ->
+               let arg_costs =
+                 List.init (Bigarray.Array1.dim arg_costs) ~f:(fun i ->
+                     arg_costs.{i})
+               in
+               Perm.(create arg_costs |> to_list)
+               |> List.dedup_and_sort ~compare:[%compare: int list]
+               |> List.iter ~f:(fun arg_costs ->
+                      match arg_costs with
+                      | [ c; c' ] ->
+                          let cs = of_cost c and cs' = of_cost c' in
+                          let total = List.length cs * List.length cs' * 3 in
+                          let print_percent i j k =
+                            Fmt.epr "Fill %d%%\r%!"
+                              ( ((i * (List.length cs' * 3)) + (j * 3) + k)
+                              * 100 / total )
+                          in
+                          List.iteri cs ~f:(fun i (a : State_node.t) ->
+                              List.iteri cs' ~f:(fun j (a' : State_node.t) ->
+                                  List.iteri [ `Union; `Inter; `Sub ]
+                                    ~f:(fun k op ->
+                                      print_percent i j k;
+                                      let state =
+                                        match op with
+                                        | Op.Union -> Abs.union a.state a'.state
+                                        | Inter -> Abs.inter a.state a'.state
+                                        | Sub -> Abs.sub a.state a'.state
+                                      in
+                                      let did_add =
+                                        State_node.create ~state ~cost
+                                          ~op:(op :> Op.t)
+                                          graph [ a; a' ]
+                                      in
+                                      added := !added || did_add)))
+                      | _ -> failwith "Unexpected costs")));
     !added
 
 let refine graph (node : State_node.t) bad =
-  let conc = node.cstate and old = node.state in
+  let old = node.state in
 
-  (* The bad behavior should not be the same as the concrete behavior, the
-     initial state should abstract the bad behavior and the concrete behavior.
-  *)
-  assert (
-    (not ([%compare.equal: Conc.t] bad conc))
-    && Abs.contains old bad && Abs.contains old conc );
+  (* The current state should contain the bad behavior. *)
+  assert (Abs.(old ==> bad));
 
-  let len = Array.length conc in
-  let rec loop i =
-    if i >= len then failwith "Could not refine"
-    else if Bool.(conc.(i) <> bad.(i)) then Abs.add_exn node.state i conc.(i)
-    else loop (i + 1)
-  in
-  let new_ = loop 0 in
+  (* Select a point that the current state does not define and split into two
+     states. *)
+  let point = Set.diff (Abs.domain bad) (Abs.domain old) |> Set.choose_exn in
+  let left = State_node.copy node ~state:(Abs.add node.state point true)
+  and right = State_node.copy node ~state:(Abs.add node.state point false) in
+  G.split_vertex graph ~orig:(State node) ~left:(State left)
+    ~right:(State right);
 
-  (* Check that the new state refines the old one, does not contain the bad
-     state, and still abstracts the concrete behavior. *)
-  assert (Abs.is_subset_a old ~of_:new_);
-  assert (Abs.(not (contains new_ bad)));
-  assert (Abs.contains new_ conc);
+  (* Check that at least one state excludes the bad behavior. *)
+  assert (Abs.((not (left.state ==> bad)) || not (right.state ==> bad)));
 
-  State_node.set_state node new_;
-  [ node ]
+  [ left; right ]
 
 let rec strengthen graph (node : State_node.t) bad_out =
-  assert (Abs.contains node.state bad_out);
+  assert (Abs.(node.state ==> bad_out));
   let to_prune = refine graph node bad_out in
   let to_prune' = refine_children graph node in
-  assert (not (Abs.contains node.state bad_out));
+  assert (not Abs.(node.state ==> bad_out));
   to_prune @ to_prune'
-
-let%expect_test "" =
-  let g = G.create () in
-  State_node.create
-    ~state:(Abs.of_list_exn [ (0, true) ])
-    ~op:(`Input [| true; true |])
-    ~cost:1 g []
-  |> ignore;
-  State_node.create
-    ~state:(Abs.of_list_exn [ (1, true) ])
-    ~op:(`Input [| true; false |])
-    ~cost:1 g []
-  |> ignore;
-  fill g 3 |> ignore;
-  G.output_graph stdout g;
-  [%expect
-    {|
-    digraph G {
-      0 [label=<in 1_0>, ];
-      1 [label=<in 1_1>, ];
-      2 [label=<or 1_1>, ];
-      3 [label=<and 1_1>, ];
-      4 [label=<diff 0_1>, ];
-      5 [label=<or 1_0 1_1>, ];
-      6 [label=<and >, ];
-      7 [label=<diff 0_0>, ];
-      8 [label=<or 1_0 1_1>, ];
-      9 [label=<and >, ];
-      10 [label=<diff 0_1>, ];
-      11 [label=<or 1_0>, ];
-      12 [label=<and 1_0>, ];
-      13 [label=<diff 0_0>, ];
-
-
-      2 -> 1 [label="0", ];
-      2 -> 1 [label="1", ];
-      3 -> 1 [label="0", ];
-      3 -> 1 [label="1", ];
-      4 -> 1 [label="0", ];
-      4 -> 1 [label="1", ];
-      5 -> 0 [label="1", ];
-      5 -> 1 [label="0", ];
-      6 -> 0 [label="1", ];
-      6 -> 1 [label="0", ];
-      7 -> 0 [label="1", ];
-      7 -> 1 [label="0", ];
-      8 -> 0 [label="0", ];
-      8 -> 1 [label="1", ];
-      9 -> 0 [label="0", ];
-      9 -> 1 [label="1", ];
-      10 -> 0 [label="0", ];
-      10 -> 1 [label="1", ];
-      11 -> 0 [label="0", ];
-      11 -> 0 [label="1", ];
-      12 -> 0 [label="0", ];
-      12 -> 0 [label="1", ];
-      13 -> 0 [label="0", ];
-      13 -> 0 [label="1", ];
-
-      } |}]
 
 module Stats = struct
   type t = {
@@ -926,8 +835,11 @@ end
 
 exception Done of [ `Sat | `Unsat ]
 
-let synth ?(no_abstraction = false) inputs output =
-  let graph = G.create () and step = ref 0 in
+let synth ?(no_abstraction = false) bench =
+  let graph = G.create ()
+  and step = ref 0
+  and expected = Abs.of_list bench.Cad_bench.io
+  and inputs = List.map bench.Cad_bench.io ~f:(fun (i, _) -> i) in
 
   let module Viz = Graph.Graphviz.Dot (struct
     include G
@@ -940,10 +852,13 @@ let synth ?(no_abstraction = false) inputs output =
 
     let vertex_attributes = function
       | Node.State n ->
-          [ `HtmlLabel (Fmt.str "%a" State_node.graphviz_pp n) ]
-          @
-          if n.covered then [ `Style `Dotted ]
-          else [] @ if Abs.contains n.state output then [ `Style `Bold ] else []
+          let attr = [ `HtmlLabel (Fmt.str "%a" State_node.graphviz_pp n) ] in
+          let attr = if n.covered then `Style `Dotted :: attr else attr in
+          let attr =
+            if Abs.is_subset ~of_:expected n.state then `Style `Bold :: attr
+            else attr
+          in
+          attr
       | Args n ->
           [ `HtmlLabel (Fmt.str "%a" Args_node.graphviz_pp n); `Shape `Box ]
 
@@ -967,15 +882,15 @@ let synth ?(no_abstraction = false) inputs output =
   let refute () =
     match
       G.find_map_vertex graph ~f:(function
-        | State v when (not v.covered) && Abs.contains v.state output -> Some v
+        | State v when (not v.covered) && Abs.is_subset expected ~of_:v.state ->
+            Some v
         | _ -> None)
     with
     | Some v ->
-        if [%compare.equal: Conc.t] v.cstate output then raise (Done `Sat)
+        let output = Program.(eval_on (eval_node graph v) inputs) in
+        if Abs.is_subset expected ~of_:output then raise (Done `Sat)
         else (
           incr n_refuted;
-          (* Fmt.epr "Refuting: %a\n" Sexp.pp_hum
-           *   ([%sexp_of: Program.t] (State_node.choose_program graph v)); *)
           let to_prune = strengthen graph v output in
           dump ();
           prune graph to_prune;
@@ -984,7 +899,7 @@ let synth ?(no_abstraction = false) inputs output =
     | None -> false
   in
 
-  let rec loop cost =
+  let rec search cost =
     if cost > !max_size then raise (Done `Unsat);
     let rec strengthen_and_cover () =
       update_covers graph;
@@ -998,16 +913,23 @@ let synth ?(no_abstraction = false) inputs output =
     Fmt.epr "Changed: %b Cost: %d\n%!" changed cost;
     if changed then dump ();
     let cost = if changed then cost else cost + 1 in
-    loop cost
+    search cost
   in
 
   (* Add inputs to the state space graph. *)
-  List.iter inputs ~f:(fun input ->
-      let state = if no_abstraction then Abs.lift input else Abs.top in
-      State_node.create ~state ~cost:1 ~op:(`Input input) graph [] |> ignore);
+  let mk_state op =
+    State_node.create ~state:Abs.top ~cost:1 ~op graph [] |> ignore
+  in
+  List.iter bench.spheres ~f:(fun s -> mk_state (Op.Sphere s));
+  List.iteri bench.cuboids ~f:(fun i c ->
+      let cuboid = Op.{ id = i; rot = c.rot } in
+      mk_state (Op.Cuboid cuboid);
+      List.iter c.x ~f:(fun x -> mk_state (Op.Cuboid_x (cuboid, x)));
+      List.iter c.y ~f:(fun y -> mk_state (Op.Cuboid_y (cuboid, y)));
+      List.iter c.z ~f:(fun z -> mk_state (Op.Cuboid_z (cuboid, z))));
   dump ();
 
-  try loop 1
+  try search 1
   with Done status ->
     let widths =
       G.filter_map_vertex graph ~f:(function
@@ -1037,86 +959,86 @@ let synth ?(no_abstraction = false) inputs output =
           sat = (match status with `Sat -> true | `Unsat -> false);
         } )
 
-let sample ?(state = Random.State.default) inputs =
-  let open Grammar in
-  let named_inputs = List.mapi inputs ~f:(fun i x -> (sprintf "i%d" i, x)) in
-  let input_rules =
-    List.map named_inputs ~f:(fun (n, _) -> Rule.create "p" (Term.app n []) [])
-  in
-  let g =
-    input_rules
-    @ [
-        Rule.create "p"
-          (Term.app "and" [ Term.nonterm "p"; Term.nonterm "p" ])
-          [];
-        Rule.create "p"
-          (Term.app "or" [ Term.nonterm "p"; Term.nonterm "p" ])
-          [];
-        Rule.create "p"
-          (Term.app "diff" [ Term.nonterm "p"; Term.nonterm "p" ])
-          [];
-      ]
-  in
-  let rec to_prog = function
-    | App (func, args) ->
-        let op =
-          match func with
-          | "and" -> `Inter
-          | "or" -> `Union
-          | "diff" -> `Sub
-          | _ -> (
-              match
-                List.Assoc.find ~equal:[%compare.equal: string] named_inputs
-                  func
-              with
-              | Some i -> `Input i
-              | None -> failwith "unexpected function" )
-        in
-        let args = List.map args ~f:to_prog in
-        `Apply (op, args)
-    | _ -> failwith "unexpected term"
-  in
-  let rec sample_prog () =
-    let p = to_prog (Grammar.sample ~state "p" g :> Untyped_term.t) in
-    if Program.size p > !max_size then sample_prog () else p
-  in
-  sample_prog ()
-
-let check_search_space ?(n = 100_000) inputs graph =
-  let rec loop i =
-    if i > n then Ok ()
-    else
-      let prog = sample inputs in
-      let cstate = Program.ceval prog in
-      match
-        G.find_map_vertex graph ~f:(function
-          | State v when Abs.contains v.state cstate -> Some v
-          | _ -> None)
-      with
-      | Some v -> loop (i + 1)
-      | None ->
-          Fmt.epr "Missed program %a with size %d and state %a\n" Sexp.pp
-            ([%sexp_of: Program.t] prog)
-            (Program.size prog) Conc.pp cstate;
-          Error cstate
-  in
-  loop 0
-
-let random_likely_unsat ?(state = Random.State.default) n k =
-  let inputs =
-    List.init n ~f:(fun _ -> Array.init k ~f:(fun _ -> Random.State.bool state))
-  in
-  let output = Array.init k ~f:(fun _ -> Random.State.bool state) in
-  (inputs, output)
-
-let random_sat ?(state = Random.State.default) n k =
-  let inputs =
-    List.init n ~f:(fun _ -> Array.init k ~f:(fun _ -> Random.State.bool state))
-  in
-  let output = sample ~state inputs |> Program.ceval in
-  (inputs, output)
-
-let random_io ?(state = Random.State.default) ~n ~k =
-  (* if Random.State.bool state then random_sat ~state n k
-   * else *)
-  random_likely_unsat ~state n k
+(* let sample ?(state = Random.State.default) inputs =
+ *   let open Grammar in
+ *   let named_inputs = List.mapi inputs ~f:(fun i x -> (sprintf "i%d" i, x)) in
+ *   let input_rules =
+ *     List.map named_inputs ~f:(fun (n, _) -> Rule.create "p" (Term.app n []) [])
+ *   in
+ *   let g =
+ *     input_rules
+ *     @ [
+ *         Rule.create "p"
+ *           (Term.app "and" [ Term.nonterm "p"; Term.nonterm "p" ])
+ *           [];
+ *         Rule.create "p"
+ *           (Term.app "or" [ Term.nonterm "p"; Term.nonterm "p" ])
+ *           [];
+ *         Rule.create "p"
+ *           (Term.app "diff" [ Term.nonterm "p"; Term.nonterm "p" ])
+ *           [];
+ *       ]
+ *   in
+ *   let rec to_prog = function
+ *     | App (func, args) ->
+ *         let op =
+ *           match func with
+ *           | "and" -> `Inter
+ *           | "or" -> `Union
+ *           | "diff" -> `Sub
+ *           | _ -> (
+ *               match
+ *                 List.Assoc.find ~equal:[%compare.equal: string] named_inputs
+ *                   func
+ *               with
+ *               | Some i -> `Input i
+ *               | None -> failwith "unexpected function" )
+ *         in
+ *         let args = List.map args ~f:to_prog in
+ *         `Apply (op, args)
+ *     | _ -> failwith "unexpected term"
+ *   in
+ *   let rec sample_prog () =
+ *     let p = to_prog (Grammar.sample ~state "p" g :> Untyped_term.t) in
+ *     if Program.size p > !max_size then sample_prog () else p
+ *   in
+ *   sample_prog ()
+ * 
+ * let check_search_space ?(n = 100_000) inputs graph =
+ *   let rec loop i =
+ *     if i > n then Ok ()
+ *     else
+ *       let prog = sample inputs in
+ *       let cstate = Program.ceval prog in
+ *       match
+ *         G.find_map_vertex graph ~f:(function
+ *           | State v when Abs.contains v.state cstate -> Some v
+ *           | _ -> None)
+ *       with
+ *       | Some v -> loop (i + 1)
+ *       | None ->
+ *           Fmt.epr "Missed program %a with size %d and state %a\n" Sexp.pp
+ *             ([%sexp_of: Program.t] prog)
+ *             (Program.size prog) Conc.pp cstate;
+ *           Error cstate
+ *   in
+ *   loop 0
+ * 
+ * let random_likely_unsat ?(state = Random.State.default) n k =
+ *   let inputs =
+ *     List.init n ~f:(fun _ -> Array.init k ~f:(fun _ -> Random.State.bool state))
+ *   in
+ *   let output = Array.init k ~f:(fun _ -> Random.State.bool state) in
+ *   (inputs, output)
+ * 
+ * let random_sat ?(state = Random.State.default) n k =
+ *   let inputs =
+ *     List.init n ~f:(fun _ -> Array.init k ~f:(fun _ -> Random.State.bool state))
+ *   in
+ *   let output = sample ~state inputs |> Program.ceval in
+ *   (inputs, output)
+ * 
+ * let random_io ?(state = Random.State.default) ~n ~k =
+ *   (\* if Random.State.bool state then random_sat ~state n k
+ *    * else *\)
+ *   random_likely_unsat ~state n k *)

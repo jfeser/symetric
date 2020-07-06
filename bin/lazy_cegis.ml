@@ -1,18 +1,8 @@
 open! Core
 open Staged_synth.Lazy_cegis
 
-let _inputs, _output =
-  let conv l =
-    List.map l ~f:(fun i -> if i = 0 then false else true) |> Array.of_list
-  in
-  let inputs =
-    List.map ~f:conv [ [ 0; 1; 1; 0 ]; [ 1; 1; 0; 0 ]; [ 0; 0; 0; 1 ] ]
-  in
-  let output = conv [ 0; 1; 0; 1 ] in
-  (inputs, output)
-
 let main ~n ~enable_graph_output ~seed ~max_cost ~k ~print_header ~abstraction
-    ~check ~refine ~file () =
+    ~check ~refine () =
   if print_header then (
     Fmt.pr
       "k,n,seed,max_cost,abstraction,n_state_nodes,n_arg_nodes,n_covered,n_refuted,min_width,max_width,median_width,check,sat,refine\n";
@@ -29,20 +19,8 @@ let main ~n ~enable_graph_output ~seed ~max_cost ~k ~print_header ~abstraction
   enable_dump := enable_graph_output;
   max_size := max_cost;
 
-  let state = Random.State.make [| seed |] in
-  let inputs, output =
-    match file with
-    | Some f -> (
-        let examples =
-          Sexp.load_sexps f
-          |> List.map ~f:[%of_sexp: int array]
-          |> List.map ~f:(Array.map ~f:(fun x -> x > 0))
-        in
-        match examples with o :: is -> (is, o) | [] -> failwith "no examples" )
-    | None -> random_io ~state ~n ~k
-  in
-
-  let graph, stats = synth ~no_abstraction inputs output in
+  let bench = Sexp.input_sexp In_channel.stdin |> [%of_sexp: Cad_bench.t] in
+  let graph, stats = synth ~no_abstraction bench in
 
   let check_output =
     if check && not stats.sat then Some (check_search_space inputs graph)
@@ -61,7 +39,7 @@ let main ~n ~enable_graph_output ~seed ~max_cost ~k ~print_header ~abstraction
 
 let () =
   let open Command.Let_syntax in
-  Command.basic ~summary:"Run lazy CEGIS on a random testcase."
+  Command.basic ~summary:"Run lazy CEGIS on a CAD benchmark."
     [%map_open
       let n =
         flag "num-inputs"
@@ -87,8 +65,8 @@ let () =
         flag "refine"
           (optional_with_default "first" string)
           ~doc:" refinement strategy"
-      and file = flag "file" (optional string) ~doc:" input benchmark" in
+      in
 
       main ~n ~enable_graph_output ~seed ~max_cost ~k ~print_header ~abstraction
-        ~check ~refine ~file]
+        ~check ~refine]
   |> Command.run

@@ -229,7 +229,9 @@ module Make (C : Deps) = struct
       let of_code c =
         match C.find_annot c Key.key with
         | Some (Key.K v) -> v.Variant.constructor @@ C.cast c
-        | None -> Error.create "Could not convert code to value." c [%sexp_of:_ C.t] |> Error.raise
+        | None ->
+            Error.create "Could not convert code to value." c [%sexp_of: _ C.t]
+            |> Error.raise
     end
 
     open Value
