@@ -1,7 +1,7 @@
 open! Core
 open Staged_synth.Lazy_cegis
 
-let main ~n ~enable_graph_output ~seed ~max_cost ~k ~print_header ~abstraction
+let main ~n ~enable_graph_output ~seed ~max_cost ~print_header ~abstraction
     ~check ~refine () =
   if print_header then (
     Fmt.pr
@@ -23,10 +23,12 @@ let main ~n ~enable_graph_output ~seed ~max_cost ~k ~print_header ~abstraction
   let graph, stats = synth ~no_abstraction bench in
 
   let check_output =
-    if check && not stats.sat then Some (check_search_space inputs graph)
+    if check && not stats.sat then
+      (* Some (check_search_space inputs graph) *)
+      failwith "unimplemented"
     else None
   in
-  Fmt.pr "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d,%s\n" k n seed max_cost
+  Fmt.pr "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d,%s\n" n seed max_cost
     abstraction stats.Stats.n_state_nodes stats.Stats.n_arg_nodes
     stats.Stats.n_covered stats.Stats.n_refuted stats.Stats.min_width
     stats.Stats.max_width stats.Stats.median_width
@@ -52,7 +54,6 @@ let () =
         flag "max-cost"
           (optional_with_default 20 int)
           ~doc:" maximum program cost"
-      and k = anon ("num-bits" %: int)
       and print_header = flag "print-header" no_arg ~doc:" print csv header"
       and abstraction =
         flag "abstraction"
@@ -67,6 +68,6 @@ let () =
           ~doc:" refinement strategy"
       in
 
-      main ~n ~enable_graph_output ~seed ~max_cost ~k ~print_header ~abstraction
+      main ~n ~enable_graph_output ~seed ~max_cost ~print_header ~abstraction
         ~check ~refine]
   |> Command.run
