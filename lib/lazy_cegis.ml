@@ -131,10 +131,10 @@ module type ABS = sig
   val domain : t -> Set.M(Vector3).t
 end
 
-module Map_abs : ABS = struct
+module Map_abs = struct
   module T = struct
     type t = { pos : Set.M(Vector3).t; neg : Set.M(Vector3).t }
-    [@@deriving compare, hash, sexp]
+    [@@deriving compare, equal, hash, sexp]
   end
 
   include T
@@ -164,7 +164,9 @@ module Map_abs : ABS = struct
   let inter { pos = p1; neg = n1 } { pos = p2; neg = n2 } =
     { pos = Set.inter p1 p2; neg = Set.union n1 n2 }
 
-  let sub { pos = p1; neg = n1 } { pos = p2; neg = n2 } = failwith ""
+  let negate { pos; neg } = { neg = pos; pos = neg }
+
+  let sub x y = inter x (negate y)
 
   let mem a i = Set.mem a.pos i || Set.mem a.neg i
 
@@ -173,8 +175,6 @@ module Map_abs : ABS = struct
     else { a with neg = Set.add a.neg k }
 
   let ( ==> ) s s' = is_subset s ~of_:s'
-
-  let contains a c = failwith ""
 
   let width { pos; neg } = Set.length pos + Set.length neg
 
@@ -191,8 +191,6 @@ module Abs = Map_abs
 module Op = struct
   type cuboid = { id : int; rot : Vector3.t } [@@deriving compare, hash, sexp]
 
-  type dim = X | Y | Z [@@deriving compare, hash, sexp]
-
   type t =
     | Union
     | Inter
@@ -201,10 +199,10 @@ module Op = struct
     | Repeat_n of int
     | Sphere of (Vector3.t * float)
     | Cuboid of cuboid
-    | Cuboid_plane of cuboid * dim * float
+    | Cuboid_plane of cuboid * Vector3.dim * float
   [@@deriving compare, hash, sexp]
 
-  type tag = Shape | Count | Plane [@@deriving equal, sexp]
+  type tag = Shape | Count | Plane [@@deriving compare, equal, hash, sexp]
 
   let pp fmt op =
     let str =
@@ -269,24 +267,15 @@ end
 module State_node0 = struct
   let time = ref 0
 
-  type t = {
-    id : int;
-    tag : Op.tag;
-    mutable cost : int;
-    mutable state : Abs.t;
-    mutable covered : bool;
-    mutable last_mod_time : int;
-  }
+  type t = { id : int; tag : Op.tag; mutable cost : int; mutable state : Abs.t }
   [@@deriving sexp]
 
-  let copy ?cost ?state ?covered ?last_mod_time n =
+  let copy ?cost ?state n =
     {
       id = mk_id ();
       tag = n.tag;
       cost = Option.value cost ~default:n.cost;
       state = Option.value state ~default:n.state;
-      covered = Option.value covered ~default:n.covered;
-      last_mod_time = Option.value last_mod_time ~default:n.last_mod_time;
     }
 
   let id { id; _ } = id
@@ -294,18 +283,6 @@ module State_node0 = struct
   let state { state; _ } = state
 
   let set_state n s = n.state <- s
-
-  let cover n =
-    if not n.covered then (
-      incr time;
-      n.covered <- true;
-      n.last_mod_time <- !time )
-
-  let uncover n =
-    if n.covered then (
-      incr time;
-      n.covered <- false;
-      n.last_mod_time <- !time )
 
   let pp fmt { state; _ } = Abs.pp fmt state
 
@@ -438,35 +415,18 @@ module Program = struct
   include Comparator.Make (T)
 
   let eval_open eval term =
-    match (term#op, term#args) with
+    match (term#op, List.map ~f:eval term#args) with
     | Op.Sphere (center, radius), [] ->
         fun v -> Float.(Vector3.l2_dist center v <= radius)
+    | Cuboid_plane ({ rot; _ }, dim, offset), [] ->
+        fun v -> Float.(offset <= Vector3.(get dim @@ inverse_rotate rot v))
     | Cuboid { rot; id }, [ xl; xh; yl; yh; zl; zh ] ->
-        let offset t =
-          match (t#op, t#args) with
-          | Op.Cuboid_plane ({ id = id'; _ }, _, x), [] ->
-              assert (id = id');
-              x
-          | _ -> failwith "unexpected offset"
-        in
         fun v ->
-          let x, y, z = Vector3.inverse_rotate rot v in
           Float.(
-            offset xl <= x
-            && x <= offset xh
-            && offset yl <= y
-            && y <= offset yh
-            && offset zl <= z
-            && z <= offset zh)
-    | Union, [ x; y ] ->
-        let f = eval x and g = eval y in
-        fun v -> f v || g v
-    | Inter, [ x; y ] ->
-        let f = eval x and g = eval y in
-        fun v -> f v && g v
-    | Sub, [ x; y ] ->
-        let f = eval x and g = eval y in
-        fun v -> f v && not (g v)
+            xl v && (not (xh v)) && yl v && (not (yh v)) && zl v && not (zh v))
+    | Union, [ f; g ] -> fun v -> f v || g v
+    | Inter, [ f; g ] -> fun v -> f v && g v
+    | Sub, [ f; g ] -> fun v -> f v && not (g v)
     | op, _ -> Error.(create "Unexpected op" op [%sexp_of: Op.t] |> raise)
 
   let rec eval_program term =
@@ -492,7 +452,7 @@ module Program = struct
     let rec eval term = eval_open eval term in
     eval (node_to_obj graph node)
 
-  let rec eval_op graph op args =
+  let rec eval_op eval_open graph op args =
     let obj =
       object
         method op = op
@@ -506,10 +466,29 @@ module Program = struct
   let eval_on eval points =
     List.map points ~f:(fun v -> (v, eval v)) |> Abs.of_list
 
+  let abs_eval_open eval term =
+    match (term#op, term#args) with
+    | Op.Cuboid { rot; id }, [ xl; xh; yl; yh; zl; zh ] ->
+        List.reduce_exn ~f:Abs.inter
+          [ xl; Abs.negate xh; yl; Abs.negate yh; zl; Abs.negate zh ]
+    | Union, [ x; y ] -> Abs.union x y
+    | Inter, [ x; y ] -> Abs.inter x y
+    | Sub, [ x; y ] -> Abs.sub x y
+    | op, _ -> Error.(create "Unexpected op" op [%sexp_of: Op.t] |> raise)
+
+  let rec abs_eval_op graph op args =
+    let obj =
+      object
+        method op = op
+
+        method args = List.map args ~f:(fun v -> v.State_node0.state)
+      end
+    in
+    let rec eval term = abs_eval_open eval term in
+    eval obj
+
   let rec size (Apply (op, args)) = 1 + List.sum (module Int) args ~f:size
 end
-
-let contains a c = Map.for_alli a ~f:(fun ~key:i ~data:v -> Bool.(c.(i) = v))
 
 (* let refine_ordered strong_enough abs conc =
  *   let open State_node0 in
@@ -753,31 +732,37 @@ module State_node = struct
     | (op, args) :: _ -> `Apply (op, List.map args ~f:(choose_program graph))
     | _ -> failwith "expected arguments"
 
+  module Key = struct
+    type t = Abs.t * Op.tag [@@deriving compare, hash, sexp]
+  end
+
   let create ?(covered = false) ~state ~cost ~op graph children =
     match Args_node.create ~op graph children with
-    | Some args_v ->
-        let state_v =
-          incr time;
-          {
-            id = mk_id ();
-            cost;
-            state;
-            covered;
-            last_mod_time = !time;
-            tag = Op.tag op;
-          }
-        in
-        G.ensure_edge_e graph (Node.State state_v, -1, args_v);
-        true
+    | Some args_v -> (
+        let tag = Op.tag op in
+        match
+          G.find_map_vertex graph ~f:(function
+            | State v
+              when [%equal: Op.tag] tag v.tag && [%equal: Abs.t] v.state state
+              ->
+                Some v
+            | _ -> None)
+        with
+        | Some _ -> false
+        | None ->
+            let state_v =
+              incr time;
+              { id = mk_id (); cost; state; tag }
+            in
+            G.ensure_edge_e graph (Node.State state_v, -1, args_v);
+            true )
     | None -> false
 end
 
 let of_cost graph tag cost =
   G.filter_map_vertex
     ~f:(function
-      | State ({ covered = false; _ } as v)
-        when v.cost = cost && [%equal: Op.tag] tag v.tag ->
-          Some v
+      | State v when v.cost = cost && [%equal: Op.tag] tag v.tag -> Some v
       | _ -> None)
     graph
 
@@ -803,9 +788,11 @@ let fill_bool_op op graph cost =
                       and cs' = of_cost graph Shape c' in
                       List.iteri cs ~f:(fun i (a : State_node.t) ->
                           List.iteri cs' ~f:(fun j (a' : State_node.t) ->
-                              let _state = Program.eval_op graph op [ a; a' ] in
                               let did_add =
-                                State_node.create ~state:Abs.top ~cost
+                                State_node.create
+                                  ~state:
+                                    (Program.abs_eval_op graph op [ a; a' ])
+                                  ~cost
                                   ~op:(op :> Op.t)
                                   graph [ a; a' ]
                               in
@@ -835,9 +822,11 @@ let fill_repeat op graph cost =
                       and cs' = of_cost graph Shape c' in
                       List.iteri cs ~f:(fun i (a : State_node.t) ->
                           List.iteri cs' ~f:(fun j (a' : State_node.t) ->
-                              let _state = Program.eval_op graph op [ a; a' ] in
                               let did_add =
-                                State_node.create ~state:Abs.top ~cost
+                                State_node.create
+                                  ~state:
+                                    (Program.abs_eval_op graph op [ a; a' ])
+                                  ~cost
                                   ~op:(op :> Op.t)
                                   graph [ a; a' ]
                               in
@@ -867,9 +856,10 @@ let fill_cuboid op graph cost =
                         |> List.iteri ~f:(fun i (a : State_node.t) ->
                                fill_arg (args @ [ a ]) cs)
                     | [] ->
-                        let _state = Program.eval_op graph op args in
                         let did_add =
-                          State_node.create ~state:Abs.top ~cost
+                          State_node.create
+                            ~state:(Program.abs_eval_op graph op args)
+                            ~cost
                             ~op:(op :> Op.t)
                             graph args
                         in
@@ -952,7 +942,6 @@ let synth ?(no_abstraction = false) bench =
     let vertex_attributes = function
       | Node.State n ->
           let attr = [ `HtmlLabel (Fmt.str "%a" State_node.graphviz_pp n) ] in
-          let attr = if n.covered then `Style `Dotted :: attr else attr in
           let attr =
             if Abs.is_subset ~of_:expected n.state then `Style `Bold :: attr
             else attr
@@ -1044,11 +1033,7 @@ let synth ?(no_abstraction = false) bench =
           n_arg_nodes =
             G.filter_vertex graph ~f:(function Args v -> true | _ -> false)
             |> List.length;
-          n_covered =
-            G.filter_vertex graph ~f:(function
-              | State v -> v.covered
-              | _ -> false)
-            |> List.length;
+          n_covered = -1;
           n_refuted = !n_refuted;
           min_width = widths.(0);
           max_width = widths.(Array.length widths - 1);

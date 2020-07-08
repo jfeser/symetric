@@ -7,6 +7,8 @@ end
 include T
 include Comparator.Make (T)
 
+type dim = X | Y | Z [@@deriving compare, hash, sexp]
+
 let l2_dist (x, y, z) (x', y', z') =
   Float.(sqrt ((x - x') ** 2.0) + ((y - y') ** 2.0) + ((z - z') ** 2.0))
 
@@ -22,3 +24,5 @@ let inverse_rotate (rot_x, rot_y, rot_z) (x, y, z) =
   and y3 = (cos (-rot_x) * y2) - (sin (-rot_x) * z2)
   and z3 = (sin (-rot_x) * y2) + (cos (-rot_x) * z2) in
   (x3, y3, z3)
+
+let get dim (x, y, z) = match dim with X -> x | Y -> y | Z -> z
