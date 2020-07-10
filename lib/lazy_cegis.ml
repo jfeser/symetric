@@ -597,47 +597,36 @@ end
  *   | `Random -> refine_random ~state:(Random.State.make [||])
  *   | `Pareto -> refine_hybrid *)
 
-(* let rec refine_child graph node op children =
- *   let open State_node0 in
- *   if List.is_empty children then []
- *   else
- *     let conc_inputs = List.map children ~f:cstate
- *     and old_inputs = List.map children ~f:state in
- * 
- *     (\* The old state contains the concrete behavior. *\)
- *     assert (
- *       List.zip_exn old_inputs conc_inputs
- *       |> List.for_all ~f:(fun (old, conc) -> Abs.contains old conc) );
- * 
- *     let strong_enough args = Abs.is_subset_a node.state ~of_:(eval' op args) in
- * 
- *     let new_inputs = refine_many () strong_enough old_inputs conc_inputs in
- * 
- *     (\* The new state refines the old state. *\)
- *     assert (
- *       List.zip_exn old_inputs new_inputs
- *       |> List.for_all ~f:(fun (old, new_) -> Abs.is_subset_a old ~of_:new_) );
- * 
- *     (\* The new state contains the concrete behavior. *\)
- *     assert (
- *       List.zip_exn conc_inputs new_inputs
- *       |> List.for_all ~f:(fun (conc, new_) -> Abs.contains new_ conc) );
- * 
- *     let to_prune =
- *       List.zip_exn children @@ List.zip_exn old_inputs new_inputs
- *       |> List.filter_map ~f:(fun (node, (old, new_)) ->
- *              if [%compare.equal: Abs.t] old new_ then None
- *              else (
- *                set_state node new_;
- *                Some node ))
- *     in
- *     to_prune @ List.concat_map to_prune ~f:(refine_children graph)
- * 
- * and refine_children graph node =
- *   G.children graph node
- *   |> List.concat_map ~f:(fun (op, args) -> refine_child graph node op args)
- * 
- * let prune g (nodes : State_node0.t list) =
+let rec refine_child graph node op children =
+  let open State_node0 in
+  if List.is_empty children then []
+  else
+    let old_inputs = List.map children ~f:state in
+
+    let strong_enough args = Abs.(node.state ==> eval' op args) in
+
+    let new_inputs = refine_many () strong_enough old_inputs in
+
+    (* The new state refines the old state. *)
+    assert (
+      List.for_all2_exn old_inputs new_inputs ~f:(fun old new_ ->
+          Abs.(old ==> new_)) );
+
+    let to_prune =
+      List.zip_exn children @@ List.zip_exn old_inputs new_inputs
+      |> List.filter_map ~f:(fun (node, (old, new_)) ->
+             if [%compare.equal: Abs.t] old new_ then None
+             else (
+               set_state node new_;
+               Some node ))
+    in
+    to_prune @ List.concat_map to_prune ~f:(refine_children graph)
+
+and refine_children graph node =
+  G.children graph node
+  |> List.concat_map ~f:(fun (op, args) -> refine_child graph node op args)
+
+(* let prune g (nodes : State_node0.t list) =
  *   let open State_node0 in
  *   if not (List.is_empty nodes) then (
  *     let min_mod_time =
@@ -674,30 +663,7 @@ end
  *           process (work @ vs)
  *       | [] -> ()
  *     in
- *     process nodes )
- * 
- * let update_covers graph =
- *   let uncovered =
- *     G.filter_map_vertex graph ~f:(function
- *       | State v when not v.covered -> Some v
- *       | _ -> None)
- *     |> List.sort ~compare:(fun (x : State_node0.t) x' ->
- *            [%compare: int] (Abs.width x.state) (Abs.width x'.state))
- *   in
- *   let rec cover = function
- *     | v :: vs ->
- *         let vs' =
- *           List.filter vs ~f:(fun (v' : State_node0.t) ->
- *               if v'.cost <= v.cost && Abs.is_subset v'.state ~of_:v.state then
- *                 State_node0.cover v
- *               else if v.cost <= v'.cost && Abs.is_subset v.state ~of_:v'.state
- *               then State_node0.cover v';
- *               not v'.covered)
- *         in
- *         cover vs'
- *     | [] -> ()
- *   in
- *   cover uncovered *)
+ *     process nodes ) *)
 
 module Args_node = struct
   include Args_node0
@@ -902,12 +868,11 @@ let refine graph (node : State_node.t) bad =
 
   [ left; right ]
 
-(* let rec strengthen graph (node : State_node.t) bad_out =
- *   assert (Abs.(node.state ==> bad_out));
- *   let to_prune = refine graph node bad_out in
- *   let to_prune' = refine_children graph node in
- *   assert (not Abs.(node.state ==> bad_out));
- *   to_prune @ to_prune' *)
+let rec strengthen graph (node : State_node.t) bad_out =
+  assert (Abs.(node.state ==> bad_out));
+  let to_prune = refine graph node bad_out in
+  let to_prune' = List.concat_map to_prune ~f:(refine_children graph) in
+  to_prune @ to_prune'
 
 module Stats = struct
   type t = {
@@ -967,35 +932,32 @@ let synth ?(no_abstraction = false) bench =
 
   let n_refuted = ref 0 in
 
-  (* let refute () =
-   *   match
-   *     G.find_map_vertex graph ~f:(function
-   *       | State v when (not v.covered) && Abs.is_subset expected ~of_:v.state ->
-   *           Some v
-   *       | _ -> None)
-   *   with
-   *   | Some v ->
-   *       let output = Program.(eval_on (eval_node graph v) inputs) in
-   *       if Abs.is_subset expected ~of_:output then raise (Done `Sat)
-   *       else (
-   *         incr n_refuted;
-   *         let to_prune = strengthen graph v output in
-   *         dump ();
-   *         prune graph to_prune;
-   *         dump () );
-   *       true
-   *   | None -> false
-   * in *)
+  let refute () =
+    match
+      G.find_map_vertex graph ~f:(function
+        | State v when Abs.(v.state ==> expected) -> Some v
+        | _ -> None)
+    with
+    | Some v ->
+        let output = Program.(eval_on (eval_node graph v) inputs) in
+        if Abs.(expected ==> output) then raise (Done `Sat)
+        else (
+          incr n_refuted;
+          let to_prune = strengthen graph v output in
+          dump ();
+          prune graph to_prune;
+          dump () );
+        true
+    | None -> false
+  in
+
   let rec search cost =
     if cost > !max_size then raise (Done `Unsat);
-
-    (* let rec strengthen_and_cover () =
-     *   update_covers graph;
-     *   dump ();
-     *   let did_strengthen = refute () in
-     *   if did_strengthen then strengthen_and_cover ()
-     * in
-     * strengthen_and_cover (); *)
+    let rec strengthen_and_cover () =
+      let did_strengthen = refute () in
+      if did_strengthen then strengthen_and_cover ()
+    in
+    strengthen_and_cover ();
     let changed = fill graph bench cost in
     Fmt.epr "Changed: %b Cost: %d\n%!" changed cost;
     if changed then dump ();
