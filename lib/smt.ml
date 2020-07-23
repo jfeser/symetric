@@ -91,7 +91,7 @@ module Make () = struct
 
     let exactly_one xs = at_least_one xs && at_most_one xs
 
-    let bool x = Sexp.Atom (if x then "true" else "false")
+    let bool x = if x then true_ else false_
   end
 
   let assert_ expr = add_stmt (`Assert expr)

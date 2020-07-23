@@ -925,6 +925,17 @@ let to_constraint vectors graph target_node expected_output separator =
            Smt.Interpolant.assert_group ~group:sep_group defn
          else Smt.Interpolant.assert_group defn);
 
+  let rec parse_interpolant =
+    let open Sexp in
+    function
+    | List (Atom "and" :: args) -> `And (List.map ~f:parse_interpolant args)
+    | List [ Atom "not"; arg ] -> `Not (parse_interpolant arg)
+    | Atom x -> `Var x
+    | inter ->
+        Error.create "Unexpected interpolant" inter [%sexp_of: Sexp.t]
+        |> Error.raise
+  in
+
   Smt.Interpolant.get_interpolant [ sep_group ]
 
 let synth ?(no_abstraction = false) inputs output =
