@@ -234,6 +234,8 @@ module Node = struct
   include T
   include Comparator.Make (T)
 
+  module O : Comparable.Infix with type t := t = Comparable.Make (T)
+
   let id = function Args x -> Args_node0.id x | State x -> State_node0.id x
 
   let to_args = function Args x -> Some x | _ -> None
@@ -275,21 +277,66 @@ module G = struct
   include G
   include Graph.Graphviz.Dot (G)
 
-  module V = struct
-    include V
+  let iter_state_vertex g ~f =
+    iter_vertex (function State x -> f x | _ -> ()) g
 
+  (** The set of nodes that depend on a state 'v'. *)
+  let depends g v =
+    pred g (State v)
+    |> List.concat_map ~f:(pred g)
+    |> List.dedup_and_sort ~compare:[%compare: Node.t]
+    |> List.map ~f:(function Node.State x -> x | Args _ -> assert false)
+
+  let ensure_vertex g v = if not (mem_vertex g v) then add_vertex g v
+
+  let ensure_edge_e g e = if not (mem_edge_e g e) then add_edge_e g e
+end
+
+module Search_state = struct
+  module Args_table_key = struct
+    module T = struct
+      type t = Op.t * State_node0.t list [@@deriving compare, hash, sexp]
+    end
+
+    include T
+    include Comparator.Make (T)
+  end
+
+  type t = {
+    graph : G.t;
+    args_table : Args_node0.t Hashtbl.M(Args_table_key).t;
+    state_table : State_node0.t Hashtbl.M(Abs).t;
+  }
+
+  let create () =
+    {
+      graph = G.create ();
+      args_table = Hashtbl.create (module Args_table_key);
+      state_table = Hashtbl.create (module Abs);
+    }
+
+  let copy x =
+    {
+      graph = G.copy x.graph;
+      args_table = Hashtbl.copy x.args_table;
+      state_table = Hashtbl.copy x.state_table;
+    }
+
+  let wrap f g = f g.graph
+
+  module V = struct
     include Container.Make0 (struct
-      type t = G.t
+      type nonrec t = t
 
       module Elt = struct
-        type t = V.t [@@deriving equal]
+        type t = G.V.t [@@deriving equal]
       end
 
-      let fold g ~init ~f = G.fold_vertex (fun v acc -> f acc v) g init
+      let fold g ~init ~f = G.fold_vertex (fun v acc -> f acc v) g.graph init
 
-      let iter = `Custom (fun g ~f -> G.iter_vertex f g)
+      let iter = `Custom (fun g ~f -> G.iter_vertex f g.graph)
 
-      let length = `Custom G.nb_vertex
+      let length = `Custom (wrap G.nb_vertex)
     end)
 
     let filter g ~f =
@@ -301,37 +348,46 @@ module G = struct
         g ~init:[]
 
     let map g ~f = fold ~f:(fun xs x -> f x :: xs) g ~init:[]
+
+    include G.V
   end
 
   module E = struct
-    include E
-
     include Comparator.Make (struct
       type t = Node.t * int * Node.t [@@deriving compare, sexp]
     end)
 
     include Container.Make0 (struct
-      type t = G.t
+      type nonrec t = t
 
       module Elt = struct
-        type t = E.t
+        type t = G.E.t
 
-        let equal e e' = [%compare: t] e e' = 0
+        let equal e e' = G.E.compare e e' = 0
       end
 
-      let fold g ~init ~f = G.fold_edges_e (fun v acc -> f acc v) g init
+      let fold g ~init ~f = G.fold_edges_e (fun v acc -> f acc v) g.graph init
 
-      let iter = `Custom (fun g ~f -> G.iter_edges_e f g)
+      let iter = `Custom (fun g ~f -> G.iter_edges_e f g.graph)
 
-      let length = `Custom G.nb_edges
+      let length = `Custom (wrap G.nb_edges)
     end)
+
+    include G.E
   end
 
-  let iter_state_vertex g ~f =
-    iter_vertex (function State x -> f x | _ -> ()) g
+  let succ = wrap G.succ
+
+  let pred = wrap G.pred
+
+  let succ_e = wrap G.succ_e
+
+  let pred_e = wrap G.pred_e
+
+  let ensure_edge_e = wrap G.ensure_edge_e
 
   let children g v =
-    succ g (State v)
+    G.succ g.graph (State v)
     |> List.map ~f:(fun v' ->
            let a = Node.to_args_exn v' in
            let op = Args_node0.op a in
@@ -345,20 +401,16 @@ module G = struct
            in
            (op, args))
 
-  (** The set of nodes that depend on a state 'v'. *)
-  let depends g v =
-    pred g (State v)
-    |> List.concat_map ~f:(pred g)
-    |> List.dedup_and_sort ~compare:[%compare: Node.t]
-    |> List.map ~f:(function Node.State x -> x | Args _ -> assert false)
-
-  let ensure_vertex g v = if not (mem_vertex g v) then add_vertex g v
-
-  let ensure_edge_e g e = if not (mem_edge_e g e) then add_edge_e g e
+  let remove_vertex x v =
+    G.remove_vertex x.graph v;
+    Hashtbl.filter_inplace x.args_table ~f:(fun v' -> Node.O.(v <> Args v'));
+    Hashtbl.filter_inplace x.state_table ~f:(fun v' -> Node.O.(v <> State v'))
 
   let filter g ~f =
-    G.iter_vertex (fun v -> if not (f v) then G.remove_vertex g v) g
+    G.iter_vertex (fun v -> if not (f v) then remove_vertex g v) g.graph
 end
+
+module S = Search_state
 
 let eval' op args =
   match (op, args) with
@@ -370,7 +422,7 @@ let eval' op args =
 
 let eval g a =
   let args =
-    G.succ_e g (Node.Args a)
+    Search_state.succ_e g (Node.Args a)
     |> List.sort ~compare:(fun (_, i, _) (_, i', _) -> [%compare: int] i i')
     |> List.map ~f:(function
          | _, _, Node.State v -> v.state
@@ -555,26 +607,16 @@ end
 module Args_node = struct
   include Args_node0
 
-  module Key = struct
-    module T = struct
-      type t = Op.t * State_node0.t list [@@deriving compare, hash, sexp]
-    end
-
-    include T
-    include Comparator.Make (T)
-  end
-
-  let args_tbl = Hashtbl.create (module Key)
-
   let create ~op graph args =
-    match Hashtbl.find args_tbl (op, args) with
+    match Hashtbl.find graph.Search_state.args_table (op, args) with
     | Some v -> None
     | None ->
-        let args_v = Node.Args { op; id = mk_id () } in
+        let args_n = { op; id = mk_id () } in
+        let args_v = Node.Args args_n in
         List.iteri args ~f:(fun i v ->
-            G.ensure_edge_e graph (args_v, i, Node.State v));
-        Hashtbl.set args_tbl (op, args) args_v;
-        Some args_v
+            S.ensure_edge_e graph (args_v, i, Node.State v));
+        Hashtbl.set graph.args_table (op, args) args_n;
+        Some args_n
 end
 
 module State_node = struct
@@ -583,7 +625,7 @@ module State_node = struct
   let state_tbl = Hashtbl.create (module Abs)
 
   let rec choose_program graph node =
-    match G.children graph node with
+    match S.children graph node with
     | (op, args) :: _ -> `Apply (op, List.map args ~f:(choose_program graph))
     | _ -> failwith "expected arguments"
 
@@ -601,7 +643,7 @@ module State_node = struct
     match Args_node.create ~op graph children with
     | Some args_v ->
         let state_v = create ~covered ~state ~cost () in
-        G.ensure_edge_e graph (Node.State state_v, -1, args_v);
+        S.ensure_edge_e graph (Node.State state_v, -1, Node.Args args_v);
         true
     | None -> false
 end
@@ -614,7 +656,7 @@ let rec fill graph cost =
     let module Part = Combinat.Partition in
     let module Perm = Combinat.Permutation.Of_list in
     let of_cost c =
-      G.V.filter_map
+      S.V.filter_map
         ~f:(function
           | State v when (not v.covered) && v.cost = c -> Some v | _ -> None)
         graph
@@ -725,7 +767,7 @@ module Reachable (G : Graph.Fixpoint.G) =
 
 let reachable graph n =
   let module A = Reachable (G) in
-  A.analyze ([%equal: Node.t] n) graph
+  A.analyze ([%equal: Node.t] n) graph.Search_state.graph
 
 let dump =
   let step = ref 0 in
@@ -771,16 +813,17 @@ let dump =
         in
         sprintf "%d-graph%s.dot" !step suffix
       in
-      Out_channel.with_file fn ~f:(fun ch -> Viz.output_graph ch graph);
+      Out_channel.with_file fn ~f:(fun ch ->
+          Viz.output_graph ch graph.Search_state.graph);
       incr step )
 
 let separators graph target =
-  Seq.unfold ~init:(G.succ graph target) ~f:(fun sep ->
+  Seq.unfold ~init:(S.succ graph target) ~f:(fun sep ->
       if List.is_empty sep then None
       else
         let sep' =
-          List.concat_map sep ~f:(G.succ graph)
-          |> List.concat_map ~f:(G.succ graph)
+          List.concat_map sep ~f:(S.succ graph)
+          |> List.concat_map ~f:(S.succ graph)
         in
         Some (sep, sep'))
 
@@ -788,8 +831,10 @@ let in_cone graph target_node separator =
   let module R = Reachable (G) in
   let is_separator = Set.mem separator in
   let target_reaches =
-    R.analyze (fun v -> [%equal: Node.t] v (State target_node)) graph
-  and separator_reaches = R.analyze is_separator graph in
+    R.analyze
+      (fun v -> [%equal: Node.t] v (State target_node))
+      graph.Search_state.graph
+  and separator_reaches = R.analyze is_separator graph.Search_state.graph in
   fun v -> target_reaches v && (is_separator v || not (separator_reaches v))
 
 let get_refinement vectors graph target_node expected_output separator =
@@ -799,18 +844,18 @@ let get_refinement vectors graph target_node expected_output separator =
   (* Select the subset of the graph that can reach the target. *)
   let graph =
     let in_cone = in_cone graph target_node separator in
-    let g = G.copy graph in
-    G.filter g ~f:in_cone;
+    let g = S.copy graph in
+    S.filter g ~f:in_cone;
     g
   in
   dump ~suffix:"cone" graph;
 
   let edge_vars =
-    G.E.to_list graph
+    S.E.to_list graph
     |> List.map ~f:(fun e -> (e, Smt.fresh_decl ~prefix:"e" ()))
-    |> Map.of_alist_exn (module G.E)
+    |> Map.of_alist_exn (module S.E)
   and state_vars =
-    G.V.filter_map graph ~f:Node.to_state
+    S.V.filter_map graph ~f:Node.to_state
     |> List.map ~f:(fun (v : State_node.t) ->
            let vars =
              List.map vectors ~f:(fun vec ->
@@ -821,7 +866,7 @@ let get_refinement vectors graph target_node expected_output separator =
            (v, vars))
     |> Map.of_alist_exn (module State_node)
   and arg_out_vars =
-    G.V.filter_map graph ~f:Node.to_args
+    S.V.filter_map graph ~f:Node.to_args
     |> List.map ~f:(fun v ->
            let vars =
              List.init (List.length vectors) ~f:(fun _ -> Smt.fresh_decl ())
@@ -841,17 +886,17 @@ let get_refinement vectors graph target_node expected_output separator =
 
   (* Every selected state node must have exactly one incoming edge selected. The
      target node is always selected. *)
-  G.V.filter_map graph ~f:Node.to_state
+  S.V.filter_map graph ~f:Node.to_state
   |> List.map ~f:(fun v ->
          let selected =
            if [%equal: State_node.t] target_node v then Smt.Bool.(bool true)
            else
-             G.pred_e graph (State v)
+             S.pred_e graph (State v)
              |> List.map ~f:(Map.find_exn edge_vars)
              |> Smt.Bool.or_
          in
          let incoming =
-           G.succ_e graph (State v) |> List.map ~f:(Map.find_exn edge_vars)
+           S.succ_e graph (State v) |> List.map ~f:(Map.find_exn edge_vars)
          in
          Smt.Bool.(selected => exactly_one incoming))
   |> Smt.Bool.and_
@@ -860,23 +905,23 @@ let get_refinement vectors graph target_node expected_output separator =
 
   (* An arg node with a selected outgoing edge must select all its incoming
      edges. *)
-  G.V.filter_map graph ~f:Node.to_args
+  S.V.filter_map graph ~f:Node.to_args
   |> List.map ~f:(fun v ->
          let outgoing =
-           G.pred_e graph (Args v) |> List.map ~f:(Map.find_exn edge_vars)
+           S.pred_e graph (Args v) |> List.map ~f:(Map.find_exn edge_vars)
          in
          let incoming =
-           G.succ_e graph (Args v) |> List.map ~f:(Map.find_exn edge_vars)
+           S.succ_e graph (Args v) |> List.map ~f:(Map.find_exn edge_vars)
          in
          Smt.Bool.(or_ outgoing => and_ incoming))
   |> Smt.Bool.and_
   |> Smt.make_defn "args-have-all-incoming"
   |> Smt.Interpolant.assert_group;
 
-  G.V.filter_map graph ~f:Node.to_state
+  S.V.filter_map graph ~f:Node.to_state
   |> List.map ~f:(fun v ->
          let state_in = Map.find_exn state_vars v in
-         G.succ_e graph (State v)
+         S.succ_e graph (State v)
          |> List.filter_map ~f:(fun ((_, _, v) as e) ->
                 Node.to_args v
                 |> Option.map ~f:(fun v ->
@@ -889,9 +934,9 @@ let get_refinement vectors graph target_node expected_output separator =
   |> Smt.make_defn "semantics-connected"
   |> Smt.Interpolant.assert_group;
 
-  G.V.filter_map graph ~f:Node.to_args
+  S.V.filter_map graph ~f:Node.to_args
   |> List.iter ~f:(fun v ->
-         let incoming_edges = G.succ_e graph (Args v) in
+         let incoming_edges = S.succ_e graph (Args v) in
 
          let incoming_states =
            List.filter_map incoming_edges ~f:(fun (v, n, _) ->
@@ -961,7 +1006,7 @@ let get_refinement vectors graph target_node expected_output separator =
     |> Seq.filter_map ~f:Node.to_args
     |> Seq.map ~f:(fun v ->
            let output_state =
-             (G.pred graph (Args v) |> List.hd_exn |> Node.to_state_exn).state
+             (S.pred graph (Args v) |> List.hd_exn |> Node.to_state_exn).state
            in
            let out_vars = Map.find_exn arg_out_vars v in
            List.filter_mapi out_vars ~f:(fun i var ->
@@ -986,21 +1031,21 @@ let prune graph target_node separator =
   let separator = Set.of_list (module Node) separator in
   let in_cone = in_cone graph target_node separator in
   (* remove everything in the cone that's not in the separator *)
-  G.filter graph ~f:(fun v -> not (in_cone v && not (Set.mem separator v)))
+  S.filter graph ~f:(fun v -> not (in_cone v && not (Set.mem separator v)))
 
 let arg_cost graph arg =
-  G.succ graph (Args arg)
+  S.succ graph (Args arg)
   |> List.filter_map ~f:Node.to_state
   |> List.sum (module Int) ~f:(fun v -> v.State_node.cost)
   |> fun cost -> cost + 1
 
 let synth ?(no_abstraction = false) inputs output =
-  let graph = G.create () and n_refuted = ref 0 in
+  let graph = S.create () and n_refuted = ref 0 in
   let vectors = List.init (Array.length @@ List.hd_exn inputs) ~f:Fun.id in
 
   let refute () =
     match
-      G.V.find_map graph ~f:(function
+      S.V.find_map graph ~f:(function
         | State v when (not v.covered) && Abs.contains v.state output -> Some v
         | _ -> None)
     with
@@ -1026,7 +1071,7 @@ let synth ?(no_abstraction = false) inputs output =
         |> Seq.iter ~f:(fun (arg_v, state) ->
                let cost = arg_cost graph arg_v in
                let state_v = State_node.create ~state ~cost () in
-               G.ensure_edge_e graph (State state_v, -1, Args arg_v));
+               S.ensure_edge_e graph (State state_v, -1, Args arg_v));
 
         dump
           ~cone:(reachable graph (State target))
@@ -1061,7 +1106,7 @@ let synth ?(no_abstraction = false) inputs output =
   try loop 1
   with Done status ->
     let widths =
-      G.V.filter_map graph ~f:(function
+      S.V.filter_map graph ~f:(function
         | State v -> Some (Abs.width v.state)
         | _ -> None)
       |> List.sort ~compare:[%compare: int]
@@ -1071,13 +1116,13 @@ let synth ?(no_abstraction = false) inputs output =
       Stats.
         {
           n_state_nodes =
-            G.V.filter graph ~f:(function State v -> true | _ -> false)
+            S.V.filter graph ~f:(function State v -> true | _ -> false)
             |> List.length;
           n_arg_nodes =
-            G.V.filter graph ~f:(function Args v -> true | _ -> false)
+            S.V.filter graph ~f:(function Args v -> true | _ -> false)
             |> List.length;
           n_covered =
-            G.V.filter graph ~f:(function State v -> v.covered | _ -> false)
+            S.V.filter graph ~f:(function State v -> v.covered | _ -> false)
             |> List.length;
           n_refuted = !n_refuted;
           min_width = widths.(0);
@@ -1138,7 +1183,7 @@ let check_search_space ?(n = 100_000) inputs graph =
       let prog = sample inputs in
       let cstate = Program.ceval prog in
       match
-        G.V.find_map graph ~f:(function
+        S.V.find_map graph ~f:(function
           | State v when Abs.contains v.state cstate -> Some v
           | _ -> None)
       with
