@@ -241,9 +241,9 @@ module Node = struct
   let to_args_exn x = Option.value_exn (to_args x)
 
   let to_state = function State x -> Some x | _ -> None
-end
 
-let contains a c = Map.for_alli a ~f:(fun ~key:i ~data:v -> Bool.(c.(i) = v))
+  let to_state_exn x = Option.value_exn (to_state x)
+end
 
 module Edge = struct
   type t = int [@@deriving compare, equal, sexp]
@@ -355,6 +355,9 @@ module G = struct
   let ensure_vertex g v = if not (mem_vertex g v) then add_vertex g v
 
   let ensure_edge_e g e = if not (mem_edge_e g e) then add_edge_e g e
+
+  let filter g ~f =
+    G.iter_vertex (fun v -> if not (f v) then G.remove_vertex g v) g
 end
 
 let eval' op args =
@@ -584,23 +587,22 @@ module State_node = struct
     | (op, args) :: _ -> `Apply (op, List.map args ~f:(choose_program graph))
     | _ -> failwith "expected arguments"
 
-  let create ?(covered = false) ~state ~cost ~op graph children =
+  let create ?(covered = false) ~state ~cost () =
+    match Hashtbl.find state_tbl state with
+    | Some v ->
+        v.cost <- Int.min v.cost cost;
+        v
+    | None ->
+        let v = { id = mk_id (); cost; state; covered; last_mod_time = -1 } in
+        Hashtbl.add_exn state_tbl state v;
+        v
+
+  let create_op ?(covered = false) ~state ~cost ~op graph children =
     match Args_node.create ~op graph children with
     | Some args_v ->
-        let state_v, did_add =
-          match Hashtbl.find state_tbl state with
-          | Some v ->
-              v.cost <- Int.min v.cost cost;
-              (v, true)
-          | None ->
-              let v =
-                { id = mk_id (); cost; state; covered; last_mod_time = -1 }
-              in
-              Hashtbl.add_exn state_tbl state v;
-              (v, true)
-        in
+        let state_v = create ~covered ~state ~cost () in
         G.ensure_edge_e graph (Node.State state_v, -1, args_v);
-        did_add
+        true
     | None -> false
 end
 
@@ -643,7 +645,7 @@ let rec fill graph cost =
                                           | `Sub -> Abs.sub a.state a'.state
                                         in
                                         let did_add =
-                                          State_node.create ~state ~cost
+                                          State_node.create_op ~state ~cost
                                             ~op:(op :> Op.t)
                                             graph [ a; a' ]
                                         in
@@ -727,7 +729,7 @@ let reachable graph n =
 
 let dump =
   let step = ref 0 in
-  fun ?output ?(cone = fun _ -> false) graph ->
+  fun ?suffix ?output ?(cone = fun _ -> false) graph ->
     let module Viz = Graph.Graphviz.Dot (struct
       include G
 
@@ -763,10 +765,13 @@ let dump =
         if i >= 0 then [ `Label (sprintf "%d" i) ] else []
     end) in
     if !enable_dump then (
-      if !step > 10 then exit 1;
-      Out_channel.with_file (sprintf "out%d.dot" !step) ~f:(fun ch ->
-          Viz.output_graph ch graph);
-      Out_channel.flush stdout;
+      let fn =
+        let suffix =
+          Option.map suffix ~f:(sprintf "-%s") |> Option.value ~default:""
+        in
+        sprintf "%d-graph%s.dot" !step suffix
+      in
+      Out_channel.with_file fn ~f:(fun ch -> Viz.output_graph ch graph);
       incr step )
 
 let separators graph target =
@@ -779,30 +784,26 @@ let separators graph target =
         in
         Some (sep, sep'))
 
-let to_constraint vectors graph target_node expected_output separator =
+let in_cone graph target_node separator =
+  let module R = Reachable (G) in
+  let is_separator = Set.mem separator in
+  let target_reaches =
+    R.analyze (fun v -> [%equal: Node.t] v (State target_node)) graph
+  and separator_reaches = R.analyze is_separator graph in
+  fun v -> target_reaches v && (is_separator v || not (separator_reaches v))
+
+let get_refinement vectors graph target_node expected_output separator =
   let module Smt = Smt.Make () in
   let separator = Set.of_list (module Node) separator in
 
   (* Select the subset of the graph that can reach the target. *)
   let graph =
-    let module R = Reachable (G) in
-    let in_cone =
-      let is_separator = Set.mem separator in
-      let target_reaches =
-        R.analyze (fun v -> [%equal: Node.t] v (State target_node)) graph
-      and separator_reaches = R.analyze is_separator graph in
-      fun v -> target_reaches v && (is_separator v || not (separator_reaches v))
-    in
+    let in_cone = in_cone graph target_node separator in
     let g = G.copy graph in
-    G.iter_vertex
-      (fun v ->
-        if not (in_cone v) then (
-          Fmt.pr "Removing %a\n" Node.pp v;
-          G.remove_vertex g v ))
-      graph;
+    G.filter g ~f:in_cone;
     g
   in
-  dump graph;
+  dump ~suffix:"cone" graph;
 
   let edge_vars =
     G.E.to_list graph
@@ -929,14 +930,69 @@ let to_constraint vectors graph target_node expected_output separator =
     let open Sexp in
     function
     | List (Atom "and" :: args) -> `And (List.map ~f:parse_interpolant args)
-    | List [ Atom "not"; arg ] -> `Not (parse_interpolant arg)
+    | List [ Atom "not"; Atom x ] -> `Not (`Var x)
     | Atom x -> `Var x
     | inter ->
         Error.create "Unexpected interpolant" inter [%sexp_of: Sexp.t]
         |> Error.raise
   in
 
-  Smt.Interpolant.get_interpolant [ sep_group ]
+  let rec process_interpolant = function
+    | `And xs ->
+        List.map xs ~f:process_interpolant
+        |> List.reduce
+             ~f:
+               (Map.merge ~f:(fun ~key:_ ->
+                  function
+                  | `Both (a, b) ->
+                      if Bool.(a = b) then Some a else assert false
+                  | `Left a | `Right a -> Some a))
+        |> Option.value ~default:(Map.empty (module String))
+    | `Not (`Var x) -> Map.singleton (module String) x false
+    | `Var x -> Map.singleton (module String) x true
+  in
+
+  let open Option.Let_syntax in
+  let%map interpolant = Smt.Interpolant.get_interpolant [ sep_group ] in
+  Fmt.pr "Got interpolant!\n";
+  let position = process_interpolant @@ parse_interpolant interpolant in
+  let refinement =
+    Set.to_sequence separator
+    |> Seq.filter_map ~f:Node.to_args
+    |> Seq.map ~f:(fun v ->
+           let output_state =
+             (G.pred graph (Args v) |> List.hd_exn |> Node.to_state_exn).state
+           in
+           let out_vars = Map.find_exn arg_out_vars v in
+           List.filter_mapi out_vars ~f:(fun i var ->
+               let%map pos =
+                 match Map.find output_state i with
+                 | Some x -> Some x
+                 | None ->
+                     let var =
+                       match var with Atom x -> x | _ -> assert false
+                     in
+                     Map.find position var
+               in
+               (i, pos))
+           |> Map.of_alist_exn (module Int))
+  in
+  Fmt.pr "Returning refinement!\n";
+  refinement
+
+let value_exn x = Option.value_exn x
+
+let prune graph target_node separator =
+  let separator = Set.of_list (module Node) separator in
+  let in_cone = in_cone graph target_node separator in
+  (* remove everything in the cone that's not in the separator *)
+  G.filter graph ~f:(fun v -> not (in_cone v && not (Set.mem separator v)))
+
+let arg_cost graph arg =
+  G.succ graph (Args arg)
+  |> List.filter_map ~f:Node.to_state
+  |> List.sum (module Int) ~f:(fun v -> v.State_node.cost)
+  |> fun cost -> cost + 1
 
 let synth ?(no_abstraction = false) inputs output =
   let graph = G.create () and n_refuted = ref 0 in
@@ -949,12 +1005,33 @@ let synth ?(no_abstraction = false) inputs output =
         | _ -> None)
     with
     | Some target ->
-        dump ~cone:(reachable graph (State target)) ~output graph;
+        dump
+          ~cone:(reachable graph (State target))
+          ~output ~suffix:"before-refinement" graph;
 
-        let sep = separators graph (State target) |> Seq.hd_exn in
-        Fmt.pr "Separator: %a\n" (Fmt.Dump.list Node.pp) sep;
-        let interpolant = to_constraint vectors graph target output sep in
-        Fmt.pr "Interpolant: %a" Fmt.Dump.(option Sexp.pp_hum) interpolant;
+        let refinement, separator =
+          separators graph (State target)
+          |> Seq.find_map ~f:(fun sep ->
+                 let open Option.Let_syntax in
+                 let%map r = get_refinement vectors graph target output sep in
+                 (r, sep))
+          |> value_exn
+        in
+
+        prune graph target separator;
+
+        let sep = List.filter_map separator ~f:Node.to_args in
+
+        Seq.zip (Seq.of_list sep) refinement
+        |> Seq.iter ~f:(fun (arg_v, state) ->
+               let cost = arg_cost graph arg_v in
+               let state_v = State_node.create ~state ~cost () in
+               G.ensure_edge_e graph (State state_v, -1, Args arg_v));
+
+        dump
+          ~cone:(reachable graph (State target))
+          ~output ~suffix:"after-refinement" graph;
+
         incr n_refuted;
         true
     | None -> false
@@ -970,7 +1047,7 @@ let synth ?(no_abstraction = false) inputs output =
 
     let changed = fill graph cost in
     Fmt.epr "Changed: %b Cost: %d\n%!" changed cost;
-    if changed then dump ~output graph;
+    if changed then dump ~output ~suffix:"after-fill" graph;
     let cost = if changed then cost else cost + 1 in
     loop cost
   in
@@ -978,7 +1055,7 @@ let synth ?(no_abstraction = false) inputs output =
   (* Add inputs to the state space graph. *)
   List.iter inputs ~f:(fun input ->
       let state = if no_abstraction then Abs.lift input else Abs.top in
-      State_node.create ~state ~cost:1 ~op:(`Input input) graph [] |> ignore);
+      State_node.create_op ~state ~cost:1 ~op:(`Input input) graph [] |> ignore);
   dump ~output graph;
 
   try loop 1

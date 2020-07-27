@@ -113,7 +113,9 @@ module Make () = struct
     let stdout, stdin = proc in
     Out_channel.output_string stdin smtlib;
     Out_channel.close stdin;
-    let sexps = Sexp.input_sexps stdout in
+    let output = In_channel.input_all stdout in
+    Fmt.pr "Mathsat output:\n%s\n" output;
+    let sexps = Sexp.scan_sexps @@ Lexing.from_string output in
     Unix.close_process proc |> Unix.Exit_or_signal.or_error |> Or_error.ok_exn;
     sexps
 
@@ -160,6 +162,11 @@ module Make () = struct
       let smtlib = Buffer.contents buf in
       Fmt.pr "Smtlib:\n%s\n\n" smtlib;
       let output = run_mathsat smtlib in
-      match output with [ Atom "unsat"; inter ] -> Some inter | _ -> None
+      match output with
+      | [ Atom "unsat"; inter ] -> Some inter
+      | Atom "sat" :: _ -> None
+      | _ ->
+          Error.create "Unexpected output" output [%sexp_of: Sexp.t list]
+          |> Error.raise
   end
 end
