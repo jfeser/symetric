@@ -146,16 +146,16 @@ end
 module Abs = Map_abs
 
 module Op = struct
-  type t = [ `Input of Conc.t | `Union | `Inter | `Sub ]
+  type t = Input of Conc.t | Union | Inter | Sub
   [@@deriving compare, equal, hash, sexp]
 
   let pp fmt op =
     let str =
       match op with
-      | `Input _ -> "in"
-      | `Union -> "or"
-      | `Inter -> "and"
-      | `Sub -> "diff"
+      | Input _ -> "in"
+      | Union -> "or"
+      | Inter -> "and"
+      | Sub -> "diff"
     in
     Fmt.pf fmt "%s" str
 end
@@ -244,7 +244,10 @@ module Node = struct
 
   let to_state = function State x -> Some x | _ -> None
 
-  let to_state_exn x = Option.value_exn (to_state x)
+  let to_state_exn = function
+    | State x -> x
+    | Args x ->
+        Error.create "Expected state." x [%sexp_of: Args_node0.t] |> Error.raise
 end
 
 module Edge = struct
@@ -407,17 +410,19 @@ module Search_state = struct
     Hashtbl.filter_inplace x.state_table ~f:(fun v' -> Node.O.(v <> State v'))
 
   let filter g ~f =
-    G.iter_vertex (fun v -> if not (f v) then remove_vertex g v) g.graph
+    G.iter_vertex (fun v -> if not (f v) then remove_vertex g v) g.graph;
+    Hashtbl.filter_inplace g.args_table ~f:(fun v -> f (Args v));
+    Hashtbl.filter_inplace g.state_table ~f:(fun v -> f (State v))
 end
 
 module S = Search_state
 
 let eval' op args =
   match (op, args) with
-  | `Input state, _ -> Abs.lift state
-  | `Union, [ x; y ] -> Abs.union x y
-  | `Inter, [ x; y ] -> Abs.inter x y
-  | `Sub, [ x; y ] -> Abs.sub x y
+  | Op.Input state, _ -> Abs.lift state
+  | Union, [ x; y ] -> Abs.union x y
+  | Inter, [ x; y ] -> Abs.inter x y
+  | Sub, [ x; y ] -> Abs.sub x y
   | _ -> failwith "Unexpected args"
 
 let eval g a =
@@ -437,10 +442,10 @@ module Program = struct
 
   let rec ceval (`Apply (op, args)) =
     match (op, args) with
-    | `Input x, _ -> x
-    | `Union, [ x; y ] -> Array.map2_exn (ceval x) (ceval y) ~f:( || )
-    | `Inter, [ x; y ] -> Array.map2_exn (ceval x) (ceval y) ~f:( && )
-    | `Sub, [ x; y ] ->
+    | Op.Input x, _ -> x
+    | Union, [ x; y ] -> Array.map2_exn (ceval x) (ceval y) ~f:( || )
+    | Inter, [ x; y ] -> Array.map2_exn (ceval x) (ceval y) ~f:( && )
+    | Sub, [ x; y ] ->
         Array.map2_exn (ceval x) (ceval y) ~f:(fun a b -> a && not b)
     | _ -> assert false
 
@@ -622,28 +627,26 @@ end
 module State_node = struct
   include State_node0
 
-  let state_tbl = Hashtbl.create (module Abs)
-
   let rec choose_program graph node =
     match S.children graph node with
     | (op, args) :: _ -> `Apply (op, List.map args ~f:(choose_program graph))
     | _ -> failwith "expected arguments"
 
-  let create ?(covered = false) ~state ~cost () =
-    match Hashtbl.find state_tbl state with
+  let create ?(covered = false) ~state ~cost (g : Search_state.t) =
+    match Hashtbl.find g.state_table state with
     | Some v ->
         v.cost <- Int.min v.cost cost;
         v
     | None ->
         let v = { id = mk_id (); cost; state; covered; last_mod_time = -1 } in
-        Hashtbl.add_exn state_tbl state v;
+        Hashtbl.add_exn g.state_table state v;
         v
 
-  let create_op ?(covered = false) ~state ~cost ~op graph children =
-    match Args_node.create ~op graph children with
+  let create_op ?(covered = false) ~state ~cost ~op g children =
+    match Args_node.create ~op g children with
     | Some args_v ->
-        let state_v = create ~covered ~state ~cost () in
-        S.ensure_edge_e graph (Node.State state_v, -1, Node.Args args_v);
+        let state_v = create ~covered ~state ~cost g in
+        S.ensure_edge_e g (Node.State state_v, -1, Node.Args args_v);
         true
     | None -> false
 end
@@ -678,17 +681,18 @@ let rec fill graph cost =
                       |> List.iter ~f:(fun (a : State_node.t) ->
                              of_cost c'
                              |> List.iter ~f:(fun (a' : State_node.t) ->
-                                    List.iter [ `Union; `Inter; `Sub ]
+                                    List.iter [ Op.Union; Inter; Sub ]
                                       ~f:(fun op ->
                                         let state =
                                           match op with
-                                          | `Union -> Abs.union a.state a'.state
-                                          | `Inter -> Abs.inter a.state a'.state
-                                          | `Sub -> Abs.sub a.state a'.state
+                                          | Op.Union ->
+                                              Abs.union a.state a'.state
+                                          | Inter -> Abs.inter a.state a'.state
+                                          | Sub -> Abs.sub a.state a'.state
+                                          | _ -> assert false
                                         in
                                         let did_add =
-                                          State_node.create_op ~state ~cost
-                                            ~op:(op :> Op.t)
+                                          State_node.create_op ~state ~cost ~op
                                             graph [ a; a' ]
                                         in
                                         added := !added || did_add)))
@@ -765,6 +769,27 @@ module Reachable (G : Graph.Fixpoint.G) =
       let analyze _ x = x
     end)
 
+module Inv_reachable (G : Graph.Fixpoint.G) =
+  Graph.Fixpoint.Make
+    (G)
+    (struct
+      type vertex = G.V.t
+
+      type edge = G.E.t
+
+      type g = G.t
+
+      type data = bool
+
+      let direction = Graph.Fixpoint.Backward
+
+      let equal = Bool.( = )
+
+      let join = ( || )
+
+      let analyze _ x = x
+    end)
+
 let reachable graph n =
   let module A = Reachable (G) in
   A.analyze ([%equal: Node.t] n) graph.Search_state.graph
@@ -829,7 +854,13 @@ let separators graph target =
 
 let in_cone graph target_node separator =
   let module R = Reachable (G) in
-  let is_separator = Set.mem separator in
+  let sep_and_args =
+    Set.to_sequence separator
+    |> Seq.concat_map ~f:(fun v -> S.succ graph v |> Seq.of_list)
+    |> Seq.to_list
+    |> Set.of_list (module Node)
+  in
+  let is_separator = Set.mem sep_and_args in
   let target_reaches =
     R.analyze
       (fun v -> [%equal: Node.t] v (State target_node))
@@ -934,13 +965,14 @@ let get_refinement vectors graph target_node expected_output separator =
   |> Smt.make_defn "semantics-connected"
   |> Smt.Interpolant.assert_group;
 
+  dump ~suffix:"test" graph;
   S.V.filter_map graph ~f:Node.to_args
   |> List.iter ~f:(fun v ->
          let incoming_edges = S.succ_e graph (Args v) in
 
          let incoming_states =
-           List.filter_map incoming_edges ~f:(fun (v, n, _) ->
-               Node.to_state v |> Option.map ~f:(fun v -> (v, n)))
+           List.map incoming_edges ~f:(fun (_, n, v) ->
+               (Node.to_state_exn v, n))
            |> List.sort ~compare:(fun (_, n) (_, n') -> [%compare: int] n n')
            |> List.map ~f:(fun (v, _) -> v)
            |> List.map ~f:(Map.find_exn state_vars)
@@ -949,17 +981,20 @@ let get_refinement vectors graph target_node expected_output separator =
          let out = Map.find_exn arg_out_vars v in
          let semantic =
            match (v.op, incoming_states) with
-           | `Union, [ s; s' ] ->
+           | Union, [ s; s' ] ->
                List.map3_exn out s s' ~f:(fun x y z -> Smt.Bool.(x = (y || z)))
-           | `Inter, [ s; s' ] ->
+           | Inter, [ s; s' ] ->
                List.map3_exn out s s' ~f:(fun x y z -> Smt.Bool.(x = (y && z)))
-           | `Sub, [ s; s' ] ->
+           | Sub, [ s; s' ] ->
                List.map3_exn out s s' ~f:(fun x y z ->
                    Smt.Bool.(x = (y && not z)))
-           | `Input conc, [] ->
+           | Input conc, [] ->
                List.map2_exn out (Array.to_list conc) ~f:(fun x v ->
                    Smt.Bool.(x = bool v))
-           | _ -> failwith "Unexpected op"
+           | op, states ->
+               Error.create "Unexpected op." (op, states)
+                 [%sexp_of: Op.t * Sexp.t list list]
+               |> Error.raise
          in
 
          let defn =
@@ -1070,7 +1105,7 @@ let synth ?(no_abstraction = false) inputs output =
         Seq.zip (Seq.of_list sep) refinement
         |> Seq.iter ~f:(fun (arg_v, state) ->
                let cost = arg_cost graph arg_v in
-               let state_v = State_node.create ~state ~cost () in
+               let state_v = State_node.create ~state ~cost graph in
                S.ensure_edge_e graph (State state_v, -1, Args arg_v));
 
         dump
@@ -1100,7 +1135,8 @@ let synth ?(no_abstraction = false) inputs output =
   (* Add inputs to the state space graph. *)
   List.iter inputs ~f:(fun input ->
       let state = if no_abstraction then Abs.lift input else Abs.top in
-      State_node.create_op ~state ~cost:1 ~op:(`Input input) graph [] |> ignore);
+      State_node.create_op ~state ~cost:1 ~op:(Op.Input input) graph []
+      |> ignore);
   dump ~output graph;
 
   try loop 1
@@ -1155,15 +1191,15 @@ let sample ?(state = Random.State.default) inputs =
     | App (func, args) ->
         let op =
           match func with
-          | "and" -> `Inter
-          | "or" -> `Union
-          | "diff" -> `Sub
+          | "and" -> Op.Inter
+          | "or" -> Union
+          | "diff" -> Sub
           | _ -> (
               match
                 List.Assoc.find ~equal:[%compare.equal: string] named_inputs
                   func
               with
-              | Some i -> `Input i
+              | Some i -> Input i
               | None -> failwith "unexpected function" )
         in
         let args = List.map args ~f:to_prog in
