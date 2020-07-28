@@ -221,8 +221,8 @@ module State_node0 = struct
 
   let pp fmt { state; _ } = Abs.pp fmt state
 
-  let graphviz_pp fmt { state; cost; _ } =
-    Fmt.pf fmt "%a %d" Abs.graphviz_pp state cost
+  let graphviz_pp fmt { state; cost; id; _ } =
+    Fmt.pf fmt "%a<br/>id=%d cost=%d" Abs.graphviz_pp state id cost
 end
 
 module Node = struct
@@ -892,7 +892,8 @@ let get_refinement vectors graph target_node expected_output separator =
              List.map vectors ~f:(fun vec ->
                  match Map.find v.state vec with
                  | Some x -> Smt.Bool.bool x
-                 | None -> Smt.fresh_decl ())
+                 | None ->
+                     Smt.fresh_decl ~prefix:(sprintf "s%d_b%d_" v.id vec) ())
            in
            (v, vars))
     |> Map.of_alist_exn (module State_node)
@@ -900,7 +901,8 @@ let get_refinement vectors graph target_node expected_output separator =
     S.V.filter_map graph ~f:Node.to_args
     |> List.map ~f:(fun v ->
            let vars =
-             List.init (List.length vectors) ~f:(fun _ -> Smt.fresh_decl ())
+             List.init (List.length vectors) ~f:(fun b ->
+                 Smt.fresh_decl ~prefix:(sprintf "out_b%d_" b) ())
            in
            (v, vars))
     |> Map.of_alist_exn (module Args_node)
@@ -915,24 +917,22 @@ let get_refinement vectors graph target_node expected_output separator =
   |> Smt.make_defn "correct-output"
   |> Smt.Interpolant.assert_group;
 
-  (* Every selected state node must have exactly one incoming edge selected. The
-     target node is always selected. *)
+  (* Every selected state node must select exactly one dependent args node. *)
   S.V.filter_map graph ~f:Node.to_state
-  |> List.map ~f:(fun v ->
+  |> List.iter ~f:(fun v ->
          let selected =
-           if [%equal: State_node.t] target_node v then Smt.Bool.(bool true)
-           else
-             S.pred_e graph (State v)
-             |> List.map ~f:(Map.find_exn edge_vars)
-             |> Smt.Bool.or_
+           if [%equal: State_node.t] target_node v then [ Smt.Bool.(bool true) ]
+           else S.pred_e graph (State v) |> List.map ~f:(Map.find_exn edge_vars)
          in
-         let incoming =
+         let deps =
            S.succ_e graph (State v) |> List.map ~f:(Map.find_exn edge_vars)
          in
-         Smt.Bool.(selected => exactly_one incoming))
-  |> Smt.Bool.and_
-  |> Smt.make_defn "state-has-one-incoming"
-  |> Smt.Interpolant.assert_group;
+         if not (List.is_empty deps) then
+           Smt.(
+             make_defn
+               (sprintf "state-%d-deps" v.id)
+               Bool.(or_ selected => exactly_one deps)
+             |> Interpolant.assert_group));
 
   (* An arg node with a selected outgoing edge must select all its incoming
      edges. *)
@@ -965,7 +965,6 @@ let get_refinement vectors graph target_node expected_output separator =
   |> Smt.make_defn "semantics-connected"
   |> Smt.Interpolant.assert_group;
 
-  dump ~suffix:"test" graph;
   S.V.filter_map graph ~f:Node.to_args
   |> List.iter ~f:(fun v ->
          let incoming_edges = S.succ_e graph (Args v) in
@@ -1034,7 +1033,7 @@ let get_refinement vectors graph target_node expected_output separator =
 
   let open Option.Let_syntax in
   let%map interpolant = Smt.Interpolant.get_interpolant [ sep_group ] in
-  Fmt.pr "Got interpolant!\n";
+  Fmt.epr "Got interpolant!\n";
   let position = process_interpolant @@ parse_interpolant interpolant in
   let refinement =
     Set.to_sequence separator
@@ -1057,7 +1056,7 @@ let get_refinement vectors graph target_node expected_output separator =
                (i, pos))
            |> Map.of_alist_exn (module Int))
   in
-  Fmt.pr "Returning refinement!\n";
+  Fmt.epr "Returning refinement!\n";
   refinement
 
 let value_exn x = Option.value_exn x

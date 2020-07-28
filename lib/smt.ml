@@ -66,19 +66,49 @@ module Make () = struct
 
     let true_ = Sexp.Atom "true"
 
-    let ( || ) x x' = app "or" [ x; x' ]
+    let is_false x = [%equal: Sexp.t] x false_
 
-    let ( && ) x x' = app "and" [ x; x' ]
+    let is_true x = [%equal: Sexp.t] x true_
 
-    let or_ = function [] -> false_ | xs -> app "or" xs
+    let or_ xs =
+      let xs =
+        if List.exists ~f:is_true xs then [ true_ ]
+        else List.filter ~f:(Fun.negate is_false) xs
+      in
+      match xs with [] -> false_ | [ x ] -> x | xs -> app "or" xs
 
-    let and_ = function [] -> true_ | xs -> app "and" xs
+    let and_ xs =
+      let xs =
+        if List.exists ~f:is_false xs then [ false_ ]
+        else List.filter ~f:(Fun.negate is_true) xs
+      in
+      match xs with [] -> true_ | [ x ] -> x | xs -> app "and" xs
 
-    let not x = app "not" [ x ]
+    let not_ x =
+      if is_true x then false_
+      else if is_false x then true_
+      else app "not" [ x ]
 
-    let ( => ) x y = app "=>" [ x; y ]
+    let implies x y =
+      if is_true x then y
+      else if is_false x || is_true y then true_
+      else if is_false y then not_ x
+      else app "=>" [ x; y ]
 
-    let ( = ) x y = app "=" [ x; y ]
+    let ( = ) x y =
+      if is_true x then y
+      else if is_true y then x
+      else if is_false x then not_ y
+      else if is_false y then not_ x
+      else app "=" [ x; y ]
+
+    let ( || ) x x' = or_ [ x; x' ]
+
+    let ( && ) x x' = and_ [ x; x' ]
+
+    let not = not_
+
+    let ( => ) = implies
 
     let at_least_one = or_
 
@@ -114,7 +144,7 @@ module Make () = struct
     Out_channel.output_string stdin smtlib;
     Out_channel.close stdin;
     let output = In_channel.input_all stdout in
-    Fmt.pr "Mathsat output:\n%s\n" output;
+    Fmt.epr "Mathsat output:\n%s\n" output;
     let sexps = Sexp.scan_sexps @@ Lexing.from_string output in
     Unix.close_process proc |> Unix.Exit_or_signal.or_error |> Or_error.ok_exn;
     sexps
@@ -138,6 +168,12 @@ module Make () = struct
       let sexp_of x = Sexp.Atom (Fmt.str "g%d" x)
     end
 
+    let debug_out_file =
+      let ctr = ref 0 in
+      fun () ->
+        incr ctr;
+        sprintf "interp%d.smt2" !ctr
+
     let assert_group ?group expr =
       let group = Option.value group ~default:(Group.create ()) in
       assert_ @@ annotate "interpolation-group" (Group.sexp_of group) expr
@@ -160,7 +196,9 @@ module Make () = struct
             ] )
         (Fmt.with_buffer buf);
       let smtlib = Buffer.contents buf in
-      Fmt.pr "Smtlib:\n%s\n\n" smtlib;
+      Out_channel.(
+        with_file (debug_out_file ()) ~f:(fun ch -> output_string ch smtlib));
+      Fmt.epr "Smtlib:\n%s\n\n" smtlib;
       let output = run_mathsat smtlib in
       match output with
       | [ Atom "unsat"; inter ] -> Some inter
