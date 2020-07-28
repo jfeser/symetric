@@ -796,7 +796,8 @@ let reachable graph n =
 
 let dump =
   let step = ref 0 in
-  fun ?suffix ?output ?(cone = fun _ -> false) graph ->
+  fun ?suffix ?output ?(cone = fun _ -> false) ?(separator = fun _ -> false)
+      graph ->
     let module Viz = Graph.Graphviz.Dot (struct
       include G
 
@@ -808,6 +809,7 @@ let dump =
 
       let vertex_attributes n =
         let attrs = if cone n then [ `Style `Filled ] else [] in
+        let attrs = if separator n then `Style `Dotted :: attrs else attrs in
         let attrs' =
           match n with
           | Node.State n ->
@@ -855,9 +857,9 @@ let separators graph target =
 let in_cone graph target_node separator =
   let module R = Reachable (G) in
   let sep_and_args =
-    Set.to_sequence separator
-    |> Seq.concat_map ~f:(fun v -> S.succ graph v |> Seq.of_list)
-    |> Seq.to_list
+    separator
+    |> List.concat_map ~f:(S.succ graph)
+    |> List.append separator
     |> Set.of_list (module Node)
   in
   let is_separator = Set.mem sep_and_args in
@@ -870,8 +872,6 @@ let in_cone graph target_node separator =
 
 let get_refinement vectors graph target_node expected_output separator =
   let module Smt = Smt.Make () in
-  let separator = Set.of_list (module Node) separator in
-
   (* Select the subset of the graph that can reach the target. *)
   let graph =
     let in_cone = in_cone graph target_node separator in
@@ -1001,7 +1001,7 @@ let get_refinement vectors graph target_node expected_output separator =
              (Fmt.str "semantics-%a-%d" Op.pp v.op v.id)
              (Smt.Bool.and_ semantic)
          in
-         if Set.mem separator (Args v) then
+         if List.mem separator (Args v) ~equal:[%equal: Node.t] then
            Smt.Interpolant.assert_group ~group:sep_group defn
          else Smt.Interpolant.assert_group defn);
 
@@ -1036,9 +1036,9 @@ let get_refinement vectors graph target_node expected_output separator =
   Fmt.epr "Got interpolant!\n";
   let position = process_interpolant @@ parse_interpolant interpolant in
   let refinement =
-    Set.to_sequence separator
-    |> Seq.filter_map ~f:Node.to_args
-    |> Seq.map ~f:(fun v ->
+    separator
+    |> List.filter_map ~f:Node.to_args
+    |> List.map ~f:(fun v ->
            let output_state =
              (S.pred graph (Args v) |> List.hd_exn |> Node.to_state_exn).state
            in
@@ -1062,8 +1062,8 @@ let get_refinement vectors graph target_node expected_output separator =
 let value_exn x = Option.value_exn x
 
 let prune graph target_node separator =
-  let separator = Set.of_list (module Node) separator in
   let in_cone = in_cone graph target_node separator in
+  let separator = Set.of_list (module Node) separator in
   (* remove everything in the cone that's not in the separator *)
   S.filter graph ~f:(fun v -> not (in_cone v && not (Set.mem separator v)))
 
@@ -1084,28 +1084,26 @@ let synth ?(no_abstraction = false) inputs output =
         | _ -> None)
     with
     | Some target ->
-        dump
-          ~cone:(reachable graph (State target))
-          ~output ~suffix:"before-refinement" graph;
-
         let refinement, separator =
           separators graph (State target)
           |> Seq.find_map ~f:(fun sep ->
                  let open Option.Let_syntax in
+                 dump ~cone:(in_cone graph target sep)
+                   ~separator:(List.mem sep ~equal:[%equal: Node.t])
+                   ~output ~suffix:"before-refinement" graph;
                  let%map r = get_refinement vectors graph target output sep in
                  (r, sep))
           |> value_exn
         in
 
-        prune graph target separator;
+        prune graph refined;
 
         let sep = List.filter_map separator ~f:Node.to_args in
 
-        Seq.zip (Seq.of_list sep) refinement
-        |> Seq.iter ~f:(fun (arg_v, state) ->
-               let cost = arg_cost graph arg_v in
-               let state_v = State_node.create ~state ~cost graph in
-               S.ensure_edge_e graph (State state_v, -1, Args arg_v));
+        List.iter2_exn sep refinement ~f:(fun arg_v state ->
+            let cost = arg_cost graph arg_v in
+            let state_v = State_node.create ~state ~cost graph in
+            S.ensure_edge_e graph (State state_v, -1, Args arg_v));
 
         dump
           ~cone:(reachable graph (State target))
