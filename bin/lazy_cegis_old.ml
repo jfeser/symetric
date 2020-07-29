@@ -40,10 +40,10 @@ let main ~n ~enable_graph_output ~seed ~max_cost ~k ~print_header ~abstraction
     if check && not stats.sat then Some (check_search_space inputs graph)
     else None
   in
-  Fmt.pr "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d,%s\n" k n seed max_cost
+  Fmt.pr "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d,%s\n" k n seed max_cost
     abstraction stats.Stats.n_state_nodes stats.Stats.n_arg_nodes
-    stats.Stats.n_covered stats.Stats.n_refuted stats.Stats.min_width
-    stats.Stats.max_width stats.Stats.median_width
+    stats.Stats.n_refuted stats.Stats.min_width stats.Stats.max_width
+    stats.Stats.median_width
     ( match check_output with
     | Some (Ok ()) -> "1"
     | Some (Error _) -> "0"

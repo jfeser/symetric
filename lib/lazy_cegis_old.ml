@@ -198,12 +198,14 @@ module Args_node0 = struct
 end
 
 module With_state = struct
-  type 'a t = { state : Abs.t; inner : 'a }
+  type 'a t = { mutable state : Abs.t; [@ignore] inner : 'a }
   [@@deriving compare, equal, hash, sexp, show]
 
   let create state inner = { state; inner }
 
   let state { state; _ } = state
+
+  let set_state x s = x.state <- s
 
   let inner { inner; _ } = inner
 
@@ -286,9 +288,16 @@ module Node = struct
     | Args n -> With_id.id n
     | Input n -> With_id.id n
 
+  let cost'_exn = function
+    | State n -> State_node0.cost n
+    | Input _ -> 1
+    | _ -> failwith "No cost"
+
   let op = Args_node0.op
 
-  let state = Input_node0.state
+  let state x = With_state.state @@ With_id.inner x
+
+  let set_state x = With_state.set_state @@ With_id.inner x
 
   let cost = State_node0.cost
 
@@ -1112,14 +1121,11 @@ let synth ?(no_abstraction = false) inputs output =
           |> value_exn
         in
 
-        prune graph refined;
-
-        let sep = List.filter_map separator ~f:Node.to_args in
-
-        List.iter2_exn sep refinement ~f:(fun arg_v state ->
-            let cost = arg_cost graph arg_v in
-            let state_v = State_node.create_consed ~state ~cost graph in
-            S.ensure_edge_e graph (State state_v, -1, Args arg_v));
+        List.iter2_exn separator refinement ~f:(fun v s ->
+            match v with
+            | Input x -> Node.set_state x s
+            | State x -> Node.set_state x s
+            | _ -> assert false);
 
         dump
           ~cone:(reachable graph (State target))
