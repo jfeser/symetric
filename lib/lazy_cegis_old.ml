@@ -34,7 +34,7 @@ module Conc = struct
 end
 
 module type ABS = sig
-  type t [@@deriving compare, hash, sexp]
+  type t [@@deriving compare, equal, hash, sexp]
 
   val top : t
 
@@ -67,7 +67,7 @@ end
 
 module Map_abs : ABS with type t = bool Map.M(Int).t = struct
   module T = struct
-    type t = bool Map.M(Int).t [@@deriving compare, hash, sexp]
+    type t = bool Map.M(Int).t [@@deriving compare, equal, hash, sexp]
   end
 
   include T
@@ -166,68 +166,100 @@ let mk_id =
     incr ctr;
     !ctr
 
-module Args_node0 = struct
-  module T = struct
-    type t = { id : int; op : Op.t }
-    [@@deriving compare, equal, hash, sexp, show]
-  end
+module With_id = struct
+  type 'a t = { id : int; inner : 'a }
+  [@@deriving compare, equal, hash, sexp, show]
 
-  include T
-  include Comparator.Make (T)
-
-  let graphviz_pp fmt { op; _ } = Op.pp fmt op
-
-  let create op = { id = mk_id (); op }
+  let fresh inner = { id = mk_id (); inner }
 
   let id { id; _ } = id
 
-  let op { op; _ } = op
+  let inner { inner; _ } = inner
+
+  let map f x = { x with inner = f x.inner }
 end
 
-module State_node0 = struct
-  let time = ref 0
-
+module Args_node0 = struct
   module T = struct
-    type t = {
-      id : int;
-      mutable cost : int; [@ignore]
-      mutable state : Abs.t; [@ignore]
-      mutable covered : bool; [@ignore]
-      mutable last_mod_time : int; [@ignore]
-    }
-    [@@deriving compare, equal, hash, sexp, show]
+    type t = Op.t With_id.t [@@deriving compare, equal, hash, sexp, show]
   end
 
   include T
   include Comparator.Make (T)
+  open With_id
 
-  let id { id; _ } = id
+  let graphviz_pp fmt x = Op.pp fmt (inner x)
+
+  let create = fresh
+
+  let id = id
+
+  let op = inner
+end
+
+module With_state = struct
+  type 'a t = { state : Abs.t; inner : 'a }
+  [@@deriving compare, equal, hash, sexp, show]
+
+  let create state inner = { state; inner }
 
   let state { state; _ } = state
 
-  let set_state n s = n.state <- s
+  let inner { inner; _ } = inner
 
-  let cover n =
-    if not n.covered then (
-      incr time;
-      n.covered <- true;
-      n.last_mod_time <- !time )
+  let map f x = { x with inner = f x.inner }
+end
 
-  let uncover n =
-    if n.covered then (
-      incr time;
-      n.covered <- false;
-      n.last_mod_time <- !time )
+module State_node0 = struct
+  module T = struct
+    type t = (int ref[@ignore]) With_state.t With_id.t
+    [@@deriving compare, equal, hash, sexp, show]
+  end
 
-  let pp fmt { state; _ } = Abs.pp fmt state
+  include T
+  include Comparator.Make (T)
 
-  let graphviz_pp fmt { state; cost; id; _ } =
-    Fmt.pf fmt "%a<br/>id=%d cost=%d" Abs.graphviz_pp state id cost
+  let create state cost = With_id.fresh @@ With_state.create state @@ ref cost
+
+  let id = With_id.id
+
+  let state x = With_state.state @@ With_id.inner x
+
+  let cost x = !(With_state.inner @@ With_id.inner x)
+
+  let set_cost x y = With_state.inner @@ With_id.inner x := y
+
+  let pp fmt x = Abs.pp fmt (state x)
+
+  let graphviz_pp fmt x =
+    Fmt.pf fmt "%a<br/>id=%d cost=%d" Abs.graphviz_pp (state x) (id x) (cost x)
+end
+
+module Input_node0 = struct
+  module T = struct
+    type t = Conc.t With_state.t With_id.t
+    [@@deriving compare, equal, hash, sexp, show]
+  end
+
+  include T
+  include Comparator.Make (T)
+
+  let id = With_id.id
+
+  let state x = With_state.state @@ With_id.inner x
+
+  let pp fmt x = Abs.pp fmt (state x)
+
+  let graphviz_pp fmt x =
+    Fmt.pf fmt "%a<br/>id=%d" Abs.graphviz_pp (state x) (id x)
 end
 
 module Node = struct
   module T = struct
-    type t = Args of Args_node0.t | State of State_node0.t
+    type t =
+      | Args of Args_node0.t
+      | State of State_node0.t
+      | Input of Input_node0.t
     [@@deriving compare, equal, hash, sexp, show]
   end
 
@@ -235,8 +267,6 @@ module Node = struct
   include Comparator.Make (T)
 
   module O : Comparable.Infix with type t := t = Comparable.Make (T)
-
-  let id = function Args x -> Args_node0.id x | State x -> State_node0.id x
 
   let to_args = function Args x -> Some x | _ -> None
 
@@ -246,8 +276,23 @@ module Node = struct
 
   let to_state_exn = function
     | State x -> x
-    | Args x ->
-        Error.create "Expected state." x [%sexp_of: Args_node0.t] |> Error.raise
+    | (Args _ | Input _) as x ->
+        Error.create "Expected state." x [%sexp_of: t] |> Error.raise
+
+  let id = With_id.id
+
+  let id' = function
+    | State n -> With_id.id n
+    | Args n -> With_id.id n
+    | Input n -> With_id.id n
+
+  let op = Args_node0.op
+
+  let state = Input_node0.state
+
+  let cost = State_node0.cost
+
+  let set_cost = State_node0.set_cost
 end
 
 module Edge = struct
@@ -257,40 +302,7 @@ module Edge = struct
 end
 
 module G = struct
-  module G = struct
-    include Graph.Imperative.Digraph.ConcreteBidirectionalLabeled (Node) (Edge)
-
-    let graph_attributes _ = []
-
-    let default_vertex_attributes _ = []
-
-    let vertex_name n = Fmt.str "%d" @@ Node.id n
-
-    let vertex_attributes = function
-      | Node.State x -> [ `HtmlLabel (Fmt.str "%a" State_node0.pp x) ]
-      | Args _ -> [ `Shape `Point ]
-
-    let get_subgraph _ = None
-
-    let default_edge_attributes _ = []
-
-    let edge_attributes (_, i, _) = [ `Label (sprintf "%d" i) ]
-  end
-
-  include G
-  include Graph.Graphviz.Dot (G)
-
-  let iter_state_vertex g ~f =
-    iter_vertex (function State x -> f x | _ -> ()) g
-
-  (** The set of nodes that depend on a state 'v'. *)
-  let depends g v =
-    pred g (State v)
-    |> List.concat_map ~f:(pred g)
-    |> List.dedup_and_sort ~compare:[%compare: Node.t]
-    |> List.map ~f:(function Node.State x -> x | Args _ -> assert false)
-
-  let ensure_vertex g v = if not (mem_vertex g v) then add_vertex g v
+  include Graph.Imperative.Digraph.ConcreteBidirectionalLabeled (Node) (Edge)
 
   let ensure_edge_e g e = if not (mem_edge_e g e) then add_edge_e g e
 end
@@ -298,7 +310,7 @@ end
 module Search_state = struct
   module Args_table_key = struct
     module T = struct
-      type t = Op.t * State_node0.t list [@@deriving compare, hash, sexp]
+      type t = Op.t * Node.t list [@@deriving compare, hash, sexp]
     end
 
     include T
@@ -430,10 +442,10 @@ let eval g a =
     Search_state.succ_e g (Node.Args a)
     |> List.sort ~compare:(fun (_, i, _) (_, i', _) -> [%compare: int] i i')
     |> List.map ~f:(function
-         | _, _, Node.State v -> v.state
+         | _, _, Node.State v -> State_node0.state v
          | _ -> failwith "expected a state node")
   in
-  eval' a.op args
+  eval' (Args_node0.op a) args
 
 module Program = struct
   module T = struct
@@ -612,14 +624,13 @@ end
 module Args_node = struct
   include Args_node0
 
-  let create ~op graph args =
+  let create_consed ~op graph args =
     match Hashtbl.find graph.Search_state.args_table (op, args) with
     | Some v -> None
     | None ->
-        let args_n = { op; id = mk_id () } in
+        let args_n = create op in
         let args_v = Node.Args args_n in
-        List.iteri args ~f:(fun i v ->
-            S.ensure_edge_e graph (args_v, i, Node.State v));
+        List.iteri args ~f:(fun i v -> S.ensure_edge_e graph (args_v, i, v));
         Hashtbl.set graph.args_table (op, args) args_n;
         Some args_n
 end
@@ -632,20 +643,20 @@ module State_node = struct
     | (op, args) :: _ -> `Apply (op, List.map args ~f:(choose_program graph))
     | _ -> failwith "expected arguments"
 
-  let create ?(covered = false) ~state ~cost (g : Search_state.t) =
+  let create_consed ~state ~cost (g : Search_state.t) =
     match Hashtbl.find g.state_table state with
     | Some v ->
-        v.cost <- Int.min v.cost cost;
+        Node.set_cost v (Int.min (Node.cost v) cost);
         v
     | None ->
-        let v = { id = mk_id (); cost; state; covered; last_mod_time = -1 } in
+        let v = create state cost in
         Hashtbl.add_exn g.state_table state v;
         v
 
   let create_op ?(covered = false) ~state ~cost ~op g children =
-    match Args_node.create ~op g children with
+    match Args_node.create_consed ~op g children with
     | Some args_v ->
-        let state_v = create ~covered ~state ~cost g in
+        let state_v = create_consed ~state ~cost g in
         S.ensure_edge_e g (Node.State state_v, -1, Node.Args args_v);
         true
     | None -> false
@@ -660,8 +671,12 @@ let rec fill graph cost =
     let module Perm = Combinat.Permutation.Of_list in
     let of_cost c =
       S.V.filter_map
-        ~f:(function
-          | State v when (not v.covered) && v.cost = c -> Some v | _ -> None)
+        ~f:(fun n ->
+          let conv x = Some (n, Node.state x) in
+          match n with
+          | State v when Node.cost v = c -> conv v
+          | Input v when c = 1 -> conv v
+          | _ -> None)
         graph
     in
 
@@ -678,22 +693,21 @@ let rec fill graph cost =
                   match arg_costs with
                   | [ c; c' ] ->
                       of_cost c
-                      |> List.iter ~f:(fun (a : State_node.t) ->
+                      |> List.iter ~f:(fun (v, s) ->
                              of_cost c'
-                             |> List.iter ~f:(fun (a' : State_node.t) ->
+                             |> List.iter ~f:(fun (v', s') ->
                                     List.iter [ Op.Union; Inter; Sub ]
                                       ~f:(fun op ->
                                         let state =
                                           match op with
-                                          | Op.Union ->
-                                              Abs.union a.state a'.state
-                                          | Inter -> Abs.inter a.state a'.state
-                                          | Sub -> Abs.sub a.state a'.state
+                                          | Op.Union -> Abs.union s s'
+                                          | Inter -> Abs.inter s s'
+                                          | Sub -> Abs.sub s s'
                                           | _ -> assert false
                                         in
                                         let did_add =
                                           State_node.create_op ~state ~cost ~op
-                                            graph [ a; a' ]
+                                            graph [ v; v' ]
                                         in
                                         added := !added || did_add)))
                   | _ -> failwith "Unexpected costs"));
@@ -737,7 +751,6 @@ module Stats = struct
   type t = {
     n_state_nodes : int;
     n_arg_nodes : int;
-    n_covered : int;
     n_refuted : int;
     min_width : int;
     max_width : int;
@@ -805,22 +818,24 @@ let dump =
 
       let default_vertex_attributes _ = []
 
-      let vertex_name n = Fmt.str "%d" @@ Node.id n
+      let vertex_name n = Fmt.str "%d" @@ Node.id' n
 
       let vertex_attributes n =
         let attrs = if cone n then [ `Style `Filled ] else [] in
         let attrs = if separator n then `Style `Dotted :: attrs else attrs in
         let attrs' =
+          let state_attrs n =
+            if
+              Option.map output ~f:(Abs.contains (Node.state n))
+              |> Option.value ~default:false
+            then [ `Style `Bold ]
+            else []
+          in
           match n with
           | Node.State n ->
               [ `HtmlLabel (Fmt.str "%a" State_node.graphviz_pp n) ]
-              @
-              if n.covered then [ `Style `Dotted ]
-              else if
-                Option.map output ~f:(Abs.contains n.state)
-                |> Option.value ~default:false
-              then [ `Style `Bold ]
-              else []
+              @ state_attrs n
+          | Input n -> state_attrs n
           | Args n ->
               [ `HtmlLabel (Fmt.str "%a" Args_node.graphviz_pp n); `Shape `Box ]
         in
@@ -890,7 +905,7 @@ let get_refinement vectors graph target_node expected_output separator =
     |> List.map ~f:(fun (v : State_node.t) ->
            let vars =
              List.map vectors ~f:(fun vec ->
-                 match Map.find v.state vec with
+                 match Map.find (Node.state v) vec with
                  | Some x -> Smt.Bool.bool x
                  | None ->
                      Smt.fresh_decl ~prefix:(sprintf "s%d_b%d_" v.id vec) ())
@@ -979,7 +994,7 @@ let get_refinement vectors graph target_node expected_output separator =
 
          let out = Map.find_exn arg_out_vars v in
          let semantic =
-           match (v.op, incoming_states) with
+           match (Node.op v, incoming_states) with
            | Union, [ s; s' ] ->
                List.map3_exn out s s' ~f:(fun x y z -> Smt.Bool.(x = (y || z)))
            | Inter, [ s; s' ] ->
@@ -998,7 +1013,7 @@ let get_refinement vectors graph target_node expected_output separator =
 
          let defn =
            Smt.make_defn
-             (Fmt.str "semantics-%a-%d" Op.pp v.op v.id)
+             (Fmt.str "semantics-%a-%d" Op.pp (Node.op v) (Node.id v))
              (Smt.Bool.and_ semantic)
          in
          if List.mem separator (Args v) ~equal:[%equal: Node.t] then
@@ -1040,7 +1055,8 @@ let get_refinement vectors graph target_node expected_output separator =
     |> List.filter_map ~f:Node.to_args
     |> List.map ~f:(fun v ->
            let output_state =
-             (S.pred graph (Args v) |> List.hd_exn |> Node.to_state_exn).state
+             S.pred graph (Args v) |> List.hd_exn |> Node.to_state_exn
+             |> Node.state
            in
            let out_vars = Map.find_exn arg_out_vars v in
            List.filter_mapi out_vars ~f:(fun i var ->
@@ -1070,7 +1086,7 @@ let prune graph target_node separator =
 let arg_cost graph arg =
   S.succ graph (Args arg)
   |> List.filter_map ~f:Node.to_state
-  |> List.sum (module Int) ~f:(fun v -> v.State_node.cost)
+  |> List.sum (module Int) ~f:Node.cost
   |> fun cost -> cost + 1
 
 let synth ?(no_abstraction = false) inputs output =
@@ -1080,7 +1096,7 @@ let synth ?(no_abstraction = false) inputs output =
   let refute () =
     match
       S.V.find_map graph ~f:(function
-        | State v when (not v.covered) && Abs.contains v.state output -> Some v
+        | State v when Abs.contains (Node.state v) output -> Some v
         | _ -> None)
     with
     | Some target ->
@@ -1102,7 +1118,7 @@ let synth ?(no_abstraction = false) inputs output =
 
         List.iter2_exn sep refinement ~f:(fun arg_v state ->
             let cost = arg_cost graph arg_v in
-            let state_v = State_node.create ~state ~cost graph in
+            let state_v = State_node.create_consed ~state ~cost graph in
             S.ensure_edge_e graph (State state_v, -1, Args arg_v));
 
         dump
@@ -1140,7 +1156,7 @@ let synth ?(no_abstraction = false) inputs output =
   with Done status ->
     let widths =
       S.V.filter_map graph ~f:(function
-        | State v -> Some (Abs.width v.state)
+        | State v -> Some (Abs.width @@ Node.state v)
         | _ -> None)
       |> List.sort ~compare:[%compare: int]
       |> Array.of_list
@@ -1153,9 +1169,6 @@ let synth ?(no_abstraction = false) inputs output =
             |> List.length;
           n_arg_nodes =
             S.V.filter graph ~f:(function Args v -> true | _ -> false)
-            |> List.length;
-          n_covered =
-            S.V.filter graph ~f:(function State v -> v.covered | _ -> false)
             |> List.length;
           n_refuted = !n_refuted;
           min_width = widths.(0);
@@ -1217,7 +1230,7 @@ let check_search_space ?(n = 100_000) inputs graph =
       let cstate = Program.ceval prog in
       match
         S.V.find_map graph ~f:(function
-          | State v when Abs.contains v.state cstate -> Some v
+          | State v when Abs.contains (Node.state v) cstate -> Some v
           | _ -> None)
       with
       | Some v -> loop (i + 1)
