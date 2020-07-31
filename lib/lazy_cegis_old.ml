@@ -14,6 +14,8 @@ let refine_strategy : [ `First | `Random | `Pareto ] ref = ref `First
 
 let max_size = ref 10
 
+let n_refuted = ref 0
+
 module Conc = struct
   module T = struct
     type t = bool array [@@deriving compare, equal, sexp]
@@ -1045,33 +1047,39 @@ let get_refinement vectors graph target_node expected_output separator =
     | `Var x -> Map.singleton (module String) x true
   in
 
-  let open Option.Let_syntax in
-  let%map interpolant = Smt.Interpolant.get_interpolant [ sep_group ] in
-  Fmt.epr "Got interpolant!\n";
-  let position = flatten_and @@ inline_let @@ parse_interpolant interpolant in
-  let refinement =
-    separator
-    |> List.filter_map ~f:Node.to_args
-    |> List.map ~f:(fun v ->
-           let output_state =
-             (S.pred graph (Args v) |> List.hd_exn |> Node.to_state_exn).state
-           in
-           let out_vars = Map.find_exn arg_out_vars v in
-           List.filter_mapi out_vars ~f:(fun i var ->
-               let%map pos =
-                 match Map.find output_state i with
-                 | Some x -> Some x
-                 | None ->
-                     let var =
-                       match var with Atom x -> x | _ -> assert false
-                     in
-                     Map.find position var
-               in
-               (i, pos))
-           |> Map.of_alist_exn (module Int))
+  let process_interpolant interpolant =
+    let open Option.Let_syntax in
+    Fmt.epr "Got interpolant!\n";
+    let position = flatten_and @@ inline_let @@ parse_interpolant interpolant in
+    let refinement =
+      separator
+      |> List.filter_map ~f:Node.to_args
+      |> List.map ~f:(fun v ->
+             let output_state =
+               (S.pred graph (Args v) |> List.hd_exn |> Node.to_state_exn).state
+             in
+             let out_vars = Map.find_exn arg_out_vars v in
+             List.filter_mapi out_vars ~f:(fun i var ->
+                 let%map pos =
+                   match Map.find output_state i with
+                   | Some x -> Some x
+                   | None ->
+                       let var =
+                         match var with Atom x -> x | _ -> assert false
+                       in
+                       Map.find position var
+                 in
+                 (i, pos))
+             |> Map.of_alist_exn (module Int))
+    in
+    Fmt.epr "Returning refinement!\n";
+    refinement
   in
-  Fmt.epr "Returning refinement!\n";
-  refinement
+
+  let process_model = Fun.id in
+
+  Smt.Interpolant.get_interpolant_or_model [ sep_group ]
+  |> Either.map ~first:process_interpolant ~second:process_model
 
 let value_exn x = Option.value_exn x
 
@@ -1094,8 +1102,29 @@ let arg_cost graph arg =
   |> List.sum (module Int) ~f:(fun v -> v.State_node.cost)
   |> fun cost -> cost + 1
 
+let refine graph output target refinement separator =
+  prune graph separator;
+
+  dump
+    ~separator:(List.mem separator ~equal:[%equal: Node.t])
+    ~output ~suffix:"after-pruning" graph;
+
+  let sep = List.filter_map separator ~f:Node.to_args in
+
+  List.iter2_exn sep refinement ~f:(fun arg_v state ->
+      let cost = arg_cost graph arg_v in
+      let state_v' = State_node.create_consed ~state ~cost graph in
+      ( match S.pred graph (Args arg_v) with
+      | [ State state_v ] -> S.update_state_vertex graph state_v state_v'
+      | _ -> () );
+      S.ensure_edge_e graph (State state_v', -1, Args arg_v));
+
+  dump
+    ~cone:(reachable graph (State target))
+    ~output ~suffix:"after-refinement" graph
+
 let synth ?(no_abstraction = false) inputs output =
-  let graph = S.create () and n_refuted = ref 0 in
+  let graph = S.create () in
   let vectors = List.init (Array.length @@ List.hd_exn inputs) ~f:Fun.id in
 
   let refute () =
@@ -1105,39 +1134,33 @@ let synth ?(no_abstraction = false) inputs output =
         | _ -> None)
     with
     | Some target ->
-        let refinement, separator =
-          separators graph (State target)
-          |> Seq.find_map ~f:(fun sep ->
-                 let open Option.Let_syntax in
-                 dump ~cone:(in_cone graph target sep)
-                   ~separator:(List.mem sep ~equal:[%equal: Node.t])
-                   ~output ~suffix:"before-refinement" graph;
-                 let%map r = get_refinement vectors graph target output sep in
-                 (r, sep))
-          |> value_exn
+        let seps = separators graph (State target) |> Seq.to_list in
+        let seps, last_sep =
+          match List.rev seps with
+          | last :: rest -> (List.rev rest, last)
+          | _ -> failwith "No separators"
         in
 
-        prune graph separator;
-
-        dump
-          ~separator:(List.mem separator ~equal:[%equal: Node.t])
-          ~output ~suffix:"after-pruning" graph;
-
-        let sep = List.filter_map separator ~f:Node.to_args in
-
-        List.iter2_exn sep refinement ~f:(fun arg_v state ->
-            let cost = arg_cost graph arg_v in
-            let state_v' = State_node.create_consed ~state ~cost graph in
-            ( match S.pred graph (Args arg_v) with
-            | [ State state_v ] -> S.update_state_vertex graph state_v state_v'
-            | _ -> () );
-            S.ensure_edge_e graph (State state_v', -1, Args arg_v));
-
-        dump
-          ~cone:(reachable graph (State target))
-          ~output ~suffix:"after-refinement" graph;
-
-        incr n_refuted;
+        let refinement =
+          List.find_map seps ~f:(fun sep ->
+              let open Option.Let_syntax in
+              dump ~cone:(in_cone graph target sep)
+                ~separator:(List.mem sep ~equal:[%equal: Node.t])
+                ~output ~suffix:"before-refinement" graph;
+              let%map r =
+                get_refinement vectors graph target output sep
+                |> Either.First.to_option
+              in
+              (r, sep))
+        in
+        ( match refinement with
+        | Some (r, s) -> refine graph output target r s
+        | None -> (
+            match get_refinement vectors graph target output last_sep with
+            | First r -> refine graph output target r last_sep
+            | Second m ->
+                Fmt.epr "Could not refute";
+                raise (Done `Sat) ) );
         true
     | None -> false
   in
