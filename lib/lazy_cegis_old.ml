@@ -185,15 +185,11 @@ module Args_node0 = struct
 end
 
 module State_node0 = struct
-  let time = ref 0
-
   module T = struct
     type t = {
       id : int;
       mutable cost : int; [@ignore]
       mutable state : Abs.t; [@ignore]
-      mutable covered : bool; [@ignore]
-      mutable last_mod_time : int; [@ignore]
     }
     [@@deriving compare, equal, hash, sexp, show]
   end
@@ -206,18 +202,6 @@ module State_node0 = struct
   let state { state; _ } = state
 
   let set_state n s = n.state <- s
-
-  let cover n =
-    if not n.covered then (
-      incr time;
-      n.covered <- true;
-      n.last_mod_time <- !time )
-
-  let uncover n =
-    if n.covered then (
-      incr time;
-      n.covered <- false;
-      n.last_mod_time <- !time )
 
   let pp fmt { state; _ } = Abs.pp fmt state
 
@@ -638,7 +622,7 @@ module State_node = struct
         v.cost <- Int.min v.cost cost;
         v
     | None ->
-        let v = { id = mk_id (); cost; state; covered; last_mod_time = -1 } in
+        let v = { id = mk_id (); cost; state } in
         Hashtbl.add_exn g.state_table state v;
         v
 
@@ -660,8 +644,7 @@ let rec fill graph cost =
     let module Perm = Combinat.Permutation.Of_list in
     let of_cost c =
       S.V.filter_map
-        ~f:(function
-          | State v when (not v.covered) && v.cost = c -> Some v | _ -> None)
+        ~f:(function State v when v.cost = c -> Some v | _ -> None)
         graph
     in
 
@@ -815,8 +798,7 @@ let dump =
           | Node.State n ->
               [ `HtmlLabel (Fmt.str "%a" State_node.graphviz_pp n) ]
               @
-              if n.covered then [ `Style `Dotted ]
-              else if
+              if
                 Option.map output ~f:(Abs.contains n.state)
                 |> Option.value ~default:false
               then [ `Style `Bold ]
@@ -1083,7 +1065,7 @@ let synth ?(no_abstraction = false) inputs output =
   let refute () =
     match
       S.V.find_map graph ~f:(function
-        | State v when (not v.covered) && Abs.contains v.state output -> Some v
+        | State v when Abs.contains v.state output -> Some v
         | _ -> None)
     with
     | Some target ->
@@ -1161,9 +1143,7 @@ let synth ?(no_abstraction = false) inputs output =
           n_arg_nodes =
             S.V.filter graph ~f:(function Args v -> true | _ -> false)
             |> List.length;
-          n_covered =
-            S.V.filter graph ~f:(function State v -> v.covered | _ -> false)
-            |> List.length;
+          n_covered = -1;
           n_refuted = !n_refuted;
           min_width = widths.(0);
           max_width = widths.(Array.length widths - 1);
