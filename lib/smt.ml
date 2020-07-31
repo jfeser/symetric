@@ -1,5 +1,10 @@
 open! Core
-module Seq = Sequence
+
+let debug_out_file =
+  let ctr = ref 0 in
+  fun () ->
+    incr ctr;
+    sprintf "interp%d.smt2" !ctr
 
 module Make () = struct
   module Sort = struct
@@ -113,6 +118,7 @@ module Make () = struct
     let at_least_one = or_
 
     let at_most_one xs =
+      let module Seq = Sequence in
       let xs = Array.of_list xs and n = List.length xs in
       Seq.init n ~f:(fun i ->
           Seq.range (i + 1) n
@@ -138,17 +144,6 @@ module Make () = struct
       ++ flush)
       fmt stmts
 
-  let run_mathsat smtlib =
-    let proc = Unix.open_process "mathsat" in
-    let stdout, stdin = proc in
-    Out_channel.output_string stdin smtlib;
-    Out_channel.close stdin;
-    let output = In_channel.input_all stdout in
-    Fmt.epr "Mathsat output:\n%s\n" output;
-    let sexps = Sexp.scan_sexps @@ Lexing.from_string output in
-    Unix.close_process proc |> Unix.Exit_or_signal.or_error |> Or_error.ok_exn;
-    sexps
-
   module Interpolant = struct
     module Group : sig
       type t
@@ -168,43 +163,69 @@ module Make () = struct
       let sexp_of x = Sexp.Atom (Fmt.str "g%d" x)
     end
 
-    let debug_out_file =
-      let ctr = ref 0 in
-      fun () ->
-        incr ctr;
-        sprintf "interp%d.smt2" !ctr
-
     let assert_group ?group expr =
       let group = Option.value group ~default:(Group.create ()) in
       assert_ @@ annotate "interpolation-group" (Group.sexp_of group) expr
 
-    let get_interpolant groups =
+    let get_interpolant_or_model groups =
       let open Sexp in
-      let buf = Buffer.create 128 in
-      to_smtlib
-        ~stmts:
-          ( [
-              `Extra
-                (app "set-option" [ Atom ":produce-interpolants"; Atom "true" ]);
-            ]
-          @ !stmts
-          @ [
-              `Extra (app "check-sat" []);
-              `Extra
-                (app "get-interpolant"
-                   [ List (List.map ~f:Group.sexp_of groups) ]);
-            ] )
-        (Fmt.with_buffer buf);
-      let smtlib = Buffer.contents buf in
-      Out_channel.(
-        with_file (debug_out_file ()) ~f:(fun ch -> output_string ch smtlib));
-      Fmt.epr "Smtlib:\n%s\n\n" smtlib;
-      let output = run_mathsat smtlib in
-      match output with
-      | [ Atom "unsat"; inter ] -> Some inter
-      | Atom "sat" :: _ -> None
-      | _ ->
-          Error.create "Unexpected output" output [%sexp_of: Sexp.t list]
-          |> Error.raise
+      let proc = Unix.open_process "mathsat" in
+      let stdout, stdin = proc in
+      Out_channel.with_file (debug_out_file ()) ~f:(fun log ->
+          let log_fmt = Format.formatter_of_out_channel log in
+          let write stmts =
+            let buf = Buffer.create 128 in
+            let fmt = Fmt.with_buffer buf in
+            to_smtlib ~stmts fmt;
+            let str = Buffer.contents buf in
+            Out_channel.output_string stdin str;
+            Out_channel.flush stdin;
+            Fmt.pf log_fmt "%s@." str
+          in
+
+          let read () =
+            let sexp = Sexp.input_sexp stdout in
+            let buf = Buffer.create 128 in
+            let fmt = Fmt.with_buffer buf in
+            Sexp.pp_hum fmt sexp;
+            Buffer.contents buf |> String.split_lines
+            |> List.map ~f:(sprintf "; %s")
+            |> String.concat ~sep:"\n" |> Fmt.pf log_fmt "%s@.";
+            sexp
+          in
+
+          let error sexp =
+            Error.create "Unexpected output" sexp [%sexp_of: Sexp.t]
+            |> Error.raise
+          in
+
+          write
+            ( [
+                `Extra
+                  (app "set-option"
+                     [ Atom ":produce-interpolants"; Atom "true" ]);
+                `Extra
+                  (app "set-option" [ Atom ":produce-models"; Atom "true" ]);
+              ]
+            @ !stmts
+            @ [ `Extra (app "check-sat" []) ] );
+          let is_sat =
+            match read () with
+            | Atom "unsat" -> false
+            | Atom "sat" -> true
+            | x -> error x
+          in
+
+          if is_sat then (
+            write [ `Extra (app "get-model" []) ];
+            Second (read ()) )
+          else (
+            write
+              [
+                `Extra
+                  (app "get-interpolant"
+                     [ List (List.map ~f:Group.sexp_of groups) ]);
+              ];
+            First (read ()) ))
   end
 end
