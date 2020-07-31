@@ -879,11 +879,17 @@ let get_refinement vectors graph target_node expected_output separator =
     ~separator:(List.mem separator ~equal:[%equal: Node.t])
     graph;
 
-  let edge_vars =
+  let edge_var_rel =
     S.E.to_list graph
     |> List.map ~f:(fun e -> (e, Smt.fresh_decl ~prefix:"e" ()))
-    |> Map.of_alist_exn (module S.E)
-  and state_vars =
+  in
+
+  let edge_vars = edge_var_rel |> Map.of_alist_exn (module S.E)
+  and var_edges =
+    List.map ~f:Tuple.T2.swap edge_var_rel |> Map.of_alist_exn (module Sexp)
+  in
+
+  let state_vars =
     S.V.filter_map graph ~f:Node.to_state
     |> List.map ~f:(fun (v : State_node.t) ->
            let vars =
@@ -1076,7 +1082,30 @@ let get_refinement vectors graph target_node expected_output separator =
     refinement
   in
 
-  let process_model = Fun.id in
+  let parse_model sexp =
+    let error s =
+      Error.create "Unexpected model" s [%sexp_of: Sexp.t] |> Error.raise
+    in
+    let parse_value = function
+      | Sexp.Atom "true" -> true
+      | Atom "false" -> false
+      | s -> error s
+    in
+    match sexp with
+    | Sexp.List vals ->
+        List.map vals ~f:(fun v ->
+            match v with
+            | List [ name; value ] -> (name, parse_value value)
+            | s -> error s)
+    | s -> error s
+  in
+
+  let process_model sexp =
+    let model = parse_model sexp in
+    List.filter_map model ~f:(fun (e, is_selected) ->
+        if is_selected then Map.find var_edges e else None)
+    |> Set.of_list (module S.E)
+  in
 
   Smt.Interpolant.get_interpolant_or_model [ sep_group ]
   |> Either.map ~first:process_interpolant ~second:process_model
@@ -1123,6 +1152,23 @@ let refine graph output target refinement separator =
     ~cone:(reachable graph (State target))
     ~output ~suffix:"after-refinement" graph
 
+let rec extract_program graph selected_edges target =
+  let args =
+    S.succ_e graph target
+    |> List.filter ~f:(Set.mem selected_edges)
+    |> List.map ~f:(fun (_, _, v) -> v)
+    |> List.map ~f:Node.to_args_exn
+  in
+  match args with
+  | [ a ] ->
+      `Apply
+        ( a.Args_node.op,
+          S.succ graph (Args a)
+          |> List.map ~f:(extract_program graph selected_edges) )
+  | args ->
+      Error.create "Too many args" args [%sexp_of: Args_node.t list]
+      |> Error.raise
+
 let synth ?(no_abstraction = false) inputs output =
   let graph = S.create () in
   let vectors = List.init (Array.length @@ List.hd_exn inputs) ~f:Fun.id in
@@ -1158,8 +1204,10 @@ let synth ?(no_abstraction = false) inputs output =
         | None -> (
             match get_refinement vectors graph target output last_sep with
             | First r -> refine graph output target r last_sep
-            | Second m ->
-                Fmt.epr "Could not refute";
+            | Second selected_edges ->
+                Fmt.epr "Could not refute: %a" Sexp.pp_hum
+                  ( [%sexp_of: Program.t]
+                  @@ extract_program graph selected_edges (State target) );
                 raise (Done `Sat) ) );
         true
     | None -> false
