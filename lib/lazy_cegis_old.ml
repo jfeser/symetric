@@ -1061,11 +1061,14 @@ let get_refinement vectors graph target_node expected_output separator =
 
 let value_exn x = Option.value_exn x
 
-let prune graph target_node separator =
-  let in_cone = in_cone graph target_node separator in
+let prune graph separator =
   let separator = Set.of_list (module Node) separator in
-  (* remove everything in the cone that's not in the separator *)
-  S.filter graph ~f:(fun v -> not (in_cone v && not (Set.mem separator v)))
+  let module R = Inv_reachable (G) in
+  let reaches_separator =
+    R.analyze (Set.mem separator) graph.Search_state.graph
+  in
+  (* remove everything that can reach the separator *)
+  S.filter graph ~f:(fun v -> Set.mem separator v || not (reaches_separator v))
 
 let arg_cost graph arg =
   S.succ graph (Args arg)
@@ -1096,7 +1099,11 @@ let synth ?(no_abstraction = false) inputs output =
           |> value_exn
         in
 
-        prune graph refined;
+        prune graph separator;
+
+        dump
+          ~separator:(List.mem separator ~equal:[%equal: Node.t])
+          ~output ~suffix:"after-pruning" graph;
 
         let sep = List.filter_map separator ~f:Node.to_args in
 
