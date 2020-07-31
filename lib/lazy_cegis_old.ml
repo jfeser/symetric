@@ -186,11 +186,7 @@ end
 
 module State_node0 = struct
   module T = struct
-    type t = {
-      id : int;
-      mutable cost : int; [@ignore]
-      mutable state : Abs.t; [@ignore]
-    }
+    type t = { id : int; cost : int; mutable state : Abs.t [@ignore] }
     [@@deriving compare, equal, hash, sexp, show]
   end
 
@@ -200,8 +196,6 @@ module State_node0 = struct
   let id { id; _ } = id
 
   let state { state; _ } = state
-
-  let set_state n s = n.state <- s
 
   let pp fmt { state; _ } = Abs.pp fmt state
 
@@ -289,17 +283,26 @@ module Search_state = struct
     include Comparator.Make (T)
   end
 
+  module State_table_key = struct
+    module T = struct
+      type t = Abs.t * int [@@deriving compare, hash, sexp]
+    end
+
+    include T
+    include Comparator.Make (T)
+  end
+
   type t = {
     graph : G.t;
     args_table : Args_node0.t Hashtbl.M(Args_table_key).t;
-    state_table : State_node0.t Hashtbl.M(Abs).t;
+    state_table : State_node0.t Hashtbl.M(State_table_key).t;
   }
 
   let create () =
     {
       graph = G.create ();
       args_table = Hashtbl.create (module Args_table_key);
-      state_table = Hashtbl.create (module Abs);
+      state_table = Hashtbl.create (module State_table_key);
     }
 
   let copy x =
@@ -617,13 +620,11 @@ module State_node = struct
     | _ -> failwith "expected arguments"
 
   let create ?(covered = false) ~state ~cost (g : Search_state.t) =
-    match Hashtbl.find g.state_table state with
-    | Some v ->
-        v.cost <- Int.min v.cost cost;
-        v
+    match Hashtbl.find g.state_table (state, cost) with
+    | Some v -> v
     | None ->
         let v = { id = mk_id (); cost; state } in
-        Hashtbl.add_exn g.state_table state v;
+        Hashtbl.add_exn g.state_table (state, cost) v;
         v
 
   let create_op ?(covered = false) ~state ~cost ~op g children =
