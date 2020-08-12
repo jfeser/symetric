@@ -313,6 +313,10 @@ module Search_state = struct
   let wrap f g = f g.graph
 
   module V = struct
+    include Comparator.Make (struct
+      type t = Node.t [@@deriving compare, sexp]
+    end)
+
     include Container.Make0 (struct
       type nonrec t = t
 
@@ -404,9 +408,12 @@ module Search_state = struct
     List.iter succs ~f:(fun (_, e, v) -> G.add_edge_e x.graph (State v', e, v))
 
   let filter g ~f =
-    G.iter_vertex (fun v -> if not (f v) then remove_vertex g v) g.graph;
-    Hashtbl.filter_inplace g.args_table ~f:(fun v -> f (Args v));
-    Hashtbl.filter_inplace g.state_table ~f:(fun v -> f (State v))
+    let to_remove = V.filter g ~f:(Fun.negate f) |> Set.of_list (module V) in
+    Set.iter to_remove ~f:(G.remove_vertex g.graph);
+    Hashtbl.filter_inplace g.args_table ~f:(fun v ->
+        not (Set.mem to_remove (Args v)));
+    Hashtbl.filter_inplace g.state_table ~f:(fun v ->
+        not (Set.mem to_remove (State v)))
 end
 
 module S = Search_state
@@ -787,54 +794,95 @@ let reachable graph n =
   let module A = Reachable (G) in
   A.analyze ([%equal: Node.t] n) graph.Search_state.graph
 
-let dump =
+let make_output_graph cone separator output =
+  let module Viz = Graph.Graphviz.Dot (struct
+    include G
+
+    let graph_attributes _ = []
+
+    let default_vertex_attributes _ = []
+
+    let vertex_name n = Fmt.str "%d" @@ Node.id n
+
+    let vertex_attributes n =
+      let attrs = if cone n then [ `Style `Filled ] else [] in
+      let attrs = if separator n then `Style `Dotted :: attrs else attrs in
+      let attrs' =
+        match n with
+        | Node.State n ->
+            [ `HtmlLabel (Fmt.str "%a" State_node.graphviz_pp n) ]
+            @
+            if
+              Option.map output ~f:(Abs.contains n.state)
+              |> Option.value ~default:false
+            then [ `Style `Bold ]
+            else []
+        | Args n ->
+            [ `HtmlLabel (Fmt.str "%a" Args_node.graphviz_pp n); `Shape `Box ]
+      in
+      attrs @ attrs'
+
+    let get_subgraph _ = None
+
+    let default_edge_attributes _ = []
+
+    let edge_attributes (_, i, _) =
+      if i >= 0 then [ `Label (sprintf "%d" i) ] else []
+  end) in
+  Viz.output_graph
+
+let dump_detailed =
   let step = ref 0 in
   fun ?suffix ?output ?(cone = fun _ -> false) ?(separator = fun _ -> false)
       graph ->
-    let module Viz = Graph.Graphviz.Dot (struct
-      include G
-
-      let graph_attributes _ = []
-
-      let default_vertex_attributes _ = []
-
-      let vertex_name n = Fmt.str "%d" @@ Node.id n
-
-      let vertex_attributes n =
-        let attrs = if cone n then [ `Style `Filled ] else [] in
-        let attrs = if separator n then `Style `Dotted :: attrs else attrs in
-        let attrs' =
-          match n with
-          | Node.State n ->
-              [ `HtmlLabel (Fmt.str "%a" State_node.graphviz_pp n) ]
-              @
-              if
-                Option.map output ~f:(Abs.contains n.state)
-                |> Option.value ~default:false
-              then [ `Style `Bold ]
-              else []
-          | Args n ->
-              [ `HtmlLabel (Fmt.str "%a" Args_node.graphviz_pp n); `Shape `Box ]
-        in
-        attrs @ attrs'
-
-      let get_subgraph _ = None
-
-      let default_edge_attributes _ = []
-
-      let edge_attributes (_, i, _) =
-        if i >= 0 then [ `Label (sprintf "%d" i) ] else []
-    end) in
     if !enable_dump then (
+      let output_graph = make_output_graph cone separator output in
       let fn =
         let suffix =
           Option.map suffix ~f:(sprintf "-%s") |> Option.value ~default:""
         in
-        sprintf "%d-graph%s.dot" !step suffix
+        sprintf "%04d-graph%s.dot" !step suffix
       in
       Out_channel.with_file fn ~f:(fun ch ->
-          Viz.output_graph ch graph.Search_state.graph);
+          output_graph ch graph.Search_state.graph);
       incr step )
+
+(* let dump_simple ?suffix ?output ?(cone = fun _ -> false)
+ *     ?(separator = fun _ -> false) graph =
+ *   let module Contract = Graph.Contraction.Make (struct
+ *     let empty = G.create ()
+ * 
+ *     let fold_vertex = G.fold_vertex
+ * 
+ *     let fold_edges_e = G.fold_edges_e
+ * 
+ *     let add_edge_e g e =
+ *       let g = G.copy g in
+ *       G.add_edge_e g e;
+ *       g
+ * 
+ *     type t = G.t
+ * 
+ *     type edge = G.E.t
+ * 
+ *     type vertex = G.V.t
+ * 
+ *     module E = G.E
+ *     module V = G.V
+ *   end) in
+ *   if !enable_dump then
+ *     let graph =
+ *       {
+ *         graph with
+ *         Search_state.graph =
+ *           Contract.contract
+ *             (function Args _, _, State _ -> true | _ -> false)
+ *             graph.Search_state.graph;
+ *       }
+ *     in
+ *     dump_detailed ?suffix ?output ~cone ~separator graph *)
+
+let dump_simple ?suffix:_ ?output:_ ?cone:_ ?separator:_ _ = ()
 
 let separators graph target =
   Seq.unfold ~init:(S.succ graph target) ~f:(fun sep ->
@@ -860,7 +908,13 @@ let in_cone graph target_node separator =
       (fun v -> [%equal: Node.t] v (State target_node))
       graph.Search_state.graph
   and separator_reaches = R.analyze is_separator graph.Search_state.graph in
-  fun v -> target_reaches v && (is_separator v || not (separator_reaches v))
+  fun v ->
+    try
+      if S.V.mem graph v then
+        target_reaches v && (is_separator v || not (separator_reaches v))
+      else false
+    with Not_found ->
+      Error.create "Node not in graph" v [%sexp_of: Node.t] |> Error.raise
 
 let get_refinement vectors graph target_node expected_output separator =
   (* Select the subset of the graph that can reach the target. *)
@@ -870,7 +924,7 @@ let get_refinement vectors graph target_node expected_output separator =
     S.filter g ~f:in_cone;
     g
   in
-  dump ~suffix:"cone"
+  dump_detailed ~suffix:"cone"
     ~separator:(List.mem separator ~equal:[%equal: Node.t])
     graph;
 
@@ -1184,9 +1238,13 @@ let prune graph separator =
     let module R = Reachable (G) in
     R.analyze (Set.mem separator) graph.Search_state.graph
   in
+  let size = G.nb_vertex graph.Search_state.graph in
   (* remove everything that can reach the separator *)
   S.filter graph ~f:(fun v ->
-      not (reaches_separator v && not (separator_reaches v)))
+      not (reaches_separator v && not (separator_reaches v)));
+  let size' = G.nb_vertex graph.Search_state.graph in
+  Fmt.epr "Pruning: size before=%d, after=%d, removed %f%%\n" size size'
+    Float.(100.0 - (of_int size' / of_int size * 100.0))
 
 let arg_cost graph arg =
   S.succ graph (Args arg)
@@ -1197,7 +1255,7 @@ let arg_cost graph arg =
 let refine graph output target refinement separator =
   prune graph separator;
 
-  dump
+  dump_simple
     ~separator:(List.mem separator ~equal:[%equal: Node.t])
     ~output ~suffix:"after-pruning" graph;
 
@@ -1211,9 +1269,20 @@ let refine graph output target refinement separator =
       | _ -> () );
       S.ensure_edge_e graph (State state_v', -1, Args arg_v));
 
-  dump
-    ~cone:(reachable graph (State target))
-    ~output ~suffix:"after-refinement" graph
+  (* Select the subset of the graph that can reach the target. *)
+  let graph =
+    let in_cone = in_cone graph target separator in
+    let g = S.copy graph in
+    S.filter g ~f:in_cone;
+    g
+  in
+  dump_detailed ~suffix:"cone-refined"
+    ~separator:(List.mem separator ~equal:[%equal: Node.t])
+    graph
+
+(* dump_simple
+ *   ~cone:(reachable graph (State target))
+ *   ~output ~suffix:"after-refinement" graph *)
 
 let rec extract_program graph selected_edges target =
   let args =
@@ -1253,7 +1322,7 @@ let synth ?(no_abstraction = false) inputs output =
         let refinement =
           List.find_map seps ~f:(fun sep ->
               let open Option.Let_syntax in
-              dump ~cone:(in_cone graph target sep)
+              dump_simple ~cone:(in_cone graph target sep)
                 ~separator:(List.mem sep ~equal:[%equal: Node.t])
                 ~output ~suffix:"before-refinement" graph;
               let%map r =
@@ -1286,7 +1355,7 @@ let synth ?(no_abstraction = false) inputs output =
 
     let changed = fill graph cost in
     Fmt.epr "Changed: %b Cost: %d\n%!" changed cost;
-    if changed then dump ~output ~suffix:"after-fill" graph;
+    if changed then dump_simple ~output ~suffix:"after-fill" graph;
     let cost = if changed then cost else cost + 1 in
     loop cost
   in
@@ -1296,7 +1365,6 @@ let synth ?(no_abstraction = false) inputs output =
       let state = if no_abstraction then Abs.lift input else Abs.top in
       State_node.create_op ~state ~cost:1 ~op:(Op.Input input) graph []
       |> ignore);
-  dump ~output graph;
 
   try loop 1
   with Done status ->
