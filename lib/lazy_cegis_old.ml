@@ -894,6 +894,34 @@ let separators graph target =
         in
         Some (sep, sep'))
 
+let state_separators graph target =
+  let open Option.Let_syntax in
+  let ssucc n =
+    S.succ graph n
+    |> List.map ~f:(fun n ->
+           match S.succ graph n with [] -> None | l -> Some l)
+    |> Option.all >>| List.concat
+  in
+  let ssucc_depth (n, d) = ssucc n >>| List.map ~f:(fun n' -> (n', d + 1)) in
+  let normalize sep =
+    sep
+    |> List.dedup_and_sort ~compare:(fun (n, _) (n', _) ->
+           [%compare: Node.t] n n')
+    |> List.sort ~compare:(fun (_, d) (_, d') -> [%compare: int] d d')
+  in
+
+  Seq.unfold
+    ~init:(Some [ (target, 0) ])
+    ~f:(function
+      | None -> None
+      | Some [] -> assert false
+      | Some (n :: ns as sep) ->
+          let next_sep =
+            let%map ns' = ssucc_depth n in
+            normalize (ns' @ ns)
+          in
+          Some (List.map ~f:(fun (n, _) -> n) sep, next_sep))
+
 let in_cone graph target_node separator =
   let module R = Reachable (G) in
   let sep_and_args =
@@ -1322,6 +1350,11 @@ let synth ?(no_abstraction = false) inputs output =
         | _ -> None)
     with
     | Some target ->
+        Seq.iter (state_separators graph (Node.State target)) ~f:(fun sep ->
+            dump_detailed ~cone:(in_cone graph target sep)
+              ~separator:(List.mem sep ~equal:[%equal: Node.t])
+              ~output ~suffix:"state-sep" graph);
+
         let seps = separators graph (State target) |> Seq.to_list in
         let seps, last_sep =
           match List.rev seps with
