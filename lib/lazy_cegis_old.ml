@@ -831,21 +831,21 @@ let make_output_graph cone separator output =
   end) in
   Viz.output_graph
 
-let dump_detailed =
-  let step = ref 0 in
-  fun ?suffix ?output ?(cone = fun _ -> false) ?(separator = fun _ -> false)
-      graph ->
-    if !enable_dump then (
-      let output_graph = make_output_graph cone separator output in
-      let fn =
-        let suffix =
-          Option.map suffix ~f:(sprintf "-%s") |> Option.value ~default:""
-        in
-        sprintf "%04d-graph%s.dot" !step suffix
+let step = ref 0
+
+let dump_detailed ?suffix ?output ?(cone = fun _ -> false)
+    ?(separator = fun _ -> false) graph =
+  if !enable_dump then (
+    let output_graph = make_output_graph cone separator output in
+    let fn =
+      let suffix =
+        Option.map suffix ~f:(sprintf "-%s") |> Option.value ~default:""
       in
-      Out_channel.with_file fn ~f:(fun ch ->
-          output_graph ch graph.Search_state.graph);
-      incr step )
+      sprintf "%04d-graph%s.dot" !step suffix
+    in
+    Out_channel.with_file fn ~f:(fun ch ->
+        output_graph ch graph.Search_state.graph);
+    incr step )
 
 (* let dump_simple ?suffix ?output ?(cone = fun _ -> false)
  *     ?(separator = fun _ -> false) graph =
@@ -1261,13 +1261,23 @@ let refine graph output target refinement separator =
 
   let sep = List.filter_map separator ~f:Node.to_args in
 
-  List.iter2_exn sep refinement ~f:(fun arg_v state ->
-      let cost = arg_cost graph arg_v in
-      let state_v' = State_node.create_consed ~state ~cost graph in
-      ( match S.pred graph (Args arg_v) with
-      | [ State state_v ] -> S.update_state_vertex graph state_v state_v'
-      | _ -> () );
-      S.ensure_edge_e graph (State state_v', -1, Args arg_v));
+  let refined =
+    List.map2_exn sep refinement ~f:(fun arg_v state ->
+        let cost = arg_cost graph arg_v in
+        let state_v' = State_node.create_consed ~state ~cost graph in
+        let id =
+          match S.pred graph (Args arg_v) with
+          | [ State state_v ] ->
+              S.update_state_vertex graph state_v state_v';
+              Some state_v.State_node.id
+          | _ -> None
+        in
+        S.ensure_edge_e graph (State state_v', -1, Args arg_v);
+        id)
+    |> List.filter_map ~f:Fun.id
+  in
+
+  Fmt.epr "Refine: step=%d, nodes=%a\n" !step Fmt.(Dump.list int) refined;
 
   (* Select the subset of the graph that can reach the target. *)
   let graph =
