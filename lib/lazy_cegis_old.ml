@@ -156,6 +156,8 @@ module Op = struct
       | Sub -> "diff"
     in
     Fmt.pf fmt "%s" str
+
+  let arity = function Input _ -> 0 | Union | Inter | Sub -> 2
 end
 
 let mk_id =
@@ -391,10 +393,15 @@ module Search_state = struct
            in
            (op, args))
 
-  let remove_vertex x v =
-    G.remove_vertex x.graph v;
-    Hashtbl.filter_inplace x.args_table ~f:(fun v' -> Node.O.(v <> Args v'));
-    Hashtbl.filter_inplace x.state_table ~f:(fun v' -> Node.O.(v <> State v'))
+  let remove_vertexes g vs =
+    let to_remove = Set.of_list (module V) vs in
+    Set.iter to_remove ~f:(G.remove_vertex g.graph);
+    Hashtbl.filter_inplace g.args_table ~f:(fun v ->
+        not (Set.mem to_remove (Args v)));
+    Hashtbl.filter_inplace g.state_table ~f:(fun v ->
+        not (Set.mem to_remove (State v)))
+
+  let remove_vertex x v = remove_vertexes x [ v ]
 
   let update_state_vertex x (v : State_node0.t) (v' : State_node0.t) =
     Fmt.epr "Updating %a to %a\n" State_node0.pp v State_node0.pp v';
@@ -406,13 +413,7 @@ module Search_state = struct
     List.iter preds ~f:(fun (v, e, _) -> G.add_edge_e x.graph (v, e, State v'));
     List.iter succs ~f:(fun (_, e, v) -> G.add_edge_e x.graph (State v', e, v))
 
-  let filter g ~f =
-    let to_remove = V.filter g ~f:(Fun.negate f) |> Set.of_list (module V) in
-    Set.iter to_remove ~f:(G.remove_vertex g.graph);
-    Hashtbl.filter_inplace g.args_table ~f:(fun v ->
-        not (Set.mem to_remove (Args v)));
-    Hashtbl.filter_inplace g.state_table ~f:(fun v ->
-        not (Set.mem to_remove (State v)))
+  let filter g ~f = remove_vertexes g @@ V.filter g ~f:(Fun.negate f)
 end
 
 module S = Search_state
@@ -893,33 +894,32 @@ let separators graph target =
         in
         Some (sep, sep'))
 
-let state_separators graph target =
-  let open Option.Let_syntax in
-  let ssucc n =
-    S.succ graph n
-    |> List.map ~f:(fun n ->
-           match S.succ graph n with [] -> None | l -> Some l)
-    |> Option.all >>| List.concat
-  in
-  let ssucc_depth (n, d) = ssucc n >>| List.map ~f:(fun n' -> (n', d + 1)) in
-  let normalize sep =
-    sep
-    |> List.dedup_and_sort ~compare:(fun (n, _) (n', _) ->
-           [%compare: Node.t] n n')
-    |> List.sort ~compare:(fun (_, d) (_, d') -> [%compare: int] d d')
-  in
-
-  Seq.unfold
-    ~init:(Some [ (target, 0) ])
-    ~f:(function
-      | None -> None
-      | Some [] -> assert false
-      | Some (n :: ns as sep) ->
-          let next_sep =
-            let%map ns' = ssucc_depth n in
-            normalize (ns' @ ns)
-          in
-          Some (List.map ~f:(fun (n, _) -> n) sep, next_sep))
+(* let separators graph target =
+ *   let open Option.Let_syntax in
+ *   let ssucc n =
+ *     S.succ graph n
+ *     |> List.map ~f:(fun n ->
+ *            match S.succ graph n with [] -> None | l -> Some l)
+ *     |> Option.all >>| List.concat
+ *   in
+ *   let ssucc_depth (n, d) = ssucc n >>| List.map ~f:(fun n' -> (n', d + 1)) in
+ *   let normalize sep =
+ *     sep
+ *     |> List.dedup_and_sort ~compare:(fun (n, _) (n', _) ->
+ *            [%compare: Node.t] n n')
+ *     |> List.sort ~compare:(fun (_, d) (_, d') -> [%compare: int] d d')
+ *   in
+ * 
+ *   Seq.unfold
+ *     ~init:(Some (S.succ graph target |> List.map ~f:(fun n -> (n, 1))))
+ *     ~f:(function
+ *       | None | Some [] -> None
+ *       | Some (n :: ns as sep) ->
+ *           let next_sep =
+ *             let%map ns' = ssucc_depth n in
+ *             normalize (ns' @ ns)
+ *           in
+ *           Some (List.map ~f:(fun (n, _) -> n) sep, next_sep)) *)
 
 let in_cone graph target_node separator =
   let module R = Reachable (G) in
@@ -1267,19 +1267,76 @@ let get_refinement vectors graph target_node expected_output separator =
 
 let value_exn x = Option.value_exn x
 
-let prune graph refined =
-  let refined = Set.of_list (module Node) refined in
-  let reaches_refined =
+let should_prune graph separator =
+  let separator = Set.of_list (module Node) separator in
+  let reaches_separator =
     let module R = Inv_reachable (G) in
-    R.analyze (Set.mem refined) graph.Search_state.graph
-  and refined_reaches =
+    R.analyze (Set.mem separator) graph.Search_state.graph
+  and separator_reaches =
     let module R = Reachable (G) in
-    R.analyze (Set.mem refined) graph.Search_state.graph
+    R.analyze (Set.mem separator) graph.Search_state.graph
   in
+  fun v -> reaches_separator v && not (separator_reaches v)
+
+let prune graph refined =
+  let should_prune = should_prune graph refined in
   let size = G.nb_vertex graph.Search_state.graph in
-  (* remove everything that can reach the separator *)
-  S.filter graph ~f:(fun v ->
-      not (reaches_refined v && not (refined_reaches v)));
+  S.filter graph ~f:(fun v -> not (should_prune v));
+  let size' = G.nb_vertex graph.Search_state.graph in
+  Fmt.epr "Pruning: size before=%d, after=%d, removed %f%%\n" size size'
+    Float.(100.0 - (of_int size' / of_int size * 100.0))
+
+let fix_up_args marked graph =
+  let to_remove =
+    S.V.filter graph ~f:(function
+      | Args a as v ->
+          let succ = S.succ graph v |> List.filter ~f:(Fun.negate marked) in
+          List.length succ <> Op.arity a.op
+      | State _ -> false)
+  in
+  if List.is_empty to_remove then false
+  else (
+    S.remove_vertexes graph to_remove;
+    true )
+
+let fix_up_states marked graph =
+  let to_remove =
+    S.V.filter graph ~f:(function
+      | Args _ -> false
+      | State _ as v ->
+          let succ = S.succ graph v |> List.filter ~f:(Fun.negate marked) in
+          List.is_empty succ)
+  in
+  if List.is_empty to_remove then false
+  else (
+    S.remove_vertexes graph to_remove;
+    true )
+
+let prune graph separator refinement =
+  let size = G.nb_vertex graph.Search_state.graph in
+
+  let to_remove =
+    let separator = Set.of_list (module Node) separator in
+    let separator_reaches =
+      let module R = Reachable (G) in
+      R.analyze (Set.mem separator) graph.Search_state.graph
+    in
+
+    List.filter_map refinement ~f:(function
+      | `Add_child (_, v, _) when not (separator_reaches (Node.State v)) ->
+          Some (Node.State v)
+      | _ -> None)
+  in
+  let marked =
+    let tr = Set.of_list (module Node) to_remove in
+    Set.mem tr
+  in
+  let rec loop () =
+    if fix_up_args marked graph || fix_up_states marked graph then loop ()
+  in
+  loop ();
+  S.remove_vertexes graph to_remove;
+
   let size' = G.nb_vertex graph.Search_state.graph in
   Fmt.epr "Pruning: size before=%d, after=%d, removed %f%%\n" size size'
     Float.(100.0 - (of_int size' / of_int size * 100.0))
@@ -1290,8 +1347,16 @@ let arg_cost graph arg =
   |> List.sum (module Int) ~f:(fun v -> v.State_node.cost)
   |> fun cost -> cost + 1
 
-let refine graph output target separator refinement =
-  prune graph separator;
+let refine_level n graph =
+  S.V.fold graph ~init:(0, 0) ~f:(fun ((num, dem) as acc) -> function
+    | Args _ -> acc | State v -> (num + Abs.width v.state, dem + n))
+
+let refine graph output separator refinement =
+  dump_detailed
+    ~cone:(should_prune graph separator)
+    ~output ~suffix:"before-pruning" graph;
+
+  prune graph separator refinement;
 
   dump_detailed ~output ~suffix:"after-pruning" graph;
 
@@ -1304,16 +1369,23 @@ let refine graph output target separator refinement =
           S.update_state_vertex graph v v';
           v'.id
       | `Add_child (v, s, state) ->
-          let v' =
+          let s' =
             State_node.create_consed ~state ~cost:s.State_node.cost graph
           in
-          S.ensure_edge_e graph (State v', -1, Args v);
-          v'.id)
+          ( match S.pred graph (Args v) with
+          | [ State s ] -> S.update_state_vertex graph s s'
+          | [] -> S.ensure_edge_e graph (State s', -1, Args v)
+          | _ -> assert false );
+          s'.id)
   in
 
   dump_detailed ~output ~suffix:"after-refinement" graph;
 
-  Fmt.epr "Refine: step=%d, nodes=%a\n" !step Fmt.(Dump.list int) refined_states
+  Fmt.epr "Refine: step=%d, nodes=%a\n" !step Fmt.(Dump.list int) refined_states;
+
+  let num, dem = refine_level (Array.length output) graph in
+  Fmt.epr "Refine level: %d/%d (%f%%)\n" num dem
+    Float.(of_int num / of_int dem * 100.0)
 
 let rec extract_program graph selected_edges target =
   let args =
@@ -1363,10 +1435,10 @@ let synth ?(no_abstraction = false) inputs output =
               (sep, r))
         in
         ( match refinement with
-        | Some (sep, r) -> refine graph output target sep r
+        | Some (sep, r) -> refine graph output sep r
         | None -> (
             match get_refinement vectors graph target output last_sep with
-            | First r -> refine graph output target last_sep r
+            | First r -> refine graph output last_sep r
             | Second selected_edges ->
                 Fmt.epr "Could not refute: %a" Sexp.pp_hum
                   ( [%sexp_of: Program.t]
@@ -1470,7 +1542,9 @@ let sample ?(state = Random.State.default) inputs =
 
 let check_search_space ?(n = 100_000) inputs graph =
   let rec loop i =
-    if i > n then Ok ()
+    if i > n then (
+      Fmt.epr "Checked %d programs and found no counterexamples\n" n;
+      Ok () )
     else
       let prog = sample inputs in
       let cstate = Program.ceval prog in
