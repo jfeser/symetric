@@ -1169,35 +1169,32 @@ let get_refinement vectors graph target_node expected_output separator =
 
   let refinement_of_model state_vars arg_out_vars model =
     let open Option.Let_syntax in
-    let refined_states =
-      separator
-      |> List.map ~f:(fun n ->
-             match n with
-             | Node.State v ->
-                 let vars = Map.find_exn state_vars v in
-                 (v, vars)
-             | Node.Args v ->
-                 let state =
-                   S.pred graph (Args v) |> List.hd_exn |> Node.to_state_exn
-                 in
-                 let vars = Map.find_exn arg_out_vars v in
-                 (state, vars))
-      |> List.dedup_and_sort ~compare:(fun (n, _) (n', _) ->
-             [%compare: State_node.t] n n')
+    let refine state_node vars =
+      let refined_state =
+        List.filter_mapi vars ~f:(fun i var ->
+            let%map pos =
+              match Map.find state_node.State_node.state i with
+              | Some x -> Some x
+              | None -> Map.find model var
+            in
+            (i, pos))
+        |> Map.of_alist_exn (module Int)
+      in
+      refined_state
     in
 
-    List.map refined_states ~f:(fun (state_node, vars) ->
-        let refined_state =
-          List.filter_mapi vars ~f:(fun i var ->
-              let%map pos =
-                match Map.find state_node.State_node.state i with
-                | Some x -> Some x
-                | None -> Map.find model var
-              in
-              (i, pos))
-          |> Map.of_alist_exn (module Int)
-        in
-        (state_node, refined_state))
+    separator
+    |> List.map ~f:(fun n ->
+           match n with
+           | Node.State v ->
+               let vars = Map.find_exn state_vars v in
+               `Update (v, refine v vars)
+           | Node.Args v ->
+               let state =
+                 S.pred graph (Args v) |> List.hd_exn |> Node.to_state_exn
+               in
+               let vars = Map.find_exn arg_out_vars v in
+               `Add_child (v, state, refine state vars))
   in
 
   let simple_model interpolant =
@@ -1293,19 +1290,30 @@ let arg_cost graph arg =
   |> List.sum (module Int) ~f:(fun v -> v.State_node.cost)
   |> fun cost -> cost + 1
 
-let refine graph output target refinement =
-  let refined_states = List.map refinement ~f:(fun (n, _) -> Node.State n) in
-  prune graph refined_states;
+let refine graph output target separator refinement =
+  prune graph separator;
 
   dump_detailed ~output ~suffix:"after-pruning" graph;
 
-  Fmt.epr "Refine: step=%d, nodes=%a\n" !step
-    Fmt.(Dump.list int)
-    (List.map refinement ~f:(fun (n, _) -> n.State_node.id));
+  let refined_states =
+    List.map refinement ~f:(function
+      | `Update (v, state) ->
+          let v' =
+            State_node.create_consed ~state ~cost:v.State_node.cost graph
+          in
+          S.update_state_vertex graph v v';
+          v'.id
+      | `Add_child (v, s, state) ->
+          let v' =
+            State_node.create_consed ~state ~cost:s.State_node.cost graph
+          in
+          S.ensure_edge_e graph (State v', -1, Args v);
+          v'.id)
+  in
 
-  List.iter refinement ~f:(fun (v, state) ->
-      let v' = State_node.create_consed ~state ~cost:v.State_node.cost graph in
-      S.update_state_vertex graph v v')
+  dump_detailed ~output ~suffix:"after-refinement" graph;
+
+  Fmt.epr "Refine: step=%d, nodes=%a\n" !step Fmt.(Dump.list int) refined_states
 
 let rec extract_program graph selected_edges target =
   let args =
@@ -1335,11 +1343,6 @@ let synth ?(no_abstraction = false) inputs output =
         | _ -> None)
     with
     | Some target ->
-        Seq.iter (state_separators graph (Node.State target)) ~f:(fun sep ->
-            dump_detailed ~cone:(in_cone graph target sep)
-              ~separator:(List.mem sep ~equal:[%equal: Node.t])
-              ~output ~suffix:"state-sep" graph);
-
         let seps = separators graph (State target) |> Seq.to_list in
         let seps, last_sep =
           match List.rev seps with
@@ -1350,17 +1353,20 @@ let synth ?(no_abstraction = false) inputs output =
         let refinement =
           List.find_map seps ~f:(fun sep ->
               let open Option.Let_syntax in
-              dump_simple ~cone:(in_cone graph target sep)
-                ~separator:(List.mem sep ~equal:[%equal: Node.t])
-                ~output ~suffix:"before-refinement" graph;
-              get_refinement vectors graph target output sep
-              |> Either.First.to_option)
+              let%map r =
+                dump_simple ~cone:(in_cone graph target sep)
+                  ~separator:(List.mem sep ~equal:[%equal: Node.t])
+                  ~output ~suffix:"before-refinement" graph;
+                get_refinement vectors graph target output sep
+                |> Either.First.to_option
+              in
+              (sep, r))
         in
         ( match refinement with
-        | Some r -> refine graph output target r
+        | Some (sep, r) -> refine graph output target sep r
         | None -> (
             match get_refinement vectors graph target output last_sep with
-            | First r -> refine graph output target r
+            | First r -> refine graph output target last_sep r
             | Second selected_edges ->
                 Fmt.epr "Could not refute: %a" Sexp.pp_hum
                   ( [%sexp_of: Program.t]
