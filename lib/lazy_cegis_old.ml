@@ -793,7 +793,7 @@ let reachable graph n =
   let module A = Reachable (G) in
   A.analyze ([%equal: Node.t] n) graph.Search_state.graph
 
-let make_output_graph cone separator output =
+let make_output_graph ?(refinement = fun _ -> false) cone separator output =
   let module Viz = Graph.Graphviz.Dot (struct
     include G
 
@@ -825,17 +825,19 @@ let make_output_graph cone separator output =
 
     let default_edge_attributes _ = []
 
-    let edge_attributes (_, i, _) =
-      if i >= 0 then [ `Label (sprintf "%d" i) ] else []
+    let edge_attributes ((_, i, _) as e) =
+      let attrs = if i >= 0 then [ `Label (sprintf "%d" i) ] else [] in
+      let attrs = if refinement e then `Style `Dotted :: attrs else attrs in
+      attrs
   end) in
   Viz.output_graph
 
 let step = ref 0
 
 let dump_detailed ?suffix ?output ?(cone = fun _ -> false)
-    ?(separator = fun _ -> false) graph =
+    ?(separator = fun _ -> false) ?(refinement = fun _ -> false) graph =
   if !enable_dump then (
-    let output_graph = make_output_graph cone separator output in
+    let output_graph = make_output_graph ~refinement cone separator output in
     let fn =
       let suffix =
         Option.map suffix ~f:(sprintf "-%s") |> Option.value ~default:""
@@ -960,7 +962,7 @@ let get_refinement vectors graph target_node expected_output separator =
     S.filter g ~f:in_cone;
     g
   in
-  dump_detailed ~suffix:"cone"
+  dump_detailed ~suffix:"before-refine"
     ~separator:(List.mem separator ~equal:[%equal: Node.t])
     graph;
 
@@ -1208,9 +1210,9 @@ let get_refinement vectors graph target_node expected_output separator =
       refined_state
     in
 
-    let refinement, changed =
+    let refinement =
       separator
-      |> List.map ~f:(fun n ->
+      |> List.filter_map ~f:(fun n ->
              match n with
              | Node.State state_node ->
                  let vars = Map.find_exn state_vars state_node in
@@ -1218,7 +1220,8 @@ let get_refinement vectors graph target_node expected_output separator =
                  let changed =
                    not ([%equal: Abs.t] new_state state_node.State_node.state)
                  in
-                 (`Update (state_node, new_state), changed)
+                 if changed then Some (`Update (state_node, new_state))
+                 else None
              | Node.Args v ->
                  let state_node =
                    S.pred graph (Args v) |> List.hd_exn |> Node.to_state_exn
@@ -1228,13 +1231,22 @@ let get_refinement vectors graph target_node expected_output separator =
                  let changed =
                    not ([%equal: Abs.t] new_state state_node.State_node.state)
                  in
-                 (`Add_child (v, state_node, new_state), changed))
-      |> List.unzip
+                 if changed then Some (`Add_child (v, state_node, new_state))
+                 else None)
     in
 
+    let edges =
+      List.concat_map refinement ~f:(function
+        | `Update (v, _) -> []
+        | `Add_child (v, _, _) -> S.pred_e graph (Args v))
+      |> Set.of_list (module S.E)
+    in
+    dump_detailed ~suffix:"after-refine"
+      ~separator:(List.mem separator ~equal:[%equal: Node.t])
+      ~refinement:(Set.mem edges) graph;
+
     Fmt.epr "Refinement: %a\n" Refinement.pp refinement;
-    if List.exists ~f:Fun.id changed then refinement
-    else failwith "No-op refinement"
+    if List.is_empty refinement then failwith "No-op refinement" else refinement
   in
 
   let simple_model interpolant =
@@ -1265,7 +1277,7 @@ let get_refinement vectors graph target_node expected_output separator =
   let sat_model interpolant =
     let model =
       let%bind vars = make_vars in
-      let%bind () = synth_constrs ~assert_group:(fun _ -> Smt.assert_) vars in
+      (* let%bind () = synth_constrs ~assert_group:(fun _ -> Smt.assert_) vars in *)
       let%bind () = Smt.assert_ interpolant in
       Smt.get_model
     in
@@ -1283,7 +1295,7 @@ let get_refinement vectors graph target_node expected_output separator =
     Fmt.epr "Interpolant: %a\n" Sexp.pp_hum interpolant;
     let model =
       List.find_map ~f:Lazy.force
-        [ lazy (simple_model interpolant); lazy (sat_model interpolant) ]
+        [ (* lazy (simple_model interpolant); *) lazy (sat_model interpolant) ]
     in
     let model = Option.value_exn model in
     refinement_of_model state_vars arg_out_vars model
