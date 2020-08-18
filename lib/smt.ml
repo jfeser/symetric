@@ -276,3 +276,14 @@ let get_model =
     write [ Extra (app "get-model" []) ];
     return (Some (read ())) )
   else return None
+
+let check_sat =
+  let open Sexp in
+  let%bind stmts = get_stmts in
+  with_mathsat @@ fun read write ->
+  write (stmts @ [ Extra (app "check-sat" []) ]);
+  return
+    ( match read () with
+    | Atom "unsat" -> false
+    | Atom "sat" -> true
+    | x -> error x )

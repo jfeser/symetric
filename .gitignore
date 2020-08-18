@@ -39,3 +39,4 @@ node_modules/
 *.dot
 *.png
 *.csv
+*.smt2
