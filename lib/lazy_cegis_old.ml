@@ -1213,15 +1213,19 @@ let get_refinement vectors graph target_node expected_output separator =
   in
 
   let normalize_bits bits =
-    let bits =
-      List.dedup_and_sort bits ~compare:[%compare: int * bool option]
-    in
-    match
-      List.find_consecutive_duplicate bits ~equal:(fun (i, _) (i', _) -> i = i')
-    with
-    | Some ((i, _), (i', _)) ->
-        Error.create "Bit value conflict" i [%sexp_of: int] |> Error.raise
-    | None -> bits
+    Map.of_alist_multi (module Int) bits
+    |> Map.mapi ~f:(fun ~key ~data ->
+           List.reduce_exn data ~f:(fun b b' ->
+               match (b, b') with
+               | Some x, Some y ->
+                   if Bool.(x = y) then Some x
+                   else
+                     Error.create "Bit value conflict" (key, b, b')
+                       [%sexp_of: int * bool option * bool option]
+                     |> Error.raise
+               | None, (Some _ as b) | (Some _ as b), None -> b
+               | None, None -> None))
+    |> Map.to_alist
   in
 
   let refinement_of_model forced state_vars arg_out_vars ivars =
