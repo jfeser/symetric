@@ -1422,11 +1422,11 @@ let prune graph refined =
   Fmt.epr "Pruning: size before=%d, after=%d, removed %f%%\n" size size'
     Float.(100.0 - (of_int size' / of_int size * 100.0))
 
-let fix_up_args marked graph =
+let fix_up_args graph =
   let to_remove =
     S.V.filter graph ~f:(function
       | Args a as v ->
-          let succ = S.succ graph v |> List.filter ~f:(Fun.negate marked) in
+          let succ = S.succ graph v in
           List.length succ <> Op.arity a.op
       | State _ -> false)
   in
@@ -1435,12 +1435,12 @@ let fix_up_args marked graph =
     S.remove_vertexes graph to_remove;
     true )
 
-let fix_up_states marked graph =
+let fix_up_states graph =
   let to_remove =
     S.V.filter graph ~f:(function
       | Args _ -> false
       | State _ as v ->
-          let succ = S.succ graph v |> List.filter ~f:(Fun.negate marked) in
+          let succ = S.succ graph v in
           List.is_empty succ)
   in
   if List.is_empty to_remove then false
@@ -1451,21 +1451,14 @@ let fix_up_states marked graph =
 let prune graph separator refinement =
   let size = G.nb_vertex graph.Search_state.graph in
 
-  let to_remove =
-    List.concat_map refinement ~f:(function
-      | `Split (v, _, _) -> S.pred graph (Args v)
-      | `Remove vs -> List.map vs ~f:(fun v -> Node.State v))
-  in
-  let marked =
-    let tr = Set.of_list (module Node) to_remove in
-    Set.mem tr
-  in
-  S.remove_vertexes graph to_remove;
-  let rec loop () =
-    if fix_up_args marked graph || fix_up_states marked graph then loop ()
-  in
+  List.iter refinement ~f:(function
+    | `Split (v, _, _) ->
+        S.pred_e graph (Args v)
+        |> List.iter ~f:(G.remove_edge_e graph.Search_state.graph)
+    | `Remove vs -> ());
+
+  let rec loop () = if fix_up_args graph || fix_up_states graph then loop () in
   loop ();
-  S.remove_vertexes graph to_remove;
 
   let size' = G.nb_vertex graph.Search_state.graph in
   Fmt.epr "Pruning: size before=%d, after=%d, removed %f%%\n" size size'
@@ -1482,9 +1475,7 @@ let refine_level n graph =
     | Args _ -> acc | State v -> (num + Abs.width v.state, dem + n))
 
 let refine graph output separator refinement =
-  dump_detailed
-    ~cone:(should_prune graph separator)
-    ~output ~suffix:"before-pruning" graph;
+  dump_detailed ~output ~suffix:"before-pruning" graph;
 
   prune graph separator refinement;
 
