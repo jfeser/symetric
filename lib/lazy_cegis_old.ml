@@ -38,6 +38,8 @@ end
 module type ABS = sig
   type t [@@deriving compare, equal, hash, sexp]
 
+  include Comparator.S with type t := t
+
   val top : t
 
   val pp : t Fmt.t
@@ -59,6 +61,8 @@ module type ABS = sig
   val mem : t -> int -> bool
 
   val add_exn : t -> int -> bool -> t
+
+  val set : t -> int -> bool -> t
 
   val contains : t -> Conc.t -> bool
 
@@ -132,7 +136,16 @@ module Map_abs : ABS with type t = bool Map.M(Int).t = struct
 
   let mem v i = Map.mem v i
 
-  let add_exn m k v = Map.add_exn m ~key:k ~data:v
+  let set m k v = Map.set m ~key:k ~data:v
+
+  let add_exn m k v =
+    match Map.find m k with
+    | Some v' ->
+        if Bool.(v = v') then m
+        else
+          Error.create "Conflicting values for bit" k [%sexp_of: int]
+          |> Error.raise
+    | None -> set m k v
 
   let contains a c = Map.for_alli a ~f:(fun ~key:i ~data:v -> Bool.(c.(i) = v))
 
@@ -1199,57 +1212,80 @@ let get_refinement vectors graph target_node expected_output separator =
     | `Var x -> return @@ Map.singleton (module Sexp) (Sexp.Atom x) true
   in
 
+  let normalize_bits bits =
+    let bits =
+      List.dedup_and_sort bits ~compare:[%compare: int * bool option]
+    in
+    match
+      List.find_consecutive_duplicate bits ~equal:(fun (i, _) (i', _) -> i = i')
+    with
+    | Some ((i, _), (i', _)) ->
+        Error.create "Bit value conflict" i [%sexp_of: int] |> Error.raise
+    | None -> bits
+  in
+
   let refinement_of_model forced state_vars arg_out_vars ivars =
     let forced = Map.of_alist_exn (module String) forced in
-    let arg_out_vars =
-      arg_out_vars
-      |> Map.map
-           ~f:(List.map ~f:(function Sexp.Atom x -> x | _ -> assert false))
+
+    let var_names =
+      Map.map ~f:(List.map ~f:(function Sexp.Atom x -> x | _ -> assert false))
     in
+    let arg_out_vars = arg_out_vars |> var_names in
+    let state_vars = state_vars |> var_names in
     let open Option.Let_syntax in
     let refinement =
       separator
       |> List.map ~f:Node.to_args_exn
       |> List.dedup_and_sort ~compare:[%compare: Args_node.t]
-      |> List.concat_map ~f:(fun v ->
+      (* Only care about args nodes with refined output bits. *)
+      |> List.filter_map ~f:(fun v ->
+             let get_bits =
+               List.filter_mapi ~f:(fun i x ->
+                   if Set.mem ivars x then Some (i, Map.find_exn forced x)
+                   else None)
+             in
+             let bits = Map.find_exn arg_out_vars v |> get_bits in
+             let bits' =
+               S.pred graph (Args v)
+               |> List.map ~f:Node.to_state_exn
+               |> List.map ~f:(Map.find_exn state_vars)
+               |> List.map ~f:get_bits |> List.concat
+             in
+             let refined_bits = normalize_bits (bits @ bits') in
+             if List.is_empty refined_bits then None else Some (v, refined_bits))
+      |> List.concat_map ~f:(fun (v, refined_bits) ->
              let (state_nodes : State_node.t list) =
                S.pred graph (Args v) |> List.map ~f:Node.to_state_exn
              in
-             let cost = List.hd_exn state_nodes |> State_node.cost in
-             let refined_bits =
-               Map.find_exn arg_out_vars v
-               |> List.filter_mapi ~f:(fun i x ->
-                      if Set.mem ivars x then Some (i, Map.find_exn forced x)
-                      else None)
-             in
 
-             let removed, states =
-               List.partition_tf state_nodes ~f:(fun s ->
-                   List.exists refined_bits ~f:(function
-                     | bit, Some v -> (
-                         match Map.find s.state bit with
-                         | Some v' -> Bool.(v <> v')
-                         | None -> false )
-                     | _ -> false))
-             in
+             Fmt.epr "Refined bits: %a@."
+               Fmt.(Dump.(list @@ pair int @@ option bool))
+               refined_bits;
 
+             let states = List.map state_nodes ~f:State_node.state in
              let refined =
-               List.fold refined_bits
-                 ~init:(List.map state_nodes ~f:State_node.state)
+               List.fold refined_bits ~init:states
                  ~f:(fun states (bit, forced) ->
                    match forced with
                    | Some value ->
-                       List.map states ~f:(fun s -> Abs.add_exn s bit value)
+                       List.map states ~f:(fun s -> Abs.set s bit value)
                    | None ->
                        List.concat_map states ~f:(fun s ->
-                           [ Abs.add_exn s bit true; Abs.add_exn s bit false ]))
+                           [ Abs.set s bit true; Abs.set s bit false ]))
              in
-             let ret =
-               if List.is_empty refined then []
-               else [ `Split (v, cost, refined) ]
+
+             let changed =
+               not
+                 (Set.equal
+                    (Set.of_list (module Abs) states)
+                    (Set.of_list (module Abs) refined))
              in
+
              let ret =
-               if List.is_empty removed then ret else `Remove removed :: ret
+               if changed then
+                 let cost = List.hd_exn state_nodes |> State_node.cost in
+                 [ `Split (v, cost, refined) ]
+               else []
              in
              ret)
     in
@@ -1265,7 +1301,7 @@ let get_refinement vectors graph target_node expected_output separator =
       ~separator:(List.mem separator ~equal:[%equal: Node.t])
       ~refinement:(Set.mem edges) graph;
 
-    Fmt.epr "Refinement: %a\n" Refinement.pp refinement;
+    Fmt.epr "Refinement: %a@." Refinement.pp refinement;
     if List.is_empty refinement then failwith "No-op refinement" else refinement
   in
 
@@ -1326,7 +1362,7 @@ let get_refinement vectors graph target_node expected_output separator =
   in
 
   let process_interpolant state_vars arg_out_vars interpolant =
-    Fmt.epr "Interpolant: %a\n" Sexp.pp_hum interpolant;
+    Fmt.epr "Interpolant: %a@." Sexp.pp_hum interpolant;
     refinement_of_model (forced_bits interpolant) state_vars arg_out_vars
       (interpolant_vars interpolant |> Or_error.ok_exn)
   in
@@ -1412,22 +1448,13 @@ let prune graph separator refinement =
   let size = G.nb_vertex graph.Search_state.graph in
 
   let to_remove =
-    let separator = Set.of_list (module Node) separator in
-    let separator_reaches =
-      let module R = Reachable (G) in
-      R.analyze (Set.mem separator) graph.Search_state.graph
-    in
-
     List.concat_map refinement ~f:(function
-      | `Add_child (_, v, _) when not (separator_reaches (Node.State v)) ->
-          [ Node.State v ]
       | `Split (v, _, _) -> S.pred graph (Args v)
-      | `Remove vs -> List.map vs ~f:(fun v -> Node.State v)
-      | _ -> [])
+      | `Remove vs -> List.map vs ~f:(fun v -> Node.State v))
   in
-  let marked (* let tr = Set.of_list (module Node) to_remove in
-              * Set.mem tr *) _ =
-    false
+  let marked =
+    let tr = Set.of_list (module Node) to_remove in
+    Set.mem tr
   in
   S.remove_vertexes graph to_remove;
   let rec loop () =
