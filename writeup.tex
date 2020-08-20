@@ -1,0 +1,161 @@
+\documentclass{article}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\begin{document}
+
+\section{Data Structures}
+
+The search space is structured as a graph with two kinds of nodes: state nodes
+and operator nodes. State nodes are approximations of reachable program states.
+Operator nodes represent the operators of the DSL and act as hyperedges that
+connect multiple input states to a single output state. Program inputs are
+treated as no-argument operators.
+
+State nodes are labeled with an abstract value representing a set of concrete
+program states and an integer cost. The cost is the number of AST nodes in the
+programs that can reach the state. States in the graph are hash-consed, and
+including costs in the state nodes ensures that the search graph is acyclic.
+
+Operator nodes are labeled with an operator.
+
+Edges in the graph are labeled with integers. If the edge is from a state node
+to an operator node, then the edge label determines the position of the input in
+the operator's argument list. Edges from operator nodes to state nodes have a
+dummy label.
+
+The search space graph respects the following invariants:
+\begin{itemize}
+\item State nodes are preceded by at least one operator node.
+\item An perator node $v_o$ is preceded by $\texttt{arity}(v_o)$ state nodes.
+\item Operator nodes are succeeded by at least one state node.
+\end{itemize}
+
+\section{Search}
+
+The search proceeds in two phases: filling and refinement. The filling step
+extends the graph by inserting new operator nodes. The refinement step splits
+state nodes to recover from errors caused by over-abstraction.
+
+The synthesizer fills the graph until a state containing the expected output is
+reached. At this point there are two possibilities: either the output is truly
+reachable, in which case a program can be extracted from the search graph, or it
+is not reachable and only appears to be because of over-approximation. The
+\texttt{Refine} function determines which of these possibilities is true and
+either returns a refined search space or terminates the program with a solution.
+
+\begin{algorithm}
+  \begin{algorithmic}
+    \Function{Fixup}{$G = (V, E)$}
+    \Repeat
+    \State $V \gets V \setminus \{v\}$ for $v \in V_{state}$ if $\not \exists v'
+    \in V_{op}.\ (v', v) \in E$
+    \State $V \gets V \setminus \{v\}$ for $v \in V_{op}$ if $|\{v' \in
+    V_{state}.\ (v', v) \in E\}| \neq
+    \texttt{arity}(v)$
+    \Until {fixpoint}
+    \State \Return $G$
+    \EndFunction
+    \State
+    \Function{Refine}{$G = (V, E), s_{out}, out$}
+    \State Let $G' = (V', E')$ be the subset of $G$ that can reach $s_{out}$
+    \ForAll {$S \subseteq V'$ s.t. $S$ only contains operator nodes and $S$ is a
+      separator of $G'$}
+    \State Let $x_{v, b}$ be boolean variables corresponding to each bit $b$ in
+    each node $v \in V'$.
+    \State Let $e_{v, v'}$ be boolean variables corresponding to each edge $(v,
+    v') \in E'$.
+    \State Let $\Phi_{out} = \bigwedge_j x_{s_{out}, j} = out_j$
+    \State Let $\Phi_{semantics} = \bigwedge_{v \in V'_{op} \ S} x_{v} =
+    \texttt{op}(v)(A_v)$ where $A_v = \{v' ~|~ v' \in V'_{state}, (v', v) \in E' \}$
+    \State Let $\Psi_{semantics} = \bigwedge_{v \in S} x_{v} =
+    \texttt{op}(v)(A_v)$ where $A_v = \{v' ~|~ v' \in V'_{state}, (v', v) \in E \}$
+    \If {$\Phi_{out} \land \Phi_{semantics} \land \Psi_{semantics}$ is
+      satisfiable}
+    \State Use the selected edges $e$ to extract a program.
+    \Else
+    \State Let $I$ be an interpolant between $\Psi$ and $\Phi$.
+    \State Let $V_{refined} = \{(v, b) | v \in V_{op}, \exists b. x_{v, b} \in
+    \texttt{vars}(I)\}$
+    \ForAll {$(v, b) \in V_{refined}$}
+    \State Let $succ = \{v' | v' \in V\}$
+    \State Let $pos = \{(v, v' \sqcup \{b \mapsto \top \}) | v' \in succ \}$
+    \State Let $neg = \{(v, v' \sqcup \{b \mapsto \bot \}) | v' \in succ \}$
+    \State $E \gets E \setminus {(v, v') | v' \in succ}$
+    \If {$I \models x_{v, b}$}
+    \State $E \gets E \cup pos$
+    \ElsIf {$I \models \lnot x_{v, b}$}
+    \State $E \gets E \cup neg$
+    \Else
+    \State $E \gets E \cup pos \cup neg$
+    \EndIf
+    \EndFor
+
+    \State \Call{Fixup}{$G$}
+    \State \Return $G$
+    \EndIf
+    \EndFor
+    \EndFunction
+  \end{algorithmic}
+\end{algorithm}
+
+\texttt{Refine} first selects the subset of the search graph that can reach the
+node that contains the expected output. Only this subset of the graph is
+relevant and pruning here reduces the size of the constraint problem that we
+will generate.
+
+Next, we generate a constraint problem that asks if we can generate a program
+that produces the correct output by selecting edges in the reduced graph. When
+generating the constraint, we select a graph separator that partitions the graph
+into a top half and a bottom half. If the constraint problem is unsatisfiable,
+we will receive an interpolant in terms of the variables that label the edges
+that are cut by this separator.
+
+If the constraint is satisfiable, we can use the selected edges to extract a
+working program and return it.
+
+Otherwise, we get an interpolant. We select the argument nodes whose output
+variables participate in the interpolant. These nodes are the source of the
+imprecision that caused the output to be spuriously reachable.
+
+Although we can safely refine all of the variables mentioned in the interpolant,
+we prune the refinement by first checking whether the interpolant entails any of
+its variables. If so, those variables can be assigned rather than split.
+
+To refine the search graph, we iterate through the operator nodes that
+participate in the interpolant and prune their outgoing edges. We replace their
+output nodes with one fresh output node if their corresponding bit is entailed.
+Otherwise, they get two fresh output nodes with the appropriate bits refined.
+
+After this update step, we fix up the search graph by removing state nodes with
+no inputs and operator nodes without the correct number of inputs.
+
+\begin{algorithm}
+  \begin{algorithmic}
+    \Function{Synth}{$I, O$}
+    \State Let $G = (I \cup \{\top\}, \bigcup_{in \in I} (in, \top))$
+    \Loop
+    \State $G \gets \Call{Fill}{G}$
+    \If {$\exists s \in V$ s.t. $O \sqsubseteq
+      \texttt{state}(s)$}
+    \State $G \gets \Call{Refine}{G, s}$
+    \EndIf
+    \EndLoop
+    \EndFunction
+  \end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}
+  \begin{algorithmic}
+    \Function{Fill}{$G=(V, E)$}
+    \State Choose an operator $op$ and states $s_1, \dots,
+    s_{\texttt{arity}(op)}$ such that the edges $E' = \bigcup_i (s_i, op)$ do not exist in
+    the graph and $\sum_i \texttt{cost}(s_i)$ is minimized.
+    \State \Return $(V \cup {op}, E \cup E')$
+    \EndFunction
+  \end{algorithmic}
+\end{algorithm}
+
+
+\end{document}
