@@ -471,160 +471,6 @@ module Program = struct
   include Comparator.Make (T)
 end
 
-(* let refine_ordered strong_enough abs conc =
- *   let open State_node0 in
- *   let abs = Array.of_list abs and conc = Array.of_list conc in
- *   let n = Array.length conc and k = Array.length conc.(0) in
- *   let rec loop i j =
- *     if i >= n || j >= k then failwith "Could not refine";
- * 
- *     if not (Abs.mem abs.(i) j) then
- *       abs.(i) <- Abs.add_exn abs.(i) j conc.(i).(j);
- * 
- *     if not (strong_enough @@ Array.to_list abs) then
- *       if j = k - 1 then loop (i + 1) 0 else loop i (j + 1)
- *   in
- *   loop 0 0;
- *   Array.to_list abs
- * 
- * let refine_random ?(state = Random.State.default) strong_enough abs conc =
- *   if strong_enough abs then abs
- *   else
- *     let abs = Array.of_list abs and conc = Array.of_list conc in
- *     let n = Array.length conc and k = Array.length conc.(0) in
- *     let choices =
- *       List.init n ~f:(fun i ->
- *           List.init k ~f:(fun j ->
- *               if Abs.mem abs.(i) j then None else Some (i, j))
- *           |> List.filter_map ~f:Fun.id)
- *       |> List.concat
- *       |> List.permute ~random_state:state
- *       |> Queue.of_list
- *     in
- *     let rec refine () =
- *       let i, j =
- *         match Queue.dequeue choices with
- *         | Some x -> x
- *         | None -> failwith Fmt.(str "cannot refine %a" (Dump.array Abs.pp) abs)
- *       in
- *       abs.(i) <- Abs.add_exn abs.(i) j conc.(i).(j);
- *       let abs_list = Array.to_list abs in
- *       if strong_enough abs_list then abs_list else refine ()
- *     in
- *     refine ()
- * 
- * let refine_pareto strong_enough abs conc =
- *   if strong_enough abs then abs
- *   else
- *     let abs_a = Array.of_list abs and conc = Array.of_list conc in
- *     let n = Array.length conc and k = Array.length conc.(0) in
- *     let choices =
- *       List.init n ~f:(fun i ->
- *           List.init k ~f:(fun j ->
- *               if Abs.mem abs_a.(i) j then None else Some (i, j))
- *           |> List.filter_map ~f:Fun.id)
- *       |> List.concat
- *     in
- *     let rec refine n_choices =
- *       if n_choices > List.length choices then failwith "cannot refine";
- *       match
- *         Combinat.Combination.Of_list.(
- *           create choices n_choices
- *           |> find_map ~f:(fun cs ->
- *                  let abs = Array.of_list abs in
- *                  List.iter cs ~f:(fun (i, j) ->
- *                      abs.(i) <- Abs.add_exn abs.(i) j conc.(i).(j));
- *                  let abs = Array.to_list abs in
- *                  if strong_enough abs then Some abs else None))
- *       with
- *       | Some abs -> abs
- *       | None -> refine (n_choices + 1)
- *     in
- *     refine 1
- * 
- * let refine_hybrid strong_enough abs conc =
- *   if strong_enough abs then abs
- *   else
- *     let abs_a = Array.of_list abs and conc_a = Array.of_list conc in
- *     let n = Array.length conc_a and k = Array.length conc_a.(0) in
- *     let choices =
- *       List.init n ~f:(fun i ->
- *           List.init k ~f:(fun j ->
- *               if Abs.mem abs_a.(i) j then None else Some (i, j))
- *           |> List.filter_map ~f:Fun.id)
- *       |> List.concat
- *     in
- *     let rec refine n_choices =
- *       if n_choices > 4 then refine_ordered strong_enough abs conc
- *       else
- *         match
- *           Combinat.Combination.Of_list.(
- *             create choices n_choices
- *             |> find_map ~f:(fun cs ->
- *                    let abs = Array.of_list abs in
- *                    List.iter cs ~f:(fun (i, j) ->
- *                        abs.(i) <- Abs.add_exn abs.(i) j conc_a.(i).(j));
- *                    let abs = Array.to_list abs in
- *                    if strong_enough abs then Some abs else None))
- *         with
- *         | Some abs -> abs
- *         | None -> refine (n_choices + 1)
- *     in
- *     refine 1
- * 
- * let prune g (nodes : State_node0.t list) =
- *   let open State_node0 in
- *   if not (List.is_empty nodes) then (
- *     let min_mod_time =
- *       Option.value_exn
- *         ( List.map nodes ~f:(fun n -> n.last_mod_time)
- *         |> List.min_elt ~compare:[%compare: int] )
- *     in
- *     G.iter_state_vertex
- *       ~f:(fun v -> if v.last_mod_time > min_mod_time then uncover v)
- *       g;
- *     Fmt.epr "Prune: min mod time %d.\n" min_mod_time;
- * 
- *     let rec process = function
- *       | v :: vs ->
- *           let work =
- *             (\* Select the arg nodes that depend on this state. *\)
- *             G.pred g (Node.State v)
- *             |> List.concat_map ~f:(function
- *                  | Node.Args a ->
- *                      let state = eval g a in
- * 
- *                      (\* Push the state update forward through the args nodes. *\)
- *                      List.concat_map (G.pred g (Args a)) ~f:(function
- *                        | State v' ->
- *                            let old = v'.state in
- *                            let new_ = Abs.meet old state in
- *                            if [%compare.equal: Abs.t] old new_ then []
- *                            else (
- *                              set_state v' new_;
- *                              v' :: refine_children g v' )
- *                        | Args _ -> failwith "expected a state node")
- *                  | State _ -> failwith "expected an args node")
- *           in
- *           process (work @ vs)
- *       | [] -> ()
- *     in
- *     process nodes )
- * 
- * let update_covers graph =
- *   let uncovered =
- *     G.filter_map_vertex graph ~f:(function
- *       | State v when not v.covered -> Some v
- *       | _ -> None)
- *   in
- *   List.iter uncovered ~f:(fun v ->
- *       if
- *         List.exists uncovered ~f:(fun v' ->
- *             (not v'.covered) && v'.cost <= v.cost
- *             && (not ([%compare.equal: State_node0.t] v v'))
- *             && Abs.is_subset_a v'.state ~of_:v.state)
- *       then State_node0.cover v) *)
-
 module Args_node = struct
   include Args_node0
 
@@ -713,40 +559,6 @@ let rec fill graph cost =
                                         added := !added || did_add)))
                   | _ -> failwith "Unexpected costs"));
     !added
-
-(* let refine graph (node : State_node.t) bad =
- *   let conc = node.cstate and old = node.state in
- * 
- *   (\* The bad behavior should not be the same as the concrete behavior, the
- *      initial state should abstract the bad behavior and the concrete behavior.
- *   *\)
- *   assert (
- *     (not ([%compare.equal: Conc.t] bad conc))
- *     && Abs.contains old bad && Abs.contains old conc );
- * 
- *   let len = Array.length conc in
- *   let rec loop i =
- *     if i >= len then failwith "Could not refine"
- *     else if Bool.(conc.(i) <> bad.(i)) then Abs.add_exn node.state i conc.(i)
- *     else loop (i + 1)
- *   in
- *   let new_ = loop 0 in
- * 
- *   (\* Check that the new state refines the old one, does not contain the bad
- *      state, and still abstracts the concrete behavior. *\)
- *   assert (Abs.is_subset_a old ~of_:new_);
- *   assert (Abs.(not (contains new_ bad)));
- *   assert (Abs.contains new_ conc);
- * 
- *   State_node.set_state node new_;
- *   [ node ]
- * 
- * let rec strengthen graph (node : State_node.t) bad_out =
- *   assert (Abs.contains node.state bad_out);
- *   let to_prune = refine graph node bad_out in
- *   let to_prune' = refine_children graph node in
- *   assert (not (Abs.contains node.state bad_out));
- *   to_prune @ to_prune' *)
 
 module Stats = struct
   type t = {
@@ -864,41 +676,6 @@ let dump_detailed ?suffix ?output ?(cone = fun _ -> false)
         output_graph ch graph.Search_state.graph);
     incr step )
 
-(* let dump_simple ?suffix ?output ?(cone = fun _ -> false)
- *     ?(separator = fun _ -> false) graph =
- *   let module Contract = Graph.Contraction.Make (struct
- *     let empty = G.create ()
- * 
- *     let fold_vertex = G.fold_vertex
- * 
- *     let fold_edges_e = G.fold_edges_e
- * 
- *     let add_edge_e g e =
- *       let g = G.copy g in
- *       G.add_edge_e g e;
- *       g
- * 
- *     type t = G.t
- * 
- *     type edge = G.E.t
- * 
- *     type vertex = G.V.t
- * 
- *     module E = G.E
- *     module V = G.V
- *   end) in
- *   if !enable_dump then
- *     let graph =
- *       {
- *         graph with
- *         Search_state.graph =
- *           Contract.contract
- *             (function Args _, _, State _ -> true | _ -> false)
- *             graph.Search_state.graph;
- *       }
- *     in
- *     dump_detailed ?suffix ?output ~cone ~separator graph *)
-
 let dump_simple ?suffix:_ ?output:_ ?cone:_ ?separator:_ _ = ()
 
 let separators graph target =
@@ -910,33 +687,6 @@ let separators graph target =
           |> List.concat_map ~f:(S.succ graph)
         in
         Some (sep, sep'))
-
-(* let separators graph target =
- *   let open Option.Let_syntax in
- *   let ssucc n =
- *     S.succ graph n
- *     |> List.map ~f:(fun n ->
- *            match S.succ graph n with [] -> None | l -> Some l)
- *     |> Option.all >>| List.concat
- *   in
- *   let ssucc_depth (n, d) = ssucc n >>| List.map ~f:(fun n' -> (n', d + 1)) in
- *   let normalize sep =
- *     sep
- *     |> List.dedup_and_sort ~compare:(fun (n, _) (n', _) ->
- *            [%compare: Node.t] n n')
- *     |> List.sort ~compare:(fun (_, d) (_, d') -> [%compare: int] d d')
- *   in
- * 
- *   Seq.unfold
- *     ~init:(Some (S.succ graph target |> List.map ~f:(fun n -> (n, 1))))
- *     ~f:(function
- *       | None | Some [] -> None
- *       | Some (n :: ns as sep) ->
- *           let next_sep =
- *             let%map ns' = ssucc_depth n in
- *             normalize (ns' @ ns)
- *           in
- *           Some (List.map ~f:(fun (n, _) -> n) sep, next_sep)) *)
 
 module Refinement = struct
   type t =
