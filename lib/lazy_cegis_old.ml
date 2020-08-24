@@ -248,9 +248,9 @@ module Edge = struct
 end
 
 module G = struct
-  module G = struct
-    include Graph.Imperative.Digraph.ConcreteBidirectionalLabeled (Node) (Edge)
+  module G = Graph.Imperative.Digraph.ConcreteBidirectionalLabeled (Node) (Edge)
 
+  module Attr = struct
     let graph_attributes _ = []
 
     let default_vertex_attributes _ = []
@@ -269,19 +269,7 @@ module G = struct
   end
 
   include G
-  include Graph.Graphviz.Dot (G)
-
-  let iter_state_vertex g ~f =
-    iter_vertex (function State x -> f x | _ -> ()) g
-
-  (** The set of nodes that depend on a state 'v'. *)
-  let depends g v =
-    pred g (State v)
-    |> List.concat_map ~f:(pred g)
-    |> List.dedup_and_sort ~compare:[%compare: Node.t]
-    |> List.map ~f:(function Node.State x -> x | Args _ -> assert false)
-
-  let ensure_vertex g v = if not (mem_vertex g v) then add_vertex g v
+  include Graph.Graphviz.Dot (G) (Attr)
 
   let ensure_edge_e g e = if not (mem_edge_e g e) then add_edge_e g e
 end
@@ -379,6 +367,11 @@ module Search_state = struct
 
       let length = `Custom (wrap G.nb_edges)
     end)
+
+    let filter g ~f =
+      fold ~f:(fun xs x -> if f x then x :: xs else xs) g ~init:[]
+
+    let map g ~f = fold ~f:(fun xs x -> f x :: xs) g ~init:[]
 
     include G.E
   end
@@ -621,62 +614,133 @@ let reachable graph n =
   let module A = Reachable (G) in
   A.analyze ([%equal: Node.t] n) graph.Search_state.graph
 
-let make_output_graph ?(refinement = fun _ -> false) cone separator output =
-  let module Viz = Graph.Graphviz.Dot (struct
-    include G
+module View (G : sig
+  type t
 
-    let graph_attributes _ = []
+  module V : sig
+    type t
+  end
 
-    let default_vertex_attributes _ = []
+  module E : sig
+    type t
 
-    let vertex_name n = Fmt.str "%d" @@ Node.id n
+    val src : t -> V.t
 
-    let vertex_attributes n =
-      let attrs = if cone n then [ `Style `Filled ] else [] in
-      let attrs = if separator n then `Style `Dotted :: attrs else attrs in
-      let attrs' =
-        match n with
-        | Node.State n ->
-            [ `HtmlLabel (Fmt.str "%a" State_node.graphviz_pp n) ]
-            @
-            if
-              Option.map output ~f:(Abs.contains n.state)
-              |> Option.value ~default:false
-            then [ `Style `Bold ]
-            else []
-        | Args n ->
-            [ `HtmlLabel (Fmt.str "%a" Args_node.graphviz_pp n); `Shape `Box ]
-      in
-      attrs @ attrs'
+    val dst : t -> V.t
+  end
 
-    let get_subgraph _ = None
+  val pred_e : t -> V.t -> E.t list
 
-    let default_edge_attributes _ = []
+  val succ_e : t -> V.t -> E.t list
 
-    let edge_attributes ((_, i, _) as e) =
-      let attrs = if i >= 0 then [ `Label (sprintf "%d" i) ] else [] in
-      let attrs = if refinement e then `Style `Dotted :: attrs else attrs in
-      attrs
-  end) in
-  Viz.output_graph
+  val iter_vertex : (V.t -> unit) -> t -> unit
 
-let step = ref 0
+  val iter_edges_e : (E.t -> unit) -> t -> unit
 
-let dump_detailed ?suffix ?output ?(cone = fun _ -> false)
-    ?(separator = fun _ -> false) ?(refinement = fun _ -> false) graph =
-  if !enable_dump then (
-    let output_graph = make_output_graph ~refinement cone separator output in
-    let fn =
-      let suffix =
-        Option.map suffix ~f:(sprintf "-%s") |> Option.value ~default:""
-      in
-      sprintf "%04d-graph%s.dot" !step suffix
+  val fold_vertex : (V.t -> 'a -> 'a) -> t -> 'a -> 'a
+
+  val fold_edges_e : (E.t -> 'a -> 'a) -> t -> 'a -> 'a
+
+  val mem_vertex : t -> V.t -> bool
+
+  val mem_edge_e : t -> E.t -> bool
+end) =
+struct
+  include G
+
+  let pred_e g v =
+    if G.mem_vertex g v then
+      G.pred_e g v |> List.filter ~f:(fun e -> G.mem_vertex g @@ E.src e)
+    else failwith "Node not in graph"
+
+  let succ_e g v =
+    if G.mem_vertex g v then
+      G.succ_e g v |> List.filter ~f:(fun e -> G.mem_vertex g @@ E.dst e)
+    else failwith "Node not in graph"
+
+  let iter_edges_e f g = iter_edges_e (fun e -> if G.mem_edge_e g e then f e) g
+
+  let iter_vertex f g = iter_vertex (fun v -> if G.mem_vertex g v then f v) g
+
+  let fold_edges_e f g x =
+    fold_edges_e (fun e x -> if G.mem_edge_e g e then f e x else x) g x
+
+  let fold_vertex f g x =
+    fold_vertex (fun v x -> if G.mem_vertex g v then f v x else x) g x
+end
+
+module Dump
+    (G : Graph.Graphviz.GRAPH
+           with type t = G.t
+            and type V.t = G.V.t
+            and type E.t = G.E.t) =
+struct
+  let make_output_graph ?(refinement = fun _ -> false) cone separator output =
+    let module Viz =
+      Graph.Graphviz.Dot
+        (G)
+        (struct
+          let graph_attributes _ = []
+
+          let default_vertex_attributes _ = []
+
+          let vertex_name n = Fmt.str "%d" @@ Node.id n
+
+          let vertex_attributes n =
+            let attrs = if cone n then [ `Style `Filled ] else [] in
+            let attrs =
+              if separator n then `Style `Dotted :: attrs else attrs
+            in
+            let attrs' =
+              match n with
+              | Node.State n ->
+                  [ `HtmlLabel (Fmt.str "%a" State_node.graphviz_pp n) ]
+                  @
+                  if
+                    Option.map output ~f:(Abs.contains n.state)
+                    |> Option.value ~default:false
+                  then [ `Style `Bold ]
+                  else []
+              | Args n ->
+                  [
+                    `HtmlLabel (Fmt.str "%a" Args_node.graphviz_pp n);
+                    `Shape `Box;
+                  ]
+            in
+            attrs @ attrs'
+
+          let get_subgraph _ = None
+
+          let default_edge_attributes _ = []
+
+          let edge_attributes ((_, i, _) as e) =
+            let attrs = if i >= 0 then [ `Label (sprintf "%d" i) ] else [] in
+            let attrs =
+              if refinement e then `Style `Dotted :: attrs else attrs
+            in
+            attrs
+        end)
     in
-    Out_channel.with_file fn ~f:(fun ch ->
-        output_graph ch graph.Search_state.graph);
-    incr step )
+    Viz.output_graph
 
-let dump_simple ?suffix:_ ?output:_ ?cone:_ ?separator:_ _ = ()
+  let step = ref 0
+
+  let dump_detailed ?suffix ?output ?(cone = fun _ -> false)
+      ?(separator = fun _ -> false) ?(refinement = fun _ -> false) graph =
+    if !enable_dump then (
+      let output_graph = make_output_graph ~refinement cone separator output in
+      let fn =
+        let suffix =
+          Option.map suffix ~f:(sprintf "-%s") |> Option.value ~default:""
+        in
+        sprintf "%04d-graph%s.dot" !step suffix
+      in
+      Out_channel.with_file fn ~f:(fun ch ->
+          output_graph ch graph.Search_state.graph);
+      incr step )
+end
+
+open Dump (G)
 
 let separators graph target =
   Seq.unfold ~init:(S.succ graph target) ~f:(fun sep ->
@@ -722,13 +786,39 @@ let in_cone graph target_node separator =
     with Not_found ->
       Error.create "Node not in graph" v [%sexp_of: Node.t] |> Error.raise
 
+let cone graph target_node separator =
+  let in_separator =
+    let sep = Set.of_list (module Node) separator in
+    Set.mem sep
+  in
+
+  let graph' = G.create () in
+  let work = Queue.create () in
+  Queue.enqueue work target_node;
+  let rec loop () =
+    match Queue.dequeue work with
+    | Some v ->
+        let succ = S.succ_e graph v in
+        (* Add edges to the filtered graph. *)
+        List.iter succ ~f:(G.add_edge_e graph');
+        (* Add new nodes to the queue. *)
+        if not (in_separator v) then
+          List.iter succ ~f:(fun (_, _, v') -> Queue.enqueue work v');
+        loop ()
+    | None -> ()
+  in
+  loop ();
+  graph'
+
 let get_refinement vectors graph target_node expected_output separator =
   (* Select the subset of the graph that can reach the target. *)
   let graph =
-    let in_cone = in_cone graph target_node separator in
-    let g = S.copy graph in
-    S.filter g ~f:in_cone;
-    g
+    Search_state.
+      {
+        graph = cone graph (State target_node) separator;
+        args_table = Hashtbl.create (module Args_table_key);
+        state_table = Hashtbl.create (module State_table_key);
+      }
   in
   dump_detailed ~suffix:"before-refine"
     ~separator:(List.mem separator ~equal:[%equal: Node.t])
@@ -1299,9 +1389,6 @@ let synth ?(no_abstraction = false) inputs output =
           List.find_map seps ~f:(fun sep ->
               let open Option.Let_syntax in
               let%map r =
-                dump_simple ~cone:(in_cone graph target sep)
-                  ~separator:(List.mem sep ~equal:[%equal: Node.t])
-                  ~output ~suffix:"before-refinement" graph;
                 get_refinement vectors graph target output sep
                 |> Either.First.to_option
               in
@@ -1331,7 +1418,6 @@ let synth ?(no_abstraction = false) inputs output =
 
     let changed = fill graph cost in
     Fmt.epr "Changed: %b Cost: %d\n%!" changed cost;
-    if changed then dump_simple ~output ~suffix:"after-fill" graph;
     let cost = if changed then cost else cost + 1 in
     loop cost
   in

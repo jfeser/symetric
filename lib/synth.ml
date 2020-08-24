@@ -82,6 +82,8 @@ struct
   end
 
   module G = struct
+    module G = Graph.Persistent.Digraph.ConcreteBidirectionalLabeled (V) (E)
+
     module X = struct
       let graph_attributes _ = []
 
@@ -105,18 +107,17 @@ struct
 
       let edge_attributes (_, idx, _) =
         if idx >= 0 then [ `Label (sprintf "%d" idx) ] else []
-
-      include Graph.Persistent.Digraph.ConcreteBidirectionalLabeled (V) (E)
     end
 
+    include G
     include X
-    include Graph.Graphviz.Dot (X)
-    include Graph.Traverse.Dfs (X)
-    include Graph.Oper.P (X)
+    include Graph.Graphviz.Dot (G) (X)
+    include Graph.Traverse.Dfs (G)
+    include Graph.Oper.P (G)
 
     module Reachability =
       Graph.Fixpoint.Make
-        (X)
+        (G)
         (struct
           type vertex = E.vertex
 
@@ -137,7 +138,7 @@ struct
 
     module Reverse_reachability =
       Graph.Fixpoint.Make
-        (X)
+        (G)
         (struct
           type vertex = E.vertex
 
@@ -156,7 +157,7 @@ struct
           let analyze _ x = x
         end)
 
-    module Topo = Graph.Topological.Make_stable (X)
+    module Topo = Graph.Topological.Make_stable (G)
 
     let filter_vertex g ~f =
       fold_vertex (fun v g -> if f v then remove_vertex g v else g) g g
