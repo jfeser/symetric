@@ -511,8 +511,7 @@ let rec fill graph cost =
   else if fill graph (cost - 1) then true
   else
     let arg_cost = cost - 1 in
-    let module Part = Combinat.Partition in
-    let module Perm = Combinat.Permutation.Of_list in
+    let module Comp = Combinat.Composition in
     let of_cost c =
       S.V.filter_map
         ~f:(function State v when v.cost = c -> Some v | _ -> None)
@@ -520,37 +519,26 @@ let rec fill graph cost =
     in
 
     let added = ref false in
-    Part.create ~n:arg_cost ~parts:2
-    |> Part.iter ~f:(fun arg_costs ->
-           let arg_costs =
-             List.init (Bigarray.Array1.dim arg_costs) ~f:(fun i ->
-                 arg_costs.{i})
-           in
-           Perm.(create arg_costs |> to_list)
-           |> List.dedup_and_sort ~compare:[%compare: int list]
-           |> List.iter ~f:(fun arg_costs ->
-                  match arg_costs with
-                  | [ c; c' ] ->
-                      of_cost c
-                      |> List.iter ~f:(fun (a : State_node.t) ->
-                             of_cost c'
-                             |> List.iter ~f:(fun (a' : State_node.t) ->
-                                    List.iter [ Op.Union; Inter; Sub ]
-                                      ~f:(fun op ->
-                                        let state =
-                                          match op with
-                                          | Op.Union ->
-                                              Abs.union a.state a'.state
-                                          | Inter -> Abs.inter a.state a'.state
-                                          | Sub -> Abs.sub a.state a'.state
-                                          | _ -> assert false
-                                        in
-                                        let did_add =
-                                          State_node.create_op ~state ~cost ~op
-                                            graph [ a; a' ]
-                                        in
-                                        added := !added || did_add)))
-                  | _ -> failwith "Unexpected costs"));
+    Comp.create ~n:arg_cost ~k:2
+    |> Comp.iter ~f:(fun arg_costs ->
+           let c = arg_costs.{0} and c' = arg_costs.{1} in
+           of_cost c
+           |> List.iter ~f:(fun (a : State_node.t) ->
+                  of_cost c'
+                  |> List.iter ~f:(fun (a' : State_node.t) ->
+                         List.iter [ Op.Union; Inter; Sub ] ~f:(fun op ->
+                             let state =
+                               match op with
+                               | Op.Union -> Abs.union a.state a'.state
+                               | Inter -> Abs.inter a.state a'.state
+                               | Sub -> Abs.sub a.state a'.state
+                               | _ -> assert false
+                             in
+                             let did_add =
+                               State_node.create_op ~state ~cost ~op graph
+                                 [ a; a' ]
+                             in
+                             added := !added || did_add))));
     !added
 
 module Stats = struct
