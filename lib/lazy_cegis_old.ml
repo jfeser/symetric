@@ -10,8 +10,6 @@ let value_exn x = Option.value_exn x
 
 let enable_dump = ref false
 
-let refine_strategy : [ `First | `Random | `Pareto ] ref = ref `First
-
 let max_cost = ref 10
 
 let n_refuted = ref 0
@@ -1237,12 +1235,6 @@ let prune graph separator refinement =
   let size' = G.nb_vertex graph.Search_state.graph in
   Fmt.epr "Pruning: size before=%d, after=%d, removed %f%%\n" size size'
     Float.(100.0 - (of_int size' / of_int size * 100.0))
-
-let arg_cost graph arg =
-  S.succ graph (Args arg)
-  |> List.filter_map ~f:Node.to_state
-  |> List.sum (module Int) ~f:(fun v -> v.State_node.cost)
-  |> fun cost -> cost + 1
 
 let refine_level n graph =
   S.V.fold graph ~init:(0, 0) ~f:(fun ((num, dem) as acc) -> function

@@ -19,12 +19,6 @@ let main ~n ~enable_graph_output ~seed ~max_cost:max_cost' ~k ~print_header
     exit 0 );
 
   let no_abstraction = abstraction = 0 in
-  (refine_strategy :=
-     match refine with
-     | "first" -> `First
-     | "random" -> `Random
-     | "pareto" -> `Pareto
-     | _ -> failwith @@ Fmt.str "unknown refinement strategy: %s" refine);
 
   enable_dump := enable_graph_output;
   max_cost := max_cost';
