@@ -270,8 +270,6 @@ module G = struct
 
   include G
   include Graph.Graphviz.Dot (G) (Attr)
-
-  let ensure_edge_e g e = if not (mem_edge_e g e) then add_edge_e g e
 end
 
 module Search_state = struct
@@ -384,7 +382,7 @@ module Search_state = struct
 
   let pred_e = wrap G.pred_e
 
-  let ensure_edge_e = wrap G.ensure_edge_e
+  let add_edge_e = wrap G.add_edge_e
 
   let children g v =
     G.succ g.graph (State v)
@@ -474,7 +472,7 @@ module Args_node = struct
         let args_n = { op; id = mk_id () } in
         let args_v = Node.Args args_n in
         List.iteri args ~f:(fun i v ->
-            S.ensure_edge_e graph (args_v, i, Node.State v));
+            S.add_edge_e graph (args_v, i, Node.State v));
         Hashtbl.set graph.args_table (op, args) args_n;
         Some args_n
 end
@@ -501,7 +499,7 @@ module State_node = struct
     match Args_node.create ~op g children with
     | Some args_v ->
         let state_v = create_consed ~state ~cost g in
-        S.ensure_edge_e g (Node.State state_v, -1, Node.Args args_v);
+        S.add_edge_e g (Node.State state_v, -1, Node.Args args_v);
         true
     | None -> false
 end
@@ -1322,13 +1320,13 @@ let refine graph output separator refinement =
           in
           match S.pred graph (Args v) with
           | [ State s ] -> S.update_state_vertex graph s s'
-          | [] -> S.ensure_edge_e graph (State s', -1, Args v)
+          | [] -> S.add_edge_e graph (State s', -1, Args v)
           | _ -> assert false )
     | `Split (v, cost, refined) ->
         if S.V.mem graph (Args v) then
           List.iter refined ~f:(fun state ->
               let v' = State_node.create_consed ~state ~cost graph in
-              S.ensure_edge_e graph (State v', -1, Args v))
+              S.add_edge_e graph (State v', -1, Args v))
     | `Remove vs ->
         S.remove_vertexes graph @@ List.map ~f:(fun v -> Node.State v) vs);
 
