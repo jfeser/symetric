@@ -1289,51 +1289,50 @@ let rec extract_program graph selected_edges target =
       Error.create "Too many args" args [%sexp_of: Args_node.t list]
       |> Error.raise
 
+let refute graph output vectors =
+  match
+    S.V.find_map graph ~f:(function
+      | State v when Abs.contains v.state output -> Some v
+      | _ -> None)
+  with
+  | Some target ->
+      let seps = separators graph (State target) |> Seq.to_list in
+      let seps, last_sep =
+        match List.rev seps with
+        | last :: rest -> (List.rev rest, last)
+        | _ -> failwith "No separators"
+      in
+
+      let refinement =
+        List.find_map seps ~f:(fun sep ->
+            let open Option.Let_syntax in
+            let%map r =
+              get_refinement vectors graph target output sep
+              |> Either.First.to_option
+            in
+            (sep, r))
+      in
+      ( match refinement with
+      | Some (sep, r) -> refine graph output sep r
+      | None -> (
+          match get_refinement vectors graph target output last_sep with
+          | First r -> refine graph output last_sep r
+          | Second selected_edges ->
+              Fmt.epr "Could not refute: %a" Sexp.pp_hum
+                ( [%sexp_of: Program.t]
+                @@ extract_program graph selected_edges (State target) );
+              raise (Done `Sat) ) );
+      true
+  | None -> false
+
 let synth ?(no_abstraction = false) inputs output =
   let graph = S.create !max_cost in
   let vectors = List.init (Array.length @@ List.hd_exn inputs) ~f:Fun.id in
 
-  let refute () =
-    match
-      S.V.find_map graph ~f:(function
-        | State v when Abs.contains v.state output -> Some v
-        | _ -> None)
-    with
-    | Some target ->
-        let seps = separators graph (State target) |> Seq.to_list in
-        let seps, last_sep =
-          match List.rev seps with
-          | last :: rest -> (List.rev rest, last)
-          | _ -> failwith "No separators"
-        in
-
-        let refinement =
-          List.find_map seps ~f:(fun sep ->
-              let open Option.Let_syntax in
-              let%map r =
-                get_refinement vectors graph target output sep
-                |> Either.First.to_option
-              in
-              (sep, r))
-        in
-        ( match refinement with
-        | Some (sep, r) -> refine graph output sep r
-        | None -> (
-            match get_refinement vectors graph target output last_sep with
-            | First r -> refine graph output last_sep r
-            | Second selected_edges ->
-                Fmt.epr "Could not refute: %a" Sexp.pp_hum
-                  ( [%sexp_of: Program.t]
-                  @@ extract_program graph selected_edges (State target) );
-                raise (Done `Sat) ) );
-        true
-    | None -> false
-  in
-
   let rec loop cost =
     if cost > !max_cost then raise (Done `Unsat);
     let rec strengthen_and_cover () =
-      let did_strengthen = refute () in
+      let did_strengthen = refute graph output vectors in
       if did_strengthen then strengthen_and_cover ()
     in
     strengthen_and_cover ();
