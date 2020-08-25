@@ -1220,44 +1220,31 @@ let fix_up_states graph =
     S.remove_vertexes graph to_remove;
     true )
 
-let prune graph separator refinement =
-  let size = G.nb_vertex graph.Search_state.graph in
+let refine_level n graph =
+  S.V.fold graph ~init:(0, 0) ~f:(fun ((num, dem) as acc) -> function
+    | Args _ -> acc | State v -> (num + Abs.width v.state, dem + n))
 
-  List.iter refinement ~f:(function
-    | `Split (v, _, _) ->
-        S.pred_e graph (Args v)
-        |> List.iter ~f:(G.remove_edge_e graph.Search_state.graph)
-    | `Remove vs -> ());
+let refine graph output separator refinement =
+  let size = G.nb_vertex graph.Search_state.graph in
+  dump_detailed ~output ~suffix:"before-refinement" graph;
+
+  List.iter refinement ~f:(function `Split (v, cost, refined) ->
+      (* Remove edges to existing state nodes. *)
+      S.pred_e graph (Args v)
+      |> List.iter ~f:(G.remove_edge_e graph.Search_state.graph);
+      (* Insert split state nodes. *)
+      List.iter refined ~f:(fun state ->
+          let (`Fresh v' | `Stale v') =
+            State_node.create_consed ~state ~cost graph
+          in
+          S.add_edge_e graph (State v', -1, Args v)));
 
   let rec loop () = if fix_up_args graph || fix_up_states graph then loop () in
   loop ();
 
   let size' = G.nb_vertex graph.Search_state.graph in
   Fmt.epr "Pruning: size before=%d, after=%d, removed %f%%\n" size size'
-    Float.(100.0 - (of_int size' / of_int size * 100.0))
-
-let refine_level n graph =
-  S.V.fold graph ~init:(0, 0) ~f:(fun ((num, dem) as acc) -> function
-    | Args _ -> acc | State v -> (num + Abs.width v.state, dem + n))
-
-let refine graph output separator refinement =
-  dump_detailed ~output ~suffix:"before-pruning" graph;
-
-  prune graph separator refinement;
-
-  dump_detailed ~output ~suffix:"after-pruning" graph;
-
-  List.iter refinement ~f:(function
-    | `Split (v, cost, refined) ->
-        if S.V.mem graph (Args v) then
-          List.iter refined ~f:(fun state ->
-              let (`Fresh v' | `Stale v') =
-                State_node.create_consed ~state ~cost graph
-              in
-              S.add_edge_e graph (State v', -1, Args v))
-    | `Remove vs ->
-        S.remove_vertexes graph @@ List.map ~f:(fun v -> Node.State v) vs);
-
+    Float.(100.0 - (of_int size' / of_int size * 100.0));
   dump_detailed ~output ~suffix:"after-refinement" graph;
 
   let num, dem = refine_level (Array.length output) graph in
