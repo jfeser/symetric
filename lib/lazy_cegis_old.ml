@@ -12,7 +12,7 @@ let enable_dump = ref false
 
 let refine_strategy : [ `First | `Random | `Pareto ] ref = ref `First
 
-let max_size = ref 10
+let max_cost = ref 10
 
 let n_refuted = ref 0
 
@@ -295,13 +295,15 @@ module Search_state = struct
     graph : G.t;
     args_table : Args_node0.t Hashtbl.M(Args_table_key).t;
     state_table : State_node0.t Hashtbl.M(State_table_key).t;
+    cost_table : State_node0.t list array;
   }
 
-  let create () =
+  let create max_cost =
     {
       graph = G.create ();
       args_table = Hashtbl.create (module Args_table_key);
       state_table = Hashtbl.create (module State_table_key);
+      cost_table = Array.create ~len:max_cost [];
     }
 
   let copy x =
@@ -309,6 +311,7 @@ module Search_state = struct
       graph = G.copy x.graph;
       args_table = Hashtbl.copy x.args_table;
       state_table = Hashtbl.copy x.state_table;
+      cost_table = Array.copy x.cost_table;
     }
 
   let wrap f g = f g.graph
@@ -402,24 +405,27 @@ module Search_state = struct
   let remove_vertexes g vs =
     let vs = List.filter vs ~f:(G.mem_vertex g.graph) in
     let to_remove = Set.of_list (module V) vs in
+    let remove_state v = not (Set.mem to_remove (State v)) in
+
+    for i = 0 to Array.length g.cost_table - 1 do
+      g.cost_table.(i) <- List.filter g.cost_table.(i) ~f:remove_state
+    done;
     Set.iter to_remove ~f:(G.remove_vertex g.graph);
     Hashtbl.filter_inplace g.args_table ~f:(fun v ->
         not (Set.mem to_remove (Args v)));
-    Hashtbl.filter_inplace g.state_table ~f:(fun v ->
-        not (Set.mem to_remove (State v)))
+    Hashtbl.filter_inplace g.state_table ~f:remove_state
 
   let remove_vertex x v = remove_vertexes x [ v ]
 
-  let update_state_vertex x (v : State_node0.t) (v' : State_node0.t) =
-    Hashtbl.set x.state_table (v.state, v.cost) v';
-    let preds = G.pred_e x.graph (State v)
-    and succs = G.succ_e x.graph (State v) in
-    G.remove_vertex x.graph (State v);
-    G.add_vertex x.graph (State v');
-    List.iter preds ~f:(fun (v, e, _) -> G.add_edge_e x.graph (v, e, State v'));
-    List.iter succs ~f:(fun (_, e, v) -> G.add_edge_e x.graph (State v', e, v))
-
   let filter g ~f = remove_vertexes g @@ V.filter g ~f:(Fun.negate f)
+
+  let states_of_cost g cost =
+    let idx = cost - 1 in
+    g.cost_table.(idx)
+
+  let set_states_of_cost g cost states =
+    let idx = cost - 1 in
+    g.cost_table.(idx) <- states
 end
 
 module S = Search_state
@@ -492,6 +498,7 @@ module State_node = struct
     | Some v -> v
     | None ->
         let v = { id = mk_id (); cost; state } in
+        S.set_states_of_cost g cost (v :: S.states_of_cost g cost);
         Hashtbl.add_exn g.state_table (state, cost) v;
         v
 
@@ -504,25 +511,19 @@ module State_node = struct
     | None -> false
 end
 
-let rec fill graph cost =
+let rec fill (graph : Search_state.t) cost =
   if cost <= 1 then false
   else if fill graph (cost - 1) then true
   else
     let arg_cost = cost - 1 in
     let module Comp = Combinat.Composition in
-    let of_cost c =
-      S.V.filter_map
-        ~f:(function State v when v.cost = c -> Some v | _ -> None)
-        graph
-    in
-
     let added = ref false in
     Comp.create ~n:arg_cost ~k:2
     |> Comp.iter ~f:(fun arg_costs ->
            let c = arg_costs.{0} and c' = arg_costs.{1} in
-           of_cost c
+           S.states_of_cost graph c
            |> List.iter ~f:(fun (a : State_node.t) ->
-                  of_cost c'
+                  S.states_of_cost graph c'
                   |> List.iter ~f:(fun (a' : State_node.t) ->
                          List.iter [ Op.Union; Inter; Sub ] ~f:(fun op ->
                              let state =
@@ -802,6 +803,7 @@ let get_refinement vectors graph target_node expected_output separator =
     Search_state.
       {
         graph = cone graph (State target_node) separator;
+        cost_table = [||];
         args_table = Hashtbl.create (module Args_table_key);
         state_table = Hashtbl.create (module State_table_key);
       }
@@ -1308,20 +1310,6 @@ let refine graph output separator refinement =
   dump_detailed ~output ~suffix:"after-pruning" graph;
 
   List.iter refinement ~f:(function
-    | `Update (v, state) ->
-        let v' =
-          State_node.create_consed ~state ~cost:v.State_node.cost graph
-        in
-        S.update_state_vertex graph v v'
-    | `Add_child (v, s, state) -> (
-        if S.V.mem graph (Args v) then
-          let s' =
-            State_node.create_consed ~state ~cost:s.State_node.cost graph
-          in
-          match S.pred graph (Args v) with
-          | [ State s ] -> S.update_state_vertex graph s s'
-          | [] -> S.add_edge_e graph (State s', -1, Args v)
-          | _ -> assert false )
     | `Split (v, cost, refined) ->
         if S.V.mem graph (Args v) then
           List.iter refined ~f:(fun state ->
@@ -1354,7 +1342,7 @@ let rec extract_program graph selected_edges target =
       |> Error.raise
 
 let synth ?(no_abstraction = false) inputs output =
-  let graph = S.create () in
+  let graph = S.create !max_cost in
   let vectors = List.init (Array.length @@ List.hd_exn inputs) ~f:Fun.id in
 
   let refute () =
@@ -1395,7 +1383,7 @@ let synth ?(no_abstraction = false) inputs output =
   in
 
   let rec loop cost =
-    if cost > !max_size then raise (Done `Unsat);
+    if cost > !max_cost then raise (Done `Unsat);
     let rec strengthen_and_cover () =
       let did_strengthen = refute () in
       if did_strengthen then strengthen_and_cover ()
@@ -1481,7 +1469,7 @@ let sample ?(state = Random.State.default) inputs =
   in
   let rec sample_prog () =
     let p = to_prog (Grammar.sample ~state "p" g :> Untyped_term.t) in
-    if Program.size p > !max_size then sample_prog () else p
+    if Program.size p > !max_cost then sample_prog () else p
   in
   sample_prog ()
 
