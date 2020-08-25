@@ -976,22 +976,6 @@ let get_refinement vectors graph target_node expected_output separator =
     return ()
   in
 
-  let rec parse_interpolant =
-    let open Sexp in
-    let open Or_error.Let_syntax in
-    function
-    | List (Atom "and" :: args) ->
-        let%map args = List.map ~f:parse_interpolant args |> Or_error.all in
-        `And args
-    | List [ Atom "not"; Atom x ] -> return @@ `Not (`Var x)
-    | List [ Atom "let"; List [ List [ Atom var; def ] ]; rhs ] ->
-        let%bind def = parse_interpolant def in
-        let%map rhs = parse_interpolant rhs in
-        `Let (var, def, rhs)
-    | Atom x -> return @@ `Var x
-    | inter -> Or_error.error "Unexpected interpolant" inter [%sexp_of: Sexp.t]
-  in
-
   let rec interpolant_vars =
     let open Or_error.Let_syntax in
     function
@@ -1005,39 +989,6 @@ let get_refinement vectors graph target_node expected_output separator =
         return @@ Set.union lhs rhs
     | Atom x -> return @@ Set.singleton (module String) x
     | inter -> Or_error.error "Unexpected interpolant" inter [%sexp_of: Sexp.t]
-  in
-
-  let rec sub lhs rhs = function
-    | `Let (var, x, y) ->
-        `Let
-          (var, sub lhs rhs x, if String.(lhs = var) then y else sub lhs rhs y)
-    | `And xs -> `And (List.map xs ~f:(sub lhs rhs))
-    | `Not x -> `Not (sub lhs rhs x)
-    | `Var x -> if String.(x = lhs) then rhs else `Var x
-  in
-  let rec inline_let = function
-    | `Let (var, def, rhs) -> inline_let (sub var def rhs)
-    | `Var _ as x -> x
-    | `Not x -> `Not (inline_let x)
-    | `And xs -> `And (List.map xs ~f:inline_let)
-  in
-
-  let rec flatten_and =
-    let open Option.Let_syntax in
-    function
-    | `And xs ->
-        let%bind xs = List.map xs ~f:flatten_and |> Option.all in
-        return
-        @@ ( List.reduce xs
-               ~f:
-                 (Map.merge ~f:(fun ~key:_ -> function
-                    | `Both (a, b) ->
-                        if Bool.(a = b) then Some a else assert false
-                    | `Left a | `Right a -> Some a))
-           |> Option.value ~default:(Map.empty (module Sexp)) )
-    | `Not (`Var x) -> return @@ Map.singleton (module Sexp) (Sexp.Atom x) false
-    | `Not _ -> None
-    | `Var x -> return @@ Map.singleton (module Sexp) (Sexp.Atom x) true
   in
 
   let normalize_bits bits =
@@ -1153,23 +1104,6 @@ let get_refinement vectors graph target_node expected_output separator =
             | List [ Atom name; value ] -> (name, parse_value value)
             | s -> error s)
     | s -> error s
-  in
-
-  let sat_model interpolant =
-    let model =
-      let%bind vars = make_vars in
-      (* let%bind () = synth_constrs ~assert_group:(fun _ -> Smt.assert_) vars in *)
-      let%bind () = Smt.assert_ interpolant in
-      Smt.get_model
-    in
-    let open Option.Let_syntax in
-    let%bind model = Smt.run model in
-    let vars = interpolant_vars interpolant |> Or_error.ok_exn in
-    parse_model model
-    |> List.filter ~f:(fun (v, _) -> Set.mem vars v)
-    |> List.map ~f:(fun (v, b) -> (Sexp.Atom v, b))
-    |> Map.of_alist_exn (module Sexp)
-    |> return
   in
 
   let forced_bits interpolant =
