@@ -495,25 +495,27 @@ module State_node = struct
 
   let create_consed ~state ~cost (g : Search_state.t) =
     match Hashtbl.find g.state_table (state, cost) with
-    | Some v -> v
+    | Some v -> `Stale v
     | None ->
         let v = { id = mk_id (); cost; state } in
         S.set_states_of_cost g cost (v :: S.states_of_cost g cost);
         Hashtbl.add_exn g.state_table (state, cost) v;
-        v
+        `Fresh v
 
   let create_op ~state ~cost ~op g children =
-    match Args_node.create ~op g children with
-    | Some args_v ->
-        let state_v = create_consed ~state ~cost g in
-        S.add_edge_e g (Node.State state_v, -1, Node.Args args_v);
-        true
-    | None -> false
+    Args_node.create ~op g children
+    |> Option.bind ~f:(fun args_v ->
+           match create_consed ~state ~cost g with
+           | `Fresh state_v ->
+               S.add_edge_e g (Node.State state_v, -1, Node.Args args_v);
+               Some state_v
+           | `Stale state_v ->
+               S.add_edge_e g (Node.State state_v, -1, Node.Args args_v);
+               None)
 end
 
-let rec fill (graph : Search_state.t) cost =
+let fill_cost (graph : Search_state.t) cost =
   if cost <= 1 then false
-  else if fill graph (cost - 1) then true
   else
     let arg_cost = cost - 1 in
     let module Comp = Combinat.Composition in
@@ -534,11 +536,21 @@ let rec fill (graph : Search_state.t) cost =
                                | _ -> assert false
                              in
                              let did_add =
-                               State_node.create_op ~state ~cost ~op graph
-                                 [ a; a' ]
+                               match
+                                 State_node.create_op ~state ~cost ~op graph
+                                   [ a; a' ]
+                               with
+                               | None -> false
+                               | Some _ -> true
                              in
                              added := !added || did_add))));
     !added
+
+let fill_up_to_cost (graph : Search_state.t) cost =
+  let rec fill c =
+    if c > cost then false else fill_cost graph c || fill (c + 1)
+  in
+  fill 1
 
 module Stats = struct
   type t = {
@@ -1247,7 +1259,9 @@ let refine graph output separator refinement =
     | `Split (v, cost, refined) ->
         if S.V.mem graph (Args v) then
           List.iter refined ~f:(fun state ->
-              let v' = State_node.create_consed ~state ~cost graph in
+              let (`Fresh v' | `Stale v') =
+                State_node.create_consed ~state ~cost graph
+              in
               S.add_edge_e graph (State v', -1, Args v))
     | `Remove vs ->
         S.remove_vertexes graph @@ List.map ~f:(fun v -> Node.State v) vs);
@@ -1324,7 +1338,7 @@ let synth ?(no_abstraction = false) inputs output =
     in
     strengthen_and_cover ();
 
-    let changed = fill graph cost in
+    let changed = fill_up_to_cost graph cost in
     Fmt.epr "Changed: %b Cost: %d\n%!" changed cost;
     let cost = if changed then cost else cost + 1 in
     loop cost
