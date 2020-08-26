@@ -1,4 +1,5 @@
-open! Core
+[@@@landmark "auto"]
+
 open Search_state
 
 module Seq = struct
