@@ -30,20 +30,6 @@ let cone graph target_node separator =
   loop ();
   graph'
 
-let rec interpolant_vars =
-  let open Or_error.Let_syntax in
-  function
-  | Sexp.List (Atom ("and" | "not" | "or") :: args) ->
-      let%map args = List.map ~f:interpolant_vars args |> Or_error.all in
-      Set.union_list (module String) args
-  | List [ Atom "let"; List [ List [ Atom var; lhs ] ]; rhs ] ->
-      let%bind lhs = interpolant_vars lhs in
-      let%bind rhs = interpolant_vars rhs in
-      let rhs = Set.remove rhs var in
-      return @@ Set.union lhs rhs
-  | Atom x -> return @@ Set.singleton (module String) x
-  | inter -> Or_error.error "Unexpected interpolant" inter [%sexp_of: Sexp.t]
-
 let normalize_bits bits =
   Map.of_alist_multi (module Int) bits
   |> Map.mapi ~f:(fun ~key ~data ->
@@ -71,7 +57,7 @@ let make_vars graph =
 
   let edge_vars = edge_var_rel |> Map.of_alist_exn (module E)
   and var_edges =
-    List.map ~f:Tuple.T2.swap edge_var_rel |> Map.of_alist_exn (module Sexp)
+    List.map ~f:Tuple.T2.swap edge_var_rel |> Map.of_alist_exn (module String_id)
   in
 
   let%bind state_vars =
@@ -82,7 +68,10 @@ let make_vars graph =
                  match Map.find v.state vec with
                  | Some x -> return @@ Smt.Bool.bool x
                  | None ->
-                     Smt.fresh_decl ~prefix:(sprintf "s%d_b%d_" v.id vec) ())
+                     let%bind var =
+                       Smt.fresh_decl ~prefix:(sprintf "s%d_b%d_" v.id vec) ()
+                     in
+                     return (Smt.Expr.Var var))
              |> Smt.all
            in
            return (v, vars))
@@ -90,7 +79,7 @@ let make_vars graph =
   in
   let state_vars = Map.of_alist_exn (module State_node0) state_vars in
 
-  let%bind arg_out_vars =
+  let%bind arg_vars =
     V.filter_map graph ~f:Node.to_args
     |> List.map ~f:(fun (v : Args_node0.t) ->
            let%bind vars =
@@ -101,43 +90,52 @@ let make_vars graph =
            return (v, vars))
     |> Smt.all
   in
-  let arg_out_vars = Map.of_alist_exn (module Args_node0) arg_out_vars in
-  return (edge_vars, var_edges, state_vars, arg_out_vars)
+  let arg_vars = Map.of_alist_exn (module Args_node0) arg_vars in
+  return (edge_vars, var_edges, state_vars, arg_vars)
 
-let check_true graph interpolant vv state =
+let check_true graph interpolant v state =
   let open Smt.Let_syntax in
   let prob =
-    let%bind () = Smt.(assert_ Bool.(not (interpolant => vv))) in
+    let%bind () = Smt.(assert_ Bool.(not (interpolant => Var v))) in
     Smt.check_sat
   in
   not (Smt.eval_with_state state prob)
 
-let check_false graph interpolant vv state =
+let check_false graph interpolant v state =
   let open Smt.Let_syntax in
   let prob =
-    let%bind () = Smt.(assert_ Bool.(not (interpolant => not vv))) in
+    let%bind () = Smt.(assert_ Bool.(not (interpolant => not (Var v)))) in
     Smt.check_sat
   in
   not (Smt.eval_with_state state prob)
 
 let forced_bits graph interpolant state =
-  let vars = interpolant_vars interpolant |> Or_error.ok_exn |> Set.to_list in
+  let vars = Smt.Expr.vars interpolant |> Set.to_list in
   if !Global.enable_forced_bit_check then
-    List.map vars ~f:(fun v ->
-        let vv = Sexp.Atom v in
-        if check_true graph interpolant vv state then (v, Some true)
-        else if check_false graph interpolant vv state then (v, Some false)
-        else (v, None))
+    List.map vars ~f:(fun var ->
+        if check_true graph interpolant var state then (var, Some true)
+        else if check_false graph interpolant var state then (var, Some false)
+        else (var, None))
   else List.map vars ~f:(fun v -> (v, None))
 
-let refinement_of_model graph separator forced state_vars arg_out_vars ivars =
-  let forced = Map.of_alist_exn (module String) forced in
+let refinement_of_model graph separator interpolant forced state_vars
+    arg_out_vars =
+  let forced = Map.of_alist_exn (module String_id) forced in
+  let ivars = Smt.Expr.vars interpolant in
 
-  let var_names =
-    Map.map ~f:(List.map ~f:(function Sexp.Atom x -> x | _ -> assert false))
+  let get_state_bits =
+    List.filter_mapi ~f:(fun i x ->
+        match x with
+        | Smt.Expr.Var v ->
+            if Set.mem ivars v then Some (i, Map.find_exn forced v) else None
+        | _ -> None)
   in
-  let arg_out_vars = arg_out_vars |> var_names in
-  let state_vars = state_vars |> var_names in
+
+  let get_args_bits =
+    List.filter_mapi ~f:(fun i x ->
+        if Set.mem ivars x then Some (i, Map.find_exn forced x) else None)
+  in
+
   let open Option.Let_syntax in
   let refinement =
     separator
@@ -145,17 +143,12 @@ let refinement_of_model graph separator forced state_vars arg_out_vars ivars =
     |> List.dedup_and_sort ~compare:[%compare: Args_node0.t]
     (* Only care about args nodes with refined output bits. *)
     |> List.filter_map ~f:(fun v ->
-           let get_bits =
-             List.filter_mapi ~f:(fun i x ->
-                 if Set.mem ivars x then Some (i, Map.find_exn forced x)
-                 else None)
-           in
-           let bits = Map.find_exn arg_out_vars v |> get_bits in
+           let bits = Map.find_exn arg_out_vars v |> get_args_bits in
            let bits' =
              pred graph (Args v)
              |> List.map ~f:Node.to_state_exn
              |> List.map ~f:(Map.find_exn state_vars)
-             |> List.map ~f:get_bits |> List.concat
+             |> List.map ~f:get_state_bits |> List.concat
            in
            let refined_bits = normalize_bits (bits @ bits') in
            if List.is_empty refined_bits then None else Some (v, refined_bits))
@@ -208,23 +201,6 @@ let refinement_of_model graph separator forced state_vars arg_out_vars ivars =
   Fmt.epr "Refinement: %a@." Refinement.pp refinement;
   if List.is_empty refinement then failwith "No-op refinement" else refinement
 
-let parse_model sexp =
-  let error s =
-    Error.create "Unexpected model" s [%sexp_of: Sexp.t] |> Error.raise
-  in
-  let parse_value = function
-    | Sexp.Atom "true" -> true
-    | Atom "false" -> false
-    | s -> error s
-  in
-  match sexp with
-  | Sexp.List vals ->
-      List.map vals ~f:(fun v ->
-          match v with
-          | List [ Atom name; value ] -> (name, parse_value value)
-          | s -> error s)
-  | s -> error s
-
 let get_refinement graph target_node expected_output separator =
   (* Select the subset of the graph that can reach the target. *)
   let graph =
@@ -246,11 +222,33 @@ let get_refinement graph target_node expected_output separator =
       (Array.to_list expected_output) ~f:(fun x v -> Smt.Bool.(x = bool v))
     |> Smt.Bool.and_
     |> Smt.make_defn "correct-output"
-    >>= Smt.Interpolant.assert_group
+    >>= fun v -> Smt.Interpolant.assert_group (Var v)
   in
 
   let synth_constrs ~assert_group
       (edge_vars, var_edges, state_vars, arg_out_vars) =
+    let assert_group_var g v = assert_group g (Smt.Expr.Var v) in
+
+    let edge_vars = Map.map ~f:(fun v -> Smt.Expr.Var v) edge_vars in
+    let arg_out_vars =
+      Map.map ~f:(List.map ~f:(fun v -> Smt.Expr.Var v)) arg_out_vars
+    in
+
+    (* Each state must be contained by its abstraction *)
+    let%bind () =
+      Map.to_alist state_vars
+      |> List.map ~f:(fun (state_v, vars) ->
+             let state = State_node0.state state_v in
+             List.filter_mapi vars ~f:(fun b v ->
+                 match Map.find state b with
+                 | Some x -> Some Smt.Bool.(bool x = v)
+                 | None -> None)
+             |> Smt.Bool.and_
+             |> Smt.make_defn (Fmt.str "state-%d" @@ State_node0.id state_v)
+             >>= assert_group_var `A)
+      |> Smt.all_unit
+    in
+
     (* Every selected state node must select exactly one dependent args node. *)
     let%bind () =
       V.filter_map graph ~f:Node.to_state
@@ -269,7 +267,7 @@ let get_refinement graph target_node expected_output separator =
                  make_defn
                    (sprintf "state-%d-deps" v.id)
                    Bool.(or_ selected => exactly_one deps)
-                 >>= assert_group `A)
+                 >>= assert_group_var `A)
              else return ())
       |> Smt.all_unit
     in
@@ -288,7 +286,7 @@ let get_refinement graph target_node expected_output separator =
              Smt.Bool.(or_ outgoing => and_ incoming))
       |> Smt.Bool.and_
       |> Smt.make_defn "args-have-all-incoming"
-      >>= assert_group `A
+      >>= assert_group_var `A
     in
 
     let%bind () =
@@ -308,7 +306,7 @@ let get_refinement graph target_node expected_output separator =
              |> Smt.Bool.and_)
       |> Smt.Bool.and_
       |> Smt.make_defn "semantics-connected"
-      >>= assert_group `A
+      >>= assert_group_var `A
     in
 
     let%bind () =
@@ -340,7 +338,7 @@ let get_refinement graph target_node expected_output separator =
                        x = bool v)
                | op, states ->
                    Error.create "Unexpected op." (op, states)
-                     [%sexp_of: Op.t * Sexp.t list list]
+                     [%sexp_of: Op.t * Smt.Expr.t list list]
                    |> Error.raise
              in
 
@@ -350,8 +348,8 @@ let get_refinement graph target_node expected_output separator =
                  (Smt.Bool.and_ semantic)
              in
              if List.mem separator (Args v) ~equal:[%equal: Node.t] then
-               assert_group `B defn
-             else assert_group `A defn)
+               assert_group_var `B defn
+             else assert_group_var `A defn)
       |> Smt.all_unit
     in
     return ()
@@ -362,17 +360,16 @@ let get_refinement graph target_node expected_output separator =
   in
 
   let process_interpolant state_vars arg_out_vars interpolant =
-    Fmt.epr "Interpolant: %a@." Sexp.pp_hum interpolant;
-    refinement_of_model graph separator
+    let interpolant = ok_exn interpolant in
+    Fmt.epr "Interpolant: %a@." Smt.Expr.pp interpolant;
+    refinement_of_model graph separator interpolant
       (forced_bits graph interpolant state)
       state_vars arg_out_vars
-      (interpolant_vars interpolant |> Or_error.ok_exn)
   in
 
-  let process_model var_edges sexp =
-    let model = parse_model sexp in
+  let process_model var_edges model =
     List.filter_map model ~f:(fun (e, is_selected) ->
-        if is_selected then Map.find var_edges (Sexp.Atom e) else None)
+        if is_selected then Map.find var_edges e else None)
     |> Set.of_list (module E)
   in
 

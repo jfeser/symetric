@@ -18,6 +18,83 @@ let pp_sig fmt (name, n_args) =
     in
     Fmt.pf fmt "%s (%s) Bool" name args
 
+module Expr = struct
+  type binop = Implies | Equals [@@deriving equal, sexp]
+
+  type unop = Not [@@deriving equal, sexp]
+
+  type varop = And | Or [@@deriving equal, sexp]
+
+  type var = String_id.t [@@deriving equal, sexp]
+
+  type t =
+    | Bool of bool
+    | Var of var
+    | Binop of binop * t * t
+    | Unop of unop * t
+    | Varop of varop * t list
+    | Let of (t * var * t)
+    | Annot of t * string * string
+  [@@deriving equal, sexp]
+
+  let pp_binop fmt = function
+    | Implies -> Fmt.pf fmt "=>"
+    | Equals -> Fmt.pf fmt "="
+
+  let pp_unop fmt = function Not -> Fmt.pf fmt "not"
+
+  let pp_varop fmt = function And -> Fmt.pf fmt "and" | Or -> Fmt.pf fmt "or"
+
+  let rec pp fmt = function
+    | Bool true -> Fmt.pf fmt "true"
+    | Bool false -> Fmt.pf fmt "false"
+    | Binop (op, x, x') -> Fmt.pf fmt "(%a %a %a)" pp_binop op pp x pp x'
+    | Unop (op, x) -> Fmt.pf fmt "(%a %a)" pp_unop op pp x
+    | Varop (op, xs) ->
+        Fmt.pf fmt "(%a %a)" pp_varop op Fmt.(list ~sep:sp pp) xs
+    | Annot (x, k, v) -> Fmt.pf fmt "(! %a :%s %s)" pp x k v
+    | Var v -> String_id.pp fmt v
+    | Let (e, v, e') ->
+        Fmt.pf fmt "(let ((%a %a)) %a)" String_id.pp v pp e pp e'
+
+  let var x = Var (String_id.of_string x)
+
+  let rec parse =
+    let open Or_error.Let_syntax in
+    function
+    | Sexp.List (Atom "or" :: args) ->
+        let%map args = List.map ~f:parse args |> Or_error.all in
+        Varop (Or, args)
+    | Sexp.List (Atom "and" :: args) ->
+        let%map args = List.map ~f:parse args |> Or_error.all in
+        Varop (And, args)
+    | Sexp.List [ Atom "not"; arg ] ->
+        let%map arg = parse arg in
+        Unop (Not, arg)
+    | List [ Atom "let"; List [ List [ Atom var; lhs ] ]; rhs ] ->
+        let%bind lhs = parse lhs in
+        let%bind rhs = parse rhs in
+        return @@ Let (lhs, String_id.of_string var, rhs)
+    | Atom x -> return @@ var x
+    | inter -> Or_error.error "Unexpected interpolant" inter [%sexp_of: Sexp.t]
+
+  let reduce reduce plus empty = function
+    | Bool _ | Var _ -> empty
+    | Binop (_, e, e') | Let (e, _, e') -> plus (reduce e) (reduce e')
+    | Annot (e, _, _) | Unop (_, e) -> reduce e
+    | Varop (_, es) ->
+        List.fold ~init:empty ~f:(fun acc e -> plus (reduce e) acc) es
+
+  let rec vars =
+    let open String_id in
+    function
+    | Var v -> Set.singleton v
+    | Let (e, v, e') -> Set.remove (Set.union (vars e) (vars e')) v
+    | e -> reduce vars Set.union Set.empty e
+end
+
+open Expr
+
 module Decl = struct
   type t = { name : string; n_args : int }
 
@@ -28,19 +105,19 @@ module Decl = struct
 end
 
 module Defn = struct
-  type t = Decl.t * Sexp.t
+  type t = Decl.t * Expr.t
 
   let create ?n_args name body = (Decl.create ?n_args name, body)
 
   let to_smtlib fmt (Decl.{ name; n_args }, body) =
-    Fmt.pf fmt "(define-fun %a %a)" pp_sig (name, n_args) Sexp.pp body
+    Fmt.pf fmt "(define-fun %a %a)" pp_sig (name, n_args) Expr.pp body
 end
 
 type stmt =
   | Decl of Decl.t
   | Defn of Defn.t
-  | Assert of Sexp.t
-  | Extra of Sexp.t
+  | Assert of Expr.t
+  | Extra of string
 
 type state = { stmts : stmt list; var_ctr : int; group_ctr : int }
 
@@ -80,7 +157,7 @@ let fresh_num = make @@ fun s -> (s.var_ctr, { s with var_ctr = s.var_ctr + 1 })
 
 let make_decl ?n_args name =
   let%bind () = add_stmt (Decl (Decl.create ?n_args name)) in
-  return (Sexp.Atom name)
+  return (String_id.of_string name)
 
 let fresh_decl ?n_args ?(prefix = "x") () =
   let%bind ctr = fresh_num in
@@ -89,58 +166,55 @@ let fresh_decl ?n_args ?(prefix = "x") () =
 
 let make_defn ?n_args ?ret name body =
   let%bind () = add_stmt (Defn (Defn.create ?n_args name body)) in
-  return (Sexp.Atom name)
+  return (String_id.of_string name)
 
 let fresh_defn ?n_args ?(prefix = "x") body =
   let%bind ctr = fresh_num in
   let name = sprintf "%s%d" prefix ctr in
   make_defn ?n_args name body
 
-let app op args = Sexp.List (Sexp.Atom op :: args)
-
-let annotate key value term =
-  Sexp.List [ Sexp.Atom "!"; term; Sexp.Atom (Fmt.str ":%s" key); value ]
+let annotate key value term = Annot (term, key, value)
 
 let comment = annotate "comment"
 
 module Bool = struct
-  let false_ = Sexp.Atom "false"
+  let false_ = Bool false
 
-  let true_ = Sexp.Atom "true"
+  let true_ = Bool true
 
-  let is_false x = [%equal: Sexp.t] x false_
+  let is_false x = [%equal: Expr.t] x false_
 
-  let is_true x = [%equal: Sexp.t] x true_
+  let is_true x = [%equal: Expr.t] x true_
 
   let or_ xs =
     let xs =
       if List.exists ~f:is_true xs then [ true_ ]
       else List.filter ~f:(Fun.negate is_false) xs
     in
-    match xs with [] -> false_ | [ x ] -> x | xs -> app "or" xs
+    match xs with [] -> false_ | [ x ] -> x | xs -> Varop (Or, xs)
 
   let and_ xs =
     let xs =
       if List.exists ~f:is_false xs then [ false_ ]
       else List.filter ~f:(Fun.negate is_true) xs
     in
-    match xs with [] -> true_ | [ x ] -> x | xs -> app "and" xs
+    match xs with [] -> true_ | [ x ] -> x | xs -> Varop (And, xs)
 
   let not_ x =
-    if is_true x then false_ else if is_false x then true_ else app "not" [ x ]
+    if is_true x then false_ else if is_false x then true_ else Unop (Not, x)
 
   let implies x y =
     if is_true x then y
     else if is_false x || is_true y then true_
     else if is_false y then not_ x
-    else app "=>" [ x; y ]
+    else Binop (Implies, x, y)
 
   let ( = ) x y =
     if is_true x then y
     else if is_true y then x
     else if is_false x then not_ y
     else if is_false y then not_ x
-    else app "=" [ x; y ]
+    else Binop (Equals, x, y)
 
   let ( || ) x x' = or_ [ x; x' ]
 
@@ -171,9 +245,8 @@ let to_smtlib =
     list (fun fmt -> function
       | Decl x -> Decl.to_smtlib fmt x
       | Defn x -> Defn.to_smtlib fmt x
-      | Assert x -> Fmt.pf fmt "(assert %a)" Sexp.pp x
-      | Extra sexp -> Sexp.pp fmt sexp)
-    ++ flush)
+      | Assert x -> Fmt.pf fmt "(assert %a)" Expr.pp x
+      | Extra x -> Fmt.pf fmt "%s" x))
 
 module Interpolant = struct
   module Group : sig
@@ -184,6 +257,8 @@ module Interpolant = struct
     val create : t s
 
     val sexp_of : t -> Sexp.t
+
+    val pp : t Fmt.t
   end
   with type 'a s := 'a t = struct
     type t = int
@@ -192,14 +267,18 @@ module Interpolant = struct
       make @@ fun s -> (s.group_ctr, { s with group_ctr = s.group_ctr + 1 })
 
     let sexp_of x = Sexp.Atom (Fmt.str "g%d" x)
+
+    let pp fmt x = Fmt.pf fmt "g%d" x
   end
 
   let assert_group ?group expr =
     let%bind group =
       match group with Some g -> return g | None -> Group.create
     in
-    assert_ @@ annotate "interpolation-group" (Group.sexp_of group) expr
+    assert_ @@ annotate "interpolation-group" (Fmt.str "%a" Group.pp group) expr
 end
+
+let read_input = Sexp.input_sexp
 
 let with_mathsat f =
   let open Sexp in
@@ -213,6 +292,8 @@ let with_mathsat f =
       let write stmts =
         let fmt = Fmt.with_buffer write_buf in
         to_smtlib fmt stmts;
+        Fmt.flush fmt ();
+
         Out_channel.output_buffer stdin write_buf;
         Out_channel.flush stdin;
 
@@ -223,7 +304,7 @@ let with_mathsat f =
       in
 
       let read () =
-        let sexp = Sexp.input_sexp stdout in
+        let sexp = read_input stdout in
         Sexp.to_string_hum sexp |> String.split_lines
         |> List.iter ~f:(Fmt.pf log_fmt "; %s@.");
         sexp
@@ -234,15 +315,32 @@ let with_mathsat f =
 let error sexp =
   Error.create "Unexpected output" sexp [%sexp_of: Sexp.t] |> Error.raise
 
+let parse_model sexp =
+  let error s =
+    Error.create "Unexpected model" s [%sexp_of: Sexp.t] |> Error.raise
+  in
+  let parse_value = function
+    | Sexp.Atom "true" -> true
+    | Atom "false" -> false
+    | s -> error s
+  in
+  match sexp with
+  | Sexp.List vals ->
+      List.map vals ~f:(fun v ->
+          match v with
+          | List [ Atom name; value ] ->
+              (String_id.of_string name, parse_value value)
+          | s -> error s)
+  | s -> error s
+
 let get_interpolant_or_model_inner groups stmts read write =
   let open Sexp in
   write
     ( [
-        Extra (app "set-option" [ Atom ":produce-interpolants"; Atom "true" ]);
-        Extra (app "set-option" [ Atom ":produce-models"; Atom "true" ]);
+        Extra "(set-option :produce-interpolants true)";
+        Extra "(set-option :produce-models true)";
       ]
-    @ stmts
-    @ [ Extra (app "check-sat" []) ] );
+    @ stmts @ [ Extra "(check-sat)" ] );
   let is_sat =
     match read () with
     | Atom "unsat" -> false
@@ -251,16 +349,17 @@ let get_interpolant_or_model_inner groups stmts read write =
   in
 
   if is_sat then (
-    write [ Extra (app "get-model" []) ];
-    return (Second (read ())) )
+    write [ Extra "(get-model)" ];
+    return (Second (read () |> parse_model)) )
   else (
     write
       [
         Extra
-          (app "get-interpolant"
-             [ List (List.map ~f:Interpolant.Group.sexp_of groups) ]);
+          (Fmt.str "(get-interpolant (%a))"
+             Fmt.(list ~sep:sp Interpolant.Group.pp)
+             groups);
       ];
-    return (First (read ())) )
+    return (First (read () |> Expr.parse)) )
 
 let get_interpolant_or_model groups =
   let open Sexp in
@@ -272,9 +371,8 @@ let get_model =
   let%bind stmts = get_stmts in
   with_mathsat @@ fun read write ->
   write
-    ( [ Extra (app "set-option" [ Atom ":produce-models"; Atom "true" ]) ]
-    @ stmts
-    @ [ Extra (app "check-sat" []) ] );
+    ( [ Extra "(set-option :produce-models true)" ]
+    @ stmts @ [ Extra "(check-sat)" ] );
   let is_sat =
     match read () with
     | Atom "unsat" -> false
@@ -283,15 +381,15 @@ let get_model =
   in
 
   if is_sat then (
-    write [ Extra (app "get-model" []) ];
-    return (Some (read ())) )
+    write [ Extra "(get-model)" ];
+    return (read () |> parse_model |> Option.return) )
   else return None
 
 let check_sat =
   let open Sexp in
   let%bind stmts = get_stmts in
   with_mathsat @@ fun read write ->
-  write (stmts @ [ Extra (app "check-sat" []) ]);
+  write (stmts @ [ Extra "(check-sat)" ]);
   return
     ( match read () with
     | Atom "unsat" -> false
