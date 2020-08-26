@@ -278,31 +278,28 @@ let prune graph refined =
   Fmt.epr "Pruning: size before=%d, after=%d, removed %f%%\n" size size'
     Float.(100.0 - (of_int size' / of_int size * 100.0))
 
-let fix_up_args graph =
-  let to_remove =
-    V.filter graph ~f:(function
-      | Args a as v ->
-          let succ = succ graph v in
-          List.length succ <> Op.arity a.op
-      | State _ -> false)
+let fix_up_args graph args =
+  let to_remove, states =
+    List.filter_map args ~f:(fun v ->
+        let args_v = match v with Node.Args v -> v | _ -> assert false in
+        let succ = succ graph v in
+        if List.length succ <> Op.arity args_v.op then Some (v, pred graph v)
+        else None)
+    |> List.unzip
   in
-  if List.is_empty to_remove then false
-  else (
-    remove_vertexes graph to_remove;
-    true )
+  remove_vertexes graph to_remove;
+  List.concat states |> List.dedup_and_sort ~compare:[%compare: Node.t]
 
-let fix_up_states graph =
-  let to_remove =
-    V.filter graph ~f:(function
-      | Args _ -> false
-      | State _ as v ->
-          let succ = succ graph v in
-          List.is_empty succ)
+let fix_up_states graph states =
+  let to_remove, args =
+    List.filter_map states ~f:(fun v ->
+        assert (match v with Node.State _ -> true | _ -> false);
+        let succ = succ graph v in
+        if List.is_empty succ then Some (v, pred graph v) else None)
+    |> List.unzip
   in
-  if List.is_empty to_remove then false
-  else (
-    remove_vertexes graph to_remove;
-    true )
+  remove_vertexes graph to_remove;
+  List.concat args |> List.dedup_and_sort ~compare:[%compare: Node.t]
 
 let refine_level n graph =
   V.fold graph ~init:(0, 0) ~f:(fun ((num, dem) as acc) -> function
@@ -312,19 +309,29 @@ let refine graph output separator refinement =
   let size = G.nb_vertex graph.Search_state.graph in
   Dump.dump_detailed ~output ~suffix:"before-refinement" graph;
 
-  List.iter refinement ~f:(function `Split (v, cost, refined) ->
-      (* Remove edges to existing state nodes. *)
-      pred_e graph (Args v)
-      |> List.iter ~f:(G.remove_edge_e graph.Search_state.graph);
-      (* Insert split state nodes. *)
-      List.iter refined ~f:(fun state ->
-          let (`Fresh v' | `Stale v') =
-            State_node.create_consed ~state ~cost graph
-          in
-          add_edge_e graph (State v', -1, Args v)));
+  let states_to_fix =
+    List.concat_map refinement ~f:(function `Split (v, cost, refined) ->
+        let pred_edges = pred_e graph (Args v) in
+        (* Remove edges to existing state nodes. *)
+        List.iter pred_edges ~f:(G.remove_edge_e graph.Search_state.graph);
+        (* Insert split state nodes. *)
+        List.iter refined ~f:(fun state ->
+            let (`Fresh v' | `Stale v') =
+              State_node.create_consed ~state ~cost graph
+            in
+            add_edge_e graph (State v', -1, Args v));
 
-  let rec loop () = if fix_up_args graph || fix_up_states graph then loop () in
-  loop ();
+        (* Extract the states where we removed an edge. *)
+        List.map pred_edges ~f:(fun (v, _, _) -> v))
+  in
+
+  let rec loop states_to_fix =
+    let args_to_fix = fix_up_states graph states_to_fix in
+    if not (List.is_empty args_to_fix) then
+      let states_to_fix = fix_up_args graph args_to_fix in
+      loop states_to_fix
+  in
+  loop states_to_fix;
 
   let size' = G.nb_vertex graph.Search_state.graph in
   Fmt.epr "Pruning: size before=%d, after=%d, removed %f%%\n" size size'
