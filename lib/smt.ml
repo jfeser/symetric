@@ -123,18 +123,17 @@ type state = { stmts : stmt list; var_ctr : int; group_ctr : int }
 
 type 'a t = State of (state -> 'a * state) [@@unboxed]
 
-let make f = State f
-
 include Monad.Make (struct
   type nonrec 'a t = 'a t
 
   let bind (State run) ~f =
-    make @@ fun s ->
-    let x, s' = run s in
-    let (State run') = f x in
-    run' s'
+    State
+      (fun s ->
+        let x, s' = run s in
+        let (State run') = f x in
+        run' s')
 
-  let return x = make @@ fun s -> (x, s)
+  let return x = State (fun s -> (x, s))
 
   let map = `Define_using_bind
 end)
@@ -149,11 +148,11 @@ let eval_with_state s c = Tuple.T2.get1 @@ with_state s c
 
 open Let_syntax
 
-let add_stmt stmt = make @@ fun s -> ((), { s with stmts = s.stmts @ [ stmt ] })
+let add_stmt stmt = State (fun s -> ((), { s with stmts = s.stmts @ [ stmt ] }))
 
-let get_stmts = make @@ fun s -> (s.stmts, s)
+let get_stmts = State (fun s -> (s.stmts, s))
 
-let fresh_num = make @@ fun s -> (s.var_ctr, { s with var_ctr = s.var_ctr + 1 })
+let fresh_num = State (fun s -> (s.var_ctr, { s with var_ctr = s.var_ctr + 1 }))
 
 let make_decl ?n_args name =
   let%bind () = add_stmt (Decl (Decl.create ?n_args name)) in
@@ -182,26 +181,42 @@ module Bool = struct
 
   let true_ = Bool true
 
-  let is_false x = [%equal: Expr.t] x false_
+  let is_false = function Bool x -> not x | _ -> false
 
-  let is_true x = [%equal: Expr.t] x true_
+  let is_true = function Bool x -> x | _ -> false
 
   let or_ xs =
-    let xs =
-      if List.exists ~f:is_true xs then [ true_ ]
-      else List.filter ~f:(Fun.negate is_false) xs
+    let or_simple = function
+      | [] -> false_
+      | [ x ] -> x
+      | xs -> Varop (Or, xs)
     in
-    match xs with [] -> false_ | [ x ] -> x | xs -> Varop (Or, xs)
+    let rec or_ acc = function
+      | [] -> or_simple (List.rev acc)
+      | Bool false :: xs -> or_ acc xs
+      | Bool true :: _ -> true_
+      | x :: xs -> or_ (x :: acc) xs
+    in
+    or_ [] xs
 
   let and_ xs =
-    let xs =
-      if List.exists ~f:is_false xs then [ false_ ]
-      else List.filter ~f:(Fun.negate is_true) xs
+    let and_simple = function
+      | [] -> true_
+      | [ x ] -> x
+      | xs -> Varop (And, xs)
     in
-    match xs with [] -> true_ | [ x ] -> x | xs -> Varop (And, xs)
+    let rec and_ acc = function
+      | [] -> and_simple (List.rev acc)
+      | Bool false :: _ -> false_
+      | Bool true :: xs -> and_ acc xs
+      | x :: xs -> and_ (x :: acc) xs
+    in
+    and_ [] xs
 
-  let not_ x =
-    if is_true x then false_ else if is_false x then true_ else Unop (Not, x)
+  let not_ = function
+    | Bool true -> false_
+    | Bool false -> true_
+    | x -> Unop (Not, x)
 
   let implies x y =
     if is_true x then y
@@ -210,11 +225,12 @@ module Bool = struct
     else Binop (Implies, x, y)
 
   let ( = ) x y =
-    if is_true x then y
-    else if is_true y then x
-    else if is_false x then not_ y
-    else if is_false y then not_ x
-    else Binop (Equals, x, y)
+    match (x, y) with
+    | Bool true, _ -> y
+    | _, Bool true -> x
+    | Bool false, _ -> not_ y
+    | _, Bool false -> not_ x
+    | _, _ -> Binop (Equals, x, y)
 
   let ( || ) x x' = or_ [ x; x' ]
 
@@ -264,7 +280,7 @@ module Interpolant = struct
     type t = int
 
     let create =
-      make @@ fun s -> (s.group_ctr, { s with group_ctr = s.group_ctr + 1 })
+      State (fun s -> (s.group_ctr, { s with group_ctr = s.group_ctr + 1 }))
 
     let sexp_of x = Sexp.Atom (Fmt.str "g%d" x)
 
