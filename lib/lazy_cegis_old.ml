@@ -280,28 +280,28 @@ let prune graph refined =
 
 let fix_up_args graph =
   let to_remove =
-    S.V.filter graph ~f:(function
+    V.filter graph ~f:(function
       | Args a as v ->
-          let succ = S.succ graph v in
+          let succ = succ graph v in
           List.length succ <> Op.arity a.op
       | State _ -> false)
   in
   if List.is_empty to_remove then false
   else (
-    S.remove_vertexes graph to_remove;
+    remove_vertexes graph to_remove;
     true )
 
 let fix_up_states graph =
   let to_remove =
-    S.V.filter graph ~f:(function
+    V.filter graph ~f:(function
       | Args _ -> false
       | State _ as v ->
-          let succ = S.succ graph v in
+          let succ = succ graph v in
           List.is_empty succ)
   in
   if List.is_empty to_remove then false
   else (
-    S.remove_vertexes graph to_remove;
+    remove_vertexes graph to_remove;
     true )
 
 let refine_level n graph =
@@ -310,18 +310,18 @@ let refine_level n graph =
 
 let refine graph output separator refinement =
   let size = G.nb_vertex graph.Search_state.graph in
-  dump_detailed ~output ~suffix:"before-refinement" graph;
+  Dump.dump_detailed ~output ~suffix:"before-refinement" graph;
 
   List.iter refinement ~f:(function `Split (v, cost, refined) ->
       (* Remove edges to existing state nodes. *)
-      S.pred_e graph (Args v)
+      pred_e graph (Args v)
       |> List.iter ~f:(G.remove_edge_e graph.Search_state.graph);
       (* Insert split state nodes. *)
       List.iter refined ~f:(fun state ->
           let (`Fresh v' | `Stale v') =
             State_node.create_consed ~state ~cost graph
           in
-          S.add_edge_e graph (State v', -1, Args v)));
+          add_edge_e graph (State v', -1, Args v)));
 
   let rec loop () = if fix_up_args graph || fix_up_states graph then loop () in
   loop ();
