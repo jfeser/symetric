@@ -1,37 +1,39 @@
 open! Core
 
+[@@@landmark "auto"]
+
 let debug_out_file =
   let ctr = ref 0 in
   fun () ->
     incr ctr;
     sprintf "interp%d.smt2" !ctr
 
-module Sort = struct
-  type t = Bool
-
-  let to_smtlib fmt = function Bool -> Fmt.pf fmt "Bool"
-end
+let pp_sig fmt (name, n_args) =
+  if n_args = 0 then Fmt.pf fmt "%s () Bool" name
+  else if n_args = 1 then Fmt.pf fmt "%s (Bool) Bool" name
+  else if n_args = 2 then Fmt.pf fmt "%s (Bool Bool) Bool" name
+  else
+    let args =
+      List.init n_args ~f:(fun _ -> "Bool") |> String.concat ~sep:" "
+    in
+    Fmt.pf fmt "%s (%s) Bool" name args
 
 module Decl = struct
-  type t = { name : string; args : Sort.t list; ret : Sort.t }
+  type t = { name : string; n_args : int }
 
-  let create ?(args = []) ?(ret = Sort.Bool) name = { name; args; ret }
+  let create ?(n_args = 0) name = { name; n_args }
 
-  let to_smtlib fmt { name; args; ret } =
-    Fmt.pf fmt "(declare-fun %s (%a) %a)" name
-      Fmt.(list ~sep:sp Sort.to_smtlib)
-      args Sort.to_smtlib ret
+  let to_smtlib fmt { name; n_args } =
+    Fmt.pf fmt "(declare-fun %a)" pp_sig (name, n_args)
 end
 
 module Defn = struct
   type t = Decl.t * Sexp.t
 
-  let create ?args ?ret name body = (Decl.create ?args ?ret name, body)
+  let create ?n_args name body = (Decl.create ?n_args name, body)
 
-  let to_smtlib fmt (Decl.{ name; args; ret }, body) =
-    Fmt.pf fmt "(define-fun %s (%a) %a %a)" name
-      Fmt.(list ~sep:sp Sort.to_smtlib)
-      args Sort.to_smtlib ret Sexp.pp_hum body
+  let to_smtlib fmt (Decl.{ name; n_args }, body) =
+    Fmt.pf fmt "(define-fun %a %a)" pp_sig (name, n_args) Sexp.pp body
 end
 
 type stmt =
@@ -60,9 +62,13 @@ include Monad.Make (struct
   let map = `Define_using_bind
 end)
 
-let run (State f) =
-  let x, _ = f { stmts = []; var_ctr = 0; group_ctr = 0 } in
-  x
+let with_state s (State f) = f s
+
+let run c = with_state { stmts = []; var_ctr = 0; group_ctr = 0 } c
+
+let eval c = Tuple.T2.get1 @@ run c
+
+let eval_with_state s c = Tuple.T2.get1 @@ with_state s c
 
 open Let_syntax
 
@@ -72,23 +78,23 @@ let get_stmts = make @@ fun s -> (s.stmts, s)
 
 let fresh_num = make @@ fun s -> (s.var_ctr, { s with var_ctr = s.var_ctr + 1 })
 
-let make_decl ?args ?ret name =
-  let%bind () = add_stmt (Decl (Decl.create ?args ?ret name)) in
+let make_decl ?n_args name =
+  let%bind () = add_stmt (Decl (Decl.create ?n_args name)) in
   return (Sexp.Atom name)
 
-let fresh_decl ?args ?ret ?(prefix = "x") () =
+let fresh_decl ?n_args ?(prefix = "x") () =
   let%bind ctr = fresh_num in
   let name = sprintf "%s%d" prefix ctr in
-  make_decl ?args ?ret name
+  make_decl ?n_args name
 
-let make_defn ?args ?ret name body =
-  let%bind () = add_stmt (Defn (Defn.create ?args ?ret name body)) in
+let make_defn ?n_args ?ret name body =
+  let%bind () = add_stmt (Defn (Defn.create ?n_args name body)) in
   return (Sexp.Atom name)
 
-let fresh_defn ?args ?ret ?(prefix = "x") body =
+let fresh_defn ?n_args ?(prefix = "x") body =
   let%bind ctr = fresh_num in
   let name = sprintf "%s%d" prefix ctr in
-  make_defn ?args ?ret name body
+  make_defn ?n_args name body
 
 let app op args = Sexp.List (Sexp.Atom op :: args)
 
@@ -165,8 +171,8 @@ let to_smtlib =
     list (fun fmt -> function
       | Decl x -> Decl.to_smtlib fmt x
       | Defn x -> Defn.to_smtlib fmt x
-      | Assert x -> Fmt.pf fmt "(assert %a)" Sexp.pp_hum x
-      | Extra sexp -> Sexp.pp_hum fmt sexp)
+      | Assert x -> Fmt.pf fmt "(assert %a)" Sexp.pp x
+      | Extra sexp -> Sexp.pp fmt sexp)
     ++ flush)
 
 module Interpolant = struct
@@ -201,24 +207,25 @@ let with_mathsat f =
   let stdout, stdin = proc in
   Out_channel.with_file (debug_out_file ()) ~f:(fun log ->
       let log_fmt = Format.formatter_of_out_channel log in
+
+      let write_buf = Buffer.create 128 in
+
       let write stmts =
-        let buf = Buffer.create 128 in
-        let fmt = Fmt.with_buffer buf in
+        let fmt = Fmt.with_buffer write_buf in
         to_smtlib fmt stmts;
-        let str = Buffer.contents buf in
-        Out_channel.output_string stdin str;
+        Out_channel.output_buffer stdin write_buf;
         Out_channel.flush stdin;
-        Fmt.pf log_fmt "%s@." str
+
+        Out_channel.output_buffer log write_buf;
+        Out_channel.newline log;
+
+        Buffer.clear write_buf
       in
 
       let read () =
         let sexp = Sexp.input_sexp stdout in
-        let buf = Buffer.create 128 in
-        let fmt = Fmt.with_buffer buf in
-        Sexp.pp_hum fmt sexp;
-        Buffer.contents buf |> String.split_lines
-        |> List.map ~f:(sprintf "; %s")
-        |> String.concat ~sep:"\n" |> Fmt.pf log_fmt "%s@.";
+        Sexp.to_string_hum sexp |> String.split_lines
+        |> List.iter ~f:(Fmt.pf log_fmt "; %s@.");
         sexp
       in
 
@@ -227,10 +234,8 @@ let with_mathsat f =
 let error sexp =
   Error.create "Unexpected output" sexp [%sexp_of: Sexp.t] |> Error.raise
 
-let get_interpolant_or_model groups =
+let get_interpolant_or_model_inner groups stmts read write =
   let open Sexp in
-  let%bind stmts = get_stmts in
-  with_mathsat @@ fun read write ->
   write
     ( [
         Extra (app "set-option" [ Atom ":produce-interpolants"; Atom "true" ]);
@@ -256,6 +261,11 @@ let get_interpolant_or_model groups =
              [ List (List.map ~f:Interpolant.Group.sexp_of groups) ]);
       ];
     return (First (read ())) )
+
+let get_interpolant_or_model groups =
+  let open Sexp in
+  let%bind stmts = get_stmts in
+  with_mathsat @@ get_interpolant_or_model_inner groups stmts
 
 let get_model =
   let open Sexp in
