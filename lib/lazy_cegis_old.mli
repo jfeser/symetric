@@ -1,19 +1,3 @@
-open! Core
-
-val enable_dump : bool ref
-
-val max_cost : int ref
-
-module Conc : sig
-  type t
-
-  val pp : t Fmt.t
-end
-
-module Search_state : sig
-  type t
-end
-
 module Stats : sig
   type t = {
     n_state_nodes : int;
