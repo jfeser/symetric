@@ -1,7 +1,8 @@
 open Search_state
 
 module Refinement = struct
-  type t = [ `Split of Args_node0.t * int * Abs.t list ] list [@@deriving sexp]
+  type t = [ `Split of Args_node0.t * int * Abs.t list ] list
+  [@@deriving sexp_of]
 
   let pp fmt x = Sexp.pp_hum fmt @@ [%sexp_of: t] x
 end
@@ -65,11 +66,13 @@ let make_vars graph =
     |> List.map ~f:(fun (v : State_node0.t) ->
            let%bind vars =
              List.init !Global.n_bits ~f:(fun vec ->
-                 match Map.find v.state vec with
+                 match Map.find (State_node0.state v) vec with
                  | Some x -> return @@ Smt.Bool.bool x
                  | None ->
                      let%bind var =
-                       Smt.fresh_decl ~prefix:(sprintf "s%d_b%d_" v.id vec) ()
+                       Smt.fresh_decl
+                         ~prefix:(sprintf "s%d_b%d_" (State_node0.id v) vec)
+                         ()
                      in
                      return (Smt.Expr.Var var))
              |> Smt.all
@@ -139,6 +142,12 @@ let refinement_of_model graph separator interpolant forced state_vars
   in
 
   let open Option.Let_syntax in
+  Fmt.epr "sep: %a@." Fmt.(Dump.list Node.pp) separator;
+  Fmt.epr "args out: %a@."
+    Fmt.(Dump.(list @@ pair Node.pp @@ list string))
+    ( Map.to_alist arg_out_vars
+    |> List.map ~f:(fun (k, v) ->
+           (Node.Args k, List.map ~f:String_id.to_string v)) );
   let refinement =
     separator
     |> List.map ~f:Node.to_args_exn
@@ -213,6 +222,10 @@ let get_refinement graph target_node expected_output separator =
       state_table = Hashtbl.create (module State_table_key);
     }
   in
+  let separator =
+    List.filter separator ~f:(fun v -> G.mem_vertex graph.graph v)
+  in
+
   Dump.dump_detailed ~suffix:"before-refine"
     ~separator:(List.mem separator ~equal:[%equal: Node.t])
     graph;
@@ -267,7 +280,7 @@ let get_refinement graph target_node expected_output separator =
              if not (List.is_empty deps) then
                Smt.(
                  make_defn
-                   (sprintf "state-%d-deps" v.id)
+                   (sprintf "state-%d-deps" (State_node0.id v))
                    Bool.(or_ selected => exactly_one deps)
                  >>= assert_group_var `A)
              else return ())

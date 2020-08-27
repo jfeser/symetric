@@ -20,7 +20,7 @@ let make_output_graph ?(refinement = fun _ -> false) cone separator output =
                 [ `HtmlLabel (Fmt.str "%a" State_node0.graphviz_pp n) ]
                 @
                 if
-                  Option.map output ~f:(Abs.contains n.state)
+                  Option.map output ~f:(Abs.contains @@ State_node0.state n)
                   |> Option.value ~default:false
                 then [ `Style `Bold ]
                 else []

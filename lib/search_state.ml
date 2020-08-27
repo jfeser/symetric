@@ -22,7 +22,7 @@ module Op = struct
 end
 
 module Args_node0 : sig
-  type t = private int [@@deriving compare, equal, hash, sexp, show]
+  type t = private int [@@deriving compare, equal, hash, sexp_of, show]
 
   include Comparator.S with type t := t
 
@@ -36,16 +36,18 @@ module Args_node0 : sig
 end = struct
   let ops = Option_array.create 1_000_000
 
+  let id = ident
+
+  let op x = Option_array.get_some_exn ops x
+
   module T = struct
-    type t = int [@@deriving compare, equal, hash, sexp, show]
+    type t = int [@@deriving compare, equal, hash, show]
+
+    let sexp_of_t id = [%sexp_of: int * Op.t] (id, op id)
   end
 
   include T
   include Comparator.Make (T)
-
-  let id = ident
-
-  let op x = Option_array.get_some_exn ops x
 
   let graphviz_pp fmt x = Fmt.pf fmt "%a<br/>id=%d" Op.pp (op x) (id x)
 
@@ -55,14 +57,33 @@ end = struct
     id
 end
 
-module State_node0 = struct
+module State_node0 : sig
+  type t [@@deriving compare, equal, hash, sexp, show]
+
+  include Comparator.S with type t := t
+
+  val create : Abs.t -> int -> t
+
+  val id : t -> int
+
+  val state : t -> Abs.t
+
+  val cost : t -> int
+
+  val graphviz_pp : t Fmt.t
+end = struct
   module T = struct
-    type t = { id : int; cost : int; state : Abs.t [@ignore] }
+    type t = { id : int; cost : int; [@ignore] state : Abs.t [@ignore] }
     [@@deriving compare, equal, hash, sexp, show]
   end
 
   include T
   include Comparator.Make (T)
+
+  let create state cost =
+    let id = mk_id () in
+    Fmt.epr "Created %d %d\n" id cost;
+    { id; state; cost }
 
   let id { id; _ } = id
 
@@ -77,13 +98,11 @@ end
 module Node = struct
   module T = struct
     type t = Args of Args_node0.t | State of State_node0.t
-    [@@deriving compare, equal, hash, sexp, show]
+    [@@deriving compare, equal, hash, sexp_of, show]
   end
 
   include T
   include Comparator.Make (T)
-
-  module O : Comparable.Infix with type t := t = Comparable.Make (T)
 
   let id = function Args x -> Args_node0.id x | State x -> State_node0.id x
 
@@ -175,7 +194,7 @@ let wrap f g = f g.graph
 
 module V = struct
   include Comparator.Make (struct
-    type t = Node.t [@@deriving compare, sexp]
+    type t = Node.t [@@deriving compare, sexp_of]
   end)
 
   include Container.Make0 (struct
@@ -206,7 +225,7 @@ end
 
 module E = struct
   include Comparator.Make (struct
-    type t = Node.t * int * Node.t [@@deriving compare, sexp]
+    type t = Node.t * int * Node.t [@@deriving compare, sexp_of]
   end)
 
   include Container.Make0 (struct
@@ -279,5 +298,6 @@ let states_of_cost g cost =
   g.cost_table.(idx)
 
 let set_states_of_cost g cost states =
+  assert (List.for_all states ~f:(fun s -> State_node0.cost s = cost));
   let idx = cost - 1 in
   g.cost_table.(idx) <- states

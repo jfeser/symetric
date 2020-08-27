@@ -58,15 +58,15 @@ module State_node = struct
     | (op, args) :: _ -> `Apply (op, List.map args ~f:(choose_program graph))
     | _ -> failwith "expected arguments"
 
-  let create ~state ~cost = { id = mk_id (); cost; state }
-
-  let create_consed ~state ~cost (g : Search_state.t) =
-    match Hashtbl.find g.state_table (state, cost) with
-    | Some v -> `Stale v
+  let create_consed ~state ~cost:c (g : Search_state.t) =
+    match Hashtbl.find g.state_table (state, c) with
+    | Some v ->
+        assert (cost v = c);
+        `Stale v
     | None ->
-        let v = { id = mk_id (); cost; state } in
-        set_states_of_cost g cost (v :: states_of_cost g cost);
-        Hashtbl.add_exn g.state_table (state, cost) v;
+        let v = create state c in
+        set_states_of_cost g c (v :: states_of_cost g c);
+        Hashtbl.add_exn g.state_table (state, c) v;
         `Fresh v
 
   let create_op ~state ~cost ~op g children =
@@ -101,10 +101,12 @@ let fill_cost (graph : Search_state.t) cost =
                   |> List.iter ~f:(fun (a' : State_node.t) ->
                          List.iter [ Op.Union; Inter; Sub ] ~f:(fun op ->
                              let state =
+                               let s = State_node0.state a
+                               and s' = State_node0.state a' in
                                match op with
-                               | Op.Union -> Abs.union a.state a'.state
-                               | Inter -> Abs.inter a.state a'.state
-                               | Sub -> Abs.sub a.state a'.state
+                               | Op.Union -> Abs.union s s'
+                               | Inter -> Abs.inter s s'
+                               | Sub -> Abs.sub s s'
                                | _ -> assert false
                              in
                              let did_add =
@@ -180,10 +182,6 @@ module Inv_reachable (G : Graph.Fixpoint.G) =
 
       let analyze _ x = x
     end)
-
-let reachable graph n =
-  let module A = Reachable (G) in
-  A.analyze ([%equal: Node.t] n) graph.Search_state.graph
 
 module View (G : sig
   type t
@@ -296,7 +294,7 @@ let fix_up_states graph states =
 
 let refine_level n graph =
   V.fold graph ~init:(0, 0) ~f:(fun ((num, dem) as acc) -> function
-    | Args _ -> acc | State v -> (num + Abs.width v.state, dem + n))
+    | Args _ -> acc | State v -> (num + Abs.width (State_node.state v), dem + n))
 
 let refine graph output separator refinement =
   let size = G.nb_vertex graph.Search_state.graph in
@@ -355,7 +353,7 @@ let rec extract_program graph selected_edges target =
 let refute graph output =
   match
     V.find_map graph ~f:(function
-      | State v when Abs.contains v.state output -> Some v
+      | State v when Abs.contains (State_node.state v) output -> Some v
       | _ -> None)
   with
   | Some target ->
@@ -415,7 +413,7 @@ let synth ?(no_abstraction = false) inputs output =
   with Done status ->
     let widths =
       V.filter_map graph ~f:(function
-        | State v -> Some (Abs.width v.state)
+        | State v -> Some (Abs.width @@ State_node.state v)
         | _ -> None)
       |> List.sort ~compare:[%compare: int]
       |> Array.of_list
@@ -492,7 +490,7 @@ let check_search_space ?(n = 100_000) inputs graph =
       let cstate = Program.ceval prog in
       match
         V.find_map graph ~f:(function
-          | State v when Abs.contains v.state cstate -> Some v
+          | State v when Abs.contains (State_node.state v) cstate -> Some v
           | _ -> None)
       with
       | Some v -> loop (i + 1)
