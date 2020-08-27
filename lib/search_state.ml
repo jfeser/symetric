@@ -58,7 +58,7 @@ end = struct
 end
 
 module State_node0 : sig
-  type t [@@deriving compare, equal, hash, sexp, show]
+  type t [@@deriving compare, equal, hash, sexp_of, show]
 
   include Comparator.S with type t := t
 
@@ -72,27 +72,33 @@ module State_node0 : sig
 
   val graphviz_pp : t Fmt.t
 end = struct
+  let costs = Option_array.create 1_000_000
+
+  let states = Option_array.create 1_000_000
+
+  let state id = Option_array.get_some_exn states id
+
+  let cost id = Option_array.get_some_exn costs id
+
   module T = struct
-    type t = { id : int; cost : int; [@ignore] state : Abs.t [@ignore] }
-    [@@deriving compare, equal, hash, sexp, show]
+    type t = int [@@deriving compare, equal, hash, show]
+
+    let sexp_of_t id = [%sexp_of: int * Abs.t * int] (id, state id, cost id)
   end
 
   include T
   include Comparator.Make (T)
 
-  let create state cost =
+  let create s c =
     let id = mk_id () in
-    Fmt.epr "Created %d %d\n" id cost;
-    { id; state; cost }
+    Option_array.set_some states id s;
+    Option_array.set_some costs id c;
+    id
 
-  let id { id; _ } = id
+  let id = ident
 
-  let state { state; _ } = state
-
-  let cost { cost; _ } = cost
-
-  let graphviz_pp fmt { state; cost; id; _ } =
-    Fmt.pf fmt "%a<br/>id=%d cost=%d" Abs.graphviz_pp state id cost
+  let graphviz_pp fmt id =
+    Fmt.pf fmt "%a<br/>id=%d cost=%d" Abs.graphviz_pp (state id) id (cost id)
 end
 
 module Node = struct
@@ -151,7 +157,7 @@ end
 
 module Args_table_key = struct
   module T = struct
-    type t = Op.t * State_node0.t list [@@deriving compare, hash, sexp]
+    type t = Op.t * State_node0.t list [@@deriving compare, hash, sexp_of]
   end
 
   include T
