@@ -147,7 +147,7 @@ let refinement_of_model graph separator interpolant forced state_vars
     Fmt.(Dump.(list @@ pair Node.pp @@ list string))
     ( Map.to_alist arg_out_vars
     |> List.map ~f:(fun (k, v) ->
-           (Node.Args k, List.map ~f:String_id.to_string v)) );
+           (Node.of_args k, List.map ~f:String_id.to_string v)) );
   let refinement =
     separator
     |> List.map ~f:Node.to_args_exn
@@ -156,7 +156,7 @@ let refinement_of_model graph separator interpolant forced state_vars
     |> List.filter_map ~f:(fun v ->
            let bits = Map.find_exn arg_out_vars v |> get_args_bits in
            let bits' =
-             pred graph (Args v)
+             pred graph (Node.of_args v)
              |> List.map ~f:Node.to_state_exn
              |> List.map ~f:(Map.find_exn state_vars)
              |> List.map ~f:get_state_bits |> List.concat
@@ -165,7 +165,7 @@ let refinement_of_model graph separator interpolant forced state_vars
            if List.is_empty refined_bits then None else Some (v, refined_bits))
     |> List.concat_map ~f:(fun (v, refined_bits) ->
            let (state_nodes : State_node0.t list) =
-             pred graph (Args v) |> List.map ~f:Node.to_state_exn
+             pred graph (Node.of_args v) |> List.map ~f:Node.to_state_exn
            in
 
            Fmt.epr "Refined bits: %a@."
@@ -201,8 +201,9 @@ let refinement_of_model graph separator interpolant forced state_vars
 
   let edges =
     List.concat_map refinement ~f:(function
-      | `Split (v, _, _) -> pred_e graph (Args v)
-      | `Remove vs -> List.concat_map ~f:(fun v -> succ_e graph (State v)) vs)
+      | `Split (v, _, _) -> pred_e graph (Node.of_args v)
+      | `Remove vs ->
+          List.concat_map ~f:(fun v -> succ_e graph (Node.of_state v)) vs)
     |> Set.of_list (module E)
   in
   Dump.dump_detailed ~suffix:"after-refine"
@@ -216,7 +217,7 @@ let get_refinement graph target_node expected_output separator =
   (* Select the subset of the graph that can reach the target. *)
   let graph =
     {
-      graph = cone graph (State target_node) separator;
+      graph = cone graph (Node.of_state target_node) separator;
       cost_table = [||];
       args_table = Hashtbl.create (module Args_table_key);
       state_table = Hashtbl.create (module State_table_key);
@@ -272,10 +273,12 @@ let get_refinement graph target_node expected_output separator =
                if [%equal: State_node0.t] target_node v then
                  [ Smt.Bool.(bool true) ]
                else
-                 pred_e graph (State v) |> List.map ~f:(Map.find_exn edge_vars)
+                 pred_e graph (Node.of_state v)
+                 |> List.map ~f:(Map.find_exn edge_vars)
              in
              let deps =
-               succ_e graph (State v) |> List.map ~f:(Map.find_exn edge_vars)
+               succ_e graph (Node.of_state v)
+               |> List.map ~f:(Map.find_exn edge_vars)
              in
              if not (List.is_empty deps) then
                Smt.(
@@ -293,10 +296,12 @@ let get_refinement graph target_node expected_output separator =
       V.filter_map graph ~f:Node.to_args
       |> List.map ~f:(fun v ->
              let outgoing =
-               pred_e graph (Args v) |> List.map ~f:(Map.find_exn edge_vars)
+               pred_e graph (Node.of_args v)
+               |> List.map ~f:(Map.find_exn edge_vars)
              in
              let incoming =
-               succ_e graph (Args v) |> List.map ~f:(Map.find_exn edge_vars)
+               succ_e graph (Node.of_args v)
+               |> List.map ~f:(Map.find_exn edge_vars)
              in
              Smt.Bool.(or_ outgoing => and_ incoming))
       |> Smt.Bool.and_
@@ -308,7 +313,7 @@ let get_refinement graph target_node expected_output separator =
       V.filter_map graph ~f:Node.to_state
       |> List.map ~f:(fun v ->
              let state_in = Map.find_exn state_vars v in
-             succ_e graph (State v)
+             succ_e graph (Node.of_state v)
              |> List.filter_map ~f:(fun ((_, _, v) as e) ->
                     Node.to_args v
                     |> Option.map ~f:(fun v ->
@@ -327,7 +332,7 @@ let get_refinement graph target_node expected_output separator =
     let%bind () =
       V.filter_map graph ~f:Node.to_args
       |> List.map ~f:(fun v ->
-             let incoming_edges = succ_e graph (Args v) in
+             let incoming_edges = succ_e graph (Node.of_args v) in
 
              let incoming_states =
                List.map incoming_edges ~f:(fun (_, n, v) ->
@@ -363,7 +368,7 @@ let get_refinement graph target_node expected_output separator =
                     (Args_node0.id v))
                  (Smt.Bool.and_ semantic)
              in
-             if List.mem separator (Args v) ~equal:[%equal: Node.t] then
+             if List.mem separator (Node.of_args v) ~equal:[%equal: Node.t] then
                assert_group_var `B defn
              else assert_group_var `A defn)
       |> Smt.all_unit

@@ -15,20 +15,20 @@ let make_output_graph ?(refinement = fun _ -> false) cone separator output =
           let attrs = if cone n then [ `Style `Filled ] else [] in
           let attrs = if separator n then `Style `Dotted :: attrs else attrs in
           let attrs' =
-            match n with
-            | Node.State n ->
+            Node.match_ n
+              ~args:(fun n ->
+                [
+                  `HtmlLabel (Fmt.str "%a" Args_node0.graphviz_pp n);
+                  `Shape `Box;
+                ])
+              ~state:(fun n ->
                 [ `HtmlLabel (Fmt.str "%a" State_node0.graphviz_pp n) ]
                 @
                 if
                   Option.map output ~f:(Abs.contains @@ State_node0.state n)
                   |> Option.value ~default:false
                 then [ `Style `Bold ]
-                else []
-            | Args n ->
-                [
-                  `HtmlLabel (Fmt.str "%a" Args_node0.graphviz_pp n);
-                  `Shape `Box;
-                ]
+                else [])
           in
           attrs @ attrs'
 

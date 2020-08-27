@@ -41,9 +41,9 @@ module Args_node = struct
     | Some v -> None
     | None ->
         let args_n = Args_node0.create op in
-        let args_v = Node.Args args_n in
+        let args_v = Node.of_args args_n in
         List.iteri args ~f:(fun i v ->
-            add_edge_e graph (args_v, i, Node.State v))
+            add_edge_e graph (args_v, i, Node.of_state v))
         [@landmark "create.add_edges"];
         Hashtbl.set graph.args_table (op, args) args_n
         [@landmark "create.insert"];
@@ -75,12 +75,12 @@ module State_node = struct
         match[@landmarks "create_op.match"] create_consed ~state ~cost g with
         | `Fresh state_v ->
             add_edge_e g
-              (Node.State state_v, -1, Node.Args args_v)
+              (Node.of_state state_v, -1, Node.of_args args_v)
             [@landmarks "create_op.add_edge"];
             Some state_v
         | `Stale state_v ->
             add_edge_e g
-              (Node.State state_v, -1, Node.Args args_v)
+              (Node.of_state state_v, -1, Node.of_args args_v)
             [@landmarks "create_op.add_edge"];
             None )
     | None -> None
@@ -271,7 +271,7 @@ let prune graph refined =
 let fix_up_args graph args =
   let to_remove, states =
     List.filter_map args ~f:(fun v ->
-        let args_v = match v with Node.Args v -> v | _ -> assert false in
+        let args_v = Node.to_args_exn v in
         let succ = succ graph v in
         if List.length succ <> Op.arity (Args_node.op args_v) then
           Some (v, pred graph v)
@@ -284,7 +284,7 @@ let fix_up_args graph args =
 let fix_up_states graph states =
   let to_remove, args =
     List.filter_map states ~f:(fun v ->
-        assert (match v with Node.State _ -> true | _ -> false);
+        Node.to_state_exn v |> ignore;
         let succ = succ graph v in
         if List.is_empty succ then Some (v, pred graph v) else None)
     |> List.unzip
@@ -293,8 +293,10 @@ let fix_up_states graph states =
   List.concat args |> List.dedup_and_sort ~compare:[%compare: Node.t]
 
 let refine_level n graph =
-  V.fold graph ~init:(0, 0) ~f:(fun ((num, dem) as acc) -> function
-    | Args _ -> acc | State v -> (num + Abs.width (State_node.state v), dem + n))
+  V.fold graph ~init:(0, 0) ~f:(fun ((num, dem) as acc) ->
+      Node.match_
+        ~args:(fun _ -> acc)
+        ~state:(fun v -> (num + Abs.width (State_node.state v), dem + n)))
 
 let refine graph output separator refinement =
   let size = G.nb_vertex graph.Search_state.graph in
@@ -302,7 +304,7 @@ let refine graph output separator refinement =
 
   let states_to_fix =
     List.concat_map refinement ~f:(function `Split (v, cost, refined) ->
-        let pred_edges = pred_e graph (Args v) in
+        let pred_edges = pred_e graph (Node.of_args v) in
         (* Remove edges to existing state nodes. *)
         List.iter pred_edges ~f:(G.remove_edge_e graph.Search_state.graph);
         (* Insert split state nodes. *)
@@ -310,7 +312,7 @@ let refine graph output separator refinement =
             let (`Fresh v' | `Stale v') =
               State_node.create_consed ~state ~cost graph
             in
-            add_edge_e graph (State v', -1, Args v));
+            add_edge_e graph (Node.of_state v', -1, Node.of_args v));
 
         (* Extract the states where we removed an edge. *)
         List.map pred_edges ~f:(fun (v, _, _) -> v))
@@ -344,7 +346,7 @@ let rec extract_program graph selected_edges target =
   | [ a ] ->
       `Apply
         ( Args_node.op a,
-          succ graph (Args a)
+          succ graph (Node.of_args a)
           |> List.map ~f:(extract_program graph selected_edges) )
   | args ->
       Error.create "Too many args" args [%sexp_of: Args_node.t list]
@@ -352,12 +354,13 @@ let rec extract_program graph selected_edges target =
 
 let refute graph output =
   match
-    V.find_map graph ~f:(function
-      | State v when Abs.contains (State_node.state v) output -> Some v
-      | _ -> None)
+    V.find_map graph ~f:(fun v ->
+        match Node.to_state v with
+        | Some v when Abs.contains (State_node.state v) output -> Some v
+        | _ -> None)
   with
   | Some target ->
-      let seps = separators graph (State target) |> Seq.to_list in
+      let seps = separators graph (Node.of_state target) |> Seq.to_list in
       let seps, last_sep =
         match List.rev seps with
         | last :: rest -> (List.rev rest, last)
@@ -381,7 +384,8 @@ let refute graph output =
           | Second selected_edges ->
               Fmt.epr "Could not refute: %a" Sexp.pp_hum
                 ( [%sexp_of: Program.t]
-                @@ extract_program graph selected_edges (State target) );
+                @@ extract_program graph selected_edges (Node.of_state target)
+                );
               raise (Done `Sat) ) );
       true
   | None -> false
@@ -412,21 +416,18 @@ let synth ?(no_abstraction = false) inputs output =
   try loop 1
   with Done status ->
     let widths =
-      V.filter_map graph ~f:(function
-        | State v -> Some (Abs.width @@ State_node.state v)
-        | _ -> None)
+      V.filter_map graph ~f:(fun v ->
+          match Node.to_state v with
+          | Some v -> Some (Abs.width @@ State_node.state v)
+          | _ -> None)
       |> List.sort ~compare:[%compare: int]
       |> Array.of_list
     in
     ( graph,
       Stats.
         {
-          n_state_nodes =
-            V.filter graph ~f:(function State v -> true | _ -> false)
-            |> List.length;
-          n_arg_nodes =
-            V.filter graph ~f:(function Args v -> true | _ -> false)
-            |> List.length;
+          n_state_nodes = V.filter graph ~f:Node.is_state |> List.length;
+          n_arg_nodes = V.filter graph ~f:Node.is_args |> List.length;
           n_covered = -1;
           n_refuted = !Global.n_refuted;
           min_width = widths.(0);
@@ -489,9 +490,10 @@ let check_search_space ?(n = 100_000) inputs graph =
       let prog = sample inputs in
       let cstate = Program.ceval prog in
       match
-        V.find_map graph ~f:(function
-          | State v when Abs.contains (State_node.state v) cstate -> Some v
-          | _ -> None)
+        V.find_map graph ~f:(fun v ->
+            match Node.to_state v with
+            | Some v when Abs.contains (State_node.state v) cstate -> Some v
+            | _ -> None)
       with
       | Some v -> loop (i + 1)
       | None ->

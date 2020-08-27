@@ -1,9 +1,3 @@
-let mk_id =
-  let ctr = ref 0 in
-  fun () ->
-    incr ctr;
-    !ctr
-
 module Op = struct
   type t = Input of Conc.t | Union | Inter | Sub
   [@@deriving compare, equal, hash, sexp]
@@ -21,24 +15,14 @@ module Op = struct
   let arity = function Input _ -> 0 | Union | Inter | Sub -> 2
 end
 
-module Args_node0 : sig
-  type t = private int [@@deriving compare, equal, hash, sexp_of, show]
-
-  include Comparator.S with type t := t
-
-  val create : Op.t -> t
-
-  val id : t -> int
-
-  val op : t -> Op.t
-
-  val graphviz_pp : t Fmt.t
-end = struct
+module Args_node0 = struct
   let ops = Option_array.create 1_000_000
+
+  let id_ctr = ref 0
 
   let id = ident
 
-  let op x = Option_array.get_some_exn ops x
+  let op id = Option_array.get_some_exn ops (id / 2)
 
   module T = struct
     type t = int [@@deriving compare, equal, hash, show]
@@ -52,33 +36,22 @@ end = struct
   let graphviz_pp fmt x = Fmt.pf fmt "%a<br/>id=%d" Op.pp (op x) (id x)
 
   let create op =
-    let id = mk_id () in
-    Option_array.set_some ops id op;
+    let id = !id_ctr in
+    id_ctr := !id_ctr + 2;
+    Option_array.set_some ops (id / 2) op;
     id
 end
 
-module State_node0 : sig
-  type t [@@deriving compare, equal, hash, sexp_of, show]
-
-  include Comparator.S with type t := t
-
-  val create : Abs.t -> int -> t
-
-  val id : t -> int
-
-  val state : t -> Abs.t
-
-  val cost : t -> int
-
-  val graphviz_pp : t Fmt.t
-end = struct
+module State_node0 = struct
   let costs = Option_array.create 1_000_000
 
   let states = Option_array.create 1_000_000
 
-  let state id = Option_array.get_some_exn states id
+  let id_ctr = ref 1
 
-  let cost id = Option_array.get_some_exn costs id
+  let state id = Option_array.get_some_exn states (id / 2)
+
+  let cost id = Option_array.get_some_exn costs (id / 2)
 
   module T = struct
     type t = int [@@deriving compare, equal, hash, show]
@@ -90,9 +63,10 @@ end = struct
   include Comparator.Make (T)
 
   let create s c =
-    let id = mk_id () in
-    Option_array.set_some states id s;
-    Option_array.set_some costs id c;
+    let id = !id_ctr in
+    id_ctr := !id_ctr + 2;
+    Option_array.set_some states (id / 2) s;
+    Option_array.set_some costs (id / 2) c;
     id
 
   let id = ident
@@ -102,26 +76,45 @@ end = struct
 end
 
 module Node = struct
+  let is_args v = v mod 2 = 0
+
+  let is_state v = not (is_args v)
+
+  let match_ ~args ~state v = if is_args v then args v else state v
+
   module T = struct
-    type t = Args of Args_node0.t | State of State_node0.t
-    [@@deriving compare, equal, hash, sexp_of, show]
+    type t = int [@@deriving compare, equal, hash, show]
+
+    let sexp_of_t v =
+      match_ ~args:[%sexp_of: Args_node0.t] ~state:[%sexp_of: State_node0.t] v
   end
 
   include T
   include Comparator.Make (T)
 
-  let id = function Args x -> Args_node0.id x | State x -> State_node0.id x
+  let id = ident
 
-  let to_args = function Args x -> Some x | _ -> None
+  let of_args = ident
+
+  let of_state = ident
+
+  let to_args v = match_ ~args:(fun x -> Some x) ~state:(fun _ -> None) v
 
   let to_args_exn x = Option.value_exn (to_args x)
 
-  let to_state = function State x -> Some x | _ -> None
+  let to_state v = match_ ~args:(fun _ -> None) ~state:(fun x -> Some x) v
 
-  let to_state_exn = function
-    | State x -> x
-    | Args x ->
-        Error.create "Expected state." x [%sexp_of: Args_node0.t] |> Error.raise
+  let to_args_exn v =
+    match_ ~args:ident
+      ~state:(fun x ->
+        Error.create "Expected args" x [%sexp_of: State_node0.t] |> Error.raise)
+      v
+
+  let to_state_exn v =
+    match_
+      ~args:(fun x ->
+        Error.create "Expected state" x [%sexp_of: Args_node0.t] |> Error.raise)
+      ~state:ident v
 end
 
 module Edge = struct
@@ -140,9 +133,11 @@ module G = struct
 
     let vertex_name n = Fmt.str "%d" @@ Node.id n
 
-    let vertex_attributes = function
-      | Node.State x -> [ `HtmlLabel (Fmt.str "%a" State_node0.pp x) ]
-      | Args _ -> [ `Shape `Point ]
+    let vertex_attributes v =
+      Node.match_
+        ~args:(fun _ -> [ `Shape `Point ])
+        ~state:(fun x -> [ `HtmlLabel (Fmt.str "%a" State_node0.pp x) ])
+        v
 
     let get_subgraph _ = None
 
@@ -268,7 +263,7 @@ let pred_e = wrap G.pred_e
 let add_edge_e g e = G.add_edge_e g.graph e
 
 let children g v =
-  G.succ g.graph (State v)
+  G.succ g.graph v
   |> List.map ~f:(fun v' ->
          let a = Node.to_args_exn v' in
          let op = Args_node0.op a in
@@ -276,24 +271,21 @@ let children g v =
            succ_e g v'
            |> List.sort ~compare:(fun (_, x, _) (_, x', _) ->
                   [%compare: int] x x')
-           |> List.map ~f:(function
-                | _, _, Node.State v -> v
-                | _ -> assert false)
+           |> List.map ~f:(function _, _, v -> v)
          in
          (op, args))
 
 let remove_vertexes g vs =
   let vs = List.filter vs ~f:(G.mem_vertex g.graph) in
   let to_remove = Set.of_list (module V) vs in
-  let remove_state v = not (Set.mem to_remove (State v)) in
+  let remove v = not (Set.mem to_remove v) in
 
   for i = 0 to Array.length g.cost_table - 1 do
-    g.cost_table.(i) <- List.filter g.cost_table.(i) ~f:remove_state
+    g.cost_table.(i) <- List.filter g.cost_table.(i) ~f:remove
   done;
   Set.iter to_remove ~f:(G.remove_vertex g.graph);
-  Hashtbl.filter_inplace g.args_table ~f:(fun v ->
-      not (Set.mem to_remove (Args v)));
-  Hashtbl.filter_inplace g.state_table ~f:remove_state
+  Hashtbl.filter_inplace g.args_table ~f:remove;
+  Hashtbl.filter_inplace g.state_table ~f:remove
 
 let remove_vertex x v = remove_vertexes x [ v ]
 
