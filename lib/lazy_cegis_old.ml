@@ -52,14 +52,19 @@ module Args_node = struct
   include Args_node0
 
   let create ~op graph args =
-    match Hashtbl.find graph.Search_state.args_table (op, args) with
+    match
+      (Hashtbl.find graph.Search_state.args_table (op, args)
+       [@landmark "create.lookup"])
+    with
     | Some v -> None
     | None ->
         let args_n = { op; id = mk_id () } in
         let args_v = Node.Args args_n in
         List.iteri args ~f:(fun i v ->
-            add_edge_e graph (args_v, i, Node.State v));
-        Hashtbl.set graph.args_table (op, args) args_n;
+            add_edge_e graph (args_v, i, Node.State v))
+        [@landmark "create.add_edges"];
+        Hashtbl.set graph.args_table (op, args) args_n
+        [@landmark "create.insert"];
         Some args_n
 end
 
@@ -83,15 +88,20 @@ module State_node = struct
         `Fresh v
 
   let create_op ~state ~cost ~op g children =
-    Args_node.create ~op g children
-    |> Option.bind ~f:(fun args_v ->
-           match create_consed ~state ~cost g with
-           | `Fresh state_v ->
-               add_edge_e g (Node.State state_v, -1, Node.Args args_v);
-               Some state_v
-           | `Stale state_v ->
-               add_edge_e g (Node.State state_v, -1, Node.Args args_v);
-               None)
+    match Args_node.create ~op g children with
+    | Some args_v -> (
+        match[@landmarks "create_op.match"] create_consed ~state ~cost g with
+        | `Fresh state_v ->
+            add_edge_e g
+              (Node.State state_v, -1, Node.Args args_v)
+            [@landmarks "create_op.add_edge"];
+            Some state_v
+        | `Stale state_v ->
+            add_edge_e g
+              (Node.State state_v, -1, Node.Args args_v)
+            [@landmarks "create_op.add_edge"];
+            None )
+    | None -> None
 end
 
 let fill_cost (graph : Search_state.t) cost =

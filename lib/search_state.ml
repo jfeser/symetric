@@ -224,7 +224,7 @@ let succ_e = wrap G.succ_e
 
 let pred_e = wrap G.pred_e
 
-let add_edge_e = wrap G.add_edge_e
+let add_edge_e g e = G.add_edge_e g.graph e
 
 let children g v =
   G.succ g.graph (State v)
