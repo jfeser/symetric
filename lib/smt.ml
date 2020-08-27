@@ -113,13 +113,9 @@ module Defn = struct
     Fmt.pf fmt "(define-fun %a %a)" pp_sig (name, n_args) Expr.pp body
 end
 
-type stmt =
-  | Decl of Decl.t
-  | Defn of Defn.t
-  | Assert of Expr.t
-  | Extra of string
+type stmt = Decl of Decl.t | Defn of Defn.t | Assert of Expr.t
 
-type state = { stmts : stmt list; var_ctr : int; group_ctr : int }
+type state = { stmts : string list; var_ctr : int; group_ctr : int }
 
 type 'a t = State of (state -> 'a * state) [@@unboxed]
 
@@ -155,7 +151,9 @@ let get_stmts = State (fun s -> (s.stmts, s))
 let fresh_num = State (fun s -> (s.var_ctr, { s with var_ctr = s.var_ctr + 1 }))
 
 let make_decl ?n_args name =
-  let%bind () = add_stmt (Decl (Decl.create ?n_args name)) in
+  let%bind () =
+    add_stmt (Fmt.str "%a" Decl.to_smtlib @@ Decl.create ?n_args name)
+  in
   return (String_id.of_string name)
 
 let fresh_decl ?n_args ?(prefix = "x") () =
@@ -164,7 +162,9 @@ let fresh_decl ?n_args ?(prefix = "x") () =
   make_decl ?n_args name
 
 let make_defn ?n_args ?ret name body =
-  let%bind () = add_stmt (Defn (Defn.create ?n_args name body)) in
+  let%bind () =
+    add_stmt (Fmt.str "%a" Defn.to_smtlib @@ Defn.create ?n_args name body)
+  in
   return (String_id.of_string name)
 
 let fresh_defn ?n_args ?(prefix = "x") body =
@@ -254,15 +254,7 @@ module Bool = struct
   let bool x = if x then true_ else false_
 end
 
-let assert_ expr = add_stmt (Assert expr)
-
-let to_smtlib =
-  Fmt.(
-    list (fun fmt -> function
-      | Decl x -> Decl.to_smtlib fmt x
-      | Defn x -> Defn.to_smtlib fmt x
-      | Assert x -> Fmt.pf fmt "(assert %a)" Expr.pp x
-      | Extra x -> Fmt.pf fmt "%s" x))
+let assert_ expr = add_stmt (Fmt.str "(assert %a)" Expr.pp expr)
 
 module Interpolant = struct
   module Group : sig
@@ -300,33 +292,27 @@ let with_mathsat f =
   let open Sexp in
   let proc = Unix.open_process "mathsat" in
   let stdout, stdin = proc in
-  Out_channel.with_file (debug_out_file ()) ~f:(fun log ->
-      let log_fmt = Format.formatter_of_out_channel log in
+  let ret =
+    Out_channel.with_file (debug_out_file ()) ~f:(fun log ->
+        let log_fmt = Format.formatter_of_out_channel log in
 
-      let write_buf = Buffer.create 128 in
+        let[@landmark "with_mathsat.write"] write stmts =
+          Out_channel.output_lines stdin stmts;
+          Out_channel.output_lines log stmts;
+          Out_channel.flush stdin
+        in
 
-      let write stmts =
-        let fmt = Fmt.with_buffer write_buf in
-        to_smtlib fmt stmts;
-        Fmt.flush fmt ();
+        let[@landmark "with_mathsat.read"] read () =
+          let sexp = (read_input stdout [@landmark "mathsat"]) in
+          Sexp.to_string_hum sexp |> String.split_lines
+          |> List.iter ~f:(Fmt.pf log_fmt "; %s@.");
+          sexp
+        in
 
-        Out_channel.output_buffer stdin write_buf;
-        Out_channel.flush stdin;
-
-        Out_channel.output_buffer log write_buf;
-        Out_channel.newline log;
-
-        Buffer.clear write_buf
-      in
-
-      let read () =
-        let sexp = read_input stdout in
-        Sexp.to_string_hum sexp |> String.split_lines
-        |> List.iter ~f:(Fmt.pf log_fmt "; %s@.");
-        sexp
-      in
-
-      f read write)
+        f read write)
+  in
+  Unix.close_process proc |> ignore;
+  ret
 
 let error sexp =
   Error.create "Unexpected output" sexp [%sexp_of: Sexp.t] |> Error.raise
@@ -353,10 +339,10 @@ let get_interpolant_or_model_inner groups stmts read write =
   let open Sexp in
   write
     ( [
-        Extra "(set-option :produce-interpolants true)";
-        Extra "(set-option :produce-models true)";
+        "(set-option :produce-interpolants true)";
+        "(set-option :produce-models true)";
       ]
-    @ stmts @ [ Extra "(check-sat)" ] );
+    @ stmts @ [ "(check-sat)" ] );
   let is_sat =
     match read () with
     | Atom "unsat" -> false
@@ -365,15 +351,14 @@ let get_interpolant_or_model_inner groups stmts read write =
   in
 
   if is_sat then (
-    write [ Extra "(get-model)" ];
+    write [ "(get-model)" ];
     return (Second (read () |> parse_model)) )
   else (
     write
       [
-        Extra
-          (Fmt.str "(get-interpolant (%a))"
-             Fmt.(list ~sep:sp Interpolant.Group.pp)
-             groups);
+        Fmt.str "(get-interpolant (%a))"
+          Fmt.(list ~sep:sp Interpolant.Group.pp)
+          groups;
       ];
     return (First (read () |> Expr.parse)) )
 
@@ -386,9 +371,7 @@ let get_model =
   let open Sexp in
   let%bind stmts = get_stmts in
   with_mathsat @@ fun read write ->
-  write
-    ( [ Extra "(set-option :produce-models true)" ]
-    @ stmts @ [ Extra "(check-sat)" ] );
+  write ([ "(set-option :produce-models true)" ] @ stmts @ [ "(check-sat)" ]);
   let is_sat =
     match read () with
     | Atom "unsat" -> false
@@ -397,7 +380,7 @@ let get_model =
   in
 
   if is_sat then (
-    write [ Extra "(get-model)" ];
+    write [ "(get-model)" ];
     return (read () |> parse_model |> Option.return) )
   else return None
 
@@ -405,7 +388,7 @@ let check_sat =
   let open Sexp in
   let%bind stmts = get_stmts in
   with_mathsat @@ fun read write ->
-  write (stmts @ [ Extra "(check-sat)" ]);
+  write (stmts @ [ "(check-sat)" ]);
   return
     ( match read () with
     | Atom "unsat" -> false
