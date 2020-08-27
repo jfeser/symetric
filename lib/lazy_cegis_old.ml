@@ -10,24 +10,6 @@ end
 
 let value_exn x = Option.value_exn x
 
-let eval' op args =
-  match (op, args) with
-  | Op.Input state, _ -> Abs.lift state
-  | Union, [ x; y ] -> Abs.union x y
-  | Inter, [ x; y ] -> Abs.inter x y
-  | Sub, [ x; y ] -> Abs.sub x y
-  | _ -> failwith "Unexpected args"
-
-let eval g a =
-  let args =
-    Search_state.succ_e g (Node.Args a)
-    |> List.sort ~compare:(fun (_, i, _) (_, i', _) -> [%compare: int] i i')
-    |> List.map ~f:(function
-         | _, _, Node.State v -> v.state
-         | _ -> failwith "expected a state node")
-  in
-  eval' a.op args
-
 module Program = struct
   module T = struct
     type t = [ `Apply of Op.t * t list ] [@@deriving compare, hash, sexp]
