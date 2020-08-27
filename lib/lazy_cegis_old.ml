@@ -40,7 +40,7 @@ module Args_node = struct
     with
     | Some v -> None
     | None ->
-        let args_n = { op; id = mk_id () } in
+        let args_n = Args_node0.create op in
         let args_v = Node.Args args_n in
         List.iteri args ~f:(fun i v ->
             add_edge_e graph (args_v, i, Node.State v))
@@ -275,7 +275,8 @@ let fix_up_args graph args =
     List.filter_map args ~f:(fun v ->
         let args_v = match v with Node.Args v -> v | _ -> assert false in
         let succ = succ graph v in
-        if List.length succ <> Op.arity args_v.op then Some (v, pred graph v)
+        if List.length succ <> Op.arity (Args_node.op args_v) then
+          Some (v, pred graph v)
         else None)
     |> List.unzip
   in
@@ -344,7 +345,7 @@ let rec extract_program graph selected_edges target =
   match args with
   | [ a ] ->
       `Apply
-        ( a.Args_node.op,
+        ( Args_node.op a,
           succ graph (Args a)
           |> List.map ~f:(extract_program graph selected_edges) )
   | args ->

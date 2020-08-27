@@ -21,22 +21,38 @@ module Op = struct
   let arity = function Input _ -> 0 | Union | Inter | Sub -> 2
 end
 
-module Args_node0 = struct
+module Args_node0 : sig
+  type t = private int [@@deriving compare, equal, hash, sexp, show]
+
+  include Comparator.S with type t := t
+
+  val create : Op.t -> t
+
+  val id : t -> int
+
+  val op : t -> Op.t
+
+  val graphviz_pp : t Fmt.t
+end = struct
+  let ops = Option_array.create 1_000_000
+
   module T = struct
-    type t = { id : int; op : Op.t }
-    [@@deriving compare, equal, hash, sexp, show]
+    type t = int [@@deriving compare, equal, hash, sexp, show]
   end
 
   include T
   include Comparator.Make (T)
 
-  let graphviz_pp fmt { op; id } = Fmt.pf fmt "%a<br/>id=%d" Op.pp op id
+  let id = ident
 
-  let create op = { id = mk_id (); op }
+  let op x = Option_array.get_some_exn ops x
 
-  let id { id; _ } = id
+  let graphviz_pp fmt x = Fmt.pf fmt "%a<br/>id=%d" Op.pp (op x) (id x)
 
-  let op { op; _ } = op
+  let create op =
+    let id = mk_id () in
+    Option_array.set_some ops id op;
+    id
 end
 
 module State_node0 = struct

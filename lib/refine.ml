@@ -84,7 +84,9 @@ let make_vars graph =
     |> List.map ~f:(fun (v : Args_node0.t) ->
            let%bind vars =
              List.init !Global.n_bits ~f:(fun b ->
-                 Smt.fresh_decl ~prefix:(sprintf "a%d_b%d_" v.id b) ())
+                 Smt.fresh_decl
+                   ~prefix:(sprintf "a%d_b%d_" (Args_node0.id v) b)
+                   ())
              |> Smt.all
            in
            return (v, vars))
@@ -326,7 +328,7 @@ let get_refinement graph target_node expected_output separator =
              let out = Map.find_exn arg_out_vars v in
              let semantic =
                let open Smt.Bool in
-               match (v.op, incoming_states) with
+               match (Args_node0.op v, incoming_states) with
                | Union, [ s; s' ] ->
                    List.map3_exn out s s' ~f:(fun x y z -> x = (y || z))
                | Inter, [ s; s' ] ->
@@ -344,7 +346,8 @@ let get_refinement graph target_node expected_output separator =
 
              let%bind defn =
                Smt.make_defn
-                 (Fmt.str "semantics-%a-%d" Op.pp v.op v.id)
+                 (Fmt.str "semantics-%a-%d" Op.pp (Args_node0.op v)
+                    (Args_node0.id v))
                  (Smt.Bool.and_ semantic)
              in
              if List.mem separator (Args v) ~equal:[%equal: Node.t] then
