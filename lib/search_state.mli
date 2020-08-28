@@ -120,8 +120,6 @@ val succ_e : t -> G.V.t -> G.E.t list
 
 val add_edge_e : t -> G.E.t -> unit
 
-val children : t -> G.V.t -> (Op.t * G.V.t list) list
-
 val states_of_cost : t -> int -> State_node0.t list
 
 val set_states_of_cost : t -> int -> State_node0.t list -> unit

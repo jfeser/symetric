@@ -53,11 +53,6 @@ end
 module State_node = struct
   include State_node0
 
-  let rec choose_program graph node =
-    match children graph node with
-    | (op, args) :: _ -> `Apply (op, List.map args ~f:(choose_program graph))
-    | _ -> failwith "expected arguments"
-
   let create_consed ~state ~cost:c (g : Search_state.t) =
     match Hashtbl.find g.state_table (state, c) with
     | Some v ->

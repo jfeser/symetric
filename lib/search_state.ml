@@ -262,19 +262,6 @@ let pred_e = wrap G.pred_e
 
 let add_edge_e g e = G.add_edge_e g.graph e
 
-let children g v =
-  G.succ g.graph v
-  |> List.map ~f:(fun v' ->
-         let a = Node.to_args_exn v' in
-         let op = Args_node0.op a in
-         let args =
-           succ_e g v'
-           |> List.sort ~compare:(fun (_, x, _) (_, x', _) ->
-                  [%compare: int] x x')
-           |> List.map ~f:(function _, _, v -> v)
-         in
-         (op, args))
-
 let remove_vertexes g vs =
   let vs = List.filter vs ~f:(G.mem_vertex g.graph) in
   let to_remove = Set.of_list (module V) vs in
