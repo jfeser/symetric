@@ -7,7 +7,7 @@ module Op : sig
   val arity : t -> int
 end
 
-module Args_node0 : sig
+module Args : sig
   type t [@@deriving compare, equal, hash, sexp_of]
 
   include Comparator.S with type t := t
@@ -21,7 +21,7 @@ module Args_node0 : sig
   val graphviz_pp : t Fmt.t
 end
 
-module State_node0 : sig
+module State : sig
   type t [@@deriving compare, equal, hash, sexp_of]
 
   include Comparator.S with type t := t
@@ -42,8 +42,7 @@ module Node : sig
 
   include Comparator.S with type t := t
 
-  val match_ :
-    args:(Args_node0.t -> 'a) -> state:(State_node0.t -> 'a) -> t -> 'a
+  val match_ : args:(Args.t -> 'a) -> state:(State.t -> 'a) -> t -> 'a
 
   val pp : t Fmt.t
 
@@ -53,24 +52,24 @@ module Node : sig
 
   val is_args : t -> bool
 
-  val of_args : Args_node0.t -> t
+  val of_args : Args.t -> t
 
-  val of_state : State_node0.t -> t
+  val of_state : State.t -> t
 
-  val to_args : t -> Args_node0.t option
+  val to_args : t -> Args.t option
 
-  val to_state : t -> State_node0.t option
+  val to_state : t -> State.t option
 
-  val to_args_exn : t -> Args_node0.t
+  val to_args_exn : t -> Args.t
 
-  val to_state_exn : t -> State_node0.t
+  val to_state_exn : t -> State.t
 end
 
 module G :
   Graph.Sig.I with type V.t = Node.t and type E.t = Node.t * int * Node.t
 
 module Args_table_key : sig
-  type t = Op.t * State_node0.t list [@@deriving compare, hash, sexp_of]
+  type t = Op.t * State.t list [@@deriving compare, hash, sexp_of]
 
   include Comparator.S with type t := t
 end
@@ -83,9 +82,9 @@ end
 
 type t = {
   graph : G.t;
-  args_table : Args_node0.t Hashtbl.M(Args_table_key).t;
-  state_table : State_node0.t Hashtbl.M(State_table_key).t;
-  cost_table : State_node0.t list array;
+  args_table : Args.t Hashtbl.M(Args_table_key).t;
+  state_table : State.t Hashtbl.M(State_table_key).t;
+  cost_table : State.t list array;
 }
 
 module E : sig
@@ -120,9 +119,9 @@ val succ_e : t -> G.V.t -> G.E.t list
 
 val add_edge_e : t -> G.E.t -> unit
 
-val states_of_cost : t -> int -> State_node0.t list
+val states_of_cost : t -> int -> State.t list
 
-val set_states_of_cost : t -> int -> State_node0.t list -> unit
+val set_states_of_cost : t -> int -> State.t list -> unit
 
 val filter : t -> f:(G.V.t -> bool) -> unit
 

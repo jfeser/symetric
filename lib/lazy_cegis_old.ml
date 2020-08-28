@@ -30,8 +30,8 @@ module Program = struct
   include Comparator.Make (T)
 end
 
-module Args_node = struct
-  include Args_node0
+module Args = struct
+  include Args
 
   let create ~op graph args =
     match
@@ -40,7 +40,7 @@ module Args_node = struct
     with
     | Some v -> None
     | None ->
-        let args_n = Args_node0.create op in
+        let args_n = Args.create op in
         let args_v = Node.of_args args_n in
         List.iteri args ~f:(fun i v ->
             add_edge_e graph (args_v, i, Node.of_state v))
@@ -50,8 +50,8 @@ module Args_node = struct
         Some args_n
 end
 
-module State_node = struct
-  include State_node0
+module State = struct
+  include State
 
   let create_consed ~state ~cost:c (g : Search_state.t) =
     match Hashtbl.find g.state_table (state, c) with
@@ -65,7 +65,7 @@ module State_node = struct
         `Fresh v
 
   let create_op ~state ~cost ~op g children =
-    match Args_node.create ~op g children with
+    match Args.create ~op g children with
     | Some args_v -> (
         match[@landmarks "create_op.match"] create_consed ~state ~cost g with
         | `Fresh state_v ->
@@ -91,13 +91,12 @@ let fill_cost (graph : Search_state.t) cost =
     |> Comp.iter ~f:(fun arg_costs ->
            let c = arg_costs.{0} and c' = arg_costs.{1} in
            states_of_cost graph c
-           |> List.iter ~f:(fun (a : State_node.t) ->
+           |> List.iter ~f:(fun (a : State.t) ->
                   states_of_cost graph c'
-                  |> List.iter ~f:(fun (a' : State_node.t) ->
+                  |> List.iter ~f:(fun (a' : State.t) ->
                          List.iter [ Op.Union; Inter; Sub ] ~f:(fun op ->
                              let state =
-                               let s = State_node0.state a
-                               and s' = State_node0.state a' in
+                               let s = State.state a and s' = State.state a' in
                                match op with
                                | Op.Union -> Abs.union s s'
                                | Inter -> Abs.inter s s'
@@ -106,7 +105,7 @@ let fill_cost (graph : Search_state.t) cost =
                              in
                              let did_add =
                                match
-                                 State_node.create_op ~state ~cost ~op graph
+                                 State.create_op ~state ~cost ~op graph
                                    [ a; a' ]
                                with
                                | None -> false
@@ -268,7 +267,7 @@ let fix_up_args graph args =
     List.filter_map args ~f:(fun v ->
         let args_v = Node.to_args_exn v in
         let succ = succ graph v in
-        if List.length succ <> Op.arity (Args_node.op args_v) then
+        if List.length succ <> Op.arity (Args.op args_v) then
           Some (v, pred graph v)
         else None)
     |> List.unzip
@@ -291,7 +290,7 @@ let refine_level n graph =
   V.fold graph ~init:(0, 0) ~f:(fun ((num, dem) as acc) ->
       Node.match_
         ~args:(fun _ -> acc)
-        ~state:(fun v -> (num + Abs.width (State_node.state v), dem + n)))
+        ~state:(fun v -> (num + Abs.width (State.state v), dem + n)))
 
 let refine graph output separator refinement =
   let size = G.nb_vertex graph.Search_state.graph in
@@ -305,7 +304,7 @@ let refine graph output separator refinement =
         (* Insert split state nodes. *)
         List.iter refined ~f:(fun state ->
             let (`Fresh v' | `Stale v') =
-              State_node.create_consed ~state ~cost graph
+              State.create_consed ~state ~cost graph
             in
             add_edge_e graph (Node.of_state v', -1, Node.of_args v));
 
@@ -340,18 +339,17 @@ let rec extract_program graph selected_edges target =
   match args with
   | [ a ] ->
       `Apply
-        ( Args_node.op a,
+        ( Args.op a,
           succ graph (Node.of_args a)
           |> List.map ~f:(extract_program graph selected_edges) )
   | args ->
-      Error.create "Too many args" args [%sexp_of: Args_node.t list]
-      |> Error.raise
+      Error.create "Too many args" args [%sexp_of: Args.t list] |> Error.raise
 
 let refute graph output =
   match
     V.find_map graph ~f:(fun v ->
         match Node.to_state v with
-        | Some v when Abs.contains (State_node.state v) output -> Some v
+        | Some v when Abs.contains (State.state v) output -> Some v
         | _ -> None)
   with
   | Some target ->
@@ -405,15 +403,14 @@ let synth ?(no_abstraction = false) inputs output =
   (* Add inputs to the state space graph. *)
   List.iter inputs ~f:(fun input ->
       let state = if no_abstraction then Abs.lift input else Abs.top in
-      State_node.create_op ~state ~cost:1 ~op:(Op.Input input) graph []
-      |> ignore);
+      State.create_op ~state ~cost:1 ~op:(Op.Input input) graph [] |> ignore);
 
   try loop 1
   with Done status ->
     let widths =
       V.filter_map graph ~f:(fun v ->
           match Node.to_state v with
-          | Some v -> Some (Abs.width @@ State_node.state v)
+          | Some v -> Some (Abs.width @@ State.state v)
           | _ -> None)
       |> List.sort ~compare:[%compare: int]
       |> Array.of_list
@@ -487,7 +484,7 @@ let check_search_space ?(n = 100_000) inputs graph =
       match
         V.find_map graph ~f:(fun v ->
             match Node.to_state v with
-            | Some v when Abs.contains (State_node.state v) cstate -> Some v
+            | Some v when Abs.contains (State.state v) cstate -> Some v
             | _ -> None)
       with
       | Some v -> loop (i + 1)

@@ -15,7 +15,7 @@ module Op = struct
   let arity = function Input _ -> 0 | Union | Inter | Sub -> 2
 end
 
-module Args_node0 = struct
+module Args = struct
   let ops = Option_array.create 1_000_000
 
   let id_ctr = ref 0
@@ -42,7 +42,7 @@ module Args_node0 = struct
     id
 end
 
-module State_node0 = struct
+module State = struct
   let costs = Option_array.create 1_000_000
 
   let states = Option_array.create 1_000_000
@@ -86,7 +86,7 @@ module Node = struct
     type t = int [@@deriving compare, equal, hash, show]
 
     let sexp_of_t v =
-      match_ ~args:[%sexp_of: Args_node0.t] ~state:[%sexp_of: State_node0.t] v
+      match_ ~args:[%sexp_of: Args.t] ~state:[%sexp_of: State.t] v
   end
 
   include T
@@ -107,13 +107,13 @@ module Node = struct
   let to_args_exn v =
     match_ ~args:ident
       ~state:(fun x ->
-        Error.create "Expected args" x [%sexp_of: State_node0.t] |> Error.raise)
+        Error.create "Expected args" x [%sexp_of: State.t] |> Error.raise)
       v
 
   let to_state_exn v =
     match_
       ~args:(fun x ->
-        Error.create "Expected state" x [%sexp_of: Args_node0.t] |> Error.raise)
+        Error.create "Expected state" x [%sexp_of: Args.t] |> Error.raise)
       ~state:ident v
 end
 
@@ -136,7 +136,7 @@ module G = struct
     let vertex_attributes v =
       Node.match_
         ~args:(fun _ -> [ `Shape `Point ])
-        ~state:(fun x -> [ `HtmlLabel (Fmt.str "%a" State_node0.pp x) ])
+        ~state:(fun x -> [ `HtmlLabel (Fmt.str "%a" State.pp x) ])
         v
 
     let get_subgraph _ = None
@@ -152,7 +152,7 @@ end
 
 module Args_table_key = struct
   module T = struct
-    type t = Op.t * State_node0.t list [@@deriving compare, hash, sexp_of]
+    type t = Op.t * State.t list [@@deriving compare, hash, sexp_of]
   end
 
   include T
@@ -170,9 +170,9 @@ end
 
 type t = {
   graph : G.t;
-  args_table : Args_node0.t Hashtbl.M(Args_table_key).t;
-  state_table : State_node0.t Hashtbl.M(State_table_key).t;
-  cost_table : State_node0.t list array;
+  args_table : Args.t Hashtbl.M(Args_table_key).t;
+  state_table : State.t Hashtbl.M(State_table_key).t;
+  cost_table : State.t list array;
 }
 
 let create max_cost =
@@ -283,6 +283,6 @@ let states_of_cost g cost =
   g.cost_table.(idx)
 
 let set_states_of_cost g cost states =
-  assert (List.for_all states ~f:(fun s -> State_node0.cost s = cost));
+  assert (List.for_all states ~f:(fun s -> State.cost s = cost));
   let idx = cost - 1 in
   g.cost_table.(idx) <- states

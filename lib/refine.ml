@@ -1,7 +1,7 @@
 open Search_state
 
 module Refinement = struct
-  type t = [ `Split of Args_node0.t * int * Abs.t list ] list
+  type t = [ `Split of Args.t * int * Abs.t list ] list
   [@@deriving sexp_of]
 
   let pp fmt x = Sexp.pp_hum fmt @@ [%sexp_of: t] x
@@ -63,15 +63,15 @@ let make_vars graph =
 
   let%bind state_vars =
     V.filter_map graph ~f:Node.to_state
-    |> List.map ~f:(fun (v : State_node0.t) ->
+    |> List.map ~f:(fun (v : State.t) ->
            let%bind vars =
              List.init !Global.n_bits ~f:(fun vec ->
-                 match Map.find (State_node0.state v) vec with
+                 match Map.find (State.state v) vec with
                  | Some x -> return @@ Smt.Bool.bool x
                  | None ->
                      let%bind var =
                        Smt.fresh_decl
-                         ~prefix:(sprintf "s%d_b%d_" (State_node0.id v) vec)
+                         ~prefix:(sprintf "s%d_b%d_" (State.id v) vec)
                          ()
                      in
                      return (Smt.Expr.Var var))
@@ -80,22 +80,22 @@ let make_vars graph =
            return (v, vars))
     |> Smt.all
   in
-  let state_vars = Map.of_alist_exn (module State_node0) state_vars in
+  let state_vars = Map.of_alist_exn (module State) state_vars in
 
   let%bind arg_vars =
     V.filter_map graph ~f:Node.to_args
-    |> List.map ~f:(fun (v : Args_node0.t) ->
+    |> List.map ~f:(fun (v : Args.t) ->
            let%bind vars =
              List.init !Global.n_bits ~f:(fun b ->
                  Smt.fresh_decl
-                   ~prefix:(sprintf "a%d_b%d_" (Args_node0.id v) b)
+                   ~prefix:(sprintf "a%d_b%d_" (Args.id v) b)
                    ())
              |> Smt.all
            in
            return (v, vars))
     |> Smt.all
   in
-  let arg_vars = Map.of_alist_exn (module Args_node0) arg_vars in
+  let arg_vars = Map.of_alist_exn (module Args) arg_vars in
   return (edge_vars, var_edges, state_vars, arg_vars)
 
 let check_true graph interpolant v state =
@@ -151,7 +151,7 @@ let refinement_of_model graph separator interpolant forced state_vars
   let refinement =
     separator
     |> List.map ~f:Node.to_args_exn
-    |> List.dedup_and_sort ~compare:[%compare: Args_node0.t]
+    |> List.dedup_and_sort ~compare:[%compare: Args.t]
     (* Only care about args nodes with refined output bits. *)
     |> List.filter_map ~f:(fun v ->
            let bits = Map.find_exn arg_out_vars v |> get_args_bits in
@@ -164,7 +164,7 @@ let refinement_of_model graph separator interpolant forced state_vars
            let refined_bits = normalize_bits (bits @ bits') in
            if List.is_empty refined_bits then None else Some (v, refined_bits))
     |> List.concat_map ~f:(fun (v, refined_bits) ->
-           let (state_nodes : State_node0.t list) =
+           let (state_nodes : State.t list) =
              pred graph (Node.of_args v) |> List.map ~f:Node.to_state_exn
            in
 
@@ -172,7 +172,7 @@ let refinement_of_model graph separator interpolant forced state_vars
              Fmt.(Dump.(list @@ pair int @@ option bool))
              refined_bits;
 
-           let states = List.map state_nodes ~f:State_node0.state in
+           let states = List.map state_nodes ~f:State.state in
            let refined =
              List.fold refined_bits ~init:states ~f:(fun states (bit, forced) ->
                  match forced with
@@ -192,7 +192,7 @@ let refinement_of_model graph separator interpolant forced state_vars
 
            let ret =
              if changed then
-               let cost = List.hd_exn state_nodes |> State_node0.cost in
+               let cost = List.hd_exn state_nodes |> State.cost in
                [ `Split (v, cost, refined) ]
              else []
            in
@@ -254,13 +254,13 @@ let get_refinement graph target_node expected_output separator =
     let%bind () =
       Map.to_alist state_vars
       |> List.map ~f:(fun (state_v, vars) ->
-             let state = State_node0.state state_v in
+             let state = State.state state_v in
              List.filter_mapi vars ~f:(fun b v ->
                  match Map.find state b with
                  | Some x -> Some Smt.Bool.(bool x = v)
                  | None -> None)
              |> Smt.Bool.and_
-             |> Smt.make_defn (Fmt.str "state-%d" @@ State_node0.id state_v)
+             |> Smt.make_defn (Fmt.str "state-%d" @@ State.id state_v)
              >>= assert_group_var `A)
       |> Smt.all_unit
     in
@@ -270,7 +270,7 @@ let get_refinement graph target_node expected_output separator =
       V.filter_map graph ~f:Node.to_state
       |> List.map ~f:(fun v ->
              let selected =
-               if [%equal: State_node0.t] target_node v then
+               if [%equal: State.t] target_node v then
                  [ Smt.Bool.(bool true) ]
                else
                  pred_e graph (Node.of_state v)
@@ -283,7 +283,7 @@ let get_refinement graph target_node expected_output separator =
              if not (List.is_empty deps) then
                Smt.(
                  make_defn
-                   (sprintf "state-%d-deps" (State_node0.id v))
+                   (sprintf "state-%d-deps" (State.id v))
                    Bool.(or_ selected => exactly_one deps)
                  >>= assert_group_var `A)
              else return ())
@@ -346,7 +346,7 @@ let get_refinement graph target_node expected_output separator =
              let out = Map.find_exn arg_out_vars v in
              let semantic =
                let open Smt.Bool in
-               match (Args_node0.op v, incoming_states) with
+               match (Args.op v, incoming_states) with
                | Union, [ s; s' ] ->
                    List.map3_exn out s s' ~f:(fun x y z -> x = (y || z))
                | Inter, [ s; s' ] ->
@@ -364,8 +364,8 @@ let get_refinement graph target_node expected_output separator =
 
              let%bind defn =
                Smt.make_defn
-                 (Fmt.str "semantics-%a-%d" Op.pp (Args_node0.op v)
-                    (Args_node0.id v))
+                 (Fmt.str "semantics-%a-%d" Op.pp (Args.op v)
+                    (Args.id v))
                  (Smt.Bool.and_ semantic)
              in
              if List.mem separator (Node.of_args v) ~equal:[%equal: Node.t] then

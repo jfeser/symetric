@@ -18,14 +18,14 @@ let make_output_graph ?(refinement = fun _ -> false) cone separator output =
             Node.match_ n
               ~args:(fun n ->
                 [
-                  `HtmlLabel (Fmt.str "%a" Args_node0.graphviz_pp n);
+                  `HtmlLabel (Fmt.str "%a" Args.graphviz_pp n);
                   `Shape `Box;
                 ])
               ~state:(fun n ->
-                [ `HtmlLabel (Fmt.str "%a" State_node0.graphviz_pp n) ]
+                [ `HtmlLabel (Fmt.str "%a" State.graphviz_pp n) ]
                 @
                 if
-                  Option.map output ~f:(Abs.contains @@ State_node0.state n)
+                  Option.map output ~f:(Abs.contains @@ State.state n)
                   |> Option.value ~default:false
                 then [ `Style `Bold ]
                 else [])
