@@ -383,6 +383,25 @@ let refute graph output =
       true
   | None -> false
 
+let count_compressible graph =
+  let args =
+    V.filter_map graph ~f:Node.to_args
+    |> List.map ~f:(fun v ->
+           let v = Node.of_args v in
+           (pred graph v, succ graph v))
+  in
+  let module Key = struct
+    module T = struct
+      type t = Node.t list * Node.t list [@@deriving compare, sexp_of]
+    end
+
+    include T
+    include Comparator.Make (T)
+  end in
+  let set_args = Set.of_list (module Key) args in
+  Fmt.epr "Compressed args: reduces %d to %d\n" (List.length args)
+    (Set.length set_args)
+
 let synth ?(no_abstraction = false) inputs output =
   let graph = create !Global.max_cost in
 
@@ -396,6 +415,7 @@ let synth ?(no_abstraction = false) inputs output =
 
     let changed = fill_up_to_cost graph cost in
     Fmt.epr "Changed: %b Cost: %d\n%!" changed cost;
+    count_compressible graph;
     let cost = if changed then cost else cost + 1 in
     loop cost
   in
