@@ -51,6 +51,8 @@ let cone graph target_node separator =
   loop ();
   graph'
 
+let cone = bounded_cone
+
 let normalize_bits bits =
   Map.of_alist_multi (module Int) bits
   |> Map.mapi ~f:(fun ~key ~data ->
@@ -167,8 +169,8 @@ let refinement_of_model graph separator interpolant forced state_vars
     |> List.map ~f:(fun (k, v) ->
            (Node.of_args k, List.map ~f:String_id.to_string v)) );
   let refinement =
-    separator
-    |> List.map ~f:Node.to_args_exn
+    Search_state.V.to_list graph
+    |> List.filter_map ~f:Node.to_args
     |> List.dedup_and_sort ~compare:[%compare: Args.t]
     (* Only care about args nodes with refined output bits. *)
     |> List.filter_map ~f:(fun v ->
@@ -191,9 +193,15 @@ let refinement_of_model graph separator interpolant forced state_vars
              refined_bits;
 
            let states = List.map state_nodes ~f:State.state in
+
+           let input_forced =
+             match Args.op v with
+             | Input in_ -> fun bit -> Some in_.(bit)
+             | _ -> fun _ -> None
+           in
            let refined =
              List.fold refined_bits ~init:states ~f:(fun states (bit, forced) ->
-                 match forced with
+                 match Option.first_some (input_forced bit) forced with
                  | Some value ->
                      List.map states ~f:(fun s -> Abs.set s bit value)
                  | None ->
