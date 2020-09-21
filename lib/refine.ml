@@ -1,17 +1,37 @@
 open Search_state
 
 module Refinement = struct
-  type t = [ `Split of Args.t * int * Abs.t list ] list
-  [@@deriving sexp_of]
+  type t = [ `Split of Args.t * int * Abs.t list ] list [@@deriving sexp_of]
 
   let pp fmt x = Sexp.pp_hum fmt @@ [%sexp_of: t] x
 end
 
-let cone graph target_node separator =
+let bounded_cone graph target_node separator =
   let in_separator =
     let sep = Set.of_list (module Node) separator in
     Set.mem sep
   in
+
+  let graph' = G.create () in
+  let work = Queue.create () in
+  Queue.enqueue work target_node;
+  let rec loop () =
+    match Queue.dequeue work with
+    | Some v ->
+        let succ = succ_e graph v in
+        (* Add edges to the filtered graph. *)
+        List.iter succ ~f:(G.add_edge_e graph');
+        (* Add new nodes to the queue. *)
+        if not (in_separator v) then
+          List.iter succ ~f:(fun (_, _, v') -> Queue.enqueue work v');
+        loop ()
+    | None -> ()
+  in
+  loop ();
+  graph'
+
+let cone graph target_node separator =
+  let in_separator _ = false in
 
   let graph' = G.create () in
   let work = Queue.create () in
@@ -87,9 +107,7 @@ let make_vars graph =
     |> List.map ~f:(fun (v : Args.t) ->
            let%bind vars =
              List.init !Global.n_bits ~f:(fun b ->
-                 Smt.fresh_decl
-                   ~prefix:(sprintf "a%d_b%d_" (Args.id v) b)
-                   ())
+                 Smt.fresh_decl ~prefix:(sprintf "a%d_b%d_" (Args.id v) b) ())
              |> Smt.all
            in
            return (v, vars))
@@ -270,8 +288,7 @@ let get_refinement graph target_node expected_output separator =
       V.filter_map graph ~f:Node.to_state
       |> List.map ~f:(fun v ->
              let selected =
-               if [%equal: State.t] target_node v then
-                 [ Smt.Bool.(bool true) ]
+               if [%equal: State.t] target_node v then [ Smt.Bool.(bool true) ]
                else
                  pred_e graph (Node.of_state v)
                  |> List.map ~f:(Map.find_exn edge_vars)
@@ -364,8 +381,7 @@ let get_refinement graph target_node expected_output separator =
 
              let%bind defn =
                Smt.make_defn
-                 (Fmt.str "semantics-%a-%d" Op.pp (Args.op v)
-                    (Args.id v))
+                 (Fmt.str "semantics-%a-%d" Op.pp (Args.op v) (Args.id v))
                  (Smt.Bool.and_ semantic)
              in
              if List.mem separator (Node.of_args v) ~equal:[%equal: Node.t] then
