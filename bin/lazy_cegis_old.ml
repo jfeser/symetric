@@ -12,10 +12,10 @@ let _inputs, _output =
   let output = conv [ 0; 1; 0; 1 ] in
   (inputs, output)
 
-let main ~n ~seed ~k ~print_header ~abstraction ~check ~refine () =
+let main ~n ~seed ~k ~print_header ~abstraction ~check () =
   if print_header then (
     Fmt.pr
-      "k,n,seed,max_cost,abstraction,n_state_nodes,n_arg_nodes,n_covered,n_refuted,min_width,max_width,median_width,check,sat,refine\n";
+      "k,n,seed,max_cost,abstraction,n_state_nodes,n_arg_nodes,n_covered,n_refuted,min_width,max_width,median_width,check,sat\n";
     exit 0 );
 
   let no_abstraction = abstraction = 0 in
@@ -31,16 +31,15 @@ let main ~n ~seed ~k ~print_header ~abstraction ~check ~refine () =
     if check && not stats.sat then Some (check_search_space inputs graph)
     else None
   in
-  Fmt.pr "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d,%s\n" k n seed
-    !Global.max_cost abstraction stats.Stats.n_state_nodes
-    stats.Stats.n_arg_nodes stats.Stats.n_covered stats.Stats.n_refuted
-    stats.Stats.min_width stats.Stats.max_width stats.Stats.median_width
+  Fmt.pr "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d\n" k n seed !Global.max_cost
+    abstraction stats.Stats.n_state_nodes stats.Stats.n_arg_nodes
+    stats.Stats.n_covered stats.Stats.n_refuted stats.Stats.min_width
+    stats.Stats.max_width stats.Stats.median_width
     ( match check_output with
     | Some (Ok ()) -> "1"
     | Some (Error _) -> "0"
     | None -> "" )
     (if stats.Stats.sat then 1 else 0)
-    refine
 
 let () =
   let open Command.Let_syntax in
@@ -69,10 +68,6 @@ let () =
       and check =
         flag "check" no_arg
           ~doc:" check the search space by sampling random programs"
-      and refine =
-        flag "refine"
-          (optional_with_default "first" string)
-          ~doc:" refinement strategy"
       in
 
       Global.enable_forced_bit_check := enable_forced_bit_check;
@@ -80,5 +75,5 @@ let () =
       Global.max_cost := max_cost;
       Global.n_bits := n_bits;
 
-      main ~n ~seed ~k:n_bits ~print_header ~abstraction ~check ~refine]
+      main ~n ~seed ~k:n_bits ~print_header ~abstraction ~check]
   |> Command.run
