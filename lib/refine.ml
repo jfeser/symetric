@@ -69,52 +69,64 @@ let normalize_bits bits =
              | None, None -> None))
   |> Map.to_alist
 
-let make_vars graph =
-  let open Smt.Let_syntax in
-  let%bind edge_var_rel =
-    E.to_list graph
-    |> List.map ~f:(fun e ->
-           let%bind decl = Smt.fresh_decl ~prefix:"e" () in
-           return (e, decl))
-    |> Smt.all
-  in
+module Vars = struct
+  type t = {
+    edge_vars : String_id.t Map.M(E).t;
+    var_edges : E.t Map.M(String_id).t;
+    state_vars : Smt.Expr.t list Map.M(State).t;
+    arg_vars : String_id.t list Map.M(Args).t;
+  }
 
-  let edge_vars = edge_var_rel |> Map.of_alist_exn (module E)
-  and var_edges =
-    List.map ~f:Tuple.T2.swap edge_var_rel |> Map.of_alist_exn (module String_id)
-  in
+  let make graph =
+    let open Smt.Let_syntax in
+    let%bind edge_var_rel =
+      E.to_list graph
+      |> List.map ~f:(fun e ->
+             let%bind decl = Smt.fresh_decl ~prefix:"e" () in
+             return (e, decl))
+      |> Smt.all
+    in
 
-  let%bind state_vars =
-    V.filter_map graph ~f:Node.to_state
-    |> List.map ~f:(fun (v : State.t) ->
-           let%bind vars =
-             List.init !Global.n_bits ~f:(fun vec ->
-                 let%bind var =
-                   Smt.fresh_decl
-                     ~prefix:(sprintf "s%d_b%d_" (State.id v) vec)
-                     ()
-                 in
-                 return (Smt.Expr.Var var))
-             |> Smt.all
-           in
-           return (v, vars))
-    |> Smt.all
-  in
-  let state_vars = Map.of_alist_exn (module State) state_vars in
+    let edge_vars = edge_var_rel |> Map.of_alist_exn (module E)
+    and var_edges =
+      List.map ~f:Tuple.T2.swap edge_var_rel
+      |> Map.of_alist_exn (module String_id)
+    in
 
-  let%bind arg_vars =
-    V.filter_map graph ~f:Node.to_args
-    |> List.map ~f:(fun (v : Args.t) ->
-           let%bind vars =
-             List.init !Global.n_bits ~f:(fun b ->
-                 Smt.fresh_decl ~prefix:(sprintf "a%d_b%d_" (Args.id v) b) ())
-             |> Smt.all
-           in
-           return (v, vars))
-    |> Smt.all
-  in
-  let arg_vars = Map.of_alist_exn (module Args) arg_vars in
-  return (edge_vars, var_edges, state_vars, arg_vars)
+    let%bind state_vars =
+      V.filter_map graph ~f:Node.to_state
+      |> List.map ~f:(fun (v : State.t) ->
+             let%bind vars =
+               List.init !Global.n_bits ~f:(fun vec ->
+                   let%bind var =
+                     Smt.fresh_decl
+                       ~prefix:(sprintf "s%d_b%d_" (State.id v) vec)
+                       ()
+                   in
+                   return (Smt.Expr.Var var))
+               |> Smt.all
+             in
+             return (v, vars))
+      |> Smt.all
+    in
+    let state_vars = Map.of_alist_exn (module State) state_vars in
+
+    let%bind arg_vars =
+      V.filter_map graph ~f:Node.to_args
+      |> List.map ~f:(fun (v : Args.t) ->
+             let%bind vars =
+               List.init !Global.n_bits ~f:(fun b ->
+                   Smt.fresh_decl ~prefix:(sprintf "a%d_b%d_" (Args.id v) b) ())
+               |> Smt.all
+             in
+             return (v, vars))
+      |> Smt.all
+    in
+    let arg_vars = Map.of_alist_exn (module Args) arg_vars in
+    return { edge_vars; var_edges; state_vars; arg_vars }
+end
+
+open Vars
 
 let check_true graph interpolant v state =
   let open Smt.Let_syntax in
@@ -141,8 +153,7 @@ let forced_bits graph interpolant state =
         else (var, None))
   else List.map vars ~f:(fun v -> (v, None))
 
-let refinement_of_model graph separator interpolant forced state_vars
-    arg_out_vars =
+let refinement_of_model graph separator interpolant forced vars =
   let forced = Map.of_alist_exn (module String_id) forced in
   let ivars = Smt.Expr.vars interpolant in
 
@@ -163,7 +174,7 @@ let refinement_of_model graph separator interpolant forced state_vars
   Fmt.epr "sep: %a@." Fmt.(Dump.list Node.pp) separator;
   Fmt.epr "args out: %a@."
     Fmt.(Dump.(list @@ pair Node.pp @@ list string))
-    ( Map.to_alist arg_out_vars
+    ( Map.to_alist vars.arg_vars
     |> List.map ~f:(fun (k, v) ->
            (Node.of_args k, List.map ~f:String_id.to_string v)) );
   let refinement =
@@ -172,11 +183,11 @@ let refinement_of_model graph separator interpolant forced state_vars
     |> List.dedup_and_sort ~compare:[%compare: Args.t]
     (* Only care about args nodes with refined output bits. *)
     |> List.filter_map ~f:(fun v ->
-           let bits = Map.find_exn arg_out_vars v |> get_args_bits in
+           let bits = Map.find_exn vars.arg_vars v |> get_args_bits in
            let bits' =
              pred graph (Node.of_args v)
              |> List.map ~f:Node.to_state_exn
-             |> List.map ~f:(Map.find_exn state_vars)
+             |> List.map ~f:(Map.find_exn vars.state_vars)
              |> List.map ~f:get_state_bits |> List.concat
            in
            let refined_bits = normalize_bits (bits @ bits') in
@@ -264,18 +275,17 @@ let get_refinement graph target_node expected_output separator =
     >>= fun v -> Smt.Interpolant.assert_group (Var v)
   in
 
-  let synth_constrs ~assert_group
-      (edge_vars, var_edges, state_vars, arg_out_vars) =
+  let synth_constrs ~assert_group vars =
     let assert_group_var g v = assert_group g (Smt.Expr.Var v) in
 
-    let edge_vars = Map.map ~f:(fun v -> Smt.Expr.Var v) edge_vars in
+    let edge_vars = Map.map ~f:(fun v -> Smt.Expr.Var v) vars.edge_vars in
     let arg_out_vars =
-      Map.map ~f:(List.map ~f:(fun v -> Smt.Expr.Var v)) arg_out_vars
+      Map.map ~f:(List.map ~f:(fun v -> Smt.Expr.Var v)) vars.arg_vars
     in
 
     (* Each state must be contained by its abstraction *)
     let%bind () =
-      Map.to_alist state_vars
+      Map.to_alist vars.state_vars
       |> List.filter ~f:(fun (v, _) ->
              List.is_empty (succ graph @@ Node.of_state v))
       |> List.map ~f:(fun (state_v, vars) ->
@@ -336,7 +346,7 @@ let get_refinement graph target_node expected_output separator =
     let%bind () =
       V.filter_map graph ~f:Node.to_state
       |> List.map ~f:(fun v ->
-             let state_in = Map.find_exn state_vars v in
+             let state_in = Map.find_exn vars.state_vars v in
              succ_e graph (Node.of_state v)
              |> List.filter_map ~f:(fun ((_, _, v) as e) ->
                     Node.to_args v
@@ -364,7 +374,7 @@ let get_refinement graph target_node expected_output separator =
                |> List.sort ~compare:(fun (_, n) (_, n') ->
                       [%compare: int] n n')
                |> List.map ~f:(fun (v, _) -> v)
-               |> List.map ~f:(Map.find_exn state_vars)
+               |> List.map ~f:(Map.find_exn vars.state_vars)
              in
 
              let out = Map.find_exn arg_out_vars v in
@@ -399,27 +409,25 @@ let get_refinement graph target_node expected_output separator =
     return ()
   in
 
-  let ((edge_vars, var_edges, state_vars, arg_out_vars) as vars), state =
-    make_vars graph |> Smt.run
-  in
+  let vars, state = Vars.make graph |> Smt.run in
 
-  let process_interpolant state_vars arg_out_vars interpolant =
+  let process_interpolant vars interpolant =
     let interpolant = ok_exn interpolant in
     Fmt.epr "Interpolant: %a@." Smt.Expr.pp interpolant;
     refinement_of_model graph separator interpolant
       (forced_bits graph interpolant state)
-      state_vars arg_out_vars
+      vars
   in
 
-  let process_model var_edges model =
+  let process_model vars model =
     List.filter_map model ~f:(fun (e, is_selected) ->
-        if is_selected then Map.find var_edges e else None)
+        if is_selected then Map.find vars.var_edges e else None)
     |> Set.of_list (module E)
   in
 
   let get_interpolant =
     let%bind sep_group = Smt.Interpolant.Group.create in
-    let%bind () = output_constr state_vars in
+    let%bind () = output_constr vars.state_vars in
     let%bind () =
       synth_constrs
         ~assert_group:(fun g defn ->
@@ -429,12 +437,8 @@ let get_refinement graph target_node expected_output separator =
         vars
     in
     let%bind ret = Smt.get_interpolant_or_model [ sep_group ] in
-    return (arg_out_vars, state_vars, var_edges, ret)
+    return (vars, ret)
   in
 
-  let arg_out_vars, state_vars, var_edges, ret =
-    Smt.eval_with_state state get_interpolant
-  in
-  Either.map
-    ~first:(process_interpolant state_vars arg_out_vars)
-    ~second:(process_model var_edges) ret
+  let vars, ret = Smt.eval_with_state state get_interpolant in
+  Either.map ~first:(process_interpolant vars) ~second:(process_model vars) ret
