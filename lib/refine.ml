@@ -327,7 +327,7 @@ let get_refinement graph target_node expected_output separator =
                succ_e graph (Node.of_args v)
                |> List.map ~f:(Map.find_exn edge_vars)
              in
-             Smt.Bool.(or_ outgoing => and_ incoming))
+             Smt.Bool.(or_ outgoing => (and_ incoming && exactly_one outgoing)))
       |> Smt.Bool.and_
       |> Smt.make_defn "args-have-all-incoming"
       >>= assert_group_var `A
