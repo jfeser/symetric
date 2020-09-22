@@ -1,7 +1,8 @@
 open Search_state
 
 module Refinement = struct
-  type t = [ `Split of Args.t * int * Abs.t list ] list [@@deriving sexp_of]
+  type t = [ `Split of Args.t * int * Abs.t list | `Remove of State.t ] list
+  [@@deriving sexp_of]
 
   let pp fmt x = Sexp.pp_hum fmt @@ [%sexp_of: t] x
 end
@@ -88,15 +89,12 @@ let make_vars graph =
     |> List.map ~f:(fun (v : State.t) ->
            let%bind vars =
              List.init !Global.n_bits ~f:(fun vec ->
-                 match Map.find (State.state v) vec with
-                 | Some x -> return @@ Smt.Bool.bool x
-                 | None ->
-                     let%bind var =
-                       Smt.fresh_decl
-                         ~prefix:(sprintf "s%d_b%d_" (State.id v) vec)
-                         ()
-                     in
-                     return (Smt.Expr.Var var))
+                 let%bind var =
+                   Smt.fresh_decl
+                     ~prefix:(sprintf "s%d_b%d_" (State.id v) vec)
+                     ()
+                 in
+                 return (Smt.Expr.Var var))
              |> Smt.all
            in
            return (v, vars))
@@ -192,37 +190,36 @@ let refinement_of_model graph separator interpolant forced state_vars
              Fmt.(Dump.(list @@ pair int @@ option bool))
              refined_bits;
 
-           let states = List.map state_nodes ~f:State.state in
-
            let input_forced =
              match Args.op v with
              | Input in_ -> fun bit -> Some in_.(bit)
              | _ -> fun _ -> None
            in
-           let refined =
-             List.fold refined_bits ~init:states ~f:(fun states (bit, forced) ->
-                 match Option.first_some (input_forced bit) forced with
-                 | Some value ->
-                     List.map states ~f:(fun s -> Abs.set s bit value)
-                 | None ->
-                     List.concat_map states ~f:(fun s ->
-                         [ Abs.set s bit true; Abs.set s bit false ]))
+
+           let set states b v =
+             List.map states ~f:(fun s -> Abs.add s b v)
+             |> Or_error.all |> Or_error.ok
            in
 
-           let changed =
-             not
-               (Set.equal
-                  (Set.of_list (module Abs) states)
-                  (Set.of_list (module Abs) refined))
+           let refinements =
+             List.filter_map state_nodes ~f:(fun v ->
+                 let state = State.state v in
+                 (* For each refined bit, generate a pair of refined states. If the bit contradicts a bit that is already refined, the state will be pruned. *)
+                 List.fold refined_bits
+                   ~init:(Some [ state ])
+                   ~f:(fun states (bit, forced) ->
+                     let%bind states = states in
+                     match Option.first_some (input_forced bit) forced with
+                     | Some value -> set states bit value
+                     | None ->
+                         let%bind s = set states bit true in
+                         let%bind s' = set states bit false in
+                         return (s @ s')))
+             |> List.concat
            in
 
-           let ret =
-             if changed then
-               let cost = List.hd_exn state_nodes |> State.cost in
-               [ `Split (v, cost, refined) ]
-             else []
-           in
-           ret)
+           let cost = List.hd_exn state_nodes |> State.cost in
+           [ `Split (v, cost, refinements) ])
   in
 
   let edges =
@@ -279,6 +276,8 @@ let get_refinement graph target_node expected_output separator =
     (* Each state must be contained by its abstraction *)
     let%bind () =
       Map.to_alist state_vars
+      |> List.filter ~f:(fun (v, _) ->
+             List.is_empty (succ graph @@ Node.of_state v))
       |> List.map ~f:(fun (state_v, vars) ->
              let state = State.state state_v in
              List.filter_mapi vars ~f:(fun b v ->
