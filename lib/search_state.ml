@@ -15,14 +15,41 @@ module Op = struct
   let arity = function Input _ -> 0 | Union | Inter | Sub -> 2
 end
 
+module Option_vector : sig
+  type 'a t
+
+  val create : int -> 'a t
+
+  val reserve : 'a t -> int -> unit
+
+  val get_some_exn : 'a t -> int -> 'a
+
+  val set_some : 'a t -> int -> 'a -> unit
+end = struct
+  type 'a t = 'a Option_array.t ref
+
+  let create n = ref (Option_array.create n)
+
+  let reserve a n =
+    let new_len = Int.ceil_pow2 (n + 1) and old_len = Option_array.length !a in
+    if old_len < new_len then (
+      let a' = Option_array.create ~len:new_len in
+      Option_array.blit ~src:!a ~src_pos:0 ~len:old_len ~dst:a' ~dst_pos:0;
+      a := a' )
+
+  let get_some_exn a = Option_array.get_some_exn !a
+
+  let set_some a = Option_array.set_some !a
+end
+
 module Args = struct
-  let ops = Option_array.create 1_000_000
+  let ops = Option_vector.create 128
 
   let id_ctr = ref 0
 
   let id = ident
 
-  let op id = Option_array.get_some_exn ops (id / 2)
+  let op id = Option_vector.get_some_exn ops (id / 2)
 
   module T = struct
     type t = int [@@deriving compare, equal, hash, show]
@@ -38,20 +65,22 @@ module Args = struct
   let create op =
     let id = !id_ctr in
     id_ctr := !id_ctr + 2;
-    Option_array.set_some ops (id / 2) op;
+    let idx = id / 2 in
+    Option_vector.reserve ops idx;
+    Option_vector.set_some ops idx op;
     id
 end
 
 module State = struct
-  let costs = Option_array.create 1_000_000
+  let costs = Option_vector.create 128
 
-  let states = Option_array.create 1_000_000
+  let states = Option_vector.create 128
 
   let id_ctr = ref 1
 
-  let state id = Option_array.get_some_exn states (id / 2)
+  let state id = Option_vector.get_some_exn states (id / 2)
 
-  let cost id = Option_array.get_some_exn costs (id / 2)
+  let cost id = Option_vector.get_some_exn costs (id / 2)
 
   module T = struct
     type t = int [@@deriving compare, equal, hash, show]
@@ -65,8 +94,11 @@ module State = struct
   let create s c =
     let id = !id_ctr in
     id_ctr := !id_ctr + 2;
-    Option_array.set_some states (id / 2) s;
-    Option_array.set_some costs (id / 2) c;
+    let idx = id / 2 in
+    Option_vector.reserve states idx;
+    Option_vector.reserve costs idx;
+    Option_vector.set_some states idx s;
+    Option_vector.set_some costs idx c;
     id
 
   let id = ident
