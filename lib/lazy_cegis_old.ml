@@ -82,6 +82,8 @@ module State = struct
 end
 
 let fill_cost (graph : Search_state.t) cost =
+  Fmt.epr "Filling cost %d\n" cost;
+  let size = nb_vertex graph in
   if cost <= 1 then false
   else
     let arg_cost = cost - 1 in
@@ -112,6 +114,10 @@ let fill_cost (graph : Search_state.t) cost =
                                | Some _ -> true
                              in
                              added := !added || did_add))));
+
+    let size' = nb_vertex graph in
+    Fmt.epr "Pruning: size before=%d, after=%d, removed %f%%\n" size size'
+      Float.(100.0 - (of_int size' / of_int size * 100.0));
     !added
 
 let fill_up_to_cost (graph : Search_state.t) cost =
@@ -177,61 +183,6 @@ module Inv_reachable (G : Graph.Fixpoint.G) =
       let analyze _ x = x
     end)
 
-module View (G : sig
-  type t
-
-  module V : sig
-    type t
-  end
-
-  module E : sig
-    type t
-
-    val src : t -> V.t
-
-    val dst : t -> V.t
-  end
-
-  val pred_e : t -> V.t -> E.t list
-
-  val succ_e : t -> V.t -> E.t list
-
-  val iter_vertex : (V.t -> unit) -> t -> unit
-
-  val iter_edges_e : (E.t -> unit) -> t -> unit
-
-  val fold_vertex : (V.t -> 'a -> 'a) -> t -> 'a -> 'a
-
-  val fold_edges_e : (E.t -> 'a -> 'a) -> t -> 'a -> 'a
-
-  val mem_vertex : t -> V.t -> bool
-
-  val mem_edge_e : t -> E.t -> bool
-end) =
-struct
-  include G
-
-  let pred_e g v =
-    if G.mem_vertex g v then
-      G.pred_e g v |> List.filter ~f:(fun e -> G.mem_vertex g @@ E.src e)
-    else failwith "Node not in graph"
-
-  let succ_e g v =
-    if G.mem_vertex g v then
-      G.succ_e g v |> List.filter ~f:(fun e -> G.mem_vertex g @@ E.dst e)
-    else failwith "Node not in graph"
-
-  let iter_edges_e f g = iter_edges_e (fun e -> if G.mem_edge_e g e then f e) g
-
-  let iter_vertex f g = iter_vertex (fun v -> if G.mem_vertex g v then f v) g
-
-  let fold_edges_e f g x =
-    fold_edges_e (fun e x -> if G.mem_edge_e g e then f e x else x) g x
-
-  let fold_vertex f g x =
-    fold_vertex (fun v x -> if G.mem_vertex g v then f v x else x) g x
-end
-
 let separators graph target =
   Seq.unfold ~init:(succ graph target) ~f:(fun sep ->
       if List.is_empty sep then None
@@ -256,9 +207,9 @@ let should_prune graph separator =
 
 let prune graph refined =
   let should_prune = should_prune graph refined in
-  let size = G.nb_vertex graph.Search_state.graph in
+  let size = nb_vertex graph in
   filter graph ~f:(fun v -> not (should_prune v));
-  let size' = G.nb_vertex graph.Search_state.graph in
+  let size' = nb_vertex graph in
   Fmt.epr "Pruning: size before=%d, after=%d, removed %f%%\n" size size'
     Float.(100.0 - (of_int size' / of_int size * 100.0))
 
@@ -293,7 +244,7 @@ let refine_level n graph =
         ~state:(fun v -> (num + Abs.width (State.state v), dem + n)))
 
 let refine graph output separator refinement =
-  let size = G.nb_vertex graph.Search_state.graph in
+  let size = nb_vertex graph in
   Dump.dump_detailed ~output ~suffix:"before-refinement" graph;
 
   let states_to_fix =
@@ -320,7 +271,7 @@ let refine graph output separator refinement =
   in
   loop states_to_fix;
 
-  let size' = G.nb_vertex graph.Search_state.graph in
+  let size' = nb_vertex graph in
   Fmt.epr "Pruning: size before=%d, after=%d, removed %f%%\n" size size'
     Float.(100.0 - (of_int size' / of_int size * 100.0));
   Dump.dump_detailed ~output ~suffix:"after-refinement" graph;
@@ -407,19 +358,23 @@ let synth ?(no_abstraction = false) inputs output =
 
   let rec loop cost =
     if cost > !Global.max_cost then raise (Done `Unsat);
-    let rec strengthen_and_cover () =
-      let did_strengthen = refute graph output in
-      if did_strengthen then strengthen_and_cover ()
+
+    let rec loop' () =
+      let rec strengthen_and_cover () =
+        let did_strengthen = refute graph output in
+        if did_strengthen then (
+          strengthen_and_cover () |> ignore;
+          true )
+        else false
+      in
+      let changed = strengthen_and_cover () in
+      let changed' = fill_up_to_cost graph cost in
+      Fmt.epr "Changed: %b Cost: %d\n%!" (changed || changed') cost;
+      count_compressible graph;
+      if changed || changed' then loop' () else loop (cost + 1)
     in
-    strengthen_and_cover ();
-
-    let changed = fill_up_to_cost graph cost in
-    Fmt.epr "Changed: %b Cost: %d\n%!" changed cost;
-    count_compressible graph;
-    let cost = if changed then cost else cost + 1 in
-    loop cost
+    loop' ()
   in
-
   (* Add inputs to the state space graph. *)
   List.iter inputs ~f:(fun input ->
       let state = if no_abstraction then Abs.lift input else Abs.top in

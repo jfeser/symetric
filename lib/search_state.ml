@@ -298,7 +298,6 @@ let remove_vertexes g vs =
   let vs = List.filter vs ~f:(G.mem_vertex g.graph) in
   let to_remove = Set.of_list (module V) vs in
   let remove v = not (Set.mem to_remove v) in
-
   for i = 0 to Array.length g.cost_table - 1 do
     g.cost_table.(i) <- List.filter g.cost_table.(i) ~f:remove
   done;
@@ -310,6 +309,8 @@ let remove_vertex x v = remove_vertexes x [ v ]
 
 let filter g ~f = remove_vertexes g @@ V.filter g ~f:(Fun.negate f)
 
+let nb_vertex g = G.nb_vertex g.graph
+
 let states_of_cost g cost =
   let idx = cost - 1 in
   g.cost_table.(idx)
@@ -318,3 +319,18 @@ let set_states_of_cost g cost states =
   assert (List.for_all states ~f:(fun s -> State.cost s = cost));
   let idx = cost - 1 in
   g.cost_table.(idx) <- states
+
+let check g =
+  Hashtbl.iter g.args_table ~f:(fun v ->
+      assert (G.mem_vertex g.graph @@ Node.of_args v));
+  Hashtbl.iter g.state_table ~f:(fun v ->
+      assert (G.mem_vertex g.graph @@ Node.of_state v));
+  Array.iter g.cost_table
+    ~f:
+      (List.iter ~f:(fun v -> assert (G.mem_vertex g.graph @@ Node.of_state v)))
+
+let inputs g arg_v =
+  succ_e g (Node.of_args arg_v)
+  |> List.map ~f:(fun (_, n, v) -> (Node.to_state_exn v, n))
+  |> List.sort ~compare:(fun (_, n) (_, n') -> [%compare: int] n n')
+  |> List.map ~f:(fun (v, _) -> v)

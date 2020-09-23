@@ -126,3 +126,9 @@ val set_states_of_cost : t -> int -> State.t list -> unit
 val filter : t -> f:(G.V.t -> bool) -> unit
 
 val remove_vertexes : t -> G.V.t list -> unit
+
+val nb_vertex : t -> int
+
+val check : t -> unit
+
+val inputs : t -> Args.t -> State.t list
