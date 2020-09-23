@@ -1,11 +1,17 @@
 open Search_state
 
 module Refinement = struct
-  type t = [ `Split of Args.t * int * Abs.t list | `Remove of State.t ] list
+  type t = {
+    context : Args.t;
+    splits :
+      [ `Input of (State.t * Abs.t list) list | `Output of int * Abs.t list ];
+  }
   [@@deriving sexp_of]
 
   let pp fmt x = Sexp.pp_hum fmt @@ [%sexp_of: t] x
 end
+
+open Refinement
 
 let bounded_cone graph target_node separator =
   let in_separator =
@@ -153,98 +159,125 @@ let forced_bits graph interpolant state =
         else (var, None))
   else List.map vars ~f:(fun v -> (v, None))
 
+let set states b v =
+  List.map states ~f:(fun s -> Abs.add s b v) |> Or_error.all |> Or_error.ok
+
 let refinement_of_model graph separator interpolant forced vars =
   let forced = Map.of_alist_exn (module String_id) forced in
   let ivars = Smt.Expr.vars interpolant in
+
+  let used_ivars = ref (Set.empty (module String_id)) in
 
   let get_state_bits =
     List.filter_mapi ~f:(fun i x ->
         match x with
         | Smt.Expr.Var v ->
-            if Set.mem ivars v then Some (i, Map.find_exn forced v) else None
+            if Set.mem ivars v then (
+              used_ivars := Set.add !used_ivars v;
+              Some (i, Map.find_exn forced v) )
+            else None
         | _ -> None)
   in
 
   let get_args_bits =
     List.filter_mapi ~f:(fun i x ->
-        if Set.mem ivars x then Some (i, Map.find_exn forced x) else None)
+        if Set.mem ivars x then (
+          used_ivars := Set.add !used_ivars x;
+          Some (i, Map.find_exn forced x) )
+        else None)
   in
 
   let open Option.Let_syntax in
-  Fmt.epr "sep: %a@." Fmt.(Dump.list Node.pp) separator;
-  Fmt.epr "args out: %a@."
-    Fmt.(Dump.(list @@ pair Node.pp @@ list string))
-    ( Map.to_alist vars.arg_vars
-    |> List.map ~f:(fun (k, v) ->
-           (Node.of_args k, List.map ~f:String_id.to_string v)) );
   let refinement =
-    Search_state.V.to_list graph
-    |> List.filter_map ~f:Node.to_args
+    List.filter_map separator ~f:Node.to_args
     |> List.dedup_and_sort ~compare:[%compare: Args.t]
     (* Only care about args nodes with refined output bits. *)
-    |> List.filter_map ~f:(fun v ->
-           let bits = Map.find_exn vars.arg_vars v |> get_args_bits in
-           let bits' =
-             pred graph (Node.of_args v)
+    |> List.filter_map ~f:(fun arg_v ->
+           let refined_out_bits =
+             let bits = Map.find_exn vars.arg_vars arg_v |> get_args_bits in
+             let bits' =
+               pred graph (Node.of_args arg_v)
+               |> List.map ~f:Node.to_state_exn
+               |> List.map ~f:(Map.find_exn vars.state_vars)
+               |> List.map ~f:get_state_bits |> List.concat
+             in
+             normalize_bits (bits @ bits')
+           and refined_in_bits =
+             succ graph (Node.of_args arg_v)
              |> List.map ~f:Node.to_state_exn
-             |> List.map ~f:(Map.find_exn vars.state_vars)
-             |> List.map ~f:get_state_bits |> List.concat
-           in
-           let refined_bits = normalize_bits (bits @ bits') in
-           if List.is_empty refined_bits then None else Some (v, refined_bits))
-    |> List.concat_map ~f:(fun (v, refined_bits) ->
-           let (state_nodes : State.t list) =
-             pred graph (Node.of_args v) |> List.map ~f:Node.to_state_exn
+             |> List.map ~f:(fun v ->
+                    (v, get_state_bits @@ Map.find_exn vars.state_vars v))
            in
 
-           Fmt.epr "Refined bits: %a@."
-             Fmt.(Dump.(list @@ pair int @@ option bool))
-             refined_bits;
-
-           let input_forced =
-             match Args.op v with
-             | Input in_ -> fun bit -> Some in_.(bit)
-             | _ -> fun _ -> None
+           let no_refined_out_bits = List.is_empty refined_out_bits
+           and no_refined_in_bits =
+             List.for_all refined_in_bits ~f:(fun (_, bs) -> List.is_empty bs)
            in
 
-           let set states b v =
-             List.map states ~f:(fun s -> Abs.add s b v)
-             |> Or_error.all |> Or_error.ok
-           in
+           if no_refined_out_bits && no_refined_in_bits then None
+           else if no_refined_in_bits then
+             let state_nodes =
+               Node.of_args arg_v |> pred graph |> List.map ~f:Node.to_state_exn
+             in
+             let input_forced =
+               match Args.op arg_v with
+               | Input in_ -> fun bit -> Some in_.(bit)
+               | _ -> fun _ -> None
+             in
 
-           let refinements =
-             List.filter_map state_nodes ~f:(fun v ->
-                 let state = State.state v in
-                 (* For each refined bit, generate a pair of refined states. If the bit contradicts a bit that is already refined, the state will be pruned. *)
-                 List.fold refined_bits
-                   ~init:(Some [ state ])
-                   ~f:(fun states (bit, forced) ->
-                     let%bind states = states in
-                     match Option.first_some (input_forced bit) forced with
-                     | Some value -> set states bit value
-                     | None ->
-                         let%bind s = set states bit true in
-                         let%bind s' = set states bit false in
-                         return (s @ s')))
-             |> List.concat
-           in
+             let refinements =
+               List.filter_map state_nodes ~f:(fun v ->
+                   let state = State.state v in
+                   (* For each refined bit, generate a pair of refined states. If the bit contradicts a bit that is already refined, the state will be pruned. *)
+                   List.fold refined_out_bits
+                     ~init:(Some [ state ])
+                     ~f:(fun states (bit, forced) ->
+                       let%bind states = states in
+                       match Option.first_some (input_forced bit) forced with
+                       | Some value -> set states bit value
+                       | None ->
+                           let%bind s = set states bit true in
+                           let%bind s' = set states bit false in
+                           return (s @ s')))
+               |> List.concat
+             in
 
-           let cost = List.hd_exn state_nodes |> State.cost in
-           [ `Split (v, cost, refinements) ])
+             let cost = List.hd_exn state_nodes |> State.cost in
+             Some { context = arg_v; splits = `Output (cost, refinements) }
+           else
+             let refinements =
+               List.filter_map refined_in_bits ~f:(fun (state_v, bits) ->
+                   let%map rs =
+                     List.fold bits
+                       ~init:(Some [ State.state state_v ])
+                       ~f:(fun states (bit, forced) ->
+                         let%bind states = states in
+                         match forced with
+                         | Some value -> set states bit value
+                         | None ->
+                             let%bind s = set states bit true in
+                             let%bind s' = set states bit false in
+                             return (s @ s'))
+                   in
+                   (state_v, rs))
+             in
+
+             Some { context = arg_v; splits = `Input refinements })
   in
+
+  [%test_result: Set.M(String_id).t] ~expect:ivars !used_ivars;
 
   let edges =
     List.concat_map refinement ~f:(function
-      | `Split (v, _, _) -> pred_e graph (Node.of_args v)
-      | `Remove vs ->
-          List.concat_map ~f:(fun v -> succ_e graph (Node.of_state v)) vs)
+      | { context = v; splits = `Output _ } -> pred_e graph (Node.of_args v)
+      | { context = v; splits = `Input _ } -> succ_e graph (Node.of_args v))
     |> Set.of_list (module E)
   in
   Dump.dump_detailed ~suffix:"after-refine"
     ~separator:(List.mem separator ~equal:[%equal: Node.t])
     ~refinement:(Set.mem edges) graph;
 
-  Fmt.epr "Refinement: %a@." Refinement.pp refinement;
+  Fmt.epr "Refinement: %a@." Fmt.Dump.(list Refinement.pp) refinement;
   if List.is_empty refinement then failwith "No-op refinement" else refinement
 
 let get_refinement graph target_node expected_output separator =
