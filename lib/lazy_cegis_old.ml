@@ -116,6 +116,8 @@ let fill_cost (graph : Search_state.t) cost =
                              added := !added || did_add))));
 
     let size' = nb_vertex graph in
+    Dump.dump_detailed ~suffix:(sprintf "after-fill-%d" cost) graph;
+
     Fmt.epr "Pruning: size before=%d, after=%d, removed %f%%\n" size size'
       Float.(100.0 - (of_int size' / of_int size * 100.0));
     !added
@@ -213,29 +215,42 @@ let prune graph refined =
   Fmt.epr "Pruning: size before=%d, after=%d, removed %f%%\n" size size'
     Float.(100.0 - (of_int size' / of_int size * 100.0))
 
-let fix_up_args graph args =
-  let to_remove, states =
-    List.filter_map args ~f:(fun v ->
-        let args_v = Node.to_args_exn v in
-        let succ = succ graph v in
-        if List.length succ <> Op.arity (Args.op args_v) then
-          Some (v, pred graph v)
-        else None)
-    |> List.unzip
-  in
-  remove_vertexes graph to_remove;
-  List.concat states |> List.dedup_and_sort ~compare:[%compare: Node.t]
+let fix_up_args work add_work graph args_v =
+  let v = Node.of_args args_v in
+  let succ = succ graph v in
+  if List.length succ <> Op.arity (Args.op args_v) then (
+    let work' = List.fold_left ~init:work ~f:add_work (pred graph v) in
+    remove_vertexes graph [ v ];
+    work' )
+  else work
 
-let fix_up_states graph states =
-  let to_remove, args =
-    List.filter_map states ~f:(fun v ->
-        Node.to_state_exn v |> ignore;
-        let succ = succ graph v in
-        if List.is_empty succ then Some (v, pred graph v) else None)
-    |> List.unzip
+let fix_up_states work add_work graph state_v =
+  let v = Node.of_state state_v in
+  let succ = succ graph v in
+  if List.is_empty succ then (
+    let work' = List.fold_left ~init:work ~f:add_work (pred graph v) in
+    remove_vertexes graph [ v ];
+    work' )
+  else work
+
+let fix_up graph =
+  let worklist = Queue.of_list @@ V.to_list graph in
+  let add_work () v = Queue.enqueue worklist v in
+  let fix_node v =
+    if V.mem graph v then
+      Node.match_
+        ~args:(fix_up_args () add_work graph)
+        ~state:(fix_up_states () add_work graph)
+        v
   in
-  remove_vertexes graph to_remove;
-  List.concat args |> List.dedup_and_sort ~compare:[%compare: Node.t]
+  let rec loop () =
+    match Queue.dequeue worklist with
+    | Some v ->
+        fix_node v;
+        loop ()
+    | None -> ()
+  in
+  loop ()
 
 let refine_level n graph =
   V.fold graph ~init:(0, 0) ~f:(fun ((num, dem) as acc) ->
@@ -245,63 +260,49 @@ let refine_level n graph =
 
 let refine graph output separator refinement =
   let size = nb_vertex graph in
-  Dump.dump_detailed ~output ~suffix:"before-refinement" graph;
 
-  let states_to_fix, args_to_fix =
-    List.map refinement ~f:(fun r ->
-        let open Refine.Refinement in
-        match r.splits with
-        | `Output (cost, refined) ->
-            let pred_edges = pred_e graph (Node.of_args r.context) in
-            (* Remove edges to existing state nodes. *)
-            List.iter pred_edges ~f:(G.remove_edge_e graph.Search_state.graph);
-            (* Insert split state nodes. *)
-            List.iter refined ~f:(fun state ->
-                let (`Fresh v' | `Stale v') =
-                  State.create_consed ~state ~cost graph
-                in
-                add_edge_e graph (Node.of_state v', -1, Node.of_args r.context));
+  List.iteri refinement ~f:(fun i r ->
+      (let open Refine.Refinement in
+      match r.splits with
+      | `Output (cost, refined) ->
+          let pred_edges = pred_e graph (Node.of_args r.context) in
+          (* Remove edges to existing state nodes. *)
+          List.iter pred_edges ~f:(G.remove_edge_e graph.Search_state.graph);
+          (* Insert split state nodes. *)
+          List.iter refined ~f:(fun state ->
+              let (`Fresh v' | `Stale v') =
+                State.create_consed ~state ~cost graph
+              in
+              add_edge_e graph (Node.of_state v', -1, Node.of_args r.context))
+      | `Input refined ->
+          let refined =
+            List.filter refined ~f:(fun (v, _) ->
+                V.mem graph @@ Node.of_state v)
+            |> List.map ~f:(fun (state_v, rs) ->
+                   let succ_edges = succ_e graph (Node.of_state state_v) in
+                   (state_v, succ_edges, rs))
+          in
 
-            (* Extract the states where we removed an edge. *)
-            (List.map pred_edges ~f:(fun (v, _, _) -> v), [])
-        | `Input refined ->
-            let refined =
-              List.filter refined ~f:(fun (v, _) ->
-                  V.mem graph @@ Node.of_state v)
-            in
-            let args_to_fix =
-              List.concat_map refined ~f:(fun (state_v, _) ->
-                  pred graph @@ Node.of_state state_v)
-            in
-            List.iter refined ~f:(fun (state_v, rs) ->
-                let succ_edges = succ_e graph (Node.of_state state_v) in
-                List.iter rs ~f:(fun state ->
-                    let (`Fresh v' | `Stale v') =
-                      State.create_consed ~state ~cost:(State.cost state_v)
-                        graph
-                    in
-                    List.iter succ_edges ~f:(fun (_, l, v) ->
-                        add_edge_e graph (Node.of_state v', l, v))));
-            List.iter refined ~f:(fun (state_v, _) ->
-                remove_vertexes graph [ Node.of_state state_v ]);
-            ([], args_to_fix))
-    |> List.unzip
-  in
-  let states_to_fix = List.concat states_to_fix |> List.filter ~f:(V.mem graph)
-  and args_to_fix = List.concat args_to_fix |> List.filter ~f:(V.mem graph) in
+          remove_vertexes graph
+          @@ List.map refined ~f:(fun (v, _, _) -> Node.of_state v);
 
-  let rec loop states_to_fix args_to_fix =
-    let args_to_fix = fix_up_states graph states_to_fix @ args_to_fix in
-    if not (List.is_empty args_to_fix) then
-      let states_to_fix = fix_up_args graph args_to_fix in
-      loop states_to_fix []
-  in
-  loop states_to_fix args_to_fix;
+          List.iter refined ~f:(fun (state_v, succ_edges, rs) ->
+              List.iter rs ~f:(fun state ->
+                  let (`Fresh v' | `Stale v') =
+                    State.create_consed ~state ~cost:(State.cost state_v) graph
+                  in
+                  List.iter succ_edges ~f:(fun (_, l, v) ->
+                      add_edge_e graph (Node.of_state v', l, v)))));
+
+      Dump.dump_detailed ~output ~suffix:(sprintf "fixup-%d" i) graph);
+
+  Dump.dump_detailed ~output ~suffix:"before-fixup" graph;
+  fix_up graph;
+  Dump.dump_detailed ~output ~suffix:"after-fixup" graph;
 
   let size' = nb_vertex graph in
   Fmt.epr "Pruning: size before=%d, after=%d, removed %f%%\n" size size'
     Float.(100.0 - (of_int size' / of_int size * 100.0));
-  Dump.dump_detailed ~output ~suffix:"after-refinement" graph;
 
   let num, dem = refine_level (Array.length output) graph in
   Fmt.epr "Refine level: %d/%d (%f%%)\n" num dem
@@ -337,6 +338,8 @@ let refute graph output =
         | last :: rest -> (List.rev rest, last)
         | _ -> failwith "No separators"
       in
+
+      Dump.dump_detailed ~output ~suffix:"before-refinement" ~depth:0 graph;
 
       let refinement =
         List.find_map seps ~f:(fun sep ->

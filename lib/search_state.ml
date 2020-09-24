@@ -297,13 +297,17 @@ let add_edge_e g e = G.add_edge_e g.graph e
 let remove_vertexes g vs =
   let vs = List.filter vs ~f:(G.mem_vertex g.graph) in
   let to_remove = Set.of_list (module V) vs in
-  let remove v = not (Set.mem to_remove v) in
+  let should_keep v = not (Set.mem to_remove v) in
+
   for i = 0 to Array.length g.cost_table - 1 do
-    g.cost_table.(i) <- List.filter g.cost_table.(i) ~f:remove
+    g.cost_table.(i) <- List.filter g.cost_table.(i) ~f:should_keep
   done;
+
   Set.iter to_remove ~f:(G.remove_vertex g.graph);
-  Hashtbl.filter_inplace g.args_table ~f:remove;
-  Hashtbl.filter_inplace g.state_table ~f:remove
+  Hashtbl.filteri_inplace g.args_table ~f:(fun ~key:(_, states) ~data ->
+      should_keep data
+      && List.for_all states ~f:(fun v -> should_keep @@ Node.of_state v));
+  Hashtbl.filter_inplace g.state_table ~f:should_keep
 
 let remove_vertex x v = remove_vertexes x [ v ]
 
@@ -312,11 +316,20 @@ let filter g ~f = remove_vertexes g @@ V.filter g ~f:(Fun.negate f)
 let nb_vertex g = G.nb_vertex g.graph
 
 let states_of_cost g cost =
-  let idx = cost - 1 in
-  g.cost_table.(idx)
+  V.filter_map g ~f:Node.to_state
+  |> List.filter ~f:(fun v -> State.cost v = cost)
+
+(* let idx = cost - 1 in
+ * let ret = g.cost_table.(idx) in
+ * [%test_pred: State.t list]
+ *   (List.for_all ~f:(fun v -> V.mem g @@ Node.of_state v))
+ *   ret;
+ * ret *)
 
 let set_states_of_cost g cost states =
-  assert (List.for_all states ~f:(fun s -> State.cost s = cost));
+  [%test_pred: State.t list]
+    (List.for_all ~f:(fun s -> State.cost s = cost))
+    states;
   let idx = cost - 1 in
   g.cost_table.(idx) <- states
 
