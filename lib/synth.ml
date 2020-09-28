@@ -11,7 +11,6 @@ let prune = ref true
 and debug = ref false
 
 let param =
-  let open Command in
   let open Command.Let_syntax in
   [%map_open
     let no_prune = flag "no-prune" no_arg ~doc:"prune the search graph"
@@ -217,7 +216,6 @@ struct
     (bind, iter_inputs, output)
 
   let cache_iter ~sym ~size ~f cache =
-    let open S in
     let open S.Int in
     match size with
     | 0 -> iter_inputs sym f
@@ -254,7 +252,7 @@ struct
               = of_code target)
           with
           | `Static b -> S.Bool.bool b
-          | `Dyn b -> S.Bool.(b)
+          | `Dyn b -> b
         in
         S.ite found
           (fun () ->
@@ -539,7 +537,7 @@ struct
           Log.debug (fun m -> m "Skipping reconstruction: no equality");
           S.unit
 
-  let insert state term value =
+  let insert state value =
     let sym = state.V.symbol and cost = state.V.cost in
     C.put ~sym ~size:cost (cache.value ()) value
 
@@ -605,8 +603,7 @@ struct
     let fill_inner bindings =
       let term, ctx = to_contexts term bindings in
       vlet (L.eval ctx (term : _ Gr.Term.t :> Gr.Untyped_term.t))
-      @@ fun value ->
-      S.seq (reconstruct g state value) (insert state term value)
+      @@ fun value -> S.seq (reconstruct g state value) (insert state value)
     in
 
     let arg_order = argument_graph rule in

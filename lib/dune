@@ -1,12 +1,9 @@
 (library
  (name staged_synth)
- ; (modes byte)
  (libraries core combinat utils ocamlgraph delimcc fmt hashcons landmarks)
- (preprocess (pps ppx_sexp_conv ppx_compare ppx_hash ppx_expect ppx_assert ppx_let ppx_variants_conv ppx_deriving.show landmarks.ppx))
+ (preprocess (pps ppx_sexp_conv ppx_compare ppx_hash ppx_expect ppx_assert ppx_let ppx_variants_conv ppx_deriving.show landmarks.ppx ppx_here))
  (inline_tests (modes byte))
- (flags -g -open Core)
- 
-)
+ (flags :standard -g -open Core -w -9))
 
 (copy_files ../etc/{*.cpp,*.hpp})
 

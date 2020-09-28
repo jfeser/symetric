@@ -636,8 +636,6 @@ for(int $(i) = $(lo); $(i) < $(hi); $(i) += $(step)) {
 
     module Atom = struct
       let type_ = Type.create ~name:"std::string"
-
-      let of_string = Fun.id
     end
 
     let input () =

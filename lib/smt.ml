@@ -35,7 +35,7 @@ module Expr = struct
     | Varop of varop * t list
     | Let of (t * var * t)
     | Annot of t * string * string
-  [@@deriving equal, sexp]
+  [@@deriving equal, variants, sexp]
 
   let pp_binop fmt = function
     | Implies -> Fmt.pf fmt "=>"
@@ -57,7 +57,7 @@ module Expr = struct
     | Let (e, v, e') ->
         Fmt.pf fmt "(let ((%a %a)) %a)" String_id.pp v pp e pp e'
 
-  let var x = Var (String_id.of_string x)
+  let var_s x = Var (String_id.of_string x)
 
   let rec parse =
     let open Or_error.Let_syntax in
@@ -75,7 +75,7 @@ module Expr = struct
         let%bind lhs = parse lhs in
         let%bind rhs = parse rhs in
         return @@ Let (lhs, String_id.of_string var, rhs)
-    | Atom x -> return @@ var x
+    | Atom x -> return @@ var_s x
     | inter -> Or_error.error "Unexpected interpolant" inter [%sexp_of: Sexp.t]
 
   let reduce reduce plus empty = function
@@ -161,7 +161,7 @@ let fresh_decl ?n_args ?(prefix = "x") () =
   let name = sprintf "%s%d" prefix ctr in
   make_decl ?n_args name
 
-let make_defn ?n_args ?ret name body =
+let make_defn ?n_args name body =
   let%bind () =
     add_stmt (Fmt.str "%a" Defn.to_smtlib @@ Defn.create ?n_args name body)
   in
@@ -289,7 +289,6 @@ end
 let read_input = Sexp.input_sexp
 
 let with_mathsat f =
-  let open Sexp in
   let proc = Unix.open_process "mathsat" in
   let stdout, stdin = proc in
   let ret =
@@ -363,7 +362,6 @@ let get_interpolant_or_model_inner groups stmts read write =
     return (First (read () |> Expr.parse)) )
 
 let get_interpolant_or_model groups =
-  let open Sexp in
   let%bind stmts = get_stmts in
   with_mathsat @@ get_interpolant_or_model_inner groups stmts
 

@@ -54,7 +54,7 @@ let with_holes ?fresh term =
     |> List.map ~f:(fun (sym, idx) -> (sym, idx, Fresh.name fresh "x%d"))
   in
   let holes_ctx =
-    List.map holes ~f:(fun (sym, idx, id) -> (idx, App (id, [])))
+    List.map holes ~f:(fun (_, idx, id) -> (idx, App (id, [])))
     |> Map.of_alist_exn (module Int)
   in
   let rec rename = function
@@ -157,8 +157,6 @@ module Rule = struct
 end
 
 type 's t = 's Rule.t list [@@deriving compare, sexp]
-
-open Untyped_term
 
 let of_list = List.map ~f:Rule.of_tuple
 

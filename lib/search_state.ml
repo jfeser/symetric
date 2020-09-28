@@ -28,7 +28,7 @@ module Option_vector : sig
 end = struct
   type 'a t = 'a Option_array.t ref
 
-  let create n = ref (Option_array.create n)
+  let create n = ref (Option_array.create ~len:n)
 
   let reserve a n =
     let new_len = Int.ceil_pow2 (n + 1) and old_len = Option_array.length !a in
@@ -52,7 +52,7 @@ module Args = struct
   let op id = Option_vector.get_some_exn ops (id / 2)
 
   module T = struct
-    type t = int [@@deriving compare, equal, hash, show]
+    type t = int [@@deriving compare, equal, hash]
 
     let sexp_of_t id = [%sexp_of: int * Op.t] (id, op id)
   end
@@ -131,8 +131,6 @@ module Node = struct
   let of_state = ident
 
   let to_args v = match_ ~args:(fun x -> Some x) ~state:(fun _ -> None) v
-
-  let to_args_exn x = Option.value_exn (to_args x)
 
   let to_state v = match_ ~args:(fun _ -> None) ~state:(fun x -> Some x) v
 
@@ -215,14 +213,6 @@ let create max_cost =
     cost_table = Array.create ~len:max_cost [];
   }
 
-let copy x =
-  {
-    graph = G.copy x.graph;
-    args_table = Hashtbl.copy x.args_table;
-    state_table = Hashtbl.copy x.state_table;
-    cost_table = Array.copy x.cost_table;
-  }
-
 let wrap f g = f g.graph
 
 module V = struct
@@ -251,8 +241,6 @@ module V = struct
       ~f:(fun xs x -> match f x with Some x' -> x' :: xs | None -> xs)
       g ~init:[]
 
-  let map g ~f = fold ~f:(fun xs x -> f x :: xs) g ~init:[]
-
   include G.V
 end
 
@@ -276,10 +264,6 @@ module E = struct
 
     let length = `Custom (wrap G.nb_edges)
   end)
-
-  let filter g ~f = fold ~f:(fun xs x -> if f x then x :: xs else xs) g ~init:[]
-
-  let map g ~f = fold ~f:(fun xs x -> f x :: xs) g ~init:[]
 
   include G.E
 end
@@ -308,8 +292,6 @@ let remove_vertexes g vs =
       should_keep data
       && List.for_all states ~f:(fun v -> should_keep @@ Node.of_state v));
   Hashtbl.filter_inplace g.state_table ~f:should_keep
-
-let remove_vertex x v = remove_vertexes x [ v ]
 
 let filter g ~f = remove_vertexes g @@ V.filter g ~f:(Fun.negate f)
 

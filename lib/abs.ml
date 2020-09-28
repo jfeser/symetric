@@ -29,7 +29,7 @@ let meet =
 let is_subset_a s ~of_:s' =
   if Map.length s > Map.length s' then false
   else
-    Map.fold2 s s' ~init:true ~f:(fun ~key ~data acc ->
+    Map.fold2 s s' ~init:true ~f:(fun ~key:_ ~data acc ->
         acc
         &&
         match data with

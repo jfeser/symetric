@@ -6,7 +6,8 @@ let%expect_test "" =
   inline "A"
   @@ Grammar.of_list [ ("A", app "x" []); ("B", app "f" [ nonterm "A" ]) ]
   |> [%sexp_of: _ Grammar.t] |> print_s;
-  [%expect {| (((lhs A) (rhs (App x ()))) ((lhs B) (rhs (App f ((App x ())))))) |}]
+  [%expect
+    {| (((lhs A) (rhs (App x ()))) ((lhs B) (rhs (App f ((App x ())))))) |}]
 
 let%expect_test "" =
   let open Term in
@@ -20,7 +21,6 @@ let%expect_test "" =
      ((lhs B) (rhs (App f ((App x ()))))) ((lhs B) (rhs (App f ((App y ())))))) |}]
 
 let test_grammar () =
-  let open Term in
   let nt x = Term.nonterm x in
   let id x = Term.app x [] in
   let app (x, y) = Term.app x y in

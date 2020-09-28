@@ -8,8 +8,6 @@ module Seq = struct
   let of_array a = init (Array.length a) ~f:(fun i -> a.(i))
 end
 
-let value_exn x = Option.value_exn x
-
 module Program = struct
   module T = struct
     type t = [ `Apply of Op.t * t list ] [@@deriving compare, hash, sexp]
@@ -24,7 +22,7 @@ module Program = struct
         Array.map2_exn (ceval x) (ceval y) ~f:(fun a b -> a && not b)
     | _ -> assert false
 
-  let rec size (`Apply (op, args)) = 1 + List.sum (module Int) args ~f:size
+  let rec size (`Apply (_, args)) = 1 + List.sum (module Int) args ~f:size
 
   include T
   include Comparator.Make (T)
@@ -38,14 +36,14 @@ module Args = struct
       (Hashtbl.find graph.Search_state.args_table (op, args)
        [@landmark "create.lookup"])
     with
-    | Some v -> None
+    | Some _ -> None
     | None ->
         let args_n = Args.create op in
         let args_v = Node.of_args args_n in
         List.iteri args ~f:(fun i v ->
             add_edge_e graph (args_v, i, Node.of_state v))
         [@landmark "create.add_edges"];
-        Hashtbl.set graph.args_table (op, args) args_n
+        Hashtbl.set graph.args_table ~key:(op, args) ~data:args_n
         [@landmark "create.insert"];
         Some args_n
 end
@@ -61,7 +59,7 @@ module State = struct
     | None ->
         let v = create state c in
         set_states_of_cost g c (v :: states_of_cost g c);
-        Hashtbl.add_exn g.state_table (state, c) v;
+        Hashtbl.add_exn g.state_table ~key:(state, c) ~data:v;
         `Fresh v
 
   let create_op ~state ~cost ~op g children =
@@ -143,48 +141,6 @@ end
 
 exception Done of [ `Sat | `Unsat ]
 
-module Reachable (G : Graph.Fixpoint.G) =
-  Graph.Fixpoint.Make
-    (G)
-    (struct
-      type vertex = G.V.t
-
-      type edge = G.E.t
-
-      type g = G.t
-
-      type data = bool
-
-      let direction = Graph.Fixpoint.Forward
-
-      let equal = Bool.( = )
-
-      let join = ( || )
-
-      let analyze _ x = x
-    end)
-
-module Inv_reachable (G : Graph.Fixpoint.G) =
-  Graph.Fixpoint.Make
-    (G)
-    (struct
-      type vertex = G.V.t
-
-      type edge = G.E.t
-
-      type g = G.t
-
-      type data = bool
-
-      let direction = Graph.Fixpoint.Backward
-
-      let equal = Bool.( = )
-
-      let join = ( || )
-
-      let analyze _ x = x
-    end)
-
 let separators graph target =
   Seq.unfold ~init:(succ graph target) ~f:(fun sep ->
       if List.is_empty sep then None
@@ -193,27 +149,6 @@ let separators graph target =
           List.concat_map sep ~f:(succ graph) |> List.concat_map ~f:(succ graph)
         in
         Some (sep, sep'))
-
-let value_exn x = Option.value_exn x
-
-let should_prune graph separator =
-  let separator = Set.of_list (module Node) separator in
-  let reaches_separator =
-    let module R = Inv_reachable (G) in
-    R.analyze (Set.mem separator) graph.Search_state.graph
-  and separator_reaches =
-    let module R = Reachable (G) in
-    R.analyze (Set.mem separator) graph.Search_state.graph
-  in
-  fun v -> reaches_separator v && not (separator_reaches v)
-
-let prune graph refined =
-  let should_prune = should_prune graph refined in
-  let size = nb_vertex graph in
-  filter graph ~f:(fun v -> not (should_prune v));
-  let size' = nb_vertex graph in
-  Fmt.epr "Pruning: size before=%d, after=%d, removed %f%%\n" size size'
-    Float.(100.0 - (of_int size' / of_int size * 100.0))
 
 let fix_up_args work add_work graph args_v =
   let v = Node.of_args args_v in
@@ -258,7 +193,7 @@ let refine_level n graph =
         ~args:(fun _ -> acc)
         ~state:(fun v -> (num + Abs.width (State.state v), dem + n)))
 
-let refine graph output separator refinement =
+let refine graph output refinement =
   let size = nb_vertex graph in
 
   List.iteri refinement ~f:(fun i r ->
@@ -351,10 +286,10 @@ let refute graph output =
             (sep, r))
       in
       ( match refinement with
-      | Some (sep, r) -> refine graph output sep r
+      | Some (_, r) -> refine graph output r
       | None -> (
           match Refine.get_refinement graph target output last_sep with
-          | First r -> refine graph output last_sep r
+          | First r -> refine graph output r
           | Second selected_edges ->
               Fmt.epr "Could not refute: %a" Sexp.pp_hum
                 ( [%sexp_of: Program.t]
@@ -492,7 +427,7 @@ let check_search_space ?(n = 100_000) inputs graph =
             | Some v when Abs.contains (State.state v) cstate -> Some v
             | _ -> None)
       with
-      | Some v -> loop (i + 1)
+      | Some _ -> loop (i + 1)
       | None ->
           Fmt.epr "Missed program %a with size %d and state %a\n" Sexp.pp
             ([%sexp_of: Program.t] prog)

@@ -261,7 +261,7 @@ module Make (C : Deps) = struct
     module C4 = C.Tuple_4
 
     let eval_cuboid cuboid_hint x_lo x_hi y_lo y_hi z_lo z_hi vectors =
-      C4.tuple_of cuboid_hint @@ fun (id, theta_x, theta_y, theta_z) ->
+      C4.tuple_of cuboid_hint @@ fun (_, theta_x, theta_y, theta_z) ->
       C.Array.map vectors ~f:(fun v ->
           C3.tuple_of v @@ fun (x, y, z) ->
           C3.tuple_of (inverse_rotate (x, y, z) (theta_x, theta_y, theta_z))
