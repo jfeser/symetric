@@ -1,5 +1,60 @@
 open Search_state
 
+module FoldM0
+    (M : Monad.S) (F : sig
+      type t
+
+      type elem
+
+      val fold_left : t -> init:'b -> f:('b -> elem -> 'b) -> 'b
+    end) =
+struct
+  let fold ~f ~init c =
+    let open M.Let_syntax in
+    F.fold_left
+      ~f:(fun acc x ->
+        let%bind acc = acc in
+        f acc x)
+      ~init:(return init) c
+
+  let iter ~f c = fold ~f:(fun () x -> f x) ~init:() c
+end
+
+module FoldM
+    (M : Monad.S) (F : sig
+      type 'a t
+
+      val fold_left : 'a t -> init:'b -> f:('b -> 'a -> 'b) -> 'b
+    end) =
+struct
+  let fold (type a) ~f ~init (c : a F.t) =
+    let module F0 = struct
+      type t = a F.t
+
+      type elem = a
+
+      let fold_left = F.fold_left
+    end in
+    let module Fold = FoldM0 (M) (F0) in
+    Fold.fold ~f ~init c
+end
+
+module V_foldable = struct
+  type t = G.t
+
+  type elem = G.V.t
+
+  let fold_left g ~init ~f = G.fold_vertex (fun x acc -> f acc x) g init
+end
+
+module E_foldable = struct
+  type t = G.t
+
+  type elem = G.E.t
+
+  let fold_left g ~init ~f = G.fold_edges_e (fun x acc -> f acc x) g init
+end
+
 module Refinement = struct
   type t = {
     context : Args.t;
@@ -25,7 +80,7 @@ let bounded_cone graph target_node separator =
   let rec loop () =
     match Queue.dequeue work with
     | Some v ->
-        let succ = succ_e graph v in
+        let succ = G.succ_e graph v in
         (* Add edges to the filtered graph. *)
         List.iter succ ~f:(G.add_edge_e graph');
         (* Add new nodes to the queue. *)
@@ -79,56 +134,48 @@ module Vars = struct
   type t = {
     edge_vars : String_id.t Map.M(E).t;
     var_edges : E.t Map.M(String_id).t;
-    state_vars : Smt.Expr.t list Map.M(State).t;
+    state_vars : String_id.t list Map.M(State).t;
     arg_vars : String_id.t list Map.M(Args).t;
   }
 
+  let make_bit_vars prefix =
+    List.init !Global.n_bits ~f:(fun b -> Smt.fresh_decl ~prefix:(prefix b) ())
+    |> Smt.all
+
   let make graph =
     let open Smt.Let_syntax in
-    let%bind edge_var_rel =
-      E.to_list graph
-      |> List.map ~f:(fun e ->
-             let%bind decl = Smt.fresh_decl ~prefix:"e" () in
-             return (e, decl))
-      |> Smt.all
+    let%bind edge_vars =
+      let module F = FoldM0 (Smt) (E_foldable) in
+      F.fold graph
+        ~init:(Map.empty (module E))
+        ~f:(fun m e ->
+          let%map decl = Smt.fresh_decl ~prefix:"e" () in
+          Map.set m ~key:e ~data:decl)
     in
 
-    let edge_vars = edge_var_rel |> Map.of_alist_exn (module E)
-    and var_edges =
-      List.map ~f:Tuple.T2.swap edge_var_rel
+    let var_edges =
+      Map.to_alist edge_vars |> List.map ~f:Tuple.T2.swap
       |> Map.of_alist_exn (module String_id)
     in
 
-    let%bind state_vars =
-      V.filter_map graph ~f:Node.to_state
-      |> List.map ~f:(fun (v : State.t) ->
-             let%bind vars =
-               List.init !Global.n_bits ~f:(fun vec ->
-                   let%bind var =
-                     Smt.fresh_decl
-                       ~prefix:(sprintf "s%d_b%d_" (State.id v) vec)
-                       ()
-                   in
-                   return (Smt.Expr.Var var))
-               |> Smt.all
-             in
-             return (v, vars))
-      |> Smt.all
+    let%bind state_vars, arg_vars =
+      let module F = FoldM0 (Smt) (V_foldable) in
+      F.fold graph
+        ~init:(Map.empty (module State), Map.empty (module Args))
+        ~f:(fun (ms, ma) v ->
+          Node.match_ v
+            ~args:(fun args_v ->
+              let%map vars =
+                make_bit_vars (sprintf "a%d_b%d_" (Args.id args_v))
+              in
+              (ms, Map.set ma ~key:args_v ~data:vars))
+            ~state:(fun state_v ->
+              let%map vars =
+                make_bit_vars (sprintf "s%d_b%d_" (State.id state_v))
+              in
+              (Map.set ms ~key:state_v ~data:vars, ma)))
     in
-    let state_vars = Map.of_alist_exn (module State) state_vars in
 
-    let%bind arg_vars =
-      V.filter_map graph ~f:Node.to_args
-      |> List.map ~f:(fun (v : Args.t) ->
-             let%bind vars =
-               List.init !Global.n_bits ~f:(fun b ->
-                   Smt.fresh_decl ~prefix:(sprintf "a%d_b%d_" (Args.id v) b) ())
-               |> Smt.all
-             in
-             return (v, vars))
-      |> Smt.all
-    in
-    let arg_vars = Map.of_alist_exn (module Args) arg_vars in
     return { edge_vars; var_edges; state_vars; arg_vars }
 end
 
@@ -168,18 +215,7 @@ let refinement_of_model graph separator interpolant forced vars =
 
   let used_ivars = ref (Set.empty (module String_id)) in
 
-  let get_state_bits =
-    List.filter_mapi ~f:(fun i x ->
-        match x with
-        | Smt.Expr.Var v ->
-            if Set.mem ivars v then (
-              used_ivars := Set.add !used_ivars v;
-              Some (i, Map.find_exn forced v) )
-            else None
-        | _ -> None)
-  in
-
-  let get_args_bits =
+  let get_bits =
     List.filter_mapi ~f:(fun i x ->
         if Set.mem ivars x then (
           used_ivars := Set.add !used_ivars x;
@@ -194,19 +230,19 @@ let refinement_of_model graph separator interpolant forced vars =
     (* Only care about args nodes with refined output bits. *)
     |> List.filter_map ~f:(fun arg_v ->
            let refined_out_bits =
-             let bits = Map.find_exn vars.arg_vars arg_v |> get_args_bits in
+             let bits = Map.find_exn vars.arg_vars arg_v |> get_bits in
              let bits' =
-               pred graph (Node.of_args arg_v)
+               G.pred graph (Node.of_args arg_v)
                |> List.map ~f:Node.to_state_exn
                |> List.map ~f:(Map.find_exn vars.state_vars)
-               |> List.map ~f:get_state_bits |> List.concat
+               |> List.map ~f:get_bits |> List.concat
              in
              normalize_bits (bits @ bits')
            and refined_in_bits =
-             succ graph (Node.of_args arg_v)
+             G.succ graph (Node.of_args arg_v)
              |> List.map ~f:Node.to_state_exn
              |> List.map ~f:(fun v ->
-                    (v, get_state_bits @@ Map.find_exn vars.state_vars v))
+                    (v, get_bits @@ Map.find_exn vars.state_vars v))
            in
 
            let no_refined_out_bits = List.is_empty refined_out_bits
@@ -217,7 +253,8 @@ let refinement_of_model graph separator interpolant forced vars =
            if no_refined_out_bits && no_refined_in_bits then None
            else if no_refined_in_bits then
              let state_nodes =
-               Node.of_args arg_v |> pred graph |> List.map ~f:Node.to_state_exn
+               Node.of_args arg_v |> G.pred graph
+               |> List.map ~f:Node.to_state_exn
              in
              let input_forced =
                match Args.op arg_v with
@@ -267,16 +304,16 @@ let refinement_of_model graph separator interpolant forced vars =
 
   [%test_result: Set.M(String_id).t] ~expect:ivars !used_ivars;
 
-  let edges =
-    List.concat_map refinement ~f:(function
-      | { context = v; splits = `Output _ } -> pred_e graph (Node.of_args v)
-      | { context = v; splits = `Input _ } -> succ_e graph (Node.of_args v))
-    |> Set.of_list (module E)
-  in
-  Dump.dump_detailed ~suffix:"after-refine"
-    ~separator:(List.mem separator ~equal:[%equal: Node.t])
-    ~refinement:(Set.mem edges) graph;
+  (* let edges =
+   *   List.concat_map refinement ~f:(function
+   *     | { context = v; splits = `Output _ } -> G.pred_e graph (Node.of_args v)
+   *     | { context = v; splits = `Input _ } -> G.succ_e graph (Node.of_args v))
+   *   |> Set.of_list (module E)
+   * in *)
 
+  (* Dump.dump_detailed ~suffix:"after-refine"
+   *   ~separator:(List.mem separator ~equal:[%equal: Node.t])
+   *   ~refinement:(Set.mem edges) graph; *)
   Fmt.epr "Refinement: %a@." Fmt.Dump.(list Refinement.pp) refinement;
   if List.is_empty refinement then failwith "No-op refinement" else refinement
 
@@ -284,16 +321,36 @@ let assert_group_var g v = Smt.(Interpolant.assert_group ~group:g (Expr.Var v))
 
 let vars_to_exprs = List.map ~f:Smt.Expr.var
 
+let find_edge_vars vars = List.map ~f:(Map.find_exn vars.edge_vars)
+
+let pred_selected vars g v =
+  G.pred_e g v |> find_edge_vars vars |> vars_to_exprs
+
+let succ_selected vars g v =
+  G.succ_e g v |> find_edge_vars vars |> vars_to_exprs
+
+let filter g ~f = G.fold_vertex (fun v vs -> if f v then v :: vs else vs) g []
+
+let to_list g = G.fold_vertex (fun v vs -> v :: vs) g []
+
+let foldm g ~init ~f =
+  let open Smt.Let_syntax in
+  G.fold_vertex
+    (fun v s ->
+      let%bind s = s in
+      f s v)
+    g init
+
 let assert_input_states_contained group vars graph =
   let open Smt in
   Map.to_alist vars.state_vars
   |> List.filter ~f:(fun (v, _) ->
-         List.is_empty (succ graph @@ Node.of_state v))
+         List.is_empty (G.succ graph @@ Node.of_state v))
   |> List.map ~f:(fun (state_v, vars) ->
          let state = State.state state_v in
          List.filter_mapi vars ~f:(fun b v ->
              match Map.find state b with
-             | Some x -> Some Bool.(bool x = v)
+             | Some x -> Some Bool.(bool x = Expr.var v)
              | None -> None)
          |> Bool.and_
          |> make_defn (Fmt.str "state-%d" @@ State.id state_v)
@@ -305,46 +362,34 @@ let assert_output_state_contained group vars target_node expected_output =
   let state_vars = Map.find_exn vars.state_vars target_node
   and expected = Array.to_list expected_output in
   let body =
-    List.map2_exn state_vars expected ~f:(fun x v -> Bool.(x = bool v))
+    List.map2_exn state_vars expected ~f:(fun x v -> Bool.(Expr.var x = bool v))
     |> Bool.and_
   in
   make_defn "correct-output" body >>= assert_group_var group
 
-let find_edge_vars vars = List.map ~f:(Map.find_exn vars.edge_vars)
-
-let pred_selected vars g v = pred_e g v |> find_edge_vars vars |> vars_to_exprs
-
-let succ_selected vars g v = succ_e g v |> find_edge_vars vars |> vars_to_exprs
-
-let assert_selected_state_selects_input group vars graph target_node v =
+let assert_selected_state_selects_input group vars graph state_v =
   let open Smt in
-  let selected =
-    if [%equal: State.t] target_node v then Bool.(bool true)
-    else
-      pred_e graph (Node.of_state v)
-      |> find_edge_vars vars |> vars_to_exprs |> Bool.or_
-  in
-  let deps =
-    succ_e graph (Node.of_state v) |> find_edge_vars vars |> vars_to_exprs
-  in
-  let body = Bool.(selected => exactly_one deps)
-  and name = sprintf "state-%d-deps" (State.id v) in
+  let v = Node.of_state state_v in
+  let parent_select = pred_selected vars graph v
+  and child_select = succ_selected vars graph v in
+  let body = Bool.(or_ parent_select => exactly_one child_select)
+  and name = sprintf "state-%d-deps" (State.id state_v) in
   make_defn name body >>= assert_group_var group
 
 let assert_selected_args_selects_inputs group vars graph args_v =
   let open Smt in
   let v = Node.of_args args_v in
-  let outgoing = pred_selected vars graph v
-  and incoming = succ_selected vars graph v in
-  let body = Bool.(or_ outgoing => (and_ incoming && exactly_one outgoing))
+  let parent_select = pred_selected vars graph v
+  and child_select = succ_selected vars graph v in
+  let body = Bool.(or_ parent_select => and_ child_select)
   and name = sprintf "args-%d-deps" (Args.id args_v) in
   make_defn name body >>= assert_group_var group
 
 let assert_state_semantics group vars graph v =
   let open Smt in
   let body =
-    let state_vars = Map.find_exn vars.state_vars v in
-    succ_e graph (Node.of_state v)
+    let state_vars = Map.find_exn vars.state_vars v |> vars_to_exprs in
+    G.succ_e graph (Node.of_state v)
     |> List.map ~f:(fun ((_, _, v) as e) ->
            let args_v = Node.to_args_exn v in
            let args_vars = Map.find_exn vars.arg_vars args_v |> vars_to_exprs in
@@ -357,13 +402,13 @@ let assert_state_semantics group vars graph v =
 
 let assert_args_semantics group vars graph v =
   let open Smt in
-  let incoming_edges = succ_e graph (Node.of_args v) in
+  let incoming_edges = G.succ_e graph (Node.of_args v) in
 
   let incoming_states =
     List.map incoming_edges ~f:(fun (_, n, v) -> (Node.to_state_exn v, n))
     |> List.sort ~compare:(fun (_, n) (_, n') -> [%compare: int] n n')
-    |> List.map ~f:(fun (v, _) -> v)
-    |> List.map ~f:(Map.find_exn vars.state_vars)
+    |> List.map ~f:(fun (v, _) ->
+           Map.find_exn vars.state_vars v |> vars_to_exprs)
   in
 
   let out = Map.find_exn vars.arg_vars v |> vars_to_exprs in
@@ -384,31 +429,24 @@ let assert_args_semantics group vars graph v =
   and name = Fmt.str "semantics-%a-%d" Op.pp (Args.op v) (Args.id v) in
   make_defn name body >>= assert_group_var group
 
-let above_separator graph separator =
-  let module A = Analysis.Inv_reachable (Search_state.G) in
-  let sep = Set.of_list (module Node) separator in
-  let reachable = A.analyze (Set.mem sep) graph.Search_state.graph in
-  fun v -> (not (Set.mem sep v)) && reachable v
-
-let synth_constrs vars graph target_node expected_output separator =
+let assert_args_output graph group =
   let open Smt.Let_syntax in
-  let above_separator = above_separator graph separator in
-  let%bind lo_group = Smt.Interpolant.Group.create
-  and hi_group = Smt.Interpolant.Group.create in
-
-  (* Each state must be contained by its abstraction *)
-  let%bind () = assert_input_states_contained lo_group vars graph in
-  let%bind () =
-    assert_output_state_contained hi_group vars target_node expected_output
+  let target_node =
+    match filter graph ~f:(fun v -> G.in_degree graph v = 0) with
+    | [ v ] -> Node.to_args_exn v
+    | vs -> raise_s [%message "Expected one target node." (vs : Node.t list)]
   in
 
+  let%bind vars = Vars.make graph in
+  let%bind () = assert_input_states_contained group vars graph in
+
   let%bind () =
-    List.map (V.to_list graph) ~f:(fun v ->
-        let group = if above_separator v then hi_group else lo_group in
+    let module F = FoldM0 (Smt) (V_foldable) in
+    List.map (to_list graph) ~f:(fun v ->
         Node.match_ v
           ~state:(fun v ->
             let%bind () =
-              assert_selected_state_selects_input group vars graph target_node v
+              assert_selected_state_selects_input group vars graph v
             in
             assert_state_semantics group vars graph v)
           ~args:(fun v ->
@@ -418,23 +456,62 @@ let synth_constrs vars graph target_node expected_output separator =
             assert_args_semantics group vars graph v))
     |> Smt.all_unit
   in
-  return hi_group
+  return @@ Map.find_exn vars.arg_vars target_node
 
-let get_refinement graph target_node expected_output separator =
-  (* Select the subset of the graph that can reach the target. *)
-  let graph =
-    {
-      graph = cone graph (Node.of_state target_node) separator;
-      cost_table = [||];
-      args_table = Hashtbl.create (module Args_table_key);
-      state_table = Hashtbl.create (module State_table_key);
-    }
+let synth_constrs vars graph target_node expected_output separator =
+  let open Smt.Let_syntax in
+  let%bind lo_group = Smt.Interpolant.Group.create
+  and hi_group = Smt.Interpolant.Group.create in
+
+  let%bind vars =
+    let module F = FoldM (Smt) (List) in
+    F.fold separator ~init:vars ~f:(fun vars v ->
+        let%bind local_arg_vars =
+          let local_graph = cone graph v [] in
+          assert_args_output local_graph lo_group
+        in
+        return
+          {
+            vars with
+            arg_vars =
+              Map.set vars.arg_vars ~key:(Node.to_args_exn v)
+                ~data:local_arg_vars;
+          })
   in
 
-  Dump.dump_detailed ~suffix:"before-refine"
-    ~separator:(List.mem separator ~equal:[%equal: Node.t])
-    graph;
+  let top_graph =
+    let g = G.copy graph in
+    List.iter separator ~f:(G.iter_succ_e (G.remove_edge_e g) g);
+    cone g (Node.of_state target_node) separator
+  in
 
+  let%bind () =
+    assert_output_state_contained hi_group vars target_node expected_output
+  in
+  let%bind () =
+    let module F = FoldM0 (Smt) (V_foldable) in
+    F.iter top_graph ~f:(fun v ->
+        Node.match_ v
+          ~state:(fun v ->
+            let%bind () =
+              assert_selected_state_selects_input hi_group vars top_graph v
+            in
+            assert_state_semantics hi_group vars top_graph v)
+          ~args:(fun v ->
+            let%bind () =
+              assert_selected_args_selects_inputs hi_group vars top_graph v
+            in
+            assert_args_semantics hi_group vars top_graph v))
+  in
+  return hi_group
+
+let get_refinement state target_node expected_output separator =
+  (* Select the subset of the graph that can reach the target. *)
+  let graph = cone state.graph (Node.of_state target_node) separator in
+
+  (* Dump.dump_detailed ~suffix:"before-refine"
+   *   ~separator:(List.mem separator ~equal:[%equal: Node.t])
+   *   graph; *)
   let open Smt in
   let open Let_syntax in
   let vars, state = Vars.make graph |> run in

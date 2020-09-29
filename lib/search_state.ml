@@ -329,3 +329,40 @@ let inputs g arg_v =
   |> List.map ~f:(fun (_, n, v) -> (Node.to_state_exn v, n))
   |> List.sort ~compare:(fun (_, n) (_, n') -> [%compare: int] n n')
   |> List.map ~f:(fun (v, _) -> v)
+
+let fix_up_args work add_work graph args_v =
+  let v = Node.of_args args_v in
+  let succ = succ graph v in
+  if List.length succ <> Op.arity (Args.op args_v) then (
+    let work' = List.fold_left ~init:work ~f:add_work (pred graph v) in
+    remove_vertexes graph [ v ];
+    work' )
+  else work
+
+let fix_up_states work add_work graph state_v =
+  let v = Node.of_state state_v in
+  let succ = succ graph v in
+  if List.is_empty succ then (
+    let work' = List.fold_left ~init:work ~f:add_work (pred graph v) in
+    remove_vertexes graph [ v ];
+    work' )
+  else work
+
+let fix_up graph =
+  let worklist = Queue.of_list @@ V.to_list graph in
+  let add_work () v = Queue.enqueue worklist v in
+  let fix_node v =
+    if V.mem graph v then
+      Node.match_
+        ~args:(fix_up_args () add_work graph)
+        ~state:(fix_up_states () add_work graph)
+        v
+  in
+  let rec loop () =
+    match Queue.dequeue worklist with
+    | Some v ->
+        fix_node v;
+        loop ()
+    | None -> ()
+  in
+  loop ()

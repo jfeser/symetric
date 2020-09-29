@@ -80,7 +80,7 @@ module State_table_key : sig
   include Comparator.S with type t := t
 end
 
-type t = {
+type t = private {
   graph : G.t;
   args_table : Args.t Hashtbl.M(Args_table_key).t;
   state_table : State.t Hashtbl.M(State_table_key).t;
@@ -132,3 +132,5 @@ val nb_vertex : t -> int
 val check : t -> unit
 
 val inputs : t -> Args.t -> State.t list
+
+val fix_up : t -> unit
