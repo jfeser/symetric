@@ -17,4 +17,4 @@ val synth :
 val random_io : ?state:Random.State.t -> n:int -> k:int -> Conc.t list * Conc.t
 
 val check_search_space :
-  ?n:int -> Conc.t list -> Search_state.t -> (unit, Conc.t) result
+  ?n:int -> Conc.t list -> Search_state.G.t -> (unit, Conc.t) result

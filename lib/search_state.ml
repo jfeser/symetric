@@ -178,6 +178,11 @@ module G = struct
 
   include G
   include Graph.Graphviz.Dot (G) (Attr)
+
+  let iter_succ_e f g v =
+    try iter_succ_e f g v
+    with Invalid_argument msg ->
+      raise_s [%message "iter_succ_e failed" (msg : string) (v : Node.t)]
 end
 
 module Args_table_key = struct
@@ -213,25 +218,23 @@ let create max_cost =
     cost_table = Array.create ~len:max_cost [];
   }
 
-let wrap f g = f g.graph
-
 module V = struct
   include Comparator.Make (struct
     type t = Node.t [@@deriving compare, sexp_of]
   end)
 
   include Container.Make0 (struct
-    type nonrec t = t
+    type nonrec t = G.t
 
     module Elt = struct
       type t = G.V.t [@@deriving equal]
     end
 
-    let fold g ~init ~f = G.fold_vertex (fun v acc -> f acc v) g.graph init
+    let fold g ~init ~f = G.fold_vertex (fun v acc -> f acc v) g init
 
-    let iter = `Custom (fun g ~f -> G.iter_vertex f g.graph)
+    let iter = `Custom (fun g ~f -> G.iter_vertex f g)
 
-    let length = `Custom (wrap G.nb_vertex)
+    let length = `Custom G.nb_vertex
   end)
 
   let filter g ~f = fold ~f:(fun xs x -> if f x then x :: xs else xs) g ~init:[]
@@ -250,7 +253,7 @@ module E = struct
   end)
 
   include Container.Make0 (struct
-    type nonrec t = t
+    type nonrec t = G.t
 
     module Elt = struct
       type t = G.E.t
@@ -258,25 +261,15 @@ module E = struct
       let equal e e' = G.E.compare e e' = 0
     end
 
-    let fold g ~init ~f = G.fold_edges_e (fun v acc -> f acc v) g.graph init
+    let fold g ~init ~f = G.fold_edges_e (fun v acc -> f acc v) g init
 
-    let iter = `Custom (fun g ~f -> G.iter_edges_e f g.graph)
+    let iter = `Custom (fun g ~f -> G.iter_edges_e f g)
 
-    let length = `Custom (wrap G.nb_edges)
+    let length = `Custom G.nb_edges
   end)
 
   include G.E
 end
-
-let succ = wrap G.succ
-
-let pred = wrap G.pred
-
-let succ_e = wrap G.succ_e
-
-let pred_e = wrap G.pred_e
-
-let add_edge_e g e = G.add_edge_e g.graph e
 
 let remove_vertexes g vs =
   let vs = List.filter vs ~f:(G.mem_vertex g.graph) in
@@ -293,12 +286,12 @@ let remove_vertexes g vs =
       && List.for_all states ~f:(fun v -> should_keep @@ Node.of_state v));
   Hashtbl.filter_inplace g.state_table ~f:should_keep
 
-let filter g ~f = remove_vertexes g @@ V.filter g ~f:(Fun.negate f)
+let filter g ~f = remove_vertexes g @@ V.filter g.graph ~f:(Fun.negate f)
 
 let nb_vertex g = G.nb_vertex g.graph
 
 let states_of_cost g cost =
-  V.filter_map g ~f:Node.to_state
+  V.filter_map g.graph ~f:Node.to_state
   |> List.filter ~f:(fun v -> State.cost v = cost)
 
 (* let idx = cost - 1 in
@@ -325,37 +318,38 @@ let check g =
       (List.iter ~f:(fun v -> assert (G.mem_vertex g.graph @@ Node.of_state v)))
 
 let inputs g arg_v =
-  succ_e g (Node.of_args arg_v)
+  G.succ_e g.graph (Node.of_args arg_v)
   |> List.map ~f:(fun (_, n, v) -> (Node.to_state_exn v, n))
   |> List.sort ~compare:(fun (_, n) (_, n') -> [%compare: int] n n')
   |> List.map ~f:(fun (v, _) -> v)
 
-let fix_up_args work add_work graph args_v =
+let fix_up_args work add_work state args_v =
   let v = Node.of_args args_v in
-  let succ = succ graph v in
-  if List.length succ <> Op.arity (Args.op args_v) then (
-    let work' = List.fold_left ~init:work ~f:add_work (pred graph v) in
-    remove_vertexes graph [ v ];
+  if G.out_degree state.graph v <> Op.arity (Args.op args_v) then (
+    let work' = G.fold_pred (fun v' w -> add_work w v') state.graph v work in
+    remove_vertexes state [ v ];
     work' )
+  else if G.in_degree state.graph v = 0 then (
+    remove_vertexes state [ v ];
+    work )
   else work
 
-let fix_up_states work add_work graph state_v =
+let fix_up_states work add_work state state_v =
   let v = Node.of_state state_v in
-  let succ = succ graph v in
-  if List.is_empty succ then (
-    let work' = List.fold_left ~init:work ~f:add_work (pred graph v) in
-    remove_vertexes graph [ v ];
+  if G.out_degree state.graph v = 0 then (
+    let work' = G.fold_pred (fun v' w -> add_work w v') state.graph v work in
+    remove_vertexes state [ v ];
     work' )
   else work
 
-let fix_up graph =
-  let worklist = Queue.of_list @@ V.to_list graph in
+let fix_up state =
+  let worklist = Queue.of_list @@ V.to_list state.graph in
   let add_work () v = Queue.enqueue worklist v in
   let fix_node v =
-    if V.mem graph v then
+    if V.mem state.graph v then
       Node.match_
-        ~args:(fix_up_args () add_work graph)
-        ~state:(fix_up_states () add_work graph)
+        ~args:(fix_up_args () add_work state)
+        ~state:(fix_up_states () add_work state)
         v
   in
   let rec loop () =

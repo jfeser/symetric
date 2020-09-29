@@ -25,10 +25,11 @@ let main ~n ~seed ~k ~print_header ~abstraction ~check () =
   List.iteri inputs ~f:(fun i v -> Fmt.epr "Input %d: %a\n" i Conc.pp v);
   Fmt.epr "Output: %a\n" Conc.pp output;
 
-  let graph, stats = synth ~no_abstraction inputs output in
+  let search_state, stats = synth ~no_abstraction inputs output in
 
   let check_output =
-    if check && not stats.sat then Some (check_search_space inputs graph)
+    if check && not stats.sat then
+      Some (check_search_space inputs search_state.graph)
     else None
   in
   Fmt.pr "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d\n" k n seed !Global.max_cost

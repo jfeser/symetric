@@ -44,7 +44,7 @@ let make_output_graph ?(refinement = fun _ -> false) cone separator output =
 let step = ref 0
 
 let filter_depth g d =
-  let roots = V.filter g ~f:(fun v -> List.is_empty @@ succ g v) in
+  let roots = V.filter g ~f:(fun v -> List.is_empty @@ G.succ g v) in
   let module Inv_reachable =
     Graph.Fixpoint.Make
       (G)
@@ -66,7 +66,7 @@ let filter_depth g d =
         let analyze _ x = x + 1
       end)
   in
-  let g' = G.copy g.graph in
+  let g' = G.copy g in
   let f =
     Inv_reachable.analyze
       (fun v ->
@@ -81,8 +81,7 @@ let dump_detailed ?suffix ?output ?(cone = fun _ -> false)
   if !Global.enable_dump then (
     let output_graph = make_output_graph ~refinement cone separator output in
     let graph =
-      Option.map depth ~f:(filter_depth graph)
-      |> Option.value ~default:graph.Search_state.graph
+      Option.map depth ~f:(filter_depth graph) |> Option.value ~default:graph
     in
     let fn =
       let suffix =

@@ -68,7 +68,7 @@ end
 
 open Refinement
 
-let bounded_cone graph target_node separator =
+let cone graph target_node separator =
   let in_separator =
     let sep = Set.of_list (module Node) separator in
     Set.mem sep
@@ -80,6 +80,7 @@ let bounded_cone graph target_node separator =
   let rec loop () =
     match Queue.dequeue work with
     | Some v ->
+        G.add_vertex graph' v;
         let succ = G.succ_e graph v in
         (* Add edges to the filtered graph. *)
         List.iter succ ~f:(G.add_edge_e graph');
@@ -91,29 +92,6 @@ let bounded_cone graph target_node separator =
   in
   loop ();
   graph'
-
-let _cone graph target_node _ =
-  let in_separator _ = false in
-
-  let graph' = G.create () in
-  let work = Queue.create () in
-  Queue.enqueue work target_node;
-  let rec loop () =
-    match Queue.dequeue work with
-    | Some v ->
-        let succ = succ_e graph v in
-        (* Add edges to the filtered graph. *)
-        List.iter succ ~f:(G.add_edge_e graph');
-        (* Add new nodes to the queue. *)
-        if not (in_separator v) then
-          List.iter succ ~f:(fun (_, _, v') -> Queue.enqueue work v');
-        loop ()
-    | None -> ()
-  in
-  loop ();
-  graph'
-
-let cone = bounded_cone
 
 let normalize_bits bits =
   Map.of_alist_multi (module Int) bits
@@ -184,6 +162,7 @@ open Vars
 let check_true interpolant v state =
   let open Smt.Let_syntax in
   let prob =
+    let%bind () = Smt.clear_asserts in
     let%bind () = Smt.(assert_ Bool.(not (interpolant => Var v))) in
     Smt.check_sat
   in
@@ -192,6 +171,7 @@ let check_true interpolant v state =
 let check_false interpolant v state =
   let open Smt.Let_syntax in
   let prob =
+    let%bind () = Smt.clear_asserts in
     let%bind () = Smt.(assert_ Bool.(not (interpolant => not (Var v)))) in
     Smt.check_sat
   in
@@ -239,10 +219,11 @@ let refinement_of_model graph separator interpolant forced vars =
              in
              normalize_bits (bits @ bits')
            and refined_in_bits =
-             G.succ graph (Node.of_args arg_v)
-             |> List.map ~f:Node.to_state_exn
-             |> List.map ~f:(fun v ->
-                    (v, get_bits @@ Map.find_exn vars.state_vars v))
+             []
+             (* G.succ graph (Node.of_args arg_v)
+              * |> List.map ~f:Node.to_state_exn
+              * |> List.map ~f:(fun v ->
+              *        (v, get_bits @@ Map.find_exn vars.state_vars v)) *)
            in
 
            let no_refined_out_bits = List.is_empty refined_out_bits
@@ -304,16 +285,16 @@ let refinement_of_model graph separator interpolant forced vars =
 
   [%test_result: Set.M(String_id).t] ~expect:ivars !used_ivars;
 
-  (* let edges =
-   *   List.concat_map refinement ~f:(function
-   *     | { context = v; splits = `Output _ } -> G.pred_e graph (Node.of_args v)
-   *     | { context = v; splits = `Input _ } -> G.succ_e graph (Node.of_args v))
-   *   |> Set.of_list (module E)
-   * in *)
+  let edges =
+    List.concat_map refinement ~f:(function
+      | { context = v; splits = `Output _ } -> G.pred_e graph (Node.of_args v)
+      | { context = v; splits = `Input _ } -> G.succ_e graph (Node.of_args v))
+    |> Set.of_list (module E)
+  in
 
-  (* Dump.dump_detailed ~suffix:"after-refine"
-   *   ~separator:(List.mem separator ~equal:[%equal: Node.t])
-   *   ~refinement:(Set.mem edges) graph; *)
+  Dump.dump_detailed ~suffix:"after-refine"
+    ~separator:(List.mem separator ~equal:[%equal: Node.t])
+    ~refinement:(Set.mem edges) graph;
   Fmt.epr "Refinement: %a@." Fmt.Dump.(list Refinement.pp) refinement;
   if List.is_empty refinement then failwith "No-op refinement" else refinement
 
@@ -333,14 +314,6 @@ let filter g ~f = G.fold_vertex (fun v vs -> if f v then v :: vs else vs) g []
 
 let to_list g = G.fold_vertex (fun v vs -> v :: vs) g []
 
-let foldm g ~init ~f =
-  let open Smt.Let_syntax in
-  G.fold_vertex
-    (fun v s ->
-      let%bind s = s in
-      f s v)
-    g init
-
 let assert_input_states_contained group vars graph =
   let open Smt in
   Map.to_alist vars.state_vars
@@ -353,7 +326,7 @@ let assert_input_states_contained group vars graph =
              | Some x -> Some Bool.(bool x = Expr.var v)
              | None -> None)
          |> Bool.and_
-         |> make_defn (Fmt.str "state-%d" @@ State.id state_v)
+         |> fresh_defn ~prefix:(Fmt.str "state-%d" @@ State.id state_v)
          >>= assert_group_var group)
   |> all_unit
 
@@ -365,25 +338,33 @@ let assert_output_state_contained group vars target_node expected_output =
     List.map2_exn state_vars expected ~f:(fun x v -> Bool.(Expr.var x = bool v))
     |> Bool.and_
   in
-  make_defn "correct-output" body >>= assert_group_var group
+  fresh_defn ~prefix:"correct-output" body >>= assert_group_var group
 
 let assert_selected_state_selects_input group vars graph state_v =
   let open Smt in
   let v = Node.of_state state_v in
-  let parent_select = pred_selected vars graph v
-  and child_select = succ_selected vars graph v in
-  let body = Bool.(or_ parent_select => exactly_one child_select)
+  let parent_select =
+    if G.in_degree graph v > 0 then Bool.or_ @@ pred_selected vars graph v
+    else Bool.true_
+  and child_select =
+    if G.out_degree graph v > 0 then
+      Bool.exactly_one @@ succ_selected vars graph v
+    else Bool.true_
+  in
+  let body = Bool.(parent_select => child_select)
   and name = sprintf "state-%d-deps" (State.id state_v) in
-  make_defn name body >>= assert_group_var group
+  fresh_defn ~prefix:name body >>= assert_group_var group
 
 let assert_selected_args_selects_inputs group vars graph args_v =
   let open Smt in
   let v = Node.of_args args_v in
-  let parent_select = pred_selected vars graph v
+  let parent_select =
+    if G.in_degree graph v > 0 then Bool.or_ @@ pred_selected vars graph v
+    else Bool.true_
   and child_select = succ_selected vars graph v in
-  let body = Bool.(or_ parent_select => and_ child_select)
+  let body = Bool.(parent_select => and_ child_select)
   and name = sprintf "args-%d-deps" (Args.id args_v) in
-  make_defn name body >>= assert_group_var group
+  fresh_defn ~prefix:name body >>= assert_group_var group
 
 let assert_state_semantics group vars graph v =
   let open Smt in
@@ -398,7 +379,7 @@ let assert_state_semantics group vars graph v =
              is_selected => and_ (List.map2_exn args_vars state_vars ~f:( = ))))
     |> Bool.and_
   and name = sprintf "state-%d-semantics" (State.id v) in
-  make_defn name body >>= assert_group_var group
+  fresh_defn ~prefix:name body >>= assert_group_var group
 
 let assert_args_semantics group vars graph v =
   let open Smt in
@@ -427,7 +408,7 @@ let assert_args_semantics group vars graph v =
   in
   let body = Bool.and_ semantic
   and name = Fmt.str "semantics-%a-%d" Op.pp (Args.op v) (Args.id v) in
-  make_defn name body >>= assert_group_var group
+  fresh_defn ~prefix:name body >>= assert_group_var group
 
 let assert_args_output graph group =
   let open Smt.Let_syntax in
@@ -458,16 +439,29 @@ let assert_args_output graph group =
   in
   return @@ Map.find_exn vars.arg_vars target_node
 
-let synth_constrs vars graph target_node expected_output separator =
+let synth_constrs graph target_node expected_output separator =
   let open Smt.Let_syntax in
   let%bind lo_group = Smt.Interpolant.Group.create
   and hi_group = Smt.Interpolant.Group.create in
+
+  let top_graph =
+    let g = G.copy graph in
+    List.iter separator ~f:(G.iter_succ_e (G.remove_edge_e g) g);
+    cone g (Node.of_state target_node) separator
+  in
+  Dump.dump_detailed ~suffix:"top-graph"
+    ~separator:(List.mem separator ~equal:[%equal: Node.t])
+    top_graph;
+  let%bind vars = Vars.make top_graph in
 
   let%bind vars =
     let module F = FoldM (Smt) (List) in
     F.fold separator ~init:vars ~f:(fun vars v ->
         let%bind local_arg_vars =
           let local_graph = cone graph v [] in
+          Dump.dump_detailed ~suffix:"local-graph"
+            ~separator:(List.mem separator ~equal:[%equal: Node.t])
+            local_graph;
           assert_args_output local_graph lo_group
         in
         return
@@ -479,44 +473,39 @@ let synth_constrs vars graph target_node expected_output separator =
           })
   in
 
-  let top_graph =
-    let g = G.copy graph in
-    List.iter separator ~f:(G.iter_succ_e (G.remove_edge_e g) g);
-    cone g (Node.of_state target_node) separator
-  in
-
   let%bind () =
     assert_output_state_contained hi_group vars target_node expected_output
   in
   let%bind () =
     let module F = FoldM0 (Smt) (V_foldable) in
     F.iter top_graph ~f:(fun v ->
-        Node.match_ v
-          ~state:(fun v ->
-            let%bind () =
-              assert_selected_state_selects_input hi_group vars top_graph v
-            in
-            assert_state_semantics hi_group vars top_graph v)
-          ~args:(fun v ->
-            let%bind () =
-              assert_selected_args_selects_inputs hi_group vars top_graph v
-            in
-            assert_args_semantics hi_group vars top_graph v))
+        if List.mem separator ~equal:[%compare.equal: Node.t] v then return ()
+        else
+          Node.match_ v
+            ~state:(fun v ->
+              let%bind () =
+                assert_selected_state_selects_input hi_group vars top_graph v
+              in
+              assert_state_semantics hi_group vars top_graph v)
+            ~args:(fun v ->
+              let%bind () =
+                assert_selected_args_selects_inputs hi_group vars top_graph v
+              in
+              assert_args_semantics hi_group vars top_graph v))
   in
-  return hi_group
+  return (vars, lo_group)
 
 let get_refinement state target_node expected_output separator =
   (* Select the subset of the graph that can reach the target. *)
   let graph = cone state.graph (Node.of_state target_node) separator in
+  let separator = List.filter separator ~f:(G.mem_vertex graph) in
 
-  (* Dump.dump_detailed ~suffix:"before-refine"
-   *   ~separator:(List.mem separator ~equal:[%equal: Node.t])
-   *   graph; *)
+  Dump.dump_detailed ~suffix:"before-refine"
+    ~separator:(List.mem separator ~equal:[%equal: Node.t])
+    graph;
   let open Smt in
   let open Let_syntax in
-  let vars, state = Vars.make graph |> run in
-
-  let process_interpolant vars interpolant =
+  let process_interpolant state vars interpolant =
     let interpolant = ok_exn interpolant in
     Fmt.epr "Interpolant: %a@." Expr.pp interpolant;
     refinement_of_model graph separator interpolant
@@ -531,12 +520,14 @@ let get_refinement state target_node expected_output separator =
   in
 
   let get_interpolant =
-    let%bind sep_group =
-      synth_constrs vars graph target_node expected_output separator
+    let%bind vars, sep_group =
+      synth_constrs graph target_node expected_output separator
     in
     let%bind ret = Smt.get_interpolant_or_model [ sep_group ] in
     return (vars, ret)
   in
 
-  let vars, ret = Smt.eval_with_state state get_interpolant in
-  Either.map ~first:(process_interpolant vars) ~second:(process_model vars) ret
+  let (vars, ret), state = Smt.run get_interpolant in
+  Either.map
+    ~first:(process_interpolant state vars)
+    ~second:(process_model vars) ret

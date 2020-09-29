@@ -115,7 +115,7 @@ end
 
 type stmt = Decl of Decl.t | Defn of Defn.t | Assert of Expr.t
 
-type state = { stmts : string list; var_ctr : int; group_ctr : int }
+type state = { stmts : (stmt * string) list; var_ctr : int; group_ctr : int }
 
 type 'a t = State of (state -> 'a * state) [@@unboxed]
 
@@ -142,18 +142,33 @@ let eval c = Tuple.T2.get1 @@ run c
 
 let eval_with_state s c = Tuple.T2.get1 @@ with_state s c
 
+let clear_asserts =
+  let f s =
+    let stmts' =
+      List.filter s.stmts ~f:(fun (stmt, _) ->
+          match stmt with Assert _ -> false | _ -> true)
+    in
+    ((), { s with stmts = stmts' })
+  in
+  State f
+
 open Let_syntax
 
-let add_stmt stmt = State (fun s -> ((), { s with stmts = s.stmts @ [ stmt ] }))
+let add_stmt stmt =
+  let stmt_str =
+    match stmt with
+    | Decl d -> Fmt.str "%a" Decl.to_smtlib d
+    | Defn d -> Fmt.str "%a" Defn.to_smtlib d
+    | Assert a -> Fmt.str "(assert %a)" Expr.pp a
+  in
+  State (fun s -> ((), { s with stmts = s.stmts @ [ (stmt, stmt_str) ] }))
 
 let get_stmts = State (fun s -> (s.stmts, s))
 
 let fresh_num = State (fun s -> (s.var_ctr, { s with var_ctr = s.var_ctr + 1 }))
 
 let make_decl ?n_args name =
-  let%bind () =
-    add_stmt (Fmt.str "%a" Decl.to_smtlib @@ Decl.create ?n_args name)
-  in
+  let%bind () = add_stmt @@ Decl (Decl.create ?n_args name) in
   return (String_id.of_string name)
 
 let fresh_decl ?n_args ?(prefix = "x") () =
@@ -162,9 +177,7 @@ let fresh_decl ?n_args ?(prefix = "x") () =
   make_decl ?n_args name
 
 let make_defn ?n_args name body =
-  let%bind () =
-    add_stmt (Fmt.str "%a" Defn.to_smtlib @@ Defn.create ?n_args name body)
-  in
+  let%bind () = add_stmt @@ Defn (Defn.create ?n_args name body) in
   return (String_id.of_string name)
 
 let fresh_defn ?n_args ?(prefix = "x") body =
@@ -254,7 +267,7 @@ module Bool = struct
   let bool x = if x then true_ else false_
 end
 
-let assert_ expr = add_stmt (Fmt.str "(assert %a)" Expr.pp expr)
+let assert_ expr = add_stmt @@ Assert expr
 
 module Interpolant = struct
   module Group : sig
@@ -363,11 +376,14 @@ let get_interpolant_or_model_inner groups stmts read write =
 
 let get_interpolant_or_model groups =
   let%bind stmts = get_stmts in
-  with_mathsat @@ get_interpolant_or_model_inner groups stmts
+  with_mathsat
+  @@ get_interpolant_or_model_inner groups
+  @@ List.map ~f:Tuple.T2.get2 stmts
 
 let get_model =
   let open Sexp in
   let%bind stmts = get_stmts in
+  let stmts = List.map ~f:Tuple.T2.get2 stmts in
   with_mathsat @@ fun read write ->
   write ([ "(set-option :produce-models true)" ] @ stmts @ [ "(check-sat)" ]);
   let is_sat =
@@ -385,6 +401,7 @@ let get_model =
 let check_sat =
   let open Sexp in
   let%bind stmts = get_stmts in
+  let stmts = List.map ~f:Tuple.T2.get2 stmts in
   with_mathsat @@ fun read write ->
   write (stmts @ [ "(check-sat)" ]);
   return

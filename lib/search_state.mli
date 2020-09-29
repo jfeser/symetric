@@ -90,7 +90,7 @@ type t = private {
 module E : sig
   include Comparator.S with type t := G.E.t
 
-  include Container.S0 with type t := t and type elt := G.E.t
+  include Container.S0 with type t := G.t and type elt := G.E.t
 
   type t = G.E.t
 end
@@ -98,26 +98,16 @@ end
 module V : sig
   include Comparator.S with type t := G.V.t
 
-  include Container.S0 with type t := t and type elt := G.V.t
+  include Container.S0 with type t := G.t and type elt := G.V.t
 
-  val filter_map : t -> f:(G.V.t -> 'a option) -> 'a list
+  val filter_map : G.t -> f:(G.V.t -> 'a option) -> 'a list
 
-  val filter : t -> f:(G.V.t -> bool) -> G.V.t list
+  val filter : G.t -> f:(G.V.t -> bool) -> G.V.t list
 
   type t = G.V.t
 end
 
 val create : int -> t
-
-val pred : t -> G.V.t -> G.V.t list
-
-val pred_e : t -> G.V.t -> G.E.t list
-
-val succ : t -> G.V.t -> G.V.t list
-
-val succ_e : t -> G.V.t -> G.E.t list
-
-val add_edge_e : t -> G.E.t -> unit
 
 val states_of_cost : t -> int -> State.t list
 

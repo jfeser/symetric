@@ -41,7 +41,7 @@ module Args = struct
         let args_n = Args.create op in
         let args_v = Node.of_args args_n in
         List.iteri args ~f:(fun i v ->
-            add_edge_e graph (args_v, i, Node.of_state v))
+            G.add_edge_e graph.graph (args_v, i, Node.of_state v))
         [@landmark "create.add_edges"];
         Hashtbl.set graph.args_table ~key:(op, args) ~data:args_n
         [@landmark "create.insert"];
@@ -67,12 +67,12 @@ module State = struct
     | Some args_v -> (
         match[@landmarks "create_op.match"] create_consed ~state ~cost g with
         | `Fresh state_v ->
-            add_edge_e g
+            G.add_edge_e g.graph
               (Node.of_state state_v, -1, Node.of_args args_v)
             [@landmarks "create_op.add_edge"];
             Some state_v
         | `Stale state_v ->
-            add_edge_e g
+            G.add_edge_e g.graph
               (Node.of_state state_v, -1, Node.of_args args_v)
             [@landmarks "create_op.add_edge"];
             None )
@@ -114,7 +114,7 @@ let fill_cost (graph : Search_state.t) cost =
                              added := !added || did_add))));
 
     let size' = nb_vertex graph in
-    Dump.dump_detailed ~suffix:(sprintf "after-fill-%d" cost) graph;
+    Dump.dump_detailed ~suffix:(sprintf "after-fill-%d" cost) graph.graph;
 
     Fmt.epr "Pruning: size before=%d, after=%d, removed %f%%\n" size size'
       Float.(100.0 - (of_int size' / of_int size * 100.0));
@@ -142,11 +142,12 @@ end
 exception Done of [ `Sat | `Unsat ]
 
 let separators graph target =
-  Seq.unfold ~init:(succ graph target) ~f:(fun sep ->
+  Seq.unfold ~init:(G.succ graph target) ~f:(fun sep ->
       if List.is_empty sep then None
       else
         let sep' =
-          List.concat_map sep ~f:(succ graph) |> List.concat_map ~f:(succ graph)
+          List.concat_map sep ~f:(G.succ graph)
+          |> List.concat_map ~f:(G.succ graph)
         in
         Some (sep, sep'))
 
@@ -156,49 +157,51 @@ let refine_level n graph =
         ~args:(fun _ -> acc)
         ~state:(fun v -> (num + Abs.width (State.state v), dem + n)))
 
-let refine graph output refinement =
-  let size = nb_vertex graph in
+let refine search_state output refinement =
+  let graph = search_state.graph in
+  let size = nb_vertex search_state in
 
   List.iteri refinement ~f:(fun i r ->
       (let open Refine.Refinement in
       match r.splits with
       | `Output (cost, refined) ->
-          let pred_edges = pred_e graph (Node.of_args r.context) in
+          let pred_edges = G.pred_e graph (Node.of_args r.context) in
           (* Remove edges to existing state nodes. *)
-          List.iter pred_edges ~f:(G.remove_edge_e graph.Search_state.graph);
+          List.iter pred_edges ~f:(G.remove_edge_e graph);
           (* Insert split state nodes. *)
           List.iter refined ~f:(fun state ->
               let (`Fresh v' | `Stale v') =
-                State.create_consed ~state ~cost graph
+                State.create_consed ~state ~cost search_state
               in
-              add_edge_e graph (Node.of_state v', -1, Node.of_args r.context))
+              G.add_edge_e graph (Node.of_state v', -1, Node.of_args r.context))
       | `Input refined ->
           let refined =
             List.filter refined ~f:(fun (v, _) ->
                 V.mem graph @@ Node.of_state v)
             |> List.map ~f:(fun (state_v, rs) ->
-                   let succ_edges = succ_e graph (Node.of_state state_v) in
+                   let succ_edges = G.succ_e graph (Node.of_state state_v) in
                    (state_v, succ_edges, rs))
           in
 
-          remove_vertexes graph
+          remove_vertexes search_state
           @@ List.map refined ~f:(fun (v, _, _) -> Node.of_state v);
 
           List.iter refined ~f:(fun (state_v, succ_edges, rs) ->
               List.iter rs ~f:(fun state ->
                   let (`Fresh v' | `Stale v') =
-                    State.create_consed ~state ~cost:(State.cost state_v) graph
+                    State.create_consed ~state ~cost:(State.cost state_v)
+                      search_state
                   in
                   List.iter succ_edges ~f:(fun (_, l, v) ->
-                      add_edge_e graph (Node.of_state v', l, v)))));
+                      G.add_edge_e graph (Node.of_state v', l, v)))));
 
       Dump.dump_detailed ~output ~suffix:(sprintf "fixup-%d" i) graph);
 
   Dump.dump_detailed ~output ~suffix:"before-fixup" graph;
-  fix_up graph;
+  fix_up search_state;
   Dump.dump_detailed ~output ~suffix:"after-fixup" graph;
 
-  let size' = nb_vertex graph in
+  let size' = nb_vertex search_state in
   Fmt.epr "Pruning: size before=%d, after=%d, removed %f%%\n" size size'
     Float.(100.0 - (of_int size' / of_int size * 100.0));
 
@@ -208,7 +211,7 @@ let refine graph output refinement =
 
 let rec extract_program graph selected_edges target =
   let args =
-    succ_e graph target
+    G.succ_e graph target
     |> List.filter ~f:(Set.mem selected_edges)
     |> List.map ~f:(fun (_, _, v) -> v)
     |> List.map ~f:Node.to_args_exn
@@ -217,12 +220,13 @@ let rec extract_program graph selected_edges target =
   | [ a ] ->
       `Apply
         ( Args.op a,
-          succ graph (Node.of_args a)
+          G.succ graph (Node.of_args a)
           |> List.map ~f:(extract_program graph selected_edges) )
   | args ->
       Error.create "Too many args" args [%sexp_of: Args.t list] |> Error.raise
 
-let refute graph output =
+let refute search_state output =
+  let graph = search_state.graph in
   match
     V.find_map graph ~f:(fun v ->
         match Node.to_state v with
@@ -243,16 +247,16 @@ let refute graph output =
         List.find_map seps ~f:(fun sep ->
             let open Option.Let_syntax in
             let%map r =
-              Refine.get_refinement graph target output sep
+              Refine.get_refinement search_state target output sep
               |> Either.First.to_option
             in
             (sep, r))
       in
       ( match refinement with
-      | Some (_, r) -> refine graph output r
+      | Some (_, r) -> refine search_state output r
       | None -> (
-          match Refine.get_refinement graph target output last_sep with
-          | First r -> refine graph output r
+          match Refine.get_refinement search_state target output last_sep with
+          | First r -> refine search_state output r
           | Second selected_edges ->
               Fmt.epr "Could not refute: %a" Sexp.pp_hum
                 ( [%sexp_of: Program.t]
@@ -267,7 +271,7 @@ let count_compressible graph =
     V.filter_map graph ~f:Node.to_args
     |> List.map ~f:(fun v ->
            let v = Node.of_args v in
-           (pred graph v, succ graph v))
+           (G.pred graph v, G.succ graph v))
   in
   let module Key = struct
     module T = struct
@@ -282,21 +286,22 @@ let count_compressible graph =
     (Set.length set_args)
 
 let synth ?(no_abstraction = false) inputs output =
-  let graph = create !Global.max_cost in
+  let search_state = create !Global.max_cost in
+  let graph = search_state.graph in
 
   let rec loop cost =
     if cost > !Global.max_cost then raise (Done `Unsat);
 
     let rec loop' () =
       let rec strengthen_and_cover () =
-        let did_strengthen = refute graph output in
+        let did_strengthen = refute search_state output in
         if did_strengthen then (
           strengthen_and_cover () |> ignore;
           true )
         else false
       in
       let changed = strengthen_and_cover () in
-      let changed' = fill_up_to_cost graph cost in
+      let changed' = fill_up_to_cost search_state cost in
       Fmt.epr "Changed: %b Cost: %d\n%!" (changed || changed') cost;
       count_compressible graph;
       if changed || changed' then loop' () else loop (cost + 1)
@@ -306,7 +311,8 @@ let synth ?(no_abstraction = false) inputs output =
   (* Add inputs to the state space graph. *)
   List.iter inputs ~f:(fun input ->
       let state = if no_abstraction then Abs.lift input else Abs.top in
-      State.create_op ~state ~cost:1 ~op:(Op.Input input) graph [] |> ignore);
+      State.create_op ~state ~cost:1 ~op:(Op.Input input) search_state []
+      |> ignore);
 
   try loop 1
   with Done status ->
@@ -318,7 +324,7 @@ let synth ?(no_abstraction = false) inputs output =
       |> List.sort ~compare:[%compare: int]
       |> Array.of_list
     in
-    ( graph,
+    ( search_state,
       Stats.
         {
           n_state_nodes = V.filter graph ~f:Node.is_state |> List.length;
