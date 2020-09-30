@@ -1,3 +1,9 @@
+module Is_fresh = struct
+  type 'a t = Fresh of 'a | Stale of 'a
+end
+
+open Is_fresh
+
 module Op = struct
   type t = Input of Conc.t | Union | Inter | Sub
   [@@deriving compare, equal, hash, sexp]
@@ -76,6 +82,9 @@ module State = struct
 
   let states = Option_vector.create 128
 
+  let state_cost_idx =
+    Array.init !Global.max_cost ~f:(fun _ -> Hashtbl.create (module Abs))
+
   let id_ctr = ref 1
 
   let state id = Option_vector.get_some_exn states (id / 2)
@@ -83,7 +92,7 @@ module State = struct
   let cost id = Option_vector.get_some_exn costs (id / 2)
 
   module T = struct
-    type t = int [@@deriving compare, equal, hash, show]
+    type t = int [@@deriving compare, equal, hash]
 
     let sexp_of_t id = [%sexp_of: int * Abs.t * int] (id, state id, cost id)
   end
@@ -91,15 +100,27 @@ module State = struct
   include T
   include Comparator.Make (T)
 
+  let get s c =
+    let state_idx = state_cost_idx.(c - 1) in
+    Hashtbl.find state_idx s
+
+  let set s c id = Hashtbl.set ~key:s ~data:id state_cost_idx.(c - 1)
+
+  let of_cost c = Hashtbl.data state_cost_idx.(c - 1)
+
   let create s c =
-    let id = !id_ctr in
-    id_ctr := !id_ctr + 2;
-    let idx = id / 2 in
-    Option_vector.reserve states idx;
-    Option_vector.reserve costs idx;
-    Option_vector.set_some states idx s;
-    Option_vector.set_some costs idx c;
-    id
+    match get s c with
+    | Some id -> Stale id
+    | None ->
+        let id = !id_ctr in
+        id_ctr := !id_ctr + 2;
+        let idx = id / 2 in
+        Option_vector.reserve states idx;
+        Option_vector.reserve costs idx;
+        Option_vector.set_some states idx s;
+        Option_vector.set_some costs idx c;
+        set s c id;
+        Fresh id
 
   let id = ident
 
@@ -154,30 +175,7 @@ module Edge = struct
 end
 
 module G = struct
-  module G = Graph.Imperative.Digraph.ConcreteBidirectionalLabeled (Node) (Edge)
-
-  module Attr = struct
-    let graph_attributes _ = []
-
-    let default_vertex_attributes _ = []
-
-    let vertex_name n = Fmt.str "%d" @@ Node.id n
-
-    let vertex_attributes v =
-      Node.match_
-        ~args:(fun _ -> [ `Shape `Point ])
-        ~state:(fun x -> [ `HtmlLabel (Fmt.str "%a" State.pp x) ])
-        v
-
-    let get_subgraph _ = None
-
-    let default_edge_attributes _ = []
-
-    let edge_attributes (_, i, _) = [ `Label (sprintf "%d" i) ]
-  end
-
-  include G
-  include Graph.Graphviz.Dot (G) (Attr)
+  include Graph.Imperative.Digraph.ConcreteBidirectionalLabeled (Node) (Edge)
 
   let iter_succ_e f g v =
     try iter_succ_e f g v
@@ -194,29 +192,10 @@ module Args_table_key = struct
   include Comparator.Make (T)
 end
 
-module State_table_key = struct
-  module T = struct
-    type t = Abs.t * int [@@deriving compare, hash, sexp]
-  end
+type t = { graph : G.t; args_table : Args.t Hashtbl.M(Args_table_key).t }
 
-  include T
-  include Comparator.Make (T)
-end
-
-type t = {
-  graph : G.t;
-  args_table : Args.t Hashtbl.M(Args_table_key).t;
-  state_table : State.t Hashtbl.M(State_table_key).t;
-  cost_table : State.t list array;
-}
-
-let create max_cost =
-  {
-    graph = G.create ();
-    args_table = Hashtbl.create (module Args_table_key);
-    state_table = Hashtbl.create (module State_table_key);
-    cost_table = Array.create ~len:max_cost [];
-  }
+let create () =
+  { graph = G.create (); args_table = Hashtbl.create (module Args_table_key) }
 
 module V = struct
   include Comparator.Make (struct
@@ -276,46 +255,21 @@ let remove_vertexes g vs =
   let to_remove = Set.of_list (module V) vs in
   let should_keep v = not (Set.mem to_remove v) in
 
-  for i = 0 to Array.length g.cost_table - 1 do
-    g.cost_table.(i) <- List.filter g.cost_table.(i) ~f:should_keep
-  done;
-
   Set.iter to_remove ~f:(G.remove_vertex g.graph);
   Hashtbl.filteri_inplace g.args_table ~f:(fun ~key:(_, states) ~data ->
       should_keep data
-      && List.for_all states ~f:(fun v -> should_keep @@ Node.of_state v));
-  Hashtbl.filter_inplace g.state_table ~f:should_keep
+      && List.for_all states ~f:(fun v -> should_keep @@ Node.of_state v))
 
 let filter g ~f = remove_vertexes g @@ V.filter g.graph ~f:(Fun.negate f)
 
 let nb_vertex g = G.nb_vertex g.graph
 
 let states_of_cost g cost =
-  V.filter_map g.graph ~f:Node.to_state
-  |> List.filter ~f:(fun v -> State.cost v = cost)
-
-(* let idx = cost - 1 in
- * let ret = g.cost_table.(idx) in
- * [%test_pred: State.t list]
- *   (List.for_all ~f:(fun v -> V.mem g @@ Node.of_state v))
- *   ret;
- * ret *)
-
-let set_states_of_cost g cost states =
-  [%test_pred: State.t list]
-    (List.for_all ~f:(fun s -> State.cost s = cost))
-    states;
-  let idx = cost - 1 in
-  g.cost_table.(idx) <- states
+  State.of_cost cost |> List.filter ~f:(G.mem_vertex g.graph)
 
 let check g =
   Hashtbl.iter g.args_table ~f:(fun v ->
-      assert (G.mem_vertex g.graph @@ Node.of_args v));
-  Hashtbl.iter g.state_table ~f:(fun v ->
-      assert (G.mem_vertex g.graph @@ Node.of_state v));
-  Array.iter g.cost_table
-    ~f:
-      (List.iter ~f:(fun v -> assert (G.mem_vertex g.graph @@ Node.of_state v)))
+      assert (G.mem_vertex g.graph @@ Node.of_args v))
 
 let inputs g arg_v =
   G.succ_e g.graph (Node.of_args arg_v)

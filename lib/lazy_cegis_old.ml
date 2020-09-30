@@ -51,27 +51,16 @@ end
 module State = struct
   include State
 
-  let create_consed ~state ~cost:c (g : Search_state.t) =
-    match Hashtbl.find g.state_table (state, c) with
-    | Some v ->
-        assert (cost v = c);
-        `Stale v
-    | None ->
-        let v = create state c in
-        set_states_of_cost g c (v :: states_of_cost g c);
-        Hashtbl.add_exn g.state_table ~key:(state, c) ~data:v;
-        `Fresh v
-
   let create_op ~state ~cost ~op g children =
     match Args.create ~op g children with
     | Some args_v -> (
-        match[@landmarks "create_op.match"] create_consed ~state ~cost g with
-        | `Fresh state_v ->
+        match[@landmarks "create_op.match"] State.create state cost with
+        | Fresh state_v ->
             G.add_edge_e g.graph
               (Node.of_state state_v, -1, Node.of_args args_v)
             [@landmarks "create_op.add_edge"];
             Some state_v
-        | `Stale state_v ->
+        | Stale state_v ->
             G.add_edge_e g.graph
               (Node.of_state state_v, -1, Node.of_args args_v)
             [@landmarks "create_op.add_edge"];
@@ -167,9 +156,7 @@ let refine search_state output refinement =
 
           let cost = State.cost state_v in
           List.iter refined_states ~f:(fun state ->
-              let (`Fresh v' | `Stale v') =
-                State.create_consed ~state ~cost search_state
-              in
+              let (Fresh v' | Stale v') = State.create state cost in
               G.add_edge_e graph (Node.of_state v', -1, Node.of_args r.context)));
 
       Dump.dump_detailed ~output ~suffix:(sprintf "fixup-%d" i) graph);

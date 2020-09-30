@@ -1,3 +1,7 @@
+module Is_fresh : sig
+  type 'a t = Fresh of 'a | Stale of 'a
+end
+
 module Op : sig
   type t = Input of Conc.t | Union | Inter | Sub
   [@@deriving compare, equal, hash, sexp]
@@ -26,7 +30,7 @@ module State : sig
 
   include Comparator.S with type t := t
 
-  val create : Abs.t -> int -> t
+  val create : Abs.t -> int -> t Is_fresh.t
 
   val id : t -> int
 
@@ -74,16 +78,9 @@ module Args_table_key : sig
   include Comparator.S with type t := t
 end
 
-module State_table_key : sig
-  type t = Abs.t * int [@@deriving compare, hash, sexp]
-
-  include Comparator.S with type t := t
-end
-
 type t = private {
   graph : G.t;
   args_table : Args.t Hashtbl.M(Args_table_key).t;
-  state_table : State.t Hashtbl.M(State_table_key).t;
   cost_table : State.t list array;
 }
 
@@ -110,8 +107,6 @@ end
 val create : int -> t
 
 val states_of_cost : t -> int -> State.t list
-
-val set_states_of_cost : t -> int -> State.t list -> unit
 
 val filter : t -> f:(G.V.t -> bool) -> unit
 
