@@ -161,39 +161,16 @@ let refine search_state output refinement =
   let graph = search_state.graph in
   let size = nb_vertex search_state in
 
-  List.iteri refinement ~f:(fun i r ->
-      (let open Refine.Refinement in
-      match r.splits with
-      | `Output (cost, refined) ->
-          let pred_edges = G.pred_e graph (Node.of_args r.context) in
-          (* Remove edges to existing state nodes. *)
-          List.iter pred_edges ~f:(G.remove_edge_e graph);
-          (* Insert split state nodes. *)
-          List.iter refined ~f:(fun state ->
+  List.iteri refinement ~f:(fun i (r : Refine.Refinement.t) ->
+      List.iter r.splits ~f:(fun (state_v, refined_states) ->
+          G.remove_edge graph (Node.of_state state_v) (Node.of_args r.context);
+
+          let cost = State.cost state_v in
+          List.iter refined_states ~f:(fun state ->
               let (`Fresh v' | `Stale v') =
                 State.create_consed ~state ~cost search_state
               in
-              G.add_edge_e graph (Node.of_state v', -1, Node.of_args r.context))
-      | `Input refined ->
-          let refined =
-            List.filter refined ~f:(fun (v, _) ->
-                V.mem graph @@ Node.of_state v)
-            |> List.map ~f:(fun (state_v, rs) ->
-                   let succ_edges = G.succ_e graph (Node.of_state state_v) in
-                   (state_v, succ_edges, rs))
-          in
-
-          remove_vertexes search_state
-          @@ List.map refined ~f:(fun (v, _, _) -> Node.of_state v);
-
-          List.iter refined ~f:(fun (state_v, succ_edges, rs) ->
-              List.iter rs ~f:(fun state ->
-                  let (`Fresh v' | `Stale v') =
-                    State.create_consed ~state ~cost:(State.cost state_v)
-                      search_state
-                  in
-                  List.iter succ_edges ~f:(fun (_, l, v) ->
-                      G.add_edge_e graph (Node.of_state v', l, v)))));
+              G.add_edge_e graph (Node.of_state v', -1, Node.of_args r.context)));
 
       Dump.dump_detailed ~output ~suffix:(sprintf "fixup-%d" i) graph);
 

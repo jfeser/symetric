@@ -56,11 +56,7 @@ module E_foldable = struct
 end
 
 module Refinement = struct
-  type t = {
-    context : Args.t;
-    splits :
-      [ `Input of (State.t * Abs.t list) list | `Output of int * Abs.t list ];
-  }
+  type t = { context : Args.t; splits : (State.t * Abs.t list) list }
   [@@deriving sexp_of]
 
   let pp fmt x = Sexp.pp_hum fmt @@ [%sexp_of: t] x
@@ -218,21 +214,11 @@ let refinement_of_model graph separator interpolant forced vars =
                |> List.map ~f:get_bits |> List.concat
              in
              normalize_bits (bits @ bits')
-           and refined_in_bits =
-             []
-             (* G.succ graph (Node.of_args arg_v)
-              * |> List.map ~f:Node.to_state_exn
-              * |> List.map ~f:(fun v ->
-              *        (v, get_bits @@ Map.find_exn vars.state_vars v)) *)
            in
+           let no_refined_out_bits = List.is_empty refined_out_bits in
 
-           let no_refined_out_bits = List.is_empty refined_out_bits
-           and no_refined_in_bits =
-             List.for_all refined_in_bits ~f:(fun (_, bs) -> List.is_empty bs)
-           in
-
-           if no_refined_out_bits && no_refined_in_bits then None
-           else if no_refined_in_bits then
+           if no_refined_out_bits then None
+           else
              let state_nodes =
                Node.of_args arg_v |> G.pred graph
                |> List.map ~f:Node.to_state_exn
@@ -243,52 +229,33 @@ let refinement_of_model graph separator interpolant forced vars =
                | _ -> fun _ -> None
              in
 
-             let refinements =
-               List.filter_map state_nodes ~f:(fun v ->
+             let splits =
+               List.map state_nodes ~f:(fun v ->
                    let state = State.state v in
                    (* For each refined bit, generate a pair of refined states. If the bit contradicts a bit that is already refined, the state will be pruned. *)
-                   List.fold refined_out_bits
-                     ~init:(Some [ state ])
-                     ~f:(fun states (bit, forced) ->
-                       let%bind states = states in
-                       match Option.first_some (input_forced bit) forced with
-                       | Some value -> set states bit value
-                       | None ->
-                           let%bind s = set states bit true in
-                           let%bind s' = set states bit false in
-                           return (s @ s')))
-               |> List.concat
-             in
-
-             let cost = List.hd_exn state_nodes |> State.cost in
-             Some { context = arg_v; splits = `Output (cost, refinements) }
-           else
-             let refinements =
-               List.filter_map refined_in_bits ~f:(fun (state_v, bits) ->
-                   let%map rs =
-                     List.fold bits
-                       ~init:(Some [ State.state state_v ])
+                   let refined_states =
+                     List.fold refined_out_bits
+                       ~init:(Some [ state ])
                        ~f:(fun states (bit, forced) ->
                          let%bind states = states in
-                         match forced with
+                         match Option.first_some (input_forced bit) forced with
                          | Some value -> set states bit value
                          | None ->
                              let%bind s = set states bit true in
                              let%bind s' = set states bit false in
                              return (s @ s'))
                    in
-                   (state_v, rs))
+                   (v, Option.value refined_states ~default:[]))
              in
 
-             Some { context = arg_v; splits = `Input refinements })
+             Some { context = arg_v; splits })
   in
 
   [%test_result: Set.M(String_id).t] ~expect:ivars !used_ivars;
 
   let edges =
-    List.concat_map refinement ~f:(function
-      | { context = v; splits = `Output _ } -> G.pred_e graph (Node.of_args v)
-      | { context = v; splits = `Input _ } -> G.succ_e graph (Node.of_args v))
+    List.concat_map refinement ~f:(function r ->
+        G.pred_e graph (Node.of_args r.context))
     |> Set.of_list (module E)
   in
 
