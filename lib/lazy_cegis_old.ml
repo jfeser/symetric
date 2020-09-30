@@ -250,7 +250,7 @@ let count_compressible graph =
     (Set.length set_args)
 
 let synth ?(no_abstraction = false) inputs output =
-  let search_state = create !Global.max_cost in
+  let search_state = create () in
   let graph = search_state.graph in
 
   let rec loop cost =

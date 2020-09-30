@@ -177,6 +177,36 @@ end
 module G = struct
   include Graph.Imperative.Digraph.ConcreteBidirectionalLabeled (Node) (Edge)
 
+  let changed = ref false
+
+  let add_vertex g v =
+    changed := !changed || not (mem_vertex g v);
+    add_vertex g v
+
+  let remove_vertex g v =
+    changed := !changed || mem_vertex g v;
+    remove_vertex g v
+
+  let add_edge g v v' =
+    changed := !changed || not (mem_edge g v v');
+    add_edge g v v'
+
+  let add_edge_e g e =
+    changed := !changed || not (mem_edge_e g e);
+    add_edge_e g e
+
+  let remove_edge g v v' =
+    changed := !changed || mem_edge g v v';
+    remove_edge g v v'
+
+  let remove_edge_e g e =
+    changed := !changed || mem_edge_e g e;
+    remove_edge_e g e
+
+  let has_changed () = !changed
+
+  let reset_changed () = changed := false
+
   let iter_succ_e f g v =
     try iter_succ_e f g v
     with Invalid_argument msg ->

@@ -69,8 +69,14 @@ module Node : sig
   val to_state_exn : t -> State.t
 end
 
-module G :
-  Graph.Sig.I with type V.t = Node.t and type E.t = Node.t * int * Node.t
+module G : sig
+  include
+    Graph.Sig.I with type V.t = Node.t and type E.t = Node.t * int * Node.t
+
+  val has_changed : unit -> bool
+
+  val reset_changed : unit -> unit
+end
 
 module Args_table_key : sig
   type t = Op.t * State.t list [@@deriving compare, hash, sexp_of]
@@ -81,7 +87,6 @@ end
 type t = private {
   graph : G.t;
   args_table : Args.t Hashtbl.M(Args_table_key).t;
-  cost_table : State.t list array;
 }
 
 module E : sig
@@ -104,7 +109,7 @@ module V : sig
   type t = G.V.t
 end
 
-val create : int -> t
+val create : unit -> t
 
 val states_of_cost : t -> int -> State.t list
 
