@@ -68,14 +68,25 @@ module State = struct
     | None -> None
 end
 
+let did_change f =
+  G.reset_changed ();
+  let ret = f () in
+  let changed = G.has_changed () in
+  (changed, ret)
+
+let until_done f =
+  let rec until_done did_work =
+    let did_work' = f () in
+    if did_work' then until_done did_work' else did_work
+  in
+  until_done false
+
 let fill_cost (graph : Search_state.t) cost =
   Fmt.epr "Filling cost %d\n" cost;
   let size = nb_vertex graph in
-  if cost <= 1 then false
-  else
+  if cost > 1 then (
     let arg_cost = cost - 1 in
     let module Comp = Combinat.Composition in
-    let added = ref false in
     Comp.create ~n:arg_cost ~k:2
     |> Comp.iter ~f:(fun arg_costs ->
            let c = arg_costs.{0} and c' = arg_costs.{1} in
@@ -92,26 +103,21 @@ let fill_cost (graph : Search_state.t) cost =
                                | Sub -> Abs.sub s s'
                                | _ -> assert false
                              in
-                             let did_add =
-                               match
-                                 State.create_op ~state ~cost ~op graph
-                                   [ a; a' ]
-                               with
-                               | None -> false
-                               | Some _ -> true
-                             in
-                             added := !added || did_add))));
+                             State.create_op ~state ~cost ~op graph [ a; a' ]
+                             |> ignore))));
 
     let size' = nb_vertex graph in
     Dump.dump_detailed ~suffix:(sprintf "after-fill-%d" cost) graph.graph;
 
     Fmt.epr "Pruning: size before=%d, after=%d, removed %f%%\n" size size'
-      Float.(100.0 - (of_int size' / of_int size * 100.0));
-    !added
+      Float.(100.0 - (of_int size' / of_int size * 100.0)) )
 
 let fill_up_to_cost (graph : Search_state.t) cost =
   let rec fill c =
-    if c > cost then false else fill_cost graph c || fill (c + 1)
+    if c > cost then false
+    else
+      let changed, () = did_change @@ fun () -> fill_cost graph c in
+      changed || fill (c + 1)
   in
   fill 1
 
@@ -253,53 +259,49 @@ let synth ?(no_abstraction = false) inputs output =
   let search_state = create () in
   let graph = search_state.graph in
 
-  let rec loop cost =
-    if cost > !Global.max_cost then raise (Done `Unsat);
-
-    let rec loop' () =
-      let rec strengthen_and_cover () =
-        let did_strengthen = refute search_state output in
-        if did_strengthen then (
-          strengthen_and_cover () |> ignore;
-          true )
-        else false
-      in
-      let changed = strengthen_and_cover () in
-      let changed' = fill_up_to_cost search_state cost in
-      Fmt.epr "Changed: %b Cost: %d\n%!" (changed || changed') cost;
-      count_compressible graph;
-      if changed || changed' then loop' () else loop (cost + 1)
-    in
-    loop' ()
-  in
   (* Add inputs to the state space graph. *)
   List.iter inputs ~f:(fun input ->
       let state = if no_abstraction then Abs.lift input else Abs.top in
       State.create_op ~state ~cost:1 ~op:(Op.Input input) search_state []
       |> ignore);
 
-  try loop 1
-  with Done status ->
-    let widths =
-      V.filter_map graph ~f:(fun v ->
-          match Node.to_state v with
-          | Some v -> Some (Abs.width @@ State.state v)
-          | _ -> None)
-      |> List.sort ~compare:[%compare: int]
-      |> Array.of_list
-    in
-    ( search_state,
-      Stats.
-        {
-          n_state_nodes = V.filter graph ~f:Node.is_state |> List.length;
-          n_arg_nodes = V.filter graph ~f:Node.is_args |> List.length;
-          n_covered = -1;
-          n_refuted = !Global.n_refuted;
-          min_width = widths.(0);
-          max_width = widths.(Array.length widths - 1);
-          median_width = widths.(Array.length widths / 2);
-          sat = (match status with `Sat -> true | `Unsat -> false);
-        } )
+  let status =
+    try
+      for cost = 1 to !Global.max_cost do
+        until_done (fun () ->
+            let changed = until_done (fun () -> refute search_state output) in
+            let changed' = fill_up_to_cost search_state cost in
+            Fmt.epr "Changed: %b Cost: %d\n%!" (changed || changed') cost;
+            count_compressible graph;
+            changed || changed')
+        |> ignore
+      done;
+      `Unsat
+    with Done status -> status
+  in
+
+  let widths =
+    V.filter_map graph ~f:(fun v ->
+        match Node.to_state v with
+        | Some v -> Some (Abs.width @@ State.state v)
+        | _ -> None)
+    |> List.sort ~compare:[%compare: int]
+    |> Array.of_list
+  in
+  let stats =
+    Stats.
+      {
+        n_state_nodes = V.filter graph ~f:Node.is_state |> List.length;
+        n_arg_nodes = V.filter graph ~f:Node.is_args |> List.length;
+        n_covered = -1;
+        n_refuted = !Global.n_refuted;
+        min_width = widths.(0);
+        max_width = widths.(Array.length widths - 1);
+        median_width = widths.(Array.length widths / 2);
+        sat = (match status with `Sat -> true | `Unsat -> false);
+      }
+  in
+  (search_state, stats)
 
 let sample ?(state = Random.State.default) inputs =
   let open Grammar in
