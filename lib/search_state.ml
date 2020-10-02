@@ -1,5 +1,9 @@
 module Is_fresh = struct
   type 'a t = Fresh of 'a | Stale of 'a
+
+  let is_fresh = function Fresh _ -> true | _ -> false
+
+  let unwrap (Fresh x | Stale x) = x
 end
 
 open Is_fresh
@@ -83,7 +87,7 @@ module State = struct
   let states = Option_vector.create 128
 
   let state_cost_idx =
-    Array.init !Global.max_cost ~f:(fun _ -> Hashtbl.create (module Abs))
+    lazy (Array.init !Global.max_cost ~f:(fun _ -> Hashtbl.create (module Abs)))
 
   let id_ctr = ref 1
 
@@ -101,12 +105,17 @@ module State = struct
   include Comparator.Make (T)
 
   let get s c =
-    let state_idx = state_cost_idx.(c - 1) in
+    let idx = c - 1 in
+    [%test_pred: int] ~message:"index out of bounds"
+      (fun idx -> idx >= 0 && idx < Array.length (Lazy.force state_cost_idx))
+      idx;
+    let state_idx = (Lazy.force state_cost_idx).(c - 1) in
     Hashtbl.find state_idx s
 
-  let set s c id = Hashtbl.set ~key:s ~data:id state_cost_idx.(c - 1)
+  let set s c id =
+    Hashtbl.set ~key:s ~data:id (Lazy.force state_cost_idx).(c - 1)
 
-  let of_cost c = Hashtbl.data state_cost_idx.(c - 1)
+  let of_cost c = Hashtbl.data (Lazy.force state_cost_idx).(c - 1)
 
   let create s c =
     match get s c with
@@ -278,6 +287,38 @@ module E = struct
   end)
 
   include G.E
+end
+
+module Pred = struct
+  include Container.Make0 (struct
+    type nonrec t = G.t * G.V.t
+
+    module Elt = struct
+      type t = G.V.t [@@deriving equal]
+    end
+
+    let fold (g, v) ~init ~f = G.fold_pred (fun v acc -> f acc v) g v init
+
+    let iter = `Custom (fun (g, v) ~f -> G.iter_pred f g v)
+
+    let length = `Custom (fun (g, v) -> G.in_degree g v)
+  end)
+end
+
+module Succ = struct
+  include Container.Make0 (struct
+    type nonrec t = G.t * G.V.t
+
+    module Elt = struct
+      type t = G.V.t [@@deriving equal]
+    end
+
+    let fold (g, v) ~init ~f = G.fold_succ (fun v acc -> f acc v) g v init
+
+    let iter = `Custom (fun (g, v) ~f -> G.iter_succ f g v)
+
+    let length = `Custom (fun (g, v) -> G.out_degree g v)
+  end)
 end
 
 let remove_vertexes g vs =

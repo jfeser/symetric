@@ -1,5 +1,9 @@
 module Is_fresh : sig
   type 'a t = Fresh of 'a | Stale of 'a
+
+  val is_fresh : 'a t -> bool
+
+  val unwrap : 'a t -> 'a
 end
 
 module Op : sig
@@ -108,6 +112,10 @@ module V : sig
 
   type t = G.V.t
 end
+
+module Pred : Container.S0 with type t := G.t * G.V.t and type elt := G.V.t
+
+module Succ : Container.S0 with type t := G.t * G.V.t and type elt := G.V.t
 
 val create : unit -> t
 

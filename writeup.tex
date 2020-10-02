@@ -1,11 +1,73 @@
-\documentclass{article}
+\documentclass[review]{acmart}
 \usepackage{algorithm}
 \usepackage{algpseudocode}
-\usepackage{amsmath}
-\usepackage{amssymb}
+\usepackage{semantic}        %% For PL semantics
+
+\author{John Feser}
+\title{Test}
+
 \begin{document}
 
-\section{Data Structures}
+\section{Theory}
+\subsection{Bottom-up Enumeration}
+
+In this section we formalize a bottom-up enumeration algorithm for an untyped
+DSL with binary operators.
+
+\begin{algorithm}
+  \begin{algorithmic}
+    \Function{BottomUp}{$O, Init, Goal$}
+    \State Let $V_0 = \Delta_0 = Init$
+    \For{$i \in [1, \dots]$}
+    \If {$Goal \cap \Delta_{i - 1} \neq \emptyset$}
+    \State \Return
+    \EndIf
+    \State Let $\Delta_{i} = (\cup_{op \in O, v \in V_{i - 1}, \delta \in \Delta_{i
+        - 1}} \{op(v, \delta), op(\delta, v)\}) \setminus V_{i - 1}$
+    \State Let $V_i = V_{i - 1} \cup \Delta_{i}$
+    \EndFor
+    \EndFunction
+  \end{algorithmic}
+\end{algorithm}
+
+\begin{theorem}
+  For a set of binary operators $Op : V \times V -> V$ and sets of initial and
+  goal states $Init : V$ and $Goal: V$, \textsc{BottomUp} terminates iff there
+  exists a term $T$ over the signature $(Op, Init)$ s.t. $|[T|] \in Goal$.
+\end{theorem}
+\begin{proof}
+  Let $T$ be a term s.t. $|[T|] \in Goal$. The proof proceeds by induction on
+  $T$. If $T \in Init$ then \textsc{BottomUp} terminates immediately. Otherwise,
+  $T = op(t, t')$. 
+\end{proof}
+
+\subsection{Abstract Bottom-up Enumeration}
+
+In this section we introduce a generalization of the bottom-up enumeration
+algorithm that uses abstract instead of concrete states. This introduces an
+additional complication: the precision loss caused by the abstraction means that
+the goal states that the algorithm reaches may be spurious. The abstraction must
+be incrementally refined to eliminate these spurious goal states.
+
+\begin{algorithm}
+  \begin{algorithmic}
+    \Function{AbstractBottomUp}{$O, Init, Goal$}
+    \State Let $V_0 = \{\top\}$
+    \For{$i \in [1, \dots]$}
+    \If {$Goal \cap \Delta_{i - 1} \neq \emptyset$}
+    \State \Return
+    \EndIf
+    \State Let $\Delta_{i} = (\cup_{op \in O, v \in V_{i - 1}, \delta \in \Delta_{i
+        - 1}} \{op(v, \delta), op(\delta, v)\}) \setminus V_{i - 1}$
+    \State Let $V_i = V_{i - 1} \cup \Delta_{i}$
+    \EndFor
+    \EndFunction
+  \end{algorithmic}
+\end{algorithm}
+
+
+\section{Implementation}
+\subsection{Data Structures}
 
 The search space is structured as a graph with two kinds of nodes: state nodes
 and operator nodes. State nodes are approximations of reachable program states.
@@ -28,11 +90,11 @@ dummy label.
 The search space graph respects the following invariants:
 \begin{itemize}
 \item State nodes are preceded by at least one operator node.
-\item An perator node $v_o$ is preceded by $\texttt{arity}(v_o)$ state nodes.
+\item An operator node $v_o$ is preceded by $\texttt{arity}(v_o)$ state nodes.
 \item Operator nodes are succeeded by at least one state node.
 \end{itemize}
 
-\section{Search}
+\subsection{Search}
 
 The search proceeds in two phases: filling and refinement. The filling step
 extends the graph by inserting new operator nodes. The refinement step splits
@@ -131,31 +193,31 @@ Otherwise, they get two fresh output nodes with the appropriate bits refined.
 After this update step, we fix up the search graph by removing state nodes with
 no inputs and operator nodes without the correct number of inputs.
 
-\begin{algorithm}
-  \begin{algorithmic}
-    \Function{Synth}{$I, O$}
-    \State Let $G = (I \cup \{\top\}, \bigcup_{in \in I} (in, \top))$
-    \Loop
-    \State $G \gets \Call{Fill}{G}$
-    \If {$\exists s \in V$ s.t. $O \sqsubseteq
-      \texttt{state}(s)$}
-    \State $G \gets \Call{Refine}{G, s}$
-    \EndIf
-    \EndLoop
-    \EndFunction
-  \end{algorithmic}
-\end{algorithm}
+% \begin{algorithm}
+%   \begin{algorithmic}
+%     \Function{Synth}{$I, O$}
+%     \State Let $G = (I \cup \{\top\}, \bigcup_{in \in I} (in, \top))$
+%     \Loop
+%     \State $G \gets \Call{Fill}{G}$
+%     \If {$\exists s \in V$ s.t. $O \sqsubseteq
+%       \texttt{state}(s)$}
+%     \State $G \gets \Call{Refine}{G, s}$
+%     \EndIf
+%     \EndLoop
+%     \EndFunction
+%   \end{algorithmic}
+% \end{algorithm}
 
-\begin{algorithm}
-  \begin{algorithmic}
-    \Function{Fill}{$G=(V, E)$}
-    \State Choose an operator $op$ and states $s_1, \dots,
-    s_{\texttt{arity}(op)}$ such that the edges $E' = \bigcup_i (s_i, op)$ do not exist in
-    the graph and $\sum_i \texttt{cost}(s_i)$ is minimized.
-    \State \Return $(V \cup {op}, E \cup E')$
-    \EndFunction
-  \end{algorithmic}
-\end{algorithm}
+% \begin{algorithm}
+%   \begin{algorithmic}
+%     \Function{Fill}{$G=(V, E)$}
+%     \State Choose an operator $op$ and states $s_1, \dots,
+%     s_{\texttt{arity}(op)}$ such that the edges $E' = \bigcup_i (s_i, op)$ do not exist in
+%     the graph and $\sum_i \texttt{cost}(s_i)$ is minimized.
+%     \State \Return $(V \cup {op}, E \cup E')$
+%     \EndFunction
+%   \end{algorithmic}
+% \end{algorithm}
 
 
 \end{document}

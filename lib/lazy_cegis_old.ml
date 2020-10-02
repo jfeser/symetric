@@ -28,45 +28,29 @@ module Program = struct
   include Comparator.Make (T)
 end
 
-module Args = struct
-  include Args
+let exists_multi_edge graph state_v_ins op =
+  List.fold_left state_v_ins ~init:None ~f:(fun args state_v ->
+      let args = Option.value args ~default:(Set.empty (module Args)) in
+      ())
 
-  let create ~op graph args =
-    match
-      (Hashtbl.find graph.Search_state.args_table (op, args)
-       [@landmark "create.lookup"])
-    with
-    | Some _ -> None
-    | None ->
-        let args_n = Args.create op in
-        let args_v = Node.of_args args_n in
-        List.iteri args ~f:(fun i v ->
-            G.add_edge_e graph.graph (args_v, i, Node.of_state v))
-        [@landmark "create.add_edges"];
-        Hashtbl.set graph.args_table ~key:(op, args) ~data:args_n
-        [@landmark "create.insert"];
-        Some args_n
-end
+(* Succ.exists
+ *   (graph, Node.of_state state_v_out)
+ *   ~f:(fun v ->
+ *     let args_v = Node.to_args_exn v in
+ *     [%compare.equal: Op.t] (Args.op args_v) op
+ *     && List.for_alli state_v_ins ~f:(fun i state_v ->
+ *            G.mem_edge_e graph (v, i, Node.of_state state_v))) *)
 
-module State = struct
-  include State
+let insert_multi_edge graph state_v_ins op state_v_out =
+  let args_v = Args.create op |> Node.of_args in
+  List.iteri state_v_ins ~f:(fun i v ->
+      G.add_edge_e graph (args_v, i, Node.of_state v));
+  G.add_edge_e graph (Node.of_state state_v_out, -1, args_v)
 
-  let create_op ~state ~cost ~op g children =
-    match Args.create ~op g children with
-    | Some args_v -> (
-        match[@landmarks "create_op.match"] State.create state cost with
-        | Fresh state_v ->
-            G.add_edge_e g.graph
-              (Node.of_state state_v, -1, Node.of_args args_v)
-            [@landmarks "create_op.add_edge"];
-            Some state_v
-        | Stale state_v ->
-            G.add_edge_e g.graph
-              (Node.of_state state_v, -1, Node.of_args args_v)
-            [@landmarks "create_op.add_edge"];
-            None )
-    | None -> None
-end
+let insert_multi_edge_if_not_exists graph state_v_ins op cost state_out =
+  let state_v_out = State.create state_out cost |> Is_fresh.unwrap in
+  if not (exists_multi_edge graph state_v_ins op) then
+    insert_multi_edge graph state_v_ins op state_v_out
 
 let did_change f =
   G.reset_changed ();
@@ -103,8 +87,8 @@ let fill_cost (graph : Search_state.t) cost =
                                | Sub -> Abs.sub s s'
                                | _ -> assert false
                              in
-                             State.create_op ~state ~cost ~op graph [ a; a' ]
-                             |> ignore))));
+                             insert_multi_edge_if_not_exists graph.graph
+                               [ a; a' ] op cost state))));
 
     let size' = nb_vertex graph in
     Dump.dump_detailed ~suffix:(sprintf "after-fill-%d" cost) graph.graph;
@@ -262,8 +246,7 @@ let synth ?(no_abstraction = false) inputs output =
   (* Add inputs to the state space graph. *)
   List.iter inputs ~f:(fun input ->
       let state = if no_abstraction then Abs.lift input else Abs.top in
-      State.create_op ~state ~cost:1 ~op:(Op.Input input) search_state []
-      |> ignore);
+      insert_multi_edge_if_not_exists graph [] (Op.Input input) 1 state);
 
   let status =
     try
