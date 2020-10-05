@@ -2,9 +2,15 @@
 \usepackage{algorithm}
 \usepackage{algpseudocode}
 \usepackage{semantic}        %% For PL semantics
+\usepackage{stmaryrd}
+\usepackage{mathbbol}
 
 \author{John Feser}
 \title{Test}
+
+\newcommand{\abs}[1]{\ensuremath{\widetilde{#1}}}
+\renewcommand{\eval}[1]{\ensuremath{\mathcal{E}\llbracket#1\rrbracket}}
+\newcommand{\aeval}[1]{\ensuremath{\abs{\mathcal{E}}\llbracket#1\rrbracket}}
 
 \begin{document}
 
@@ -17,29 +23,50 @@ DSL with binary operators.
 \begin{algorithm}
   \begin{algorithmic}
     \Function{BottomUp}{$O, Init, Goal$}
-    \State Let $V_0 = \Delta_0 = Init$
-    \For{$i \in [1, \dots]$}
-    \If {$Goal \cap \Delta_{i - 1} \neq \emptyset$}
-    \State \Return
+    \State $R <- \emptyset, V_0 <- \emptyset, V_1 <- Init$
+    \For{$i \in [2, \dots]$}
+    \State Let $\Delta = V_{i - 1} \setminus V_{i - 2}$
+    \If {$Goal \in \Delta$}
+    \State \Return $\Call{Reconstruct}{R, Init, Goal}$
     \EndIf
-    \State Let $\Delta_{i} = (\cup_{op \in O, v \in V_{i - 1}, \delta \in \Delta_{i
-        - 1}} \{op(v, \delta), op(\delta, v)\}) \setminus V_{i - 1}$
-    \State Let $V_i = V_{i - 1} \cup \Delta_{i}$
+    \State $V_i <- V_{i - 1}$
+    \For{$op \in O, v \in V_{i - 1}, \delta \in \Delta$}
+    \State Let $t = op(v, \delta)$ and $t' = op(\delta, v)$
+    \State Let $\sigma = \eval{t}$ and $\sigma' = \eval{t'}$
+    \State $V_i <- V_i \cup \{\sigma, \sigma'\}$
+    \State $R <- R \cup \{(\sigma, op, v, \delta), (\sigma, op, \delta, v)\}$
+    \EndFor
     \EndFor
     \EndFunction
   \end{algorithmic}
 \end{algorithm}
 
-\begin{theorem}
-  For a set of binary operators $Op : V \times V -> V$ and sets of initial and
-  goal states $Init : V$ and $Goal: V$, \textsc{BottomUp} terminates iff there
-  exists a term $T$ over the signature $(Op, Init)$ s.t. $|[T|] \in Goal$.
+\begin{algorithm}
+  \begin{algorithmic}
+    \Function{Reconstruct}{$R, Init, \sigma$}
+    \If {$\sigma \in Init$}
+    \State \Return $\sigma$
+    \EndIf
+    \State Choose $(\sigma, op, \sigma_l, \sigma_r) \in R$
+    \State \Return $op(\Call{Reconstruct}{R, Init, \sigma_l},
+    \Call{Reconstruct}{R, Init, \sigma_r})$
+    \EndFunction
+  \end{algorithmic}
+\end{algorithm}
+
+\begin{theorem}[Soundness]
+  If $\Call{BottomUp}{O, Init, Goal} = t$, then $\eval{t} = Goal$.
 \end{theorem}
-\begin{proof}
-  Let $T$ be a term s.t. $|[T|] \in Goal$. The proof proceeds by induction on
-  $T$. If $T \in Init$ then \textsc{BottomUp} terminates immediately. Otherwise,
-  $T = op(t, t')$. 
-\end{proof}
+
+\begin{theorem}[Completeness]
+  Let $S = \{t | \eval{t} = Goal\}$. If $S \neq \emptyset$ then
+  $\Call{BottomUp}{O, Init, Goal} = t$ where $t \in S$.
+\end{theorem}
+% \begin{proof}
+%   Let $T$ be a term s.t. $|[T|] \in Goal$. The proof proceeds by induction on
+%   $T$. If $T \in Init$ then \textsc{BottomUp} terminates immediately. Otherwise,
+%   $T = op(t, t')$. 
+% \end{proof}
 
 \subsection{Abstract Bottom-up Enumeration}
 
@@ -49,21 +76,66 @@ additional complication: the precision loss caused by the abstraction means that
 the goal states that the algorithm reaches may be spurious. The abstraction must
 be incrementally refined to eliminate these spurious goal states.
 
+\
+
 \begin{algorithm}
   \begin{algorithmic}
     \Function{AbstractBottomUp}{$O, Init, Goal$}
-    \State Let $V_0 = \{\top\}$
+    \State $R <- \emptyset, \abs{V_0} <- Init, \abs{\Delta_0} <- Init$
+    \Loop
     \For{$i \in [1, \dots]$}
-    \If {$Goal \cap \Delta_{i - 1} \neq \emptyset$}
-    \State \Return
+    \If {$Goal \in \abs{\Delta_{i - 1}}$}
+    \If {$\Call{Refine}{Init, Goal, V, \Delta, R}$ returns a term $t$}
+    \State \Return $t$
     \EndIf
-    \State Let $\Delta_{i} = (\cup_{op \in O, v \in V_{i - 1}, \delta \in \Delta_{i
-        - 1}} \{op(v, \delta), op(\delta, v)\}) \setminus V_{i - 1}$
-    \State Let $V_i = V_{i - 1} \cup \Delta_{i}$
+    \EndIf
+    \For{$op \in O, v \in \abs{V_{i - 1}}, \delta \in \abs{\Delta_{i - 1}}$}
+    \State Let $t = op(v, \delta)$ and $t' = op(\delta, v)$
+    \State Let $\sigma = \aeval{t}$ and $\sigma' = \aeval{t'}$
+    \State $\abs{\Delta_{i}} <- \abs{\Delta_{i}} \cup (\{\sigma, \sigma'\} \setminus \abs{V_{i - 1}})$
+    \State $R <- R \cup \{(\sigma, op, v, \delta), (\sigma, op, \delta, v)\}$
     \EndFor
+    \State $\abs{V_i} <- \abs{V_{i - 1}} \cup \abs{\Delta_{i}}$
+    \EndFor
+    \EndLoop
+    \EndFunction
+
+    \Function{Refine}{$Init, Goal, \abs{V}, \abs{\Delta}, R$}
+    \State Let $t = \Call{Reconstruct}{R, Init, Goal}$
+    \If {$\eval{t} = Goal$}
+    \State \Return $t$
+    \EndIf
+    \State Let $\hat{\sigma}$ be a splittable state s.t. $path_R(Goal, \sigma)$
+    \State Let $\hat{\sigma_l}$ and $\hat{\sigma_r}$ be abstract states s.t.
+    $\hat{\sigma_l} \sqcup \hat{\sigma_r} = \hat{\sigma}$
+    \State Let $Deps = \{\sigma ~|~ \sigma \in V, path_R(\hat{\sigma}, \sigma) \}$
+    \State $\abs{V} <- (\abs{V} \setminus Deps) \cup \{\sigma_l,
+    \sigma_r\}, \abs{\Delta} <- (\abs{\Delta} \setminus Deps) \cup
+    \{\sigma_l, \sigma_r\}$
+    
     \EndFunction
   \end{algorithmic}
 \end{algorithm}
+
+\begin{theorem}[Abstract Completeness]
+  If $\Call{BottomUp}{O, Init, Goal} = t$, then $\Call{AbstractBottomUp}{O,
+    Init, Goal} = t'$ where $\eval{t} = \eval{t'} = Goal$.
+\end{theorem}
+
+\begin{lemma}
+  If $V_0, \dots, V_k$ are produced from a run of \Call{BottomUp}{$O, Init,
+    Goal$} then during \Call{AbstractBottomUp}{$O, Init, Goal$}, $\forall j \leq
+  i.\ \abs{V_i} \sqsupseteq V_i$.
+\end{lemma}
+
+\begin{theorem}[Abstract Soundness]
+  If $\Call{AbstractBottomUp}{O, Init, Goal} = t$, then $\eval{t} = Goal$.
+\end{theorem}
+\begin{proof}
+  $\Call{AbstractBottomUp}{O, Init, Goal}$ returns a program $t$ iff
+  $\Call{Refine}{Init, Goal, \abs{V}, \abs{\Delta}, R}$ returns a program $t$.
+  \textsc{Refine} returns a program $t$ iff $\eval{t} = Goal$.
+\end{proof}
 
 
 \section{Implementation}
