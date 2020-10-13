@@ -6,7 +6,7 @@
 \usepackage{mathbbol}
 
 \author{John Feser}
-\title{Test}
+\title{Abstract bottom-up enumeration}
 
 \newcommand{\abs}[1]{\ensuremath{\widetilde{#1}}}
 \renewcommand{\eval}[1]{\ensuremath{\mathcal{E}\llbracket#1\rrbracket}}
@@ -14,35 +14,34 @@
 
 \begin{document}
 
-\section{Theory}
+\section{Algorithm}
 \subsection{Bottom-up Enumeration}
 
 In this section we formalize a bottom-up enumeration algorithm for an untyped
-DSL with binary operators.
+DSL with binary operators. The algorithm generates a set of states $\mathcal{V}
+= \bigcup_i V_i$, where $V_i$ contains states that are reachable by a program of
+size at most $i$. It also generates a finite relation $R : State \times Operator
+\times State \times State$. If $(\sigma, op, \delta, \delta') \in R$, then
+$\eval{op(\delta, \delta')} = \sigma$ and $\sigma, \delta, \delta' \in
+\mathcal{V}$. Once the target state is reached during enumeration, $R$ is used
+to construct a program that produces the target state from the input states.
 
 \begin{algorithm}
-  \begin{algorithmic}
+  \begin{algorithmic}[1]
     \Function{BottomUp}{$O, Init, Goal$}
     \State $R <- \emptyset, V_0 <- \emptyset, V_1 <- Init$
     \For{$i \in [2, \dots]$}
-    \State Let $\Delta = V_{i - 1} \setminus V_{i - 2}$
-    \If {$Goal \in \Delta$}
+    \If {$Goal \in \mathcal{V}$}
     \State \Return $\Call{Reconstruct}{R, Init, Goal}$
     \EndIf
-    \State $V_i <- V_{i - 1}$
-    \For{$op \in O, v \in V_{i - 1}, \delta \in \Delta$}
-    \State Let $t = op(v, \delta)$ and $t' = op(\delta, v)$
-    \State Let $\sigma = \eval{t}$ and $\sigma' = \eval{t'}$
-    \State $V_i <- V_i \cup \{\sigma, \sigma'\}$
-    \State $R <- R \cup \{(\sigma, op, v, \delta), (\sigma, op, \delta, v)\}$
-    \EndFor
+    \State $V_i, R <- \Call{Fill}{O, \mathcal{V}, i}$
     \EndFor
     \EndFunction
   \end{algorithmic}
 \end{algorithm}
 
 \begin{algorithm}
-  \begin{algorithmic}
+  \begin{algorithmic}[1]
     \Function{Reconstruct}{$R, Init, \sigma$}
     \If {$\sigma \in Init$}
     \State \Return $\sigma$
@@ -50,6 +49,20 @@ DSL with binary operators.
     \State Choose $(\sigma, op, \sigma_l, \sigma_r) \in R$
     \State \Return $op(\Call{Reconstruct}{R, Init, \sigma_l},
     \Call{Reconstruct}{R, Init, \sigma_r})$
+    \EndFunction
+  \end{algorithmic}
+
+  \begin{algorithmic}[1]
+    \Function{Fill}{$O, \mathcal{V}, i$}
+    \State Let $\Delta = V_{i - 1} \setminus V_{i - 2}$
+    \State $V_i <- V_{i - 1}$
+    \For{$op \in O, v \in V_{i - 1}, \delta \in \Delta$}
+    \State Let $t = op(v, \delta)$ and $t' = op(\delta, v)$
+    \State Let $\sigma = \eval{t}$ and $\sigma' = \eval{t'}$
+    \State $V_i <- V_i \cup \{\sigma, \sigma'\}$
+    \State $R <- R \cup \{(\sigma, op, v, \delta), (\sigma, op, \delta, v)\}$
+    \EndFor
+    \State \Return $(V_i, R)$
     \EndFunction
   \end{algorithmic}
 \end{algorithm}
@@ -62,11 +75,6 @@ DSL with binary operators.
   Let $S = \{t | \eval{t} = Goal\}$. If $S \neq \emptyset$ then
   $\Call{BottomUp}{O, Init, Goal} = t$ where $t \in S$.
 \end{theorem}
-% \begin{proof}
-%   Let $T$ be a term s.t. $|[T|] \in Goal$. The proof proceeds by induction on
-%   $T$. If $T \in Init$ then \textsc{BottomUp} terminates immediately. Otherwise,
-%   $T = op(t, t')$. 
-% \end{proof}
 
 \subsection{Abstract Bottom-up Enumeration}
 
@@ -76,66 +84,100 @@ additional complication: the precision loss caused by the abstraction means that
 the goal states that the algorithm reaches may be spurious. The abstraction must
 be incrementally refined to eliminate these spurious goal states.
 
-\
-
 \begin{algorithm}
-  \begin{algorithmic}
+  \begin{algorithmic}[1]
     \Function{AbstractBottomUp}{$O, Init, Goal$}
-    \State $R <- \emptyset, \abs{V_0} <- Init, \abs{\Delta_0} <- Init$
-    \Loop
-    \For{$i \in [1, \dots]$}
-    \If {$Goal \in \abs{\Delta_{i - 1}}$}
-    \If {$\Call{Refine}{Init, Goal, V, \Delta, R}$ returns a term $t$}
-    \State \Return $t$
-    \EndIf
-    \EndIf
-    \For{$op \in O, v \in \abs{V_{i - 1}}, \delta \in \abs{\Delta_{i - 1}}$}
-    \State Let $t = op(v, \delta)$ and $t' = op(\delta, v)$
-    \State Let $\sigma = \aeval{t}$ and $\sigma' = \aeval{t'}$
-    \State $\abs{\Delta_{i}} <- \abs{\Delta_{i}} \cup (\{\sigma, \sigma'\} \setminus \abs{V_{i - 1}})$
-    \State $R <- R \cup \{(\sigma, op, v, \delta), (\sigma, op, \delta, v)\}$
-    \EndFor
-    \State $\abs{V_i} <- \abs{V_{i - 1}} \cup \abs{\Delta_{i}}$
-    \EndFor
-    \EndLoop
-    \EndFunction
-
-    \Function{Refine}{$Init, Goal, \abs{V}, \abs{\Delta}, R$}
-    \State Let $t = \Call{Reconstruct}{R, Init, Goal}$
+    \State $\abs{R} <- \emptyset, \abs{V_0} <- \emptyset, \abs{V_1} <- \{\top\}$
+    \For{$i = 2$\ \textbf{to}\ $\infty$}
+    \While {$Goal \in \abs{\mathcal{V}}$}
+    \State Let $t = \Call{Reconstruct}{\abs{R}, Init, Goal}$
     \If {$\eval{t} = Goal$}
     \State \Return $t$
     \EndIf
-    \State Let $\hat{\sigma}$ be a splittable state s.t. $path_R(Goal, \sigma)$
-    \State Let $\hat{\sigma_l}$ and $\hat{\sigma_r}$ be abstract states s.t.
-    $\hat{\sigma_l} \sqcup \hat{\sigma_r} = \hat{\sigma}$
-    \State Let $Deps = \{\sigma ~|~ \sigma \in V, path_R(\hat{\sigma}, \sigma) \}$
-    \State $\abs{V} <- (\abs{V} \setminus Deps) \cup \{\sigma_l,
-    \sigma_r\}, \abs{\Delta} <- (\abs{\Delta} \setminus Deps) \cup
-    \{\sigma_l, \sigma_r\}$
-    
+    \State Let $\hat{\sigma} \in \abs{V_j}$ be a splittable state s.t.
+    $path_{\abs{R}}(Goal, \sigma)$ and $\hat{\sigma} = \hat{\sigma_l} \sqcup
+    \hat{\sigma_r}$ where $\hat{\sigma_l} \sqcap \hat{\sigma_r} = \emptyset$.
+    \State $\abs{\mathcal{V}} <- \abs{\mathcal{V}} \setminus \bigcup_{k > j} \abs{V_k}$
+    \State $\abs{V_j} <- (\abs{V_j} \setminus \hat{\sigma}) \cup
+    \{\hat{\sigma_l}, \hat{\sigma_r}\}$
+    \For{$k = j + 1$\ \textbf{to}\ $i - 1$}
+    \State $\abs{V_k}, \abs{R} <- \Call{Fill}{O, \abs{\mathcal{V}}, k}$
+    \EndFor
+    \EndWhile
+    \State $\abs{V_i}, \abs{R} <- \Call{Fill}{O, \abs{\mathcal{V}}, i}$
+    \EndFor
     \EndFunction
   \end{algorithmic}
 \end{algorithm}
+
+This algorithm is straightforwardly sound because it only returns programs that
+reach the goal state.
+\begin{theorem}[Abstract Soundness]
+  If $\Call{AbstractBottomUp}{O, Init, Goal} = t$, then $\eval{t} = Goal$.
+\end{theorem}
+\begin{proof}
+  $\Call{AbstractBottomUp}{O, Init, Goal}$ returns a program $t$ iff $\eval{t} = Goal$.
+\end{proof}
+
+To prove that the abstract algorithm is complete we show that if a program is
+found by the concrete bottom-up algorithm, then an equivalent program will also
+be found by the abstract bottom-up algorithm.
 
 \begin{theorem}[Abstract Completeness]
   If $\Call{BottomUp}{O, Init, Goal} = t$, then $\Call{AbstractBottomUp}{O,
     Init, Goal} = t'$ where $\eval{t} = \eval{t'} = Goal$.
 \end{theorem}
 
-\begin{lemma}
-  If $V_0, \dots, V_k$ are produced from a run of \Call{BottomUp}{$O, Init,
-    Goal$} then during \Call{AbstractBottomUp}{$O, Init, Goal$}, $\forall j \leq
-  i.\ \abs{V_i} \sqsupseteq V_i$.
-\end{lemma}
+Assume that we have run \textsc{BottomUp} and generated a program $t$ and state
+sets $\mathcal{V}$. We show that as \textsc{AbstractBottomUp} runs, its abstract
+state sets $\abs{\mathcal{V}}$ converge to $\mathcal{V}$.
 
-\begin{theorem}[Abstract Soundness]
-  If $\Call{AbstractBottomUp}{O, Init, Goal} = t$, then $\eval{t} = Goal$.
-\end{theorem}
-\begin{proof}
-  $\Call{AbstractBottomUp}{O, Init, Goal}$ returns a program $t$ iff
-  $\Call{Refine}{Init, Goal, \abs{V}, \abs{\Delta}, R}$ returns a program $t$.
-  \textsc{Refine} returns a program $t$ iff $\eval{t} = Goal$.
-\end{proof}
+First we show that that each abstract state set $\abs{V_i}$ is a partition of
+the corresponding concrete state set $V_i$ at all points during the execution of
+\textsc{AbstractBottomUp}. Two concrete states $\sigma, \sigma'$ are in the same
+partition if there exists an abstract state $\abs{\delta}$ such that $\sigma,
+\sigma' \in \abs{\delta}$. Informally, $\abs{V_i}$ must partition $V_i$ because
+(1) the initial $\abs{V_0} = \emptyset$ and $\abs{V_1} = \{\top\}$ are
+partitions and (2) the update step on line 11 replaces a state $\hat{\sigma}$
+with two disjoint states $\hat{\sigma_l}$ and $\hat{\sigma_r}$, so $\abs{V_j}$
+remains a partition.
+
+Because the $\abs{V_i}$ are partitions, they form a lattice ordered by the
+finer-than relation. The least element of the lattice is $V_i$ and the greatest
+element is $\{\top\}$.
+
+\begin{definition}[Finer-than]
+  $\abs{\mathcal{V}} \leq \abs{\mathcal{V}}'$ if every element of
+  $\abs{\mathcal{V}}$ is a subset of some element of $\abs{\mathcal{V}}'$.
+\end{definition}
+
+Now we can extend the ordering on $\abs{V_i}$ to an ordering on
+$\abs{\mathcal{V}}$. Ordering the sets $\abs{V_0}, \dots, \abs{V_k}$
+lexicographically gives us a partial order on $\abs{\mathcal{V}}$ where the
+least element is $\mathcal{V}$.
+
+Now we show that $\abs{\mathcal{V}}$ decreases in each iteration of the outer
+loop in \textsc{AbstractBottomUp}. If $Goal \in \abs{\mathcal{V}}$ then we
+select a state and split it into two disjoint states. We then remove all of the
+state sets that can contain states that depend on the split state. If
+$\abs{\mathcal{V}}$ and $\abs{\mathcal{V}}'$ are the state sets before and after
+splitting, then $\abs{\mathcal{V}}' < \abs{\mathcal{V}}$. The set $\abs{V_j}$
+that contains the split state strictly decreases according to the refinement
+order after replacing the split state with two smaller states. Therefore, the
+$\abs{\mathcal{V}}$ strictly decreases as well.
+
+Let $\abs{\mathcal{V}}''$ be the state sets after the filling step on lines
+12-14. This step only changes $V_k$ where $k > j$, so $\abs{\mathcal{V}}'' \leq
+\abs{\mathcal{V}}'$. The same argument holds for the filling step on line 16.
+
+We can conclude that $\abs{\mathcal{V}}$ strictly decreases for every iteration
+of the outer loop. Since $\mathcal{V}$ is the least element in this ordering,
+eventually $\abs{\mathcal{V}} = \mathcal{V}$, at which point
+\textsc{AbstractBottomUp} will terminate with a program $t$, because
+\textsc{BottomUp} also terminated with a program $t$.
+
+Note that \textsc{AbstractBottomUp} can terminate before converging if a correct
+program is found.
 
 
 \section{Implementation}
