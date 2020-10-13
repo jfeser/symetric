@@ -1,18 +1,20 @@
-\documentclass[review]{acmart}
+\documentclass[authordraft,acmsmall,10pt]{acmart}
+
 \usepackage{algorithm}
 \usepackage{algpseudocode}
 \usepackage{semantic}        %% For PL semantics
 \usepackage{stmaryrd}
 \usepackage{mathbbol}
 
-\author{John Feser}
-\title{Abstract bottom-up enumeration}
-
 \newcommand{\abs}[1]{\ensuremath{\widetilde{#1}}}
 \renewcommand{\eval}[1]{\ensuremath{\mathcal{E}\llbracket#1\rrbracket}}
 \newcommand{\aeval}[1]{\ensuremath{\abs{\mathcal{E}}\llbracket#1\rrbracket}}
 
 \begin{document}
+
+\author{John Feser}
+\title{Abstract bottom-up enumeration}
+\maketitle
 
 \section{Algorithm}
 \subsection{Bottom-up Enumeration}
