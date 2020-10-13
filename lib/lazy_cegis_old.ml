@@ -28,30 +28,6 @@ module Program = struct
   include Comparator.Make (T)
 end
 
-let exists_multi_edge graph state_v_ins op =
-  List.fold_left state_v_ins ~init:None ~f:(fun args state_v ->
-      let args = Option.value args ~default:(Set.empty (module Args)) in
-      ())
-
-(* Succ.exists
- *   (graph, Node.of_state state_v_out)
- *   ~f:(fun v ->
- *     let args_v = Node.to_args_exn v in
- *     [%compare.equal: Op.t] (Args.op args_v) op
- *     && List.for_alli state_v_ins ~f:(fun i state_v ->
- *            G.mem_edge_e graph (v, i, Node.of_state state_v))) *)
-
-let insert_multi_edge graph state_v_ins op state_v_out =
-  let args_v = Args.create op |> Node.of_args in
-  List.iteri state_v_ins ~f:(fun i v ->
-      G.add_edge_e graph (args_v, i, Node.of_state v));
-  G.add_edge_e graph (Node.of_state state_v_out, -1, args_v)
-
-let insert_multi_edge_if_not_exists graph state_v_ins op cost state_out =
-  let state_v_out = State.create state_out cost |> Is_fresh.unwrap in
-  if not (exists_multi_edge graph state_v_ins op) then
-    insert_multi_edge graph state_v_ins op state_v_out
-
 let did_change f =
   G.reset_changed ();
   let ret = f () in
@@ -87,11 +63,14 @@ let fill_cost (graph : Search_state.t) cost =
                                | Sub -> Abs.sub s s'
                                | _ -> assert false
                              in
-                             insert_multi_edge_if_not_exists graph.graph
-                               [ a; a' ] op cost state))));
+                             let state_v_out =
+                               State.create state cost |> Is_fresh.unwrap
+                             in
+                             insert_hyper_edge_if_not_exists graph [ a; a' ] op
+                               state_v_out))));
 
     let size' = nb_vertex graph in
-    Dump.dump_detailed ~suffix:(sprintf "after-fill-%d" cost) graph.graph;
+    Dump.dump_detailed ~suffix:(sprintf "after-fill-%d" cost) graph;
 
     Fmt.epr "Pruning: size before=%d, after=%d, removed %f%%\n" size size'
       Float.(100.0 - (of_int size' / of_int size * 100.0)) )
@@ -137,7 +116,7 @@ let refine_level n graph =
         ~state:(fun v -> (num + Abs.width (State.state v), dem + n)))
 
 let refine search_state output refinement =
-  let graph = search_state.graph in
+  let graph = search_state in
   let size = nb_vertex search_state in
 
   List.iteri refinement ~f:(fun i (r : Refine.Refinement.t) ->
@@ -180,7 +159,7 @@ let rec extract_program graph selected_edges target =
       Error.create "Too many args" args [%sexp_of: Args.t list] |> Error.raise
 
 let refute search_state output =
-  let graph = search_state.graph in
+  let graph = search_state in
   match
     V.find_map graph ~f:(fun v ->
         match Node.to_state v with
@@ -241,12 +220,13 @@ let count_compressible graph =
 
 let synth ?(no_abstraction = false) inputs output =
   let search_state = create () in
-  let graph = search_state.graph in
+  let graph = search_state in
 
   (* Add inputs to the state space graph. *)
   List.iter inputs ~f:(fun input ->
       let state = if no_abstraction then Abs.lift input else Abs.top in
-      insert_multi_edge_if_not_exists graph [] (Op.Input input) 1 state);
+      let state_v_out = State.create state 1 |> Is_fresh.unwrap in
+      insert_hyper_edge_if_not_exists graph [] (Op.Input input) state_v_out);
 
   let status =
     try

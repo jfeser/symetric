@@ -35,6 +35,8 @@ module Option_vector : sig
   val get_some_exn : 'a t -> int -> 'a
 
   val set_some : 'a t -> int -> 'a -> unit
+
+  val get : 'a t -> int -> 'a option
 end = struct
   type 'a t = 'a Option_array.t ref
 
@@ -50,35 +52,8 @@ end = struct
   let get_some_exn a = Option_array.get_some_exn !a
 
   let set_some a = Option_array.set_some !a
-end
 
-module Args = struct
-  let ops = Option_vector.create 128
-
-  let id_ctr = ref 0
-
-  let id = ident
-
-  let op id = Option_vector.get_some_exn ops (id / 2)
-
-  module T = struct
-    type t = int [@@deriving compare, equal, hash]
-
-    let sexp_of_t id = [%sexp_of: int * Op.t] (id, op id)
-  end
-
-  include T
-  include Comparator.Make (T)
-
-  let graphviz_pp fmt x = Fmt.pf fmt "%a<br/>id=%d" Op.pp (op x) (id x)
-
-  let create op =
-    let id = !id_ctr in
-    id_ctr := !id_ctr + 2;
-    let idx = id / 2 in
-    Option_vector.reserve ops idx;
-    Option_vector.set_some ops idx op;
-    id
+  let get a = Option_array.get !a
 end
 
 module State = struct
@@ -135,6 +110,58 @@ module State = struct
 
   let graphviz_pp fmt id =
     Fmt.pf fmt "%a<br/>id=%d cost=%d" Abs.graphviz_pp (state id) id (cost id)
+end
+
+module Hyper_edge = struct
+  module T = struct
+    type t = State.t list * Op.t * State.t [@@deriving compare, hash, sexp_of]
+  end
+
+  include T
+
+  let hyper_edges = Hash_set.create (module T)
+
+  let mem = Hash_set.mem hyper_edges
+
+  let add = Hash_set.add hyper_edges
+
+  let remove = Hash_set.remove hyper_edges
+end
+
+module Args = struct
+  let ops = Option_vector.create 128
+
+  let hyper_edges = Option_vector.create 128
+
+  let id_ctr = ref 0
+
+  let id = ident
+
+  let op id = Option_vector.get_some_exn ops (id / 2)
+
+  let hyper_edge id = Option_vector.get hyper_edges (id / 2)
+
+  let set_hyper_edge id = Option_vector.set_some hyper_edges (id / 2)
+
+  module T = struct
+    type t = int [@@deriving compare, equal, hash]
+
+    let sexp_of_t id = [%sexp_of: int * Op.t] (id, op id)
+  end
+
+  include T
+  include Comparator.Make (T)
+
+  let graphviz_pp fmt x = Fmt.pf fmt "%a<br/>id=%d" Op.pp (op x) (id x)
+
+  let create op =
+    let id = !id_ctr in
+    id_ctr := !id_ctr + 2;
+    let idx = id / 2 in
+    Option_vector.reserve ops idx;
+    Option_vector.set_some ops idx op;
+    Option_vector.reserve hyper_edges idx;
+    id
 end
 
 module Node = struct
@@ -222,19 +249,9 @@ module G = struct
       raise_s [%message "iter_succ_e failed" (msg : string) (v : Node.t)]
 end
 
-module Args_table_key = struct
-  module T = struct
-    type t = Op.t * State.t list [@@deriving compare, hash, sexp_of]
-  end
+type t = G.t
 
-  include T
-  include Comparator.Make (T)
-end
-
-type t = { graph : G.t; args_table : Args.t Hashtbl.M(Args_table_key).t }
-
-let create () =
-  { graph = G.create (); args_table = Hashtbl.create (module Args_table_key) }
+let create () = G.create ()
 
 module V = struct
   include Comparator.Make (struct
@@ -321,57 +338,49 @@ module Succ = struct
   end)
 end
 
-let remove_vertexes g vs =
-  let vs = List.filter vs ~f:(G.mem_vertex g.graph) in
-  let to_remove = Set.of_list (module V) vs in
-  let should_keep v = not (Set.mem to_remove v) in
+let filter g ~f =
+  V.filter g ~f:(Fun.negate f)
+  |> List.iter ~f:(fun v -> if G.mem_vertex g v then G.remove_vertex g v)
 
-  Set.iter to_remove ~f:(G.remove_vertex g.graph);
-  Hashtbl.filteri_inplace g.args_table ~f:(fun ~key:(_, states) ~data ->
-      should_keep data
-      && List.for_all states ~f:(fun v -> should_keep @@ Node.of_state v))
-
-let filter g ~f = remove_vertexes g @@ V.filter g.graph ~f:(Fun.negate f)
-
-let nb_vertex g = G.nb_vertex g.graph
+let nb_vertex = G.nb_vertex
 
 let states_of_cost g cost =
-  State.of_cost cost |> List.filter ~f:(G.mem_vertex g.graph)
-
-let check g =
-  Hashtbl.iter g.args_table ~f:(fun v ->
-      assert (G.mem_vertex g.graph @@ Node.of_args v))
+  State.of_cost cost |> List.filter ~f:(G.mem_vertex g)
 
 let inputs g arg_v =
-  G.succ_e g.graph (Node.of_args arg_v)
+  G.succ_e g (Node.of_args arg_v)
   |> List.map ~f:(fun (_, n, v) -> (Node.to_state_exn v, n))
   |> List.sort ~compare:(fun (_, n) (_, n') -> [%compare: int] n n')
   |> List.map ~f:(fun (v, _) -> v)
 
+let remove_args g v =
+  Option.iter (Args.hyper_edge v) ~f:Hyper_edge.remove;
+  G.remove_vertex g (Node.of_args v)
+
 let fix_up_args work add_work state args_v =
   let v = Node.of_args args_v in
-  if G.out_degree state.graph v <> Op.arity (Args.op args_v) then (
-    let work' = G.fold_pred (fun v' w -> add_work w v') state.graph v work in
-    remove_vertexes state [ v ];
+  if G.out_degree state v <> Op.arity (Args.op args_v) then (
+    let work' = G.fold_pred (fun v' w -> add_work w v') state v work in
+    remove_args state args_v;
     work' )
-  else if G.in_degree state.graph v = 0 then (
-    remove_vertexes state [ v ];
+  else if G.in_degree state v = 0 then (
+    remove_args state args_v;
     work )
   else work
 
 let fix_up_states work add_work state state_v =
   let v = Node.of_state state_v in
-  if G.out_degree state.graph v = 0 then (
-    let work' = G.fold_pred (fun v' w -> add_work w v') state.graph v work in
-    remove_vertexes state [ v ];
+  if G.out_degree state v = 0 then (
+    let work' = G.fold_pred (fun v' w -> add_work w v') state v work in
+    G.remove_vertex state v;
     work' )
   else work
 
 let fix_up state =
-  let worklist = Queue.of_list @@ V.to_list state.graph in
+  let worklist = Queue.of_list @@ V.to_list state in
   let add_work () v = Queue.enqueue worklist v in
   let fix_node v =
-    if V.mem state.graph v then
+    if V.mem state v then
       Node.match_
         ~args:(fix_up_args () add_work state)
         ~state:(fix_up_states () add_work state)
@@ -385,3 +394,17 @@ let fix_up state =
     | None -> ()
   in
   loop ()
+
+let insert_hyper_edge graph state_v_ins op state_v_out =
+  let args_v = Args.create op |> Node.of_args in
+  let hyper_edge = (state_v_ins, op, state_v_out) in
+  Args.set_hyper_edge args_v hyper_edge;
+  Hyper_edge.add hyper_edge;
+  List.iteri state_v_ins ~f:(fun i v ->
+      G.add_edge_e graph (args_v, i, Node.of_state v));
+  G.add_edge_e graph (Node.of_state state_v_out, -1, args_v)
+
+let insert_hyper_edge_if_not_exists graph state_v_ins op state_v_out =
+  let hyper_edge = (state_v_ins, op, state_v_out) in
+  if not (Hyper_edge.mem hyper_edge) then
+    insert_hyper_edge graph state_v_ins op state_v_out

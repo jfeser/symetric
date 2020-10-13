@@ -28,8 +28,7 @@ let main ~n ~seed ~k ~print_header ~abstraction ~check () =
   let search_state, stats = synth ~no_abstraction inputs output in
 
   let check_output =
-    if check && not stats.sat then
-      Some (check_search_space inputs search_state.graph)
+    if check && not stats.sat then Some (check_search_space inputs search_state)
     else None
   in
   Fmt.pr "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d\n" k n seed !Global.max_cost

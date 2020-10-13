@@ -464,7 +464,7 @@ let synth_constrs graph target_node expected_output separator =
 
 let get_refinement state target_node expected_output separator =
   (* Select the subset of the graph that can reach the target. *)
-  let graph = cone state.graph (Node.of_state target_node) separator in
+  let graph = cone state (Node.of_state target_node) separator in
   let separator = List.filter separator ~f:(G.mem_vertex graph) in
 
   Dump.dump_detailed ~suffix:"before-refine"

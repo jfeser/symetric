@@ -82,16 +82,7 @@ module G : sig
   val reset_changed : unit -> unit
 end
 
-module Args_table_key : sig
-  type t = Op.t * State.t list [@@deriving compare, hash, sexp_of]
-
-  include Comparator.S with type t := t
-end
-
-type t = private {
-  graph : G.t;
-  args_table : Args.t Hashtbl.M(Args_table_key).t;
-}
+type t = G.t
 
 module E : sig
   include Comparator.S with type t := G.E.t
@@ -123,12 +114,11 @@ val states_of_cost : t -> int -> State.t list
 
 val filter : t -> f:(G.V.t -> bool) -> unit
 
-val remove_vertexes : t -> G.V.t list -> unit
-
 val nb_vertex : t -> int
-
-val check : t -> unit
 
 val inputs : t -> Args.t -> State.t list
 
 val fix_up : t -> unit
+
+val insert_hyper_edge_if_not_exists :
+  t -> State.t list -> Op.t -> State.t -> unit
