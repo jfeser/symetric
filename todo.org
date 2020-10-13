@@ -186,3 +186,23 @@
 ** TODO Prove that with this simple refinement model, the abstract algorithm is correct
     Key ideas:
     - When we hit a goal state, nondeterministically split a state or remove an unreachable state
+
+When refining, we nondeterministically select a state that participates in the
+spurious program. We then prune every state at a higher level (because they are
+the only ones that could have been derived from the bad state). Since states
+can't be refined indefinitely, eventually all of the first level states will be
+fully refined and once that happens the algorithm reverts to concrete bottom up.
+
+Might have to refine a state set instead of a single state. We know that this
+set always exists because either all of the reconstructed programs are correct
+or there exists an incorrect program that can be split out.
+
+After refinement and filling, abs(V') comes before abs(V) in the refinement
+level partial order. Splitting a state in V_i generates V_i' and V_i' < V_i.
+
+Each abs(V_i) is a partition of V_i, and different abs(V_i)s are ordered by the
+finer-than relation. abs(V) is a sequence of these abs(V_i)s and these sequences
+are ordered lexicographically using the finer than order. Therefore, as the
+abstract search runs, its V state descends in the partial order. We know that
+there are no infinite descending chains in this order, so eventually it has to
+hit the concrete V.
