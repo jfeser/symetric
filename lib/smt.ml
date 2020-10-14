@@ -113,9 +113,35 @@ module Defn = struct
     Fmt.pf fmt "(define-fun %a %a)" pp_sig (name, n_args) Expr.pp body
 end
 
+module Revlist : sig
+  type 'a t
+
+  val empty : 'a t
+
+  val append : 'a t -> 'a -> 'a t
+
+  val to_list : 'a t -> 'a list
+
+  val filter : 'a t -> f:('a -> bool) -> 'a t
+end = struct
+  type 'a t = 'a list
+
+  let empty = []
+
+  let append x l = l :: x
+
+  let to_list = List.rev
+
+  let filter = List.filter
+end
+
 type stmt = Decl of Decl.t | Defn of Defn.t | Assert of Expr.t
 
-type state = { stmts : (stmt * string) list; var_ctr : int; group_ctr : int }
+type state = {
+  stmts : (stmt * string) Revlist.t;
+  var_ctr : int;
+  group_ctr : int;
+}
 
 type 'a t = State of (state -> 'a * state) [@@unboxed]
 
@@ -136,7 +162,7 @@ end)
 
 let with_state s (State f) = f s
 
-let run c = with_state { stmts = []; var_ctr = 0; group_ctr = 0 } c
+let run c = with_state { stmts = Revlist.empty; var_ctr = 0; group_ctr = 0 } c
 
 let eval c = Tuple.T2.get1 @@ run c
 
@@ -145,7 +171,7 @@ let eval_with_state s c = Tuple.T2.get1 @@ with_state s c
 let clear_asserts =
   let f s =
     let stmts' =
-      List.filter s.stmts ~f:(fun (stmt, _) ->
+      Revlist.filter s.stmts ~f:(fun (stmt, _) ->
           match stmt with Assert _ -> false | _ -> true)
     in
     ((), { s with stmts = stmts' })
@@ -161,7 +187,8 @@ let add_stmt stmt =
     | Defn d -> Fmt.str "%a" Defn.to_smtlib d
     | Assert a -> Fmt.str "(assert %a)" Expr.pp a
   in
-  State (fun s -> ((), { s with stmts = s.stmts @ [ (stmt, stmt_str) ] }))
+  State
+    (fun s -> ((), { s with stmts = Revlist.append s.stmts (stmt, stmt_str) }))
 
 let get_stmts = State (fun s -> (s.stmts, s))
 
@@ -378,12 +405,12 @@ let get_interpolant_or_model groups =
   let%bind stmts = get_stmts in
   with_mathsat
   @@ get_interpolant_or_model_inner groups
-  @@ List.map ~f:Tuple.T2.get2 stmts
+  @@ List.map ~f:Tuple.T2.get2 @@ Revlist.to_list stmts
 
 let get_model =
   let open Sexp in
   let%bind stmts = get_stmts in
-  let stmts = List.map ~f:Tuple.T2.get2 stmts in
+  let stmts = List.map ~f:Tuple.T2.get2 @@ Revlist.to_list stmts in
   with_mathsat @@ fun read write ->
   write ([ "(set-option :produce-models true)" ] @ stmts @ [ "(check-sat)" ]);
   let is_sat =
@@ -401,7 +428,7 @@ let get_model =
 let check_sat =
   let open Sexp in
   let%bind stmts = get_stmts in
-  let stmts = List.map ~f:Tuple.T2.get2 stmts in
+  let stmts = List.map ~f:Tuple.T2.get2 @@ Revlist.to_list stmts in
   with_mathsat @@ fun read write ->
   write (stmts @ [ "(check-sat)" ]);
   return
