@@ -377,17 +377,17 @@ let fix_up_states work add_work state state_v =
   else work
 
 let fix_up state =
-  let worklist = Queue.of_list @@ V.to_list state in
-  let add_work () v = Queue.enqueue worklist v in
+  let worklist = Hash_queue.create @@ Hashtbl.Hashable.of_key (module Node) in
+  let add_work () v = Hash_queue.enqueue_back worklist v v |> ignore in
+  V.iter state ~f:(add_work ());
   let fix_node v =
-    if V.mem state v then
-      Node.match_
-        ~args:(fix_up_args () add_work state)
-        ~state:(fix_up_states () add_work state)
-        v
+    Node.match_
+      ~args:(fix_up_args () add_work state)
+      ~state:(fix_up_states () add_work state)
+      v
   in
   let rec loop () =
-    match Queue.dequeue worklist with
+    match Hash_queue.dequeue_back worklist with
     | Some v ->
         fix_node v;
         loop ()

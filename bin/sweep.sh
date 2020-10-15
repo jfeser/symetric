@@ -14,7 +14,7 @@ rm jobs
 #          :::: <(seq 1 25) ::: 4 ::: first random pareto \
 #          >> "$WORKDIR/jobs"
 
-parallel \ 'echo {1} {2} 9 32' \
+parallel \ 'echo {1} {2} 15 32' \
          :::: <(seq 1 200) ::: 4 \
          >> "$WORKDIR/jobs"
 
