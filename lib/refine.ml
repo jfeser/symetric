@@ -113,7 +113,9 @@ module Vars = struct
   }
 
   let make_bit_vars prefix =
-    List.init !Global.n_bits ~f:(fun b -> Smt.fresh_decl ~prefix:(prefix b) ())
+    List.init
+      (Set_once.get_exn Global.n_bits [%here])
+      ~f:(fun b -> Smt.fresh_decl ~prefix:(prefix b) ())
     |> Smt.all
 
   let make graph =
@@ -159,7 +161,7 @@ let check_true interpolant v state =
   let open Smt.Let_syntax in
   let prob =
     let%bind () = Smt.clear_asserts in
-    let%bind () = Smt.(assert_ Bool.(not (interpolant => Var v))) in
+    let%bind () = Smt.(assert_ (not (interpolant => var v))) in
     Smt.check_sat
   in
   not (Smt.eval_with_state state prob)
@@ -168,7 +170,7 @@ let check_false interpolant v state =
   let open Smt.Let_syntax in
   let prob =
     let%bind () = Smt.clear_asserts in
-    let%bind () = Smt.(assert_ Bool.(not (interpolant => not (Var v)))) in
+    let%bind () = Smt.(assert_ (not (interpolant => not (var v)))) in
     Smt.check_sat
   in
   not (Smt.eval_with_state state prob)
@@ -232,7 +234,9 @@ let refinement_of_model graph separator interpolant forced vars =
              let splits =
                List.map state_nodes ~f:(fun v ->
                    let state = State.state v in
-                   (* For each refined bit, generate a pair of refined states. If the bit contradicts a bit that is already refined, the state will be pruned. *)
+                   (* For each refined bit, generate a pair of refined states.
+                      If the bit contradicts a bit that is already refined, the
+                      state will be pruned. *)
                    let refined_states =
                      List.fold refined_out_bits
                        ~init:(Some [ state ])
@@ -265,9 +269,9 @@ let refinement_of_model graph separator interpolant forced vars =
   Fmt.epr "Refinement: %a@." Fmt.Dump.(list Refinement.pp) refinement;
   if List.is_empty refinement then failwith "No-op refinement" else refinement
 
-let assert_group_var g v = Smt.(Interpolant.assert_group ~group:g (Expr.Var v))
+let assert_group_var g v = Smt.(Interpolant.assert_group ~group:g (var v))
 
-let vars_to_exprs = List.map ~f:Smt.Expr.var
+let vars_to_exprs = List.map ~f:Smt.var
 
 let find_edge_vars vars = List.map ~f:(Map.find_exn vars.edge_vars)
 
@@ -290,9 +294,9 @@ let assert_input_states_contained group vars graph =
          let state = State.state state_v in
          List.filter_mapi vars ~f:(fun b v ->
              match Map.find state b with
-             | Some x -> Some Bool.(bool x = Expr.var v)
+             | Some x -> Some (bool x = var v)
              | None -> None)
-         |> Bool.and_
+         |> and_
          |> fresh_defn ~prefix:(Fmt.str "state-%d" @@ State.id state_v)
          >>= assert_group_var group)
   |> all_unit
@@ -302,8 +306,7 @@ let assert_output_state_contained group vars target_node expected_output =
   let state_vars = Map.find_exn vars.state_vars target_node
   and expected = Array.to_list expected_output in
   let body =
-    List.map2_exn state_vars expected ~f:(fun x v -> Bool.(Expr.var x = bool v))
-    |> Bool.and_
+    List.map2_exn state_vars expected ~f:(fun x v -> var x = bool v) |> and_
   in
   fresh_defn ~prefix:"correct-output" body >>= assert_group_var group
 
@@ -311,12 +314,10 @@ let assert_selected_state_selects_input group vars graph state_v =
   let open Smt in
   let v = Node.of_state state_v in
   let parent_select =
-    if G.in_degree graph v > 0 then Bool.or_ @@ pred_selected vars graph v
-    else Bool.true_
+    if G.in_degree graph v > 0 then or_ @@ pred_selected vars graph v else true_
   and child_select =
-    if G.out_degree graph v > 0 then
-      Bool.exactly_one @@ succ_selected vars graph v
-    else Bool.true_
+    if G.out_degree graph v > 0 then exactly_one @@ succ_selected vars graph v
+    else true_
   in
   let body = Bool.(parent_select => child_select)
   and name = sprintf "state-%d-deps" (State.id state_v) in
@@ -326,10 +327,9 @@ let assert_selected_args_selects_inputs group vars graph args_v =
   let open Smt in
   let v = Node.of_args args_v in
   let parent_select =
-    if G.in_degree graph v > 0 then Bool.or_ @@ pred_selected vars graph v
-    else Bool.true_
+    if G.in_degree graph v > 0 then or_ @@ pred_selected vars graph v else true_
   and child_select = succ_selected vars graph v in
-  let body = Bool.(parent_select => and_ child_select)
+  let body = parent_select => and_ child_select
   and name = sprintf "args-%d-deps" (Args.id args_v) in
   fresh_defn ~prefix:name body >>= assert_group_var group
 
@@ -341,10 +341,9 @@ let assert_state_semantics group vars graph v =
     |> List.map ~f:(fun ((_, _, v) as e) ->
            let args_v = Node.to_args_exn v in
            let args_vars = Map.find_exn vars.arg_vars args_v |> vars_to_exprs in
-           let is_selected = Map.find_exn vars.edge_vars e |> Expr.var in
-           Bool.(
-             is_selected => and_ (List.map2_exn args_vars state_vars ~f:( = ))))
-    |> Bool.and_
+           let is_selected = Map.find_exn vars.edge_vars e |> var in
+           is_selected => and_ (List.map2_exn args_vars state_vars ~f:( = )))
+    |> and_
   and name = sprintf "state-%d-semantics" (State.id v) in
   fresh_defn ~prefix:name body >>= assert_group_var group
 
@@ -373,7 +372,7 @@ let assert_args_semantics group vars graph v =
         Error.failwiths ~here:[%here] "Unexpected op." (op, states)
           [%sexp_of: Op.t * Expr.t list list]
   in
-  let body = Bool.and_ semantic
+  let body = and_ semantic
   and name = Fmt.str "semantics-%a-%d" Op.pp (Args.op v) (Args.id v) in
   fresh_defn ~prefix:name body >>= assert_group_var group
 

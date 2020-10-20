@@ -1,3 +1,5 @@
+open Ast
+
 module Stats : sig
   type t = {
     n_state_nodes : int;
@@ -11,10 +13,4 @@ module Stats : sig
   }
 end
 
-val synth :
-  ?no_abstraction:bool -> Conc.t list -> Conc.t -> Search_state.t * Stats.t
-
-val random_io : ?state:Random.State.t -> n:int -> k:int -> Conc.t list * Conc.t
-
-val check_search_space :
-  ?n:int -> Conc.t list -> Search_state.G.t -> (unit, Conc.t) result
+val synth : Op.t list -> Conc.t -> Search_state.t * Stats.t

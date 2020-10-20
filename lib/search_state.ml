@@ -1,3 +1,5 @@
+open Ast
+
 module Is_fresh = struct
   type 'a t = Fresh of 'a | Stale of 'a
 
@@ -7,23 +9,6 @@ module Is_fresh = struct
 end
 
 open Is_fresh
-
-module Op = struct
-  type t = Input of Conc.t | Union | Inter | Sub
-  [@@deriving compare, equal, hash, sexp]
-
-  let pp fmt op =
-    let str =
-      match op with
-      | Input _ -> "in"
-      | Union -> "or"
-      | Inter -> "and"
-      | Sub -> "diff"
-    in
-    Fmt.pf fmt "%s" str
-
-  let arity = function Input _ -> 0 | Union | Inter | Sub -> 2
-end
 
 module Option_vector : sig
   type 'a t

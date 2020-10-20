@@ -1,18 +1,11 @@
+open Ast
+
 module Is_fresh : sig
   type 'a t = Fresh of 'a | Stale of 'a
 
   val is_fresh : 'a t -> bool
 
   val unwrap : 'a t -> 'a
-end
-
-module Op : sig
-  type t = Input of Conc.t | Union | Inter | Sub
-  [@@deriving compare, equal, hash, sexp]
-
-  val pp : t Fmt.t
-
-  val arity : t -> int
 end
 
 module Args : sig

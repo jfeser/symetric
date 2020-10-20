@@ -19,13 +19,13 @@ let pp_sig fmt (name, n_args) =
     Fmt.pf fmt "%s (%s) Bool" name args
 
 module Expr = struct
-  type binop = Implies | Equals [@@deriving equal, sexp]
+  type binop = Implies | Equals [@@deriving compare, sexp]
 
-  type unop = Not [@@deriving equal, sexp]
+  type unop = Not [@@deriving compare, sexp]
 
-  type varop = And | Or [@@deriving equal, sexp]
+  type varop = And | Or [@@deriving compare, sexp]
 
-  type var = String_id.t [@@deriving equal, sexp]
+  type var = String_id.t [@@deriving compare, hash, sexp]
 
   type t =
     | Bool of bool
@@ -35,7 +35,7 @@ module Expr = struct
     | Varop of varop * t list
     | Let of (t * var * t)
     | Annot of t * string * string
-  [@@deriving equal, variants, sexp]
+  [@@deriving compare, variants, sexp]
 
   let pp_binop fmt = function
     | Implies -> Fmt.pf fmt "=>"
@@ -94,6 +94,82 @@ module Expr = struct
 end
 
 open Expr
+
+let var_s = Expr.var_s
+
+let var x = Var x
+
+let false_ = Bool false
+
+let true_ = Bool true
+
+let is_false = function Bool x -> not x | _ -> false
+
+let is_true = function Bool x -> x | _ -> false
+
+let or_ xs =
+  let or_simple = function [] -> false_ | [ x ] -> x | xs -> Varop (Or, xs) in
+  let rec or_ acc = function
+    | [] -> or_simple (List.rev acc)
+    | Bool false :: xs -> or_ acc xs
+    | Bool true :: _ -> true_
+    | x :: xs -> or_ (x :: acc) xs
+  in
+  or_ [] xs
+
+let and_ xs =
+  let and_simple = function
+    | [] -> true_
+    | [ x ] -> x
+    | xs -> Varop (And, xs)
+  in
+  let rec and_ acc = function
+    | [] -> and_simple (List.rev acc)
+    | Bool false :: _ -> false_
+    | Bool true :: xs -> and_ acc xs
+    | x :: xs -> and_ (x :: acc) xs
+  in
+  and_ [] xs
+
+let not_ = function
+  | Bool true -> false_
+  | Bool false -> true_
+  | x -> Unop (Not, x)
+
+let implies x y =
+  if is_true x then y
+  else if is_false x || is_true y then true_
+  else if is_false y then not_ x
+  else Binop (Implies, x, y)
+
+let ( = ) x y =
+  match (x, y) with
+  | Bool true, _ -> y
+  | _, Bool true -> x
+  | Bool false, _ -> not_ y
+  | _, Bool false -> not_ x
+  | _, _ -> Binop (Equals, x, y)
+
+let ( || ) x x' = or_ [ x; x' ]
+
+let ( && ) x x' = and_ [ x; x' ]
+
+let not = not_
+
+let ( => ) = implies
+
+let at_least_one = or_
+
+let at_most_one xs =
+  let module Seq = Sequence in
+  let xs = Array.of_list xs and n = List.length xs in
+  Seq.init n ~f:(fun i ->
+      Seq.range (i + 1) n |> Seq.map ~f:(fun j -> (not xs.(i)) || not xs.(j)))
+  |> Seq.concat |> Seq.to_list |> and_
+
+let exactly_one xs = at_least_one xs && at_most_one xs
+
+let bool x = if x then true_ else false_
 
 module Decl = struct
   type t = { name : string; n_args : int }
@@ -216,84 +292,6 @@ let annotate key value term = Annot (term, key, value)
 
 let comment = annotate "comment"
 
-module Bool = struct
-  let false_ = Bool false
-
-  let true_ = Bool true
-
-  let is_false = function Bool x -> not x | _ -> false
-
-  let is_true = function Bool x -> x | _ -> false
-
-  let or_ xs =
-    let or_simple = function
-      | [] -> false_
-      | [ x ] -> x
-      | xs -> Varop (Or, xs)
-    in
-    let rec or_ acc = function
-      | [] -> or_simple (List.rev acc)
-      | Bool false :: xs -> or_ acc xs
-      | Bool true :: _ -> true_
-      | x :: xs -> or_ (x :: acc) xs
-    in
-    or_ [] xs
-
-  let and_ xs =
-    let and_simple = function
-      | [] -> true_
-      | [ x ] -> x
-      | xs -> Varop (And, xs)
-    in
-    let rec and_ acc = function
-      | [] -> and_simple (List.rev acc)
-      | Bool false :: _ -> false_
-      | Bool true :: xs -> and_ acc xs
-      | x :: xs -> and_ (x :: acc) xs
-    in
-    and_ [] xs
-
-  let not_ = function
-    | Bool true -> false_
-    | Bool false -> true_
-    | x -> Unop (Not, x)
-
-  let implies x y =
-    if is_true x then y
-    else if is_false x || is_true y then true_
-    else if is_false y then not_ x
-    else Binop (Implies, x, y)
-
-  let ( = ) x y =
-    match (x, y) with
-    | Bool true, _ -> y
-    | _, Bool true -> x
-    | Bool false, _ -> not_ y
-    | _, Bool false -> not_ x
-    | _, _ -> Binop (Equals, x, y)
-
-  let ( || ) x x' = or_ [ x; x' ]
-
-  let ( && ) x x' = and_ [ x; x' ]
-
-  let not = not_
-
-  let ( => ) = implies
-
-  let at_least_one = or_
-
-  let at_most_one xs =
-    let module Seq = Sequence in
-    let xs = Array.of_list xs and n = List.length xs in
-    Seq.init n ~f:(fun i ->
-        Seq.range (i + 1) n |> Seq.map ~f:(fun j -> (not xs.(i)) || not xs.(j)))
-    |> Seq.concat |> Seq.to_list |> and_
-
-  let exactly_one xs = at_least_one xs && at_most_one xs
-
-  let bool x = if x then true_ else false_
-end
-
 let assert_ expr = add_stmt @@ Assert expr
 
 module Interpolant = struct
@@ -304,8 +302,6 @@ module Interpolant = struct
 
     val create : t s
 
-    val sexp_of : t -> Sexp.t
-
     val pp : t Fmt.t
   end
   with type 'a s := 'a t = struct
@@ -313,8 +309,6 @@ module Interpolant = struct
 
     let create =
       State (fun s -> (s.group_ctr, { s with group_ctr = s.group_ctr + 1 }))
-
-    let sexp_of x = Sexp.Atom (Fmt.str "g%d" x)
 
     let pp fmt x = Fmt.pf fmt "g%d" x
   end

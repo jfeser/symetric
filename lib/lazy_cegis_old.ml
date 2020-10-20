@@ -1,5 +1,6 @@
 [@@@landmark "auto"]
 
+open Ast
 open Search_state
 
 module Seq = struct
@@ -8,19 +9,39 @@ module Seq = struct
   let of_array a = init (Array.length a) ~f:(fun i -> a.(i))
 end
 
+let apply2 f args =
+  match args with [ x; x' ] -> f x x' | _ -> failwith "Unexpected args"
+
+let apply6 f args =
+  match args with
+  | [ x1; x2; x3; x4; x5; x6 ] -> f x1 x2 x3 x4 x5 x6
+  | _ -> failwith "Unexpected args"
+
+let abs_eval op args =
+  match op with
+  | Op.Union -> apply2 Abs.union args
+  | Inter -> apply2 Abs.inter args
+  | Sub -> apply2 Abs.sub args
+  | Cylinder c -> apply2 (Abs.cylinder c) args
+  | Cuboid c -> apply6 (Abs.cuboid c) args
+  | Sphere _ | Offset _ -> failwith "leaf node"
+
+let conc_eval op args =
+  match op with
+  | Op.Union -> apply2 Conc.union args
+  | Inter -> apply2 Conc.inter args
+  | Sub -> apply2 Conc.sub args
+  | Cylinder c -> apply2 (Conc.cylinder c) args
+  | Cuboid c -> apply6 (Conc.cuboid c) args
+  | Sphere s -> Conc.sphere s
+  | Offset x -> Conc.offset x.offset
+
 module Program = struct
   module T = struct
     type t = [ `Apply of Op.t * t list ] [@@deriving compare, hash, sexp]
   end
 
-  let rec ceval (`Apply (op, args)) =
-    match (op, args) with
-    | Op.Input x, _ -> x
-    | Union, [ x; y ] -> Array.map2_exn (ceval x) (ceval y) ~f:( || )
-    | Inter, [ x; y ] -> Array.map2_exn (ceval x) (ceval y) ~f:( && )
-    | Sub, [ x; y ] ->
-        Array.map2_exn (ceval x) (ceval y) ~f:(fun a b -> a && not b)
-    | _ -> assert false
+  let rec ceval (`Apply (op, args)) = conc_eval op (List.map args ~f:ceval)
 
   let rec size (`Apply (_, args)) = 1 + List.sum (module Int) args ~f:size
 
@@ -113,7 +134,11 @@ let refine_level n graph =
   V.fold graph ~init:(0, 0) ~f:(fun ((num, dem) as acc) ->
       Node.match_
         ~args:(fun _ -> acc)
-        ~state:(fun v -> (num + Abs.width (State.state v), dem + n)))
+        ~state:(fun v ->
+          let state = State.state v in
+          match state with
+          | Bool_vector v -> (num + Abs.Bool_vector.width v, dem + n)
+          | _ -> acc))
 
 let refine search_state output refinement =
   let graph = search_state in
@@ -136,11 +161,7 @@ let refine search_state output refinement =
 
   let size' = nb_vertex search_state in
   Fmt.epr "Pruning: size before=%d, after=%d, removed %f%%\n" size size'
-    Float.(100.0 - (of_int size' / of_int size * 100.0));
-
-  let num, dem = refine_level (Array.length output) graph in
-  Fmt.epr "Refine level: %d/%d (%f%%)\n" num dem
-    Float.(of_int num / of_int dem * 100.0)
+    Float.(100.0 - (of_int size' / of_int size * 100.0))
 
 let rec extract_program graph selected_edges target =
   let args =
@@ -218,15 +239,18 @@ let count_compressible graph =
   Fmt.epr "Compressed args: reduces %d to %d\n" (List.length args)
     (Set.length set_args)
 
-let synth ?(no_abstraction = false) inputs output =
+let synth ops output =
   let search_state = create () in
   let graph = search_state in
 
   (* Add inputs to the state space graph. *)
-  List.iter inputs ~f:(fun input ->
-      let state = if no_abstraction then Abs.lift input else Abs.top in
-      let state_v_out = State.create state 1 |> Is_fresh.unwrap in
-      insert_hyper_edge_if_not_exists graph [] (Op.Input input) state_v_out);
+  List.iter ops ~f:(fun op ->
+      match Op.type_ op with
+      | [], ret_t ->
+          let state = Abs.top ret_t in
+          let state_v_out = State.create state 1 |> Is_fresh.unwrap in
+          insert_hyper_edge_if_not_exists graph [] op state_v_out
+      | _ -> ());
 
   let status =
     try
@@ -242,157 +266,17 @@ let synth ?(no_abstraction = false) inputs output =
     with Done status -> status
   in
 
-  let widths =
-    V.filter_map graph ~f:(fun v ->
-        match Node.to_state v with
-        | Some v -> Some (Abs.width @@ State.state v)
-        | _ -> None)
-    |> List.sort ~compare:[%compare: int]
-    |> Array.of_list
-  in
   let stats =
     Stats.
       {
         n_state_nodes = V.filter graph ~f:Node.is_state |> List.length;
         n_arg_nodes = V.filter graph ~f:Node.is_args |> List.length;
         n_covered = -1;
-        n_refuted = !Global.n_refuted;
-        min_width = widths.(0);
-        max_width = widths.(Array.length widths - 1);
-        median_width = widths.(Array.length widths / 2);
+        n_refuted = -1;
+        min_width = -1;
+        max_width = -1;
+        median_width = -1;
         sat = (match status with `Sat -> true | `Unsat -> false);
       }
   in
   (search_state, stats)
-
-let sample ?(state = Random.State.default) inputs =
-  let open Grammar in
-  let named_inputs = List.mapi inputs ~f:(fun i x -> (sprintf "i%d" i, x)) in
-  let input_rules =
-    List.map named_inputs ~f:(fun (n, _) -> Rule.create "p" (Term.app n []) [])
-  in
-  let g =
-    input_rules
-    @ [
-        Rule.create "p"
-          (Term.app "and" [ Term.nonterm "p"; Term.nonterm "p" ])
-          [];
-        Rule.create "p"
-          (Term.app "or" [ Term.nonterm "p"; Term.nonterm "p" ])
-          [];
-        Rule.create "p"
-          (Term.app "diff" [ Term.nonterm "p"; Term.nonterm "p" ])
-          [];
-      ]
-  in
-  let rec to_prog = function
-    | App (func, args) ->
-        let op =
-          match func with
-          | "and" -> Op.Inter
-          | "or" -> Union
-          | "diff" -> Sub
-          | _ -> (
-              match
-                List.Assoc.find ~equal:[%compare.equal: string] named_inputs
-                  func
-              with
-              | Some i -> Input i
-              | None -> failwith "unexpected function" )
-        in
-        let args = List.map args ~f:to_prog in
-        `Apply (op, args)
-    | _ -> failwith "unexpected term"
-  in
-  let rec sample_prog () =
-    let p = to_prog (Grammar.sample ~state "p" g :> Untyped_term.t) in
-    if Program.size p > !Global.max_cost then sample_prog () else p
-  in
-  sample_prog ()
-
-let sample_big ?(state = Random.State.default) inputs =
-  let open Grammar in
-  let named_inputs = List.mapi inputs ~f:(fun i x -> (sprintf "i%d" i, x)) in
-  let input_rules =
-    List.map named_inputs ~f:(fun (n, _) -> Rule.create "p" (Term.app n []) [])
-  in
-  let g =
-    input_rules
-    @ [
-        Rule.create "p"
-          (Term.app "and" [ Term.nonterm "p"; Term.nonterm "p" ])
-          [];
-        Rule.create "p"
-          (Term.app "or" [ Term.nonterm "p"; Term.nonterm "p" ])
-          [];
-        Rule.create "p"
-          (Term.app "diff" [ Term.nonterm "p"; Term.nonterm "p" ])
-          [];
-      ]
-  in
-  let rec to_prog = function
-    | App (func, args) ->
-        let op =
-          match func with
-          | "and" -> Op.Inter
-          | "or" -> Union
-          | "diff" -> Sub
-          | _ -> (
-              match
-                List.Assoc.find ~equal:[%compare.equal: string] named_inputs
-                  func
-              with
-              | Some i -> Input i
-              | None -> failwith "unexpected function" )
-        in
-        let args = List.map args ~f:to_prog in
-        `Apply (op, args)
-    | _ -> failwith "unexpected term"
-  in
-  let rec sample_prog () =
-    let p = to_prog (Grammar.sample ~state "p" g :> Untyped_term.t) in
-    if Program.size p <> !Global.max_cost then sample_prog () else p
-  in
-  sample_prog ()
-
-let check_search_space ?(n = 100_000) inputs graph =
-  let rec loop i =
-    if i > n then (
-      Fmt.epr "Checked %d programs and found no counterexamples\n" n;
-      Ok () )
-    else
-      let prog = sample inputs in
-      let cstate = Program.ceval prog in
-      match
-        V.find_map graph ~f:(fun v ->
-            match Node.to_state v with
-            | Some v when Abs.contains (State.state v) cstate -> Some v
-            | _ -> None)
-      with
-      | Some _ -> loop (i + 1)
-      | None ->
-          Fmt.epr "Missed program %a with size %d and state %a\n" Sexp.pp
-            ([%sexp_of: Program.t] prog)
-            (Program.size prog) Conc.pp cstate;
-          Error cstate
-  in
-  loop 0
-
-let random_likely_unsat ?(state = Random.State.default) n k =
-  let inputs =
-    List.init n ~f:(fun _ -> Array.init k ~f:(fun _ -> Random.State.bool state))
-  in
-  let output = Array.init k ~f:(fun _ -> Random.State.bool state) in
-  (inputs, output)
-
-let random_sat ?(state = Random.State.default) n k =
-  let inputs =
-    List.init n ~f:(fun _ -> Array.init k ~f:(fun _ -> Random.State.bool state))
-  in
-  let output = sample_big ~state inputs |> Program.ceval in
-  (inputs, output)
-
-let random_io ?(state = Random.State.default) ~n ~k =
-  (* if Random.State.bool state then random_sat ~state n k
-   * else *)
-  random_sat ~state n k

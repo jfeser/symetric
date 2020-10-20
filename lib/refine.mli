@@ -7,6 +7,6 @@ end
 val get_refinement :
   t ->
   State.t ->
-  bool array ->
+  Conc.t ->
   Node.t list ->
   (Refinement.t list, Set.M(E).t) Either.t
