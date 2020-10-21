@@ -8,6 +8,8 @@ depends: [
   "ppx_sexp_conv" {>= "v0.13"}
   "ppx_let" {>= "v0.13"}
   "ocamlgraph"
+  "ppx_deriving"
+  "delimcc"
   "fmt"
   "odoc" {with-doc}
 ]
