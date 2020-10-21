@@ -40,7 +40,7 @@
  (public_name lazy_cegis_old)
  (modules lazy_cegis_old)
  (libraries core staged_synth)
- (preprocess (pps ppx_compare ppx_hash ppx_sexp_conv ppx_let)))
+ (preprocess (pps ppx_compare ppx_hash ppx_sexp_conv ppx_let ppx_here)))
 
 (executable
  (name mk_simple_cad_bench)

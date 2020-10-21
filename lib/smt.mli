@@ -12,6 +12,8 @@ module Expr : sig
   type var = String_id.t [@@deriving compare, hash, sexp]
 
   val vars : t -> Set.M(String_id).t
+
+  val pp : t Fmt.t
 end
 
 type stmt
@@ -50,6 +52,12 @@ val var_s : string -> Expr.t
 
 val bool : bool -> Expr.t
 
+val true_ : Expr.t
+
+val false_ : Expr.t
+
+val exactly_one : Expr.t list -> Expr.t
+
 val ( = ) : Expr.t -> Expr.t -> Expr.t
 
 val ( && ) : Expr.t -> Expr.t -> Expr.t
@@ -69,7 +77,14 @@ val assert_ : Expr.t -> unit t
 module Interpolant : sig
   module Group : sig
     type t
+
+    type 'a s
+
+    val create : t s
   end
+  with type 'a s := 'a t
+
+  val assert_group : ?group:Group.t -> Expr.t -> unit t
 end
 
 val read_input : ?parse_pos:Sexp.Parse_pos.t -> In_channel.t -> Sexp.t

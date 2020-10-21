@@ -21,15 +21,16 @@ let main ~n ~seed ~k ~print_header ~abstraction ~check () =
   let no_abstraction = abstraction = 0 in
 
   let state = Random.State.make [| seed |] in
-  let inputs, output = random_io ~state ~n ~k in
+  let inputs, output = failwith "unimplemented" in
   List.iteri inputs ~f:(fun i v -> Fmt.epr "Input %d: %a\n" i Conc.pp v);
   Fmt.epr "Output: %a\n" Conc.pp output;
 
-  let search_state, stats = synth ~no_abstraction inputs output in
+  let search_state, stats = synth inputs output in
 
   let check_output =
-    if check && not stats.sat then Some (check_search_space inputs search_state)
-    else None
+    None
+    (* if check && not stats.sat then Some (check_search_space inputs search_state)
+     * else None *)
   in
   Fmt.pr "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d\n" k n seed !Global.max_cost
     abstraction stats.Stats.n_state_nodes stats.Stats.n_arg_nodes
@@ -73,7 +74,7 @@ let () =
       Global.enable_forced_bit_check := enable_forced_bit_check;
       Global.enable_dump := enable_graph_output;
       Global.max_cost := max_cost;
-      Global.n_bits := n_bits;
+      Set_once.set_exn Global.n_bits [%here] n_bits;
 
       main ~n ~seed ~k:n_bits ~print_header ~abstraction ~check]
   |> Command.run

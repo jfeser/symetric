@@ -62,8 +62,6 @@ module Refinement = struct
   let pp fmt x = Sexp.pp_hum fmt @@ [%sexp_of: t] x
 end
 
-open Refinement
-
 let cone graph target_node separator =
   let in_separator =
     let sep = Set.of_list (module Node) separator in
@@ -184,90 +182,93 @@ let forced_bits interpolant state =
         else (var, None))
   else List.map vars ~f:(fun v -> (v, None))
 
-let set states b v =
-  List.map states ~f:(fun s -> Abs.add s b v) |> Or_error.all |> Or_error.ok
+(* let set states b v =
+ *   List.map states ~f:(fun s -> Abs.add s b v) |> Or_error.all |> Or_error.ok *)
 
 let refinement_of_model graph separator interpolant forced vars =
-  let forced = Map.of_alist_exn (module String_id) forced in
-  let ivars = Smt.Expr.vars interpolant in
+  failwith "unimplemented"
 
-  let used_ivars = ref (Set.empty (module String_id)) in
-
-  let get_bits =
-    List.filter_mapi ~f:(fun i x ->
-        if Set.mem ivars x then (
-          used_ivars := Set.add !used_ivars x;
-          Some (i, Map.find_exn forced x) )
-        else None)
-  in
-
-  let open Option.Let_syntax in
-  let refinement =
-    List.filter_map separator ~f:Node.to_args
-    |> List.dedup_and_sort ~compare:[%compare: Args.t]
-    (* Only care about args nodes with refined output bits. *)
-    |> List.filter_map ~f:(fun arg_v ->
-           let refined_out_bits =
-             let bits = Map.find_exn vars.arg_vars arg_v |> get_bits in
-             let bits' =
-               G.pred graph (Node.of_args arg_v)
-               |> List.map ~f:Node.to_state_exn
-               |> List.map ~f:(Map.find_exn vars.state_vars)
-               |> List.map ~f:get_bits |> List.concat
-             in
-             normalize_bits (bits @ bits')
-           in
-           let no_refined_out_bits = List.is_empty refined_out_bits in
-
-           if no_refined_out_bits then None
-           else
-             let state_nodes =
-               Node.of_args arg_v |> G.pred graph
-               |> List.map ~f:Node.to_state_exn
-             in
-             let input_forced =
-               match Args.op arg_v with
-               | Input in_ -> fun bit -> Some in_.(bit)
-               | _ -> fun _ -> None
-             in
-
-             let splits =
-               List.map state_nodes ~f:(fun v ->
-                   let state = State.state v in
-                   (* For each refined bit, generate a pair of refined states.
-                      If the bit contradicts a bit that is already refined, the
-                      state will be pruned. *)
-                   let refined_states =
-                     List.fold refined_out_bits
-                       ~init:(Some [ state ])
-                       ~f:(fun states (bit, forced) ->
-                         let%bind states = states in
-                         match Option.first_some (input_forced bit) forced with
-                         | Some value -> set states bit value
-                         | None ->
-                             let%bind s = set states bit true in
-                             let%bind s' = set states bit false in
-                             return (s @ s'))
-                   in
-                   (v, Option.value refined_states ~default:[]))
-             in
-
-             Some { context = arg_v; splits })
-  in
-
-  [%test_result: Set.M(String_id).t] ~expect:ivars !used_ivars;
-
-  let edges =
-    List.concat_map refinement ~f:(function r ->
-        G.pred_e graph (Node.of_args r.context))
-    |> Set.of_list (module E)
-  in
-
-  Dump.dump_detailed ~suffix:"after-refine"
-    ~separator:(List.mem separator ~equal:[%equal: Node.t])
-    ~refinement:(Set.mem edges) graph;
-  Fmt.epr "Refinement: %a@." Fmt.Dump.(list Refinement.pp) refinement;
-  if List.is_empty refinement then failwith "No-op refinement" else refinement
+(* let refinement_of_model graph separator interpolant forced vars =
+ *   let forced = Map.of_alist_exn (module String_id) forced in
+ *   let ivars = Smt.Expr.vars interpolant in
+ * 
+ *   let used_ivars = ref (Set.empty (module String_id)) in
+ * 
+ *   let get_bits =
+ *     List.filter_mapi ~f:(fun i x ->
+ *         if Set.mem ivars x then (
+ *           used_ivars := Set.add !used_ivars x;
+ *           Some (i, Map.find_exn forced x) )
+ *         else None)
+ *   in
+ * 
+ *   let open Option.Let_syntax in
+ *   let refinement =
+ *     List.filter_map separator ~f:Node.to_args
+ *     |> List.dedup_and_sort ~compare:[%compare: Args.t]
+ *     (\* Only care about args nodes with refined output bits. *\)
+ *     |> List.filter_map ~f:(fun arg_v ->
+ *            let refined_out_bits =
+ *              let bits = Map.find_exn vars.arg_vars arg_v |> get_bits in
+ *              let bits' =
+ *                G.pred graph (Node.of_args arg_v)
+ *                |> List.map ~f:Node.to_state_exn
+ *                |> List.map ~f:(Map.find_exn vars.state_vars)
+ *                |> List.map ~f:get_bits |> List.concat
+ *              in
+ *              normalize_bits (bits @ bits')
+ *            in
+ *            let no_refined_out_bits = List.is_empty refined_out_bits in
+ * 
+ *            if no_refined_out_bits then None
+ *            else
+ *              let state_nodes =
+ *                Node.of_args arg_v |> G.pred graph
+ *                |> List.map ~f:Node.to_state_exn
+ *              in
+ *              let input_forced =
+ *                match Args.op arg_v with
+ *                | Input in_ -> fun bit -> Some in_.(bit)
+ *                | _ -> fun _ -> None
+ *              in
+ * 
+ *              let splits =
+ *                List.map state_nodes ~f:(fun v ->
+ *                    let state = State.state v in
+ *                    (\* For each refined bit, generate a pair of refined states.
+ *                       If the bit contradicts a bit that is already refined, the
+ *                       state will be pruned. *\)
+ *                    let refined_states =
+ *                      List.fold refined_out_bits
+ *                        ~init:(Some [ state ])
+ *                        ~f:(fun states (bit, forced) ->
+ *                          let%bind states = states in
+ *                          match Option.first_some (input_forced bit) forced with
+ *                          | Some value -> set states bit value
+ *                          | None ->
+ *                              let%bind s = set states bit true in
+ *                              let%bind s' = set states bit false in
+ *                              return (s @ s'))
+ *                    in
+ *                    (v, Option.value refined_states ~default:[]))
+ *              in
+ * 
+ *              Some { context = arg_v; splits })
+ *   in
+ * 
+ *   [%test_result: Set.M(String_id).t] ~expect:ivars !used_ivars;
+ * 
+ *   let edges =
+ *     List.concat_map refinement ~f:(function r ->
+ *         G.pred_e graph (Node.of_args r.context))
+ *     |> Set.of_list (module E)
+ *   in
+ * 
+ *   Dump.dump_detailed ~suffix:"after-refine"
+ *     ~separator:(List.mem separator ~equal:[%equal: Node.t])
+ *     ~refinement:(Set.mem edges) graph;
+ *   Fmt.epr "Refinement: %a@." Fmt.Dump.(list Refinement.pp) refinement;
+ *   if List.is_empty refinement then failwith "No-op refinement" else refinement *)
 
 let assert_group_var g v = Smt.(Interpolant.assert_group ~group:g (var v))
 
@@ -285,30 +286,35 @@ let filter g ~f = G.fold_vertex (fun v vs -> if f v then v :: vs else vs) g []
 
 let to_list g = G.fold_vertex (fun v vs -> v :: vs) g []
 
-let assert_input_states_contained group vars graph =
-  let open Smt in
-  Map.to_alist vars.state_vars
-  |> List.filter ~f:(fun (v, _) ->
-         List.is_empty (G.succ graph @@ Node.of_state v))
-  |> List.map ~f:(fun (state_v, vars) ->
-         let state = State.state state_v in
-         List.filter_mapi vars ~f:(fun b v ->
-             match Map.find state b with
-             | Some x -> Some (bool x = var v)
-             | None -> None)
-         |> and_
-         |> fresh_defn ~prefix:(Fmt.str "state-%d" @@ State.id state_v)
-         >>= assert_group_var group)
-  |> all_unit
+(* let assert_input_states_contained group vars graph =
+ *   let open Smt in
+ *   Map.to_alist vars.state_vars
+ *   |> List.filter ~f:(fun (v, _) ->
+ *          List.is_empty (G.succ graph @@ Node.of_state v))
+ *   |> List.map ~f:(fun (state_v, vars) ->
+ *          let state = State.state state_v in
+ *          List.filter_mapi vars ~f:(fun b v ->
+ *              match Map.find state b with
+ *              | Some x -> Some (bool x = var v)
+ *              | None -> None)
+ *          |> and_
+ *          |> fresh_defn ~prefix:(Fmt.str "state-%d" @@ State.id state_v)
+ *          >>= assert_group_var group)
+ *   |> all_unit *)
+
+let assert_input_states_contained _group _vars _graph = failwith "Unimplemented"
 
 let assert_output_state_contained group vars target_node expected_output =
-  let open Smt in
-  let state_vars = Map.find_exn vars.state_vars target_node
-  and expected = Array.to_list expected_output in
-  let body =
-    List.map2_exn state_vars expected ~f:(fun x v -> var x = bool v) |> and_
-  in
-  fresh_defn ~prefix:"correct-output" body >>= assert_group_var group
+  failwith "unimplemented"
+
+(* let assert_output_state_contained group vars target_node expected_output =
+ *   let open Smt in
+ *   let state_vars = Map.find_exn vars.state_vars target_node
+ *   and expected = Array.to_list expected_output in
+ *   let body =
+ *     List.map2_exn state_vars expected ~f:(fun x v -> var x = bool v) |> and_
+ *   in
+ *   fresh_defn ~prefix:"correct-output" body >>= assert_group_var group *)
 
 let assert_selected_state_selects_input group vars graph state_v =
   let open Smt in
@@ -319,7 +325,7 @@ let assert_selected_state_selects_input group vars graph state_v =
     if G.out_degree graph v > 0 then exactly_one @@ succ_selected vars graph v
     else true_
   in
-  let body = Bool.(parent_select => child_select)
+  let body = parent_select => child_select
   and name = sprintf "state-%d-deps" (State.id state_v) in
   fresh_defn ~prefix:name body >>= assert_group_var group
 
@@ -347,34 +353,34 @@ let assert_state_semantics group vars graph v =
   and name = sprintf "state-%d-semantics" (State.id v) in
   fresh_defn ~prefix:name body >>= assert_group_var group
 
-let assert_args_semantics group vars graph v =
-  let open Smt in
-  let incoming_edges = G.succ_e graph (Node.of_args v) in
+let assert_args_semantics _group _vars _graph _v = failwith "unimplemented"
 
-  let incoming_states =
-    List.map incoming_edges ~f:(fun (_, n, v) -> (Node.to_state_exn v, n))
-    |> List.sort ~compare:(fun (_, n) (_, n') -> [%compare: int] n n')
-    |> List.map ~f:(fun (v, _) ->
-           Map.find_exn vars.state_vars v |> vars_to_exprs)
-  in
-
-  let out = Map.find_exn vars.arg_vars v |> vars_to_exprs in
-  let semantic =
-    let open Bool in
-    match (Args.op v, incoming_states) with
-    | Union, [ s; s' ] -> List.map3_exn out s s' ~f:(fun x y z -> x = (y || z))
-    | Inter, [ s; s' ] -> List.map3_exn out s s' ~f:(fun x y z -> x = (y && z))
-    | Sub, [ s; s' ] ->
-        List.map3_exn out s s' ~f:(fun x y z -> x = (y && not z))
-    | Input conc, [] ->
-        List.map2_exn out (Array.to_list conc) ~f:(fun x v -> x = bool v)
-    | op, states ->
-        Error.failwiths ~here:[%here] "Unexpected op." (op, states)
-          [%sexp_of: Op.t * Expr.t list list]
-  in
-  let body = and_ semantic
-  and name = Fmt.str "semantics-%a-%d" Op.pp (Args.op v) (Args.id v) in
-  fresh_defn ~prefix:name body >>= assert_group_var group
+(* let assert_args_semantics group vars graph v =
+ *   let open Smt in
+ *   let incoming_edges = G.succ_e graph (Node.of_args v) in
+ * 
+ *   let incoming_states =
+ *     List.map incoming_edges ~f:(fun (_, n, v) -> (Node.to_state_exn v, n))
+ *     |> List.sort ~compare:(fun (_, n) (_, n') -> [%compare: int] n n')
+ *     |> List.map ~f:(fun (v, _) ->
+ *            Map.find_exn vars.state_vars v |> vars_to_exprs)
+ *   in
+ * 
+ *   let out = Map.find_exn vars.arg_vars v |> vars_to_exprs in
+ *   let semantic =
+ *     let open Bool in
+ *     match (Args.op v, incoming_states) with
+ *     | Union, [ s; s' ] -> List.map3_exn out s s' ~f:(fun x y z -> x = (y || z))
+ *     | Inter, [ s; s' ] -> List.map3_exn out s s' ~f:(fun x y z -> x = (y && z))
+ *     | Sub, [ s; s' ] ->
+ *         List.map3_exn out s s' ~f:(fun x y z -> x = (y && not z))
+ *     | op, states ->
+ *         Error.failwiths ~here:[%here] "Unexpected op." (op, states)
+ *           [%sexp_of: Op.t * Expr.t list list]
+ *   in
+ *   let body = and_ semantic
+ *   and name = Fmt.str "semantics-%a-%d" Op.pp (Args.op v) (Args.id v) in
+ *   fresh_defn ~prefix:name body >>= assert_group_var group *)
 
 let assert_args_output graph group =
   let open Smt.Let_syntax in

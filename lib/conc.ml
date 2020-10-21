@@ -22,7 +22,7 @@ end
 module Offset = Float
 
 type t = Bool_vector of Bool_vector.t | Offset of Offset.t
-[@@deriving compare, hash, sexp]
+[@@deriving compare, hash, sexp, show]
 
 let bool_vector x = Bool_vector x
 
