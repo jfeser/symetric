@@ -239,12 +239,12 @@ let count_compressible graph =
   Fmt.epr "Compressed args: reduces %d to %d\n" (List.length args)
     (Set.length set_args)
 
-let synth ops output =
+let synth (bench : Bench.t) =
   let search_state = create () in
   let graph = search_state in
 
   (* Add inputs to the state space graph. *)
-  List.iter ops ~f:(fun op ->
+  List.iter bench.ops ~f:(fun op ->
       match Op.type_ op with
       | [], ret_t ->
           let state = Abs.top ret_t in
@@ -256,7 +256,9 @@ let synth ops output =
     try
       for cost = 1 to !Global.max_cost do
         until_done (fun () ->
-            let changed = until_done (fun () -> refute search_state output) in
+            let changed =
+              until_done (fun () -> refute search_state bench.output)
+            in
             let changed' = fill_up_to_cost search_state cost in
             Fmt.epr "Changed: %b Cost: %d\n%!" (changed || changed') cost;
             changed || changed')
