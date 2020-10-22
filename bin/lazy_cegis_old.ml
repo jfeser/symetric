@@ -34,7 +34,9 @@ let random ~n ~seed ~k ~check () = failwith "Unimplemented"
  * in
  * print_stats ~k ~n ~seed ~check_output stats *)
 
-let cad bench () = synth bench |> ignore
+let cad bench () =
+  Set_once.set_exn Global.bench [%here] bench;
+  synth () |> ignore
 
 let () =
   let open Command.Let_syntax in
@@ -83,7 +85,6 @@ let () =
                 ~doc:" check the search space by sampling random programs"
             and max_cost, print_header = shared in
 
-            Set_once.set_exn Global.n_bits [%here] n_bits;
             random ~n ~seed ~k:n_bits ~print_header ~check] );
     ]
   |> Command.run

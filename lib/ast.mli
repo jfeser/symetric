@@ -9,7 +9,7 @@ module Type : sig
 end
 
 module Op : sig
-  type offset = { id : int; offset : float; kind : Type.offset_kind }
+  type offset = { offset : float; type_ : Type.offset_type }
   [@@deriving compare, hash, sexp]
 
   type cylinder = {
@@ -41,4 +41,6 @@ module Op : sig
   val arity : t -> int
 
   val type_ : t -> Type.t list * Type.t
+
+  val ret_type : t -> Type.t
 end

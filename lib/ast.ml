@@ -9,7 +9,7 @@ module Type = struct
 end
 
 module Op = struct
-  type offset = { id : int; offset : float; kind : Type.offset_kind }
+  type offset = { offset : float; type_ : Type.offset_type }
   [@@deriving compare, hash, sexp]
 
   type cylinder = {
@@ -47,26 +47,33 @@ module Op = struct
     | Union | Inter | Sub | Cylinder _ -> 2
     | Cuboid _ -> 6
 
-  let type_ =
+  let ret_type =
     let open Type in
     function
-    | Union | Inter | Sub -> ([ Vector; Vector ], Vector)
-    | Sphere _ -> ([], Vector)
-    | Cylinder c ->
-        ( [
+    | Union | Inter | Sub | Sphere _ | Cylinder _ | Cuboid _ -> Vector
+    | Offset x -> Offset x.type_
+
+  let type_ x =
+    let open Type in
+    let ret_t = ret_type x in
+    let args_t =
+      match x with
+      | Union | Inter | Sub -> [ Vector; Vector ]
+      | Sphere _ | Offset _ -> []
+      | Cylinder c ->
+          [
             Offset { id = c.id; kind = Cylinder };
             Offset { id = c.id; kind = Cylinder };
-          ],
-          Vector )
-    | Cuboid c ->
-        ( [
+          ]
+      | Cuboid c ->
+          [
             Offset { id = c.id; kind = Cuboid_x };
             Offset { id = c.id; kind = Cuboid_x };
             Offset { id = c.id; kind = Cuboid_y };
             Offset { id = c.id; kind = Cuboid_y };
             Offset { id = c.id; kind = Cuboid_z };
             Offset { id = c.id; kind = Cuboid_z };
-          ],
-          Vector )
-    | Offset x -> ([], Offset { id = x.id; kind = x.kind })
+          ]
+    in
+    (args_t, ret_t)
 end

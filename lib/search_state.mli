@@ -27,13 +27,15 @@ module State : sig
 
   include Comparator.S with type t := t
 
-  val create : Abs.t -> int -> t Is_fresh.t
+  val create : Abs.t -> int -> Type.t -> t Is_fresh.t
 
   val id : t -> int
 
   val state : t -> Abs.t
 
   val cost : t -> int
+
+  val type_ : t -> Type.t
 
   val graphviz_pp : t Fmt.t
 end
@@ -64,6 +66,8 @@ module Node : sig
   val to_args_exn : t -> Args.t
 
   val to_state_exn : t -> State.t
+
+  val type_ : t -> Type.t
 end
 
 module G : sig

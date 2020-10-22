@@ -3,25 +3,24 @@ open Ast
 module Serial = struct
   type t = {
     ops : Op.t list;
-    input : (float * float * float) list;
-    output : int list;
+    input : (float * float * float) array;
+    output : int array;
   }
   [@@deriving compare, sexp]
 end
 
-type t = { ops : Op.t list; input : Vector3.t list; output : Conc.t }
+type t = { ops : Op.t list; input : Vector3.t array; output : bool array }
 [@@deriving compare]
 
 let of_serial (x : Serial.t) =
   {
     ops = x.ops;
-    input = List.map x.input ~f:(fun (x, y, z) -> Vector3.{ x; y; z });
+    input = Array.map x.input ~f:(fun (x, y, z) -> Vector3.{ x; y; z });
     output =
-      List.map x.output ~f:(function
+      Array.map x.output ~f:(function
         | 0 -> false
         | 1 -> true
-        | v -> raise_s [%message "Expected 0/1" (v : int)])
-      |> Array.of_list |> Conc.bool_vector;
+        | v -> raise_s [%message "Expected 0/1" (v : int)]);
   }
 
 let t_of_sexp s = [%of_sexp: Serial.t] s |> of_serial

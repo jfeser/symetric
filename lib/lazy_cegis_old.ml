@@ -9,39 +9,12 @@ module Seq = struct
   let of_array a = init (Array.length a) ~f:(fun i -> a.(i))
 end
 
-let apply2 f args =
-  match args with [ x; x' ] -> f x x' | _ -> failwith "Unexpected args"
-
-let apply6 f args =
-  match args with
-  | [ x1; x2; x3; x4; x5; x6 ] -> f x1 x2 x3 x4 x5 x6
-  | _ -> failwith "Unexpected args"
-
-let abs_eval op args =
-  match op with
-  | Op.Union -> apply2 Abs.union args
-  | Inter -> apply2 Abs.inter args
-  | Sub -> apply2 Abs.sub args
-  | Cylinder c -> apply2 (Abs.cylinder c) args
-  | Cuboid c -> apply6 (Abs.cuboid c) args
-  | Sphere _ | Offset _ -> failwith "leaf node"
-
-let conc_eval op args =
-  match op with
-  | Op.Union -> apply2 Conc.union args
-  | Inter -> apply2 Conc.inter args
-  | Sub -> apply2 Conc.sub args
-  | Cylinder c -> apply2 (Conc.cylinder c) args
-  | Cuboid c -> apply6 (Conc.cuboid c) args
-  | Sphere s -> Conc.sphere s
-  | Offset x -> Conc.offset x.offset
-
 module Program = struct
   module T = struct
     type t = [ `Apply of Op.t * t list ] [@@deriving compare, hash, sexp]
   end
 
-  let rec ceval (`Apply (op, args)) = conc_eval op (List.map args ~f:ceval)
+  let rec ceval (`Apply (op, args)) = Conc.eval op (List.map args ~f:ceval)
 
   let rec size (`Apply (_, args)) = 1 + List.sum (module Int) args ~f:size
 
@@ -84,8 +57,9 @@ let fill_cost (graph : Search_state.t) cost =
                                | Sub -> Abs.sub s s'
                                | _ -> assert false
                              in
+                             let ret_t = Op.ret_type op in
                              let state_v_out =
-                               State.create state cost |> Is_fresh.unwrap
+                               State.create state cost ret_t |> Is_fresh.unwrap
                              in
                              insert_hyper_edge_if_not_exists graph [ a; a' ] op
                                state_v_out))));
@@ -150,7 +124,9 @@ let refine search_state output refinement =
 
           let cost = State.cost state_v in
           List.iter refined_states ~f:(fun state ->
-              let (Fresh v' | Stale v') = State.create state cost in
+              let (Fresh v' | Stale v') =
+                State.create state cost (State.type_ state_v)
+              in
               G.add_edge_e graph (Node.of_state v', -1, Node.of_args r.context)));
 
       Dump.dump_detailed ~output ~suffix:(sprintf "fixup-%d" i) graph);
@@ -239,7 +215,8 @@ let count_compressible graph =
   Fmt.epr "Compressed args: reduces %d to %d\n" (List.length args)
     (Set.length set_args)
 
-let synth (bench : Bench.t) =
+let synth () =
+  let bench = Set_once.get_exn Global.bench [%here] in
   let search_state = create () in
   let graph = search_state in
 
@@ -248,20 +225,21 @@ let synth (bench : Bench.t) =
       match Op.type_ op with
       | [], ret_t ->
           let state = Abs.top ret_t in
-          let state_v_out = State.create state 1 |> Is_fresh.unwrap in
+          let state_v_out = State.create state 1 ret_t |> Is_fresh.unwrap in
           insert_hyper_edge_if_not_exists graph [] op state_v_out
       | _ -> ());
 
   let status =
     try
       for cost = 1 to !Global.max_cost do
-        until_done (fun () ->
-            let changed =
-              until_done (fun () -> refute search_state bench.output)
-            in
-            let changed' = fill_up_to_cost search_state cost in
-            Fmt.epr "Changed: %b Cost: %d\n%!" (changed || changed') cost;
-            changed || changed')
+        ( until_done @@ fun () ->
+          let changed =
+            until_done @@ fun () ->
+            refute search_state @@ Conc.bool_vector bench.output
+          in
+          let changed' = fill_up_to_cost search_state cost in
+          Fmt.epr "Changed: %b Cost: %d\n%!" (changed || changed') cost;
+          changed || changed' )
         |> ignore
       done;
       `Unsat

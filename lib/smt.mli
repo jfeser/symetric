@@ -7,7 +7,7 @@ module Defn : sig
 end
 
 module Expr : sig
-  type t
+  type t [@@deriving sexp]
 
   type var = String_id.t [@@deriving compare, hash, sexp]
 

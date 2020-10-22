@@ -1,3 +1,4 @@
+open Ast
 open Search_state
 
 module FoldM0
@@ -106,14 +107,13 @@ module Vars = struct
   type t = {
     edge_vars : String_id.t Map.M(E).t;
     var_edges : E.t Map.M(String_id).t;
-    state_vars : String_id.t list Map.M(State).t;
-    arg_vars : String_id.t list Map.M(Args).t;
+    state_vars : Symb.t Map.M(State).t;
+    arg_vars : Symb.t Map.M(Args).t;
   }
 
   let make_bit_vars prefix =
-    List.init
-      (Set_once.get_exn Global.n_bits [%here])
-      ~f:(fun b -> Smt.fresh_decl ~prefix:(prefix b) ())
+    List.init (Lazy.force Global.n_bits) ~f:(fun b ->
+        Smt.fresh_decl ~prefix:(prefix b) ())
     |> Smt.all
 
   let make graph =
@@ -137,15 +137,18 @@ module Vars = struct
       F.fold graph
         ~init:(Map.empty (module State), Map.empty (module Args))
         ~f:(fun (ms, ma) v ->
+          let type_ = Node.type_ v in
           Node.match_ v
             ~args:(fun args_v ->
               let%map vars =
-                make_bit_vars (sprintf "a%d_b%d_" (Args.id args_v))
+                Symb.create ~prefix:(sprintf "a%d_b%d_" (Args.id args_v)) type_
               in
               (ms, Map.set ma ~key:args_v ~data:vars))
             ~state:(fun state_v ->
               let%map vars =
-                make_bit_vars (sprintf "s%d_b%d_" (State.id state_v))
+                Symb.create
+                  ~prefix:(sprintf "s%d_b%d_" (State.id state_v))
+                  type_
               in
               (Map.set ms ~key:state_v ~data:vars, ma)))
     in
@@ -186,7 +189,7 @@ let forced_bits interpolant state =
  *   List.map states ~f:(fun s -> Abs.add s b v) |> Or_error.all |> Or_error.ok *)
 
 let refinement_of_model graph separator interpolant forced vars =
-  failwith "unimplemented"
+  raise_s [%message "unimplemented" [%here]]
 
 (* let refinement_of_model graph separator interpolant forced vars =
  *   let forced = Map.of_alist_exn (module String_id) forced in
@@ -286,35 +289,24 @@ let filter g ~f = G.fold_vertex (fun v vs -> if f v then v :: vs else vs) g []
 
 let to_list g = G.fold_vertex (fun v vs -> v :: vs) g []
 
-(* let assert_input_states_contained group vars graph =
- *   let open Smt in
- *   Map.to_alist vars.state_vars
- *   |> List.filter ~f:(fun (v, _) ->
- *          List.is_empty (G.succ graph @@ Node.of_state v))
- *   |> List.map ~f:(fun (state_v, vars) ->
- *          let state = State.state state_v in
- *          List.filter_mapi vars ~f:(fun b v ->
- *              match Map.find state b with
- *              | Some x -> Some (bool x = var v)
- *              | None -> None)
- *          |> and_
- *          |> fresh_defn ~prefix:(Fmt.str "state-%d" @@ State.id state_v)
- *          >>= assert_group_var group)
- *   |> all_unit *)
+let assert_input_states_contained group vars graph =
+  let open Smt in
+  Map.to_alist vars.state_vars
+  |> List.filter ~f:(fun (v, _) ->
+         List.is_empty (G.succ graph @@ Node.of_state v))
+  |> List.map ~f:(fun (state_v, var) ->
+         let state = State.state state_v in
+         Symb.contained var ~by:state
+         |> fresh_defn ~prefix:(Fmt.str "state-%d" @@ State.id state_v)
+         >>= assert_group_var group)
+  |> all_unit
 
-let assert_input_states_contained _group _vars _graph = failwith "Unimplemented"
-
-let assert_output_state_contained group vars target_node expected_output =
-  failwith "unimplemented"
-
-(* let assert_output_state_contained group vars target_node expected_output =
- *   let open Smt in
- *   let state_vars = Map.find_exn vars.state_vars target_node
- *   and expected = Array.to_list expected_output in
- *   let body =
- *     List.map2_exn state_vars expected ~f:(fun x v -> var x = bool v) |> and_
- *   in
- *   fresh_defn ~prefix:"correct-output" body >>= assert_group_var group *)
+let assert_output_state_contained group vars target_node expected =
+  let open Smt in
+  let var = Map.find_exn vars.state_vars target_node in
+  fresh_defn ~prefix:"correct-output"
+    (Symb.contained var ~by:(Abs.lift expected))
+  >>= assert_group_var group
 
 let assert_selected_state_selects_input group vars graph state_v =
   let open Smt in
@@ -342,45 +334,32 @@ let assert_selected_args_selects_inputs group vars graph args_v =
 let assert_state_semantics group vars graph v =
   let open Smt in
   let body =
-    let state_vars = Map.find_exn vars.state_vars v |> vars_to_exprs in
+    let state_vars = Map.find_exn vars.state_vars v in
     G.succ_e graph (Node.of_state v)
     |> List.map ~f:(fun ((_, _, v) as e) ->
            let args_v = Node.to_args_exn v in
-           let args_vars = Map.find_exn vars.arg_vars args_v |> vars_to_exprs in
+           let args_vars = Map.find_exn vars.arg_vars args_v in
            let is_selected = Map.find_exn vars.edge_vars e |> var in
-           is_selected => and_ (List.map2_exn args_vars state_vars ~f:( = )))
+           is_selected => Symb.(args_vars = state_vars))
     |> and_
   and name = sprintf "state-%d-semantics" (State.id v) in
   fresh_defn ~prefix:name body >>= assert_group_var group
 
-let assert_args_semantics _group _vars _graph _v = failwith "unimplemented"
+let assert_args_semantics group vars graph v =
+  let open Smt in
+  let op = Args.op v in
+  let incoming_edges = G.succ_e graph (Node.of_args v) in
 
-(* let assert_args_semantics group vars graph v =
- *   let open Smt in
- *   let incoming_edges = G.succ_e graph (Node.of_args v) in
- * 
- *   let incoming_states =
- *     List.map incoming_edges ~f:(fun (_, n, v) -> (Node.to_state_exn v, n))
- *     |> List.sort ~compare:(fun (_, n) (_, n') -> [%compare: int] n n')
- *     |> List.map ~f:(fun (v, _) ->
- *            Map.find_exn vars.state_vars v |> vars_to_exprs)
- *   in
- * 
- *   let out = Map.find_exn vars.arg_vars v |> vars_to_exprs in
- *   let semantic =
- *     let open Bool in
- *     match (Args.op v, incoming_states) with
- *     | Union, [ s; s' ] -> List.map3_exn out s s' ~f:(fun x y z -> x = (y || z))
- *     | Inter, [ s; s' ] -> List.map3_exn out s s' ~f:(fun x y z -> x = (y && z))
- *     | Sub, [ s; s' ] ->
- *         List.map3_exn out s s' ~f:(fun x y z -> x = (y && not z))
- *     | op, states ->
- *         Error.failwiths ~here:[%here] "Unexpected op." (op, states)
- *           [%sexp_of: Op.t * Expr.t list list]
- *   in
- *   let body = and_ semantic
- *   and name = Fmt.str "semantics-%a-%d" Op.pp (Args.op v) (Args.id v) in
- *   fresh_defn ~prefix:name body >>= assert_group_var group *)
+  let incoming_states =
+    List.map incoming_edges ~f:(fun (_, n, v) -> (Node.to_state_exn v, n))
+    |> List.sort ~compare:(fun (_, n) (_, n') -> [%compare: int] n n')
+    |> List.map ~f:(fun (v, _) -> Map.find_exn vars.state_vars v)
+  in
+
+  let out = Map.find_exn vars.arg_vars v in
+  let name = Fmt.str "semantics-%a-%d" Op.pp op (Args.id v) in
+  fresh_defn ~prefix:name Symb.(eval op incoming_states = out)
+  >>= assert_group_var group
 
 let assert_args_output graph group =
   let open Smt.Let_syntax in

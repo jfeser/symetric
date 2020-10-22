@@ -46,6 +46,8 @@ module State = struct
 
   let states = Option_vector.create 128
 
+  let types = Option_vector.create 128
+
   let state_cost_idx =
     lazy (Array.init !Global.max_cost ~f:(fun _ -> Hashtbl.create (module Abs)))
 
@@ -54,6 +56,8 @@ module State = struct
   let state id = Option_vector.get_some_exn states (id / 2)
 
   let cost id = Option_vector.get_some_exn costs (id / 2)
+
+  let type_ id = Option_vector.get_some_exn types (id / 2)
 
   module T = struct
     type t = int [@@deriving compare, equal, hash]
@@ -77,7 +81,7 @@ module State = struct
 
   let of_cost c = Hashtbl.data (Lazy.force state_cost_idx).(c - 1)
 
-  let create s c =
+  let create s c t =
     match get s c with
     | Some id -> Stale id
     | None ->
@@ -86,8 +90,10 @@ module State = struct
         let idx = id / 2 in
         Option_vector.reserve states idx;
         Option_vector.reserve costs idx;
+        Option_vector.reserve types idx;
         Option_vector.set_some states idx s;
         Option_vector.set_some costs idx c;
+        Option_vector.set_some types idx t;
         set s c id;
         Fresh id
 
@@ -187,6 +193,9 @@ module Node = struct
       ~args:(fun x ->
         Error.create "Expected state" x [%sexp_of: Args.t] |> Error.raise)
       ~state:ident v
+
+  let type_ =
+    match_ ~args:(fun arg_v -> Args.op arg_v |> Op.ret_type) ~state:State.type_
 end
 
 module Edge = struct

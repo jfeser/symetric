@@ -11,4 +11,4 @@ module Stats : sig
   }
 end
 
-val synth : Bench.t -> Search_state.t * Stats.t
+val synth : unit -> Search_state.t * Stats.t

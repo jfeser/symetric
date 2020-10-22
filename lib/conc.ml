@@ -50,13 +50,13 @@ let sub x x' =
        ~f:(fun a b -> a && not b)
 
 let sphere (s : Op.sphere) =
-  Set_once.get_exn Global.inputs [%here]
+  (Set_once.get_exn Global.bench [%here]).input
   |> Array.map ~f:(fun v -> Float.(Vector3.l2_dist s.center v <= s.radius))
   |> bool_vector
 
 let cylinder (c : Op.cylinder) l h =
   let l = to_offset_exn l and h = to_offset_exn h in
-  Set_once.get_exn Global.inputs [%here]
+  (Set_once.get_exn Global.bench [%here]).input
   |> Array.map ~f:(fun v ->
          let open Vector3 in
          let rot = inverse_rotate v c.theta in
@@ -74,7 +74,7 @@ let cuboid (c : Op.cuboid) lx hx ly hy lz hz =
   and hy = to_offset_exn hy
   and lz = to_offset_exn lz
   and hz = to_offset_exn hz in
-  Set_once.get_exn Global.inputs [%here]
+  (Set_once.get_exn Global.bench [%here]).input
   |> Array.map ~f:(fun v ->
          let open Vector3 in
          let rot = inverse_rotate v c.theta in
@@ -87,3 +87,14 @@ let cuboid (c : Op.cuboid) lx hx ly hy lz hz =
          above_lox && below_hix && above_loy && below_hiy && above_loz
          && below_hiz)
   |> bool_vector
+
+let eval op args =
+  let open Util in
+  match op with
+  | Op.Union -> apply2 union args
+  | Inter -> apply2 inter args
+  | Sub -> apply2 sub args
+  | Cylinder c -> apply2 (cylinder c) args
+  | Cuboid c -> apply6 (cuboid c) args
+  | Sphere s -> sphere s
+  | Offset x -> offset x.offset

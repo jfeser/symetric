@@ -111,3 +111,11 @@ let input_sketch ch =
 
     let output = output
   end : Sigs.SKETCH )
+
+let apply2 f args =
+  match args with [ x; x' ] -> f x x' | _ -> failwith "Unexpected args"
+
+let apply6 f args =
+  match args with
+  | [ x1; x2; x3; x4; x5; x6 ] -> f x1 x2 x3 x4 x5 x6
+  | _ -> failwith "Unexpected args"

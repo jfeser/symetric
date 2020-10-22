@@ -92,6 +92,8 @@ module Offset = struct
   let graphviz_pp fmt x = Fmt.pf fmt "[%f, %f]" x.lo x.hi
 
   let top = { lo = Float.min_value; hi = Float.max_value }
+
+  let lift x = { lo = x; hi = x }
 end
 
 type t = Bool_vector of Bool_vector.t | Offset of Offset.t
@@ -138,11 +140,14 @@ let contains a c =
   | Bool_vector v -> Bool_vector.contains v (Conc.to_bool_vector_exn c)
   | Offset v -> Offset.contains v (Conc.to_offset_exn c)
 
+let lift = function
+  | Conc.Bool_vector x -> bool_vector @@ Bool_vector.lift x
+  | Offset x -> offset @@ Offset.lift x
+
 let cylinder (c : Op.cylinder) l h =
   let l = to_offset_exn l and h = to_offset_exn h in
   let open Sequence in
-  Set_once.get_exn Global.inputs [%here]
-  |> Array.to_sequence
+  (Set_once.get_exn Global.bench [%here]).input |> Array.to_sequence
   |> filter_mapi ~f:(fun i v ->
          let open Vector3 in
          let rot = inverse_rotate v c.theta in
@@ -169,8 +174,7 @@ let cuboid (c : Op.cuboid) lx hx ly hy lz hz =
   and lz = to_offset_exn lz
   and hz = to_offset_exn hz in
   let open Sequence in
-  Set_once.get_exn Global.inputs [%here]
-  |> Array.to_sequence
+  (Set_once.get_exn Global.bench [%here]).input |> Array.to_sequence
   |> filter_mapi ~f:(fun i v ->
          let open Vector3 in
          let rot = inverse_rotate v c.theta in
@@ -198,3 +202,13 @@ let cuboid (c : Op.cuboid) lx hx ly hy lz hz =
          else None)
   |> Map.of_sequence_exn (module Int)
   |> bool_vector
+
+let eval op args =
+  let open Util in
+  match op with
+  | Op.Union -> apply2 union args
+  | Inter -> apply2 inter args
+  | Sub -> apply2 sub args
+  | Cylinder c -> apply2 (cylinder c) args
+  | Cuboid c -> apply6 (cuboid c) args
+  | Sphere _ | Offset _ -> failwith "leaf node"
