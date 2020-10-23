@@ -20,6 +20,8 @@ module Args : sig
   val op : t -> Op.t
 
   val graphviz_pp : t Fmt.t
+
+  val output_type : t -> Type.t
 end
 
 module State : sig

@@ -119,15 +119,16 @@ let refine search_state output refinement =
   let size = nb_vertex search_state in
 
   List.iteri refinement ~f:(fun i (r : Refine.Refinement.t) ->
-      List.iter r.splits ~f:(fun (state_v, refined_states) ->
-          G.remove_edge graph (Node.of_state state_v) (Node.of_args r.context);
+      let context_v = Node.of_args r.context in
+      let preds = G.pred graph context_v in
+      let cost = List.hd_exn preds |> Node.to_state_exn |> State.cost
+      and type_ = Args.output_type r.context in
 
-          let cost = State.cost state_v in
-          List.iter refined_states ~f:(fun state ->
-              let (Fresh v' | Stale v') =
-                State.create state cost (State.type_ state_v)
-              in
-              G.add_edge_e graph (Node.of_state v', -1, Node.of_args r.context)));
+      List.iter preds ~f:(fun p -> G.remove_edge graph p context_v);
+
+      List.iter r.splits ~f:(fun state ->
+          let (Fresh v' | Stale v') = State.create state cost type_ in
+          G.add_edge_e graph (Node.of_state v', -1, Node.of_args r.context));
 
       Dump.dump_detailed ~output ~suffix:(sprintf "fixup-%d" i) graph);
 

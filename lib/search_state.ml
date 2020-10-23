@@ -153,6 +153,8 @@ module Args = struct
     Option_vector.set_some ops idx op;
     Option_vector.reserve hyper_edges idx;
     id
+
+  let output_type id = op id |> Op.ret_type
 end
 
 module Node = struct

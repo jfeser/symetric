@@ -6,12 +6,12 @@ module Defn : sig
   type t
 end
 
+module Var = String_id
+
 module Expr : sig
   type t [@@deriving sexp]
 
-  type var = String_id.t [@@deriving compare, hash, sexp]
-
-  val vars : t -> Set.M(String_id).t
+  val vars : t -> Set.M(Var).t
 
   val pp : t Fmt.t
 end
@@ -34,19 +34,19 @@ val eval_with_state : state -> 'a t -> 'a
 
 val clear_asserts : unit t
 
-val make_decl : ?n_args:int -> string -> Expr.var t
+val make_decl : ?n_args:int -> string -> Var.t t
 
-val fresh_decl : ?n_args:int -> ?prefix:string -> unit -> Expr.var t
+val fresh_decl : ?n_args:int -> ?prefix:string -> unit -> Var.t t
 
-val make_defn : ?n_args:int -> string -> Expr.t -> Expr.var t
+val make_defn : ?n_args:int -> string -> Expr.t -> Var.t t
 
-val fresh_defn : ?n_args:int -> ?prefix:string -> Expr.t -> Expr.var t
+val fresh_defn : ?n_args:int -> ?prefix:string -> Expr.t -> Var.t t
 
 val annotate : string -> string -> Expr.t -> Expr.t
 
 val comment : string -> Expr.t -> Expr.t
 
-val var : Expr.var -> Expr.t
+val var : Var.t -> Expr.t
 
 val var_s : string -> Expr.t
 
@@ -93,19 +93,19 @@ val with_mathsat : ((unit -> Sexp.t) -> (string list -> unit) -> 'a) -> 'a
 
 val error : Sexp.t -> 'a
 
-val parse_model : Sexp.t -> (Expr.var * bool) list
+val parse_model : Sexp.t -> (Var.t * bool) list
 
 val get_interpolant_or_model_inner :
   Interpolant.Group.t list ->
   string list ->
   (unit -> Sexp.t) ->
   (string list -> unit) ->
-  (Expr.t Or_error.t, (Expr.var * bool) list) Either.t t
+  (Expr.t Or_error.t, (Var.t * bool) list) Either.t t
 
 val get_interpolant_or_model :
   Interpolant.Group.t list ->
-  (Expr.t Or_error.t, (Expr.var * bool) list) Either.t t
+  (Expr.t Or_error.t, (Var.t * bool) list) Either.t t
 
-val get_model : (Expr.var * bool) list option t
+val get_model : (Var.t * bool) list option t
 
 val check_sat : bool t

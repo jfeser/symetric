@@ -68,14 +68,11 @@ module Bool_vector = struct
   let set m k v = Map.set m ~key:k ~data:v
 
   let add m k v =
-    let open Or_error in
     match Map.find m k with
-    | Some v' ->
-        if Bool.(v = v') then return m
-        else error "Conflicting values for bit" k [%sexp_of: int]
-    | None -> return @@ set m k v
+    | Some v' -> if Bool.(v = v') then Some m else None
+    | None -> Some (set m k v)
 
-  let add_exn m k v = Or_error.ok_exn @@ add m k v
+  let add_exn m k v = Option.value_exn (add m k v)
 
   let contains a c = Map.for_alli a ~f:(fun ~key:i ~data:v -> Bool.(c.(i) = v))
 

@@ -18,6 +18,8 @@ let pp_sig fmt (name, n_args) =
     in
     Fmt.pf fmt "%s (%s) Bool" name args
 
+module Var = String_id
+
 module Expr = struct
   type binop = Implies | Equals [@@deriving compare, sexp]
 
@@ -25,15 +27,13 @@ module Expr = struct
 
   type varop = And | Or [@@deriving compare, sexp]
 
-  type var = String_id.t [@@deriving compare, hash, sexp]
-
   type t =
     | Bool of bool
-    | Var of var
+    | Var of Var.t
     | Binop of binop * t * t
     | Unop of unop * t
     | Varop of varop * t list
-    | Let of (t * var * t)
+    | Let of (t * Var.t * t)
     | Annot of t * string * string
   [@@deriving compare, variants, sexp]
 
