@@ -184,15 +184,8 @@ let forced_bits interpolant state =
         else (var, None))
   else List.map vars ~f:(fun v -> (v, None))
 
-(* let set states b v =
- *   List.map states ~f:(fun s -> Abs.add s b v) |> Or_error.all |> Or_error.ok *)
-
-let refinement_of_model graph separator interpolant forced vars =
-  raise_s [%message "unimplemented" [%here]]
-
 let refinement_of_model graph separator interpolant forced vars =
   let open Refinement in
-  let forced = Map.of_alist_exn (module String_id) forced in
   let ivars = Smt.Expr.vars interpolant in
 
   let open Option.Let_syntax in
@@ -206,27 +199,6 @@ let refinement_of_model graph separator interpolant forced vars =
              |> List.map ~f:Node.to_state_exn
              |> List.map ~f:State.state
            in
-
-           (* let splits =
-            *   List.map state_nodes ~f:(fun v ->
-            *       let state = State.state v in
-            *       (\* For each refined bit, generate a pair of refined states.
-            *          If the bit contradicts a bit that is already refined, the
-            *          state will be pruned. *\)
-            *       let refined_states =
-            *         List.fold refined_out_bits
-            *           ~init:(Some [ state ])
-            *           ~f:(fun states (bit, forced) ->
-            *             let%bind states = states in
-            *             match Option.first_some (input_forced bit) forced with
-            *             | Some value -> set states bit value
-            *             | None ->
-            *                 let%bind s = set states bit true in
-            *                 let%bind s' = set states bit false in
-            *                 return (s @ s'))
-            *       in
-            *       (v, Option.value refined_states ~default:[]))
-            * in *)
            Refinement.
              {
                context = arg_v;
@@ -234,7 +206,6 @@ let refinement_of_model graph separator interpolant forced vars =
              })
   in
 
-  (* [%test_result: Set.M(String_id).t] ~expect:ivars !used_ivars; *)
   let edges =
     List.concat_map refinement ~f:(function r ->
         G.pred_e graph (Node.of_args r.context))

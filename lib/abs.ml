@@ -133,9 +133,10 @@ let sub x x' =
   bool_vector @@ Bool_vector.sub (to_bool_vector_exn x) (to_bool_vector_exn x')
 
 let contains a c =
-  match a with
-  | Bool_vector v -> Bool_vector.contains v (Conc.to_bool_vector_exn c)
-  | Offset v -> Offset.contains v (Conc.to_offset_exn c)
+  match (a, c) with
+  | Bool_vector v, Conc.Bool_vector v' -> Bool_vector.contains v v'
+  | Offset v, Conc.Offset v' -> Offset.contains v v'
+  | _ -> false
 
 let lift = function
   | Conc.Bool_vector x -> bool_vector @@ Bool_vector.lift x
