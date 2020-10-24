@@ -43,4 +43,6 @@ module Op : sig
   val type_ : t -> Type.t list * Type.t
 
   val ret_type : t -> Type.t
+
+  val args_type : t -> Type.t list
 end

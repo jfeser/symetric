@@ -53,27 +53,25 @@ module Op = struct
     | Union | Inter | Sub | Sphere _ | Cylinder _ | Cuboid _ -> Vector
     | Offset x -> Offset x.type_
 
-  let type_ x =
+  let args_type =
     let open Type in
-    let ret_t = ret_type x in
-    let args_t =
-      match x with
-      | Union | Inter | Sub -> [ Vector; Vector ]
-      | Sphere _ | Offset _ -> []
-      | Cylinder c ->
-          [
-            Offset { id = c.id; kind = Cylinder };
-            Offset { id = c.id; kind = Cylinder };
-          ]
-      | Cuboid c ->
-          [
-            Offset { id = c.id; kind = Cuboid_x };
-            Offset { id = c.id; kind = Cuboid_x };
-            Offset { id = c.id; kind = Cuboid_y };
-            Offset { id = c.id; kind = Cuboid_y };
-            Offset { id = c.id; kind = Cuboid_z };
-            Offset { id = c.id; kind = Cuboid_z };
-          ]
-    in
-    (args_t, ret_t)
+    function
+    | Union | Inter | Sub -> [ Vector; Vector ]
+    | Sphere _ | Offset _ -> []
+    | Cylinder c ->
+        [
+          Offset { id = c.id; kind = Cylinder };
+          Offset { id = c.id; kind = Cylinder };
+        ]
+    | Cuboid c ->
+        [
+          Offset { id = c.id; kind = Cuboid_x };
+          Offset { id = c.id; kind = Cuboid_x };
+          Offset { id = c.id; kind = Cuboid_y };
+          Offset { id = c.id; kind = Cuboid_y };
+          Offset { id = c.id; kind = Cuboid_z };
+          Offset { id = c.id; kind = Cuboid_z };
+        ]
+
+  let type_ x = (args_type x, ret_type x)
 end

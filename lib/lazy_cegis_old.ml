@@ -35,46 +35,88 @@ let until_done f =
   in
   until_done false
 
-let fill_cost (graph : Search_state.t) cost =
+let iter_arg graph cost type_ ~f =
+  states_of_cost graph cost
+  |> List.iter ~f:(fun s ->
+         if [%compare.equal: Type.t] (State.type_ s) type_ then f s)
+
+let create_hyper_edge graph cost op args =
+  let arg_states = List.map args ~f:State.state in
+  let out_state = Abs.eval op arg_states in
+  let out_type = Op.ret_type op in
+  let state_v_out = State.create out_state cost out_type |> Is_fresh.unwrap in
+  insert_hyper_edge_if_not_exists graph args op state_v_out
+
+let fold_range ~init ~f lo hi =
+  let rec fold_range acc i =
+    if i >= hi then acc
+    else
+      let acc' = f acc i in
+      fold_range acc' (i + 1)
+  in
+  fold_range init lo
+
+let fill_cost (graph : Search_state.t) ops cost =
   Fmt.epr "Filling cost %d\n" cost;
   let size = nb_vertex graph in
-  if cost > 1 then (
+  ( if cost > 1 then
     let arg_cost = cost - 1 in
-    let module Comp = Combinat.Composition in
-    Comp.create ~n:arg_cost ~k:2
-    |> Comp.iter ~f:(fun arg_costs ->
-           let c = arg_costs.{0} and c' = arg_costs.{1} in
-           states_of_cost graph c
-           |> List.iter ~f:(fun (a : State.t) ->
-                  states_of_cost graph c'
-                  |> List.iter ~f:(fun (a' : State.t) ->
-                         List.iter [ Op.Union; Inter; Sub ] ~f:(fun op ->
-                             let state =
-                               let s = State.state a and s' = State.state a' in
-                               match op with
-                               | Op.Union -> Abs.union s s'
-                               | Inter -> Abs.inter s s'
-                               | Sub -> Abs.sub s s'
-                               | _ -> assert false
-                             in
-                             let ret_t = Op.ret_type op in
-                             let state_v_out =
-                               State.create state cost ret_t |> Is_fresh.unwrap
-                             in
-                             insert_hyper_edge_if_not_exists graph [ a; a' ] op
-                               state_v_out))));
 
-    let size' = nb_vertex graph in
-    Dump.dump_detailed ~suffix:(sprintf "after-fill-%d" cost) graph;
+    List.iter ops ~f:(fun op ->
+        let arity = Op.arity op in
+        let arg_types = Op.args_type op |> Array.of_list in
+        if arity >= arg_cost then
+          let module Comp = Combinat.Composition in
+          Comp.create ~n:arg_cost ~k:arity
+          |> Comp.iter ~f:(fun arg_costs ->
+                 let add_hyper_edges =
+                   fold_range
+                     ~init:(fun args -> create_hyper_edge graph cost op args)
+                     ~f:(fun f i args ->
+                       let type_ = arg_types.(i) in
+                       states_of_cost graph arg_costs.{i}
+                       |> List.iter ~f:(fun s ->
+                              if [%compare.equal: Type.t] (State.type_ s) type_
+                              then f (s :: args)))
+                     0 arity
+                 in
+                 add_hyper_edges [])) );
 
-    Fmt.epr "Pruning: size before=%d, after=%d, removed %f%%\n" size size'
-      Float.(100.0 - (of_int size' / of_int size * 100.0)) )
+  (* let arg_cost = cost - 1 in
+   * let module Comp = Combinat.Composition in
+   * Comp.create ~n:arg_cost ~k:2
+   * |> Comp.iter ~f:(fun arg_costs ->
+   *        let c = arg_costs.{0} and c' = arg_costs.{1} in
+   *        states_of_cost graph c
+   *        |> List.iter ~f:(fun (a : State.t) ->
+   *               states_of_cost graph c'
+   *               |> List.iter ~f:(fun (a' : State.t) ->
+   *                      List.iter [ Op.Union; Inter; Sub ] ~f:(fun op ->
+   *                          let state =
+   *                            let s = State.state a and s' = State.state a' in
+   *                            match op with
+   *                            | Op.Union -> Abs.union s s'
+   *                            | Inter -> Abs.inter s s'
+   *                            | Sub -> Abs.sub s s'
+   *                            | _ -> assert false
+   *                          in
+   *                          let ret_t = Op.ret_type op in
+   *                          let state_v_out =
+   *                            State.create state cost ret_t |> Is_fresh.unwrap
+   *                          in
+   *                          insert_hyper_edge_if_not_exists graph [ a; a' ] op
+   *                            state_v_out)))); *)
+  let size' = nb_vertex graph in
+  Dump.dump_detailed ~suffix:(sprintf "after-fill-%d" cost) graph;
 
-let fill_up_to_cost (graph : Search_state.t) cost =
+  Fmt.epr "Pruning: size before=%d, after=%d, removed %f%%\n" size size'
+    Float.(100.0 - (of_int size' / of_int size * 100.0))
+
+let fill_up_to_cost (graph : Search_state.t) ops cost =
   let rec fill c =
     if c > cost then false
     else
-      let changed, () = did_change @@ fun () -> fill_cost graph c in
+      let changed, () = did_change @@ fun () -> fill_cost graph ops c in
       changed || fill (c + 1)
   in
   fill 1
@@ -238,7 +280,7 @@ let synth () =
             until_done @@ fun () ->
             refute search_state @@ Conc.bool_vector bench.output
           in
-          let changed' = fill_up_to_cost search_state cost in
+          let changed' = fill_up_to_cost search_state bench.ops cost in
           Fmt.epr "Changed: %b Cost: %d\n%!" (changed || changed') cost;
           changed || changed' )
         |> ignore
