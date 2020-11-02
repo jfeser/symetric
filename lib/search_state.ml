@@ -42,6 +42,15 @@ end = struct
 end
 
 module State = struct
+  module State_and_type = struct
+    module T = struct
+      type t = Abs.t * Type.t [@@deriving compare, hash, sexp]
+    end
+
+    include T
+    include Comparator.Make (T)
+  end
+
   let costs = Option_vector.create 128
 
   let states = Option_vector.create 128
@@ -49,7 +58,9 @@ module State = struct
   let types = Option_vector.create 128
 
   let state_cost_idx =
-    lazy (Array.init !Global.max_cost ~f:(fun _ -> Hashtbl.create (module Abs)))
+    lazy
+      (Array.init !Global.max_cost ~f:(fun _ ->
+           Hashtbl.create (module State_and_type)))
 
   let id_ctr = ref 1
 
@@ -68,21 +79,21 @@ module State = struct
   include T
   include Comparator.Make (T)
 
-  let get s c =
+  let get s c t =
     let idx = c - 1 in
     [%test_pred: int] ~message:"index out of bounds"
       (fun idx -> idx >= 0 && idx < Array.length (Lazy.force state_cost_idx))
       idx;
     let state_idx = (Lazy.force state_cost_idx).(c - 1) in
-    Hashtbl.find state_idx s
+    Hashtbl.find state_idx (s, t)
 
-  let set s c id =
-    Hashtbl.set ~key:s ~data:id (Lazy.force state_cost_idx).(c - 1)
+  let set s c t id =
+    Hashtbl.set ~key:(s, t) ~data:id (Lazy.force state_cost_idx).(c - 1)
 
   let of_cost c = Hashtbl.data (Lazy.force state_cost_idx).(c - 1)
 
   let create s c t =
-    match get s c with
+    match get s c t with
     | Some id -> Stale id
     | None ->
         let id = !id_ctr in
@@ -94,7 +105,7 @@ module State = struct
         Option_vector.set_some states idx s;
         Option_vector.set_some costs idx c;
         Option_vector.set_some types idx t;
-        set s c id;
+        set s c t id;
         Fresh id
 
   let id = ident

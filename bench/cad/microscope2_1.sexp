@@ -38,6 +38,8 @@
        (Offset ((offset -20.0) (type_ ((id 2) (kind Cylinder)))))
        (Offset ((offset -30.0) (type_ ((id 2) (kind Cylinder)))))
        (Offset ((offset 30.0) (type_ ((id 2) (kind Cylinder)))))
+
+       Union Inter Sub
        ))
 
  (input ((2.12082 -8.16099 8.31532)

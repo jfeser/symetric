@@ -38,7 +38,14 @@ module Op = struct
 
   let pp fmt op =
     let str =
-      match op with Union -> "or" | Inter -> "and" | Sub -> "diff" | _ -> "??"
+      match op with
+      | Union -> "or"
+      | Inter -> "and"
+      | Sub -> "sub"
+      | Sphere _ -> "sphere"
+      | Cylinder _ -> "cylinder"
+      | Cuboid _ -> "cuboid"
+      | Offset x -> sprintf "offset(%d)" x.type_.id
     in
     Fmt.pf fmt "%s" str
 
