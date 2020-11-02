@@ -24,10 +24,7 @@ module Bool_vector = struct
 
   let meet =
     Map.merge ~f:(fun ~key:_ -> function
-      | `Left x | `Right x -> Some x
-      | `Both (x, x') ->
-          assert (Bool.(x = x'));
-          Some x)
+      | `Left x | `Right x -> Some x | `Both _ -> None)
 
   let is_subset_a s ~of_:s' =
     if Map.length s > Map.length s' then false

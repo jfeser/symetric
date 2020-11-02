@@ -1,7 +1,7 @@
 open Search_state
 
 module Refinement : sig
-  type t = { context : Args.t; splits : Abs.t list }
+  type t = { context : Args.t * State.t list; splits : Abs.t list }
 end
 
 val get_refinement :

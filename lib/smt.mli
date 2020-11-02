@@ -85,6 +85,8 @@ module Interpolant : sig
   with type 'a s := 'a t
 
   val assert_group : ?group:Group.t -> Expr.t -> unit t
+
+  val group_vars : (Group.t -> Set.M(Var).t) t
 end
 
 val read_input : ?parse_pos:Sexp.Parse_pos.t -> In_channel.t -> Sexp.t

@@ -57,7 +57,8 @@ module E_foldable = struct
 end
 
 module Refinement = struct
-  type t = { context : Args.t; splits : Abs.t list } [@@deriving sexp_of]
+  type t = { context : Args.t * State.t list; splits : Abs.t list }
+  [@@deriving sexp_of]
 
   let pp fmt x = Sexp.pp_hum fmt @@ [%sexp_of: t] x
 end
@@ -194,21 +195,22 @@ let refinement_of_model graph separator interpolant forced vars =
     |> List.dedup_and_sort ~compare:[%compare: Args.t]
     |> List.map ~f:(fun arg_v ->
            let var = Map.find_exn vars.arg_vars arg_v in
-           let states =
-             Node.of_args arg_v |> G.pred graph
-             |> List.map ~f:Node.to_state_exn
-             |> List.map ~f:State.state
+           let state_vs =
+             Node.of_args arg_v |> G.pred graph |> List.map ~f:Node.to_state_exn
            in
+           let states = List.map state_vs ~f:State.state in
            Refinement.
              {
-               context = arg_v;
+               context = (arg_v, state_vs);
                splits = Symb.refine ivars states (Args.op arg_v) var;
              })
   in
 
   let edges =
-    List.concat_map refinement ~f:(function r ->
-        G.pred_e graph (Node.of_args r.context))
+    List.concat_map refinement ~f:(fun r ->
+        let args_v, state_vs = r.context in
+        List.map state_vs ~f:(fun v ->
+            (Node.of_state v, -1, Node.of_args args_v)))
     |> Set.of_list (module E)
   in
 
@@ -237,8 +239,8 @@ let to_list g = G.fold_vertex (fun v vs -> v :: vs) g []
 let assert_input_states_contained group vars graph =
   let open Smt in
   Map.to_alist vars.state_vars
-  |> List.filter ~f:(fun (v, _) ->
-         List.is_empty (G.succ graph @@ Node.of_state v))
+  (* |> List.filter ~f:(fun (v, _) ->
+   *        List.is_empty (G.succ graph @@ Node.of_state v)) *)
   |> List.map ~f:(fun (state_v, var) ->
          let state = State.state state_v in
          Symb.contained var ~by:state
@@ -390,6 +392,14 @@ let synth_constrs graph target_node expected_output separator =
               in
               assert_args_semantics hi_group vars top_graph v))
   in
+
+  let%bind vars_of_group = Smt.Interpolant.group_vars in
+  print_s
+    [%message
+      "interpolant vars"
+        ( Set.inter (vars_of_group lo_group) (vars_of_group hi_group)
+          : Set.M(Smt.Var).t )];
+
   return (vars, lo_group)
 
 let get_refinement state target_node expected_output separator =

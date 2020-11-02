@@ -9,6 +9,7 @@ let debug_out_file =
     sprintf "interp%d.smt2" !ctr
 
 let pp_sig fmt (name, n_args) =
+  let name = String_id.to_string name in
   if n_args = 0 then Fmt.pf fmt "%s () Bool" name
   else if n_args = 1 then Fmt.pf fmt "%s (Bool) Bool" name
   else if n_args = 2 then Fmt.pf fmt "%s (Bool Bool) Bool" name
@@ -85,12 +86,25 @@ module Expr = struct
     | Varop (_, es) ->
         List.fold ~init:empty ~f:(fun acc e -> plus (reduce e) acc) es
 
+  let map map = function
+    | (Bool _ | Var _) as e -> e
+    | Binop (op, e, e') -> Binop (op, map e, map e')
+    | Let (e, v, e') -> Let (map e, v, map e')
+    | Annot (e, x, y) -> Annot (map e, x, y)
+    | Unop (op, e) -> Unop (op, map e)
+    | Varop (op, es) -> Varop (op, List.map ~f:map es)
+
   let rec vars =
     let open String_id in
     function
     | Var v -> Set.singleton v
     | Let (e, v, e') -> Set.remove (Set.union (vars e) (vars e')) v
     | e -> reduce vars Set.union Set.empty e
+
+  let rec expand ctx = function
+    | Var x as e -> (
+        match Map.find ctx x with Some e -> expand ctx e | None -> e )
+    | e -> map (expand ctx) e
 end
 
 open Expr
@@ -172,7 +186,7 @@ let exactly_one xs = at_least_one xs && at_most_one xs
 let bool x = if x then true_ else false_
 
 module Decl = struct
-  type t = { name : string; n_args : int }
+  type t = { name : Var.t; n_args : int }
 
   let create ?(n_args = 0) name = { name; n_args }
 
@@ -187,6 +201,16 @@ module Defn = struct
 
   let to_smtlib fmt (Decl.{ name; n_args }, body) =
     Fmt.pf fmt "(define-fun %a %a)" pp_sig (name, n_args) Expr.pp body
+end
+
+module Assert = struct
+  type t = { body : Expr.t; group : int option }
+
+  let to_smtlib fmt { body; group } =
+    match group with
+    | Some gid ->
+        Fmt.pf fmt "(assert (! %a :interpolation-group g%d))" Expr.pp body gid
+    | None -> Fmt.pf fmt "(assert %a)" Expr.pp body
 end
 
 module Revlist : sig
@@ -211,7 +235,7 @@ end = struct
   let filter = List.filter
 end
 
-type stmt = Decl of Decl.t | Defn of Defn.t | Assert of Expr.t
+type stmt = Decl of Decl.t | Defn of Defn.t | Assert of Assert.t
 
 type state = {
   stmts : (stmt * string) Revlist.t;
@@ -261,7 +285,7 @@ let add_stmt stmt =
     match stmt with
     | Decl d -> Fmt.str "%a" Decl.to_smtlib d
     | Defn d -> Fmt.str "%a" Defn.to_smtlib d
-    | Assert a -> Fmt.str "(assert %a)" Expr.pp a
+    | Assert a -> Fmt.str "%a" Assert.to_smtlib a
   in
   State
     (fun s -> ((), { s with stmts = Revlist.append s.stmts (stmt, stmt_str) }))
@@ -271,8 +295,9 @@ let get_stmts = State (fun s -> (s.stmts, s))
 let fresh_num = State (fun s -> (s.var_ctr, { s with var_ctr = s.var_ctr + 1 }))
 
 let make_decl ?n_args name =
+  let name = String_id.of_string name in
   let%bind () = add_stmt @@ Decl (Decl.create ?n_args name) in
-  return (String_id.of_string name)
+  return name
 
 let fresh_decl ?n_args ?(prefix = "x") () =
   let%bind ctr = fresh_num in
@@ -280,8 +305,9 @@ let fresh_decl ?n_args ?(prefix = "x") () =
   make_decl ?n_args name
 
 let make_defn ?n_args name body =
+  let name = String_id.of_string name in
   let%bind () = add_stmt @@ Defn (Defn.create ?n_args name body) in
-  return (String_id.of_string name)
+  return name
 
 let fresh_defn ?n_args ?(prefix = "x") body =
   let%bind ctr = fresh_num in
@@ -292,19 +318,10 @@ let annotate key value term = Annot (term, key, value)
 
 let comment = annotate "comment"
 
-let assert_ expr = add_stmt @@ Assert expr
+let assert_ body = add_stmt @@ Assert { body; group = None }
 
 module Interpolant = struct
-  module Group : sig
-    type t
-
-    type 'a s
-
-    val create : t s
-
-    val pp : t Fmt.t
-  end
-  with type 'a s := 'a t = struct
+  module Group = struct
     type t = int
 
     let create =
@@ -313,11 +330,32 @@ module Interpolant = struct
     let pp fmt x = Fmt.pf fmt "g%d" x
   end
 
-  let assert_group ?group expr =
+  let group_vars =
+    State
+      (fun s ->
+        let stmts = s.stmts |> Revlist.to_list in
+        let ctx =
+          List.filter_map stmts ~f:(fun (stmt, _) ->
+              match stmt with
+              | Defn ({ name; _ }, body) -> Some (name, body)
+              | _ -> None)
+          |> Map.of_alist_exn (module String_id)
+        in
+        let k g =
+          List.filter_map stmts ~f:(fun (stmt, _) ->
+              match stmt with
+              | Assert { group = Some gid; body } when Int.(g = gid) ->
+                  Some (expand ctx body |> Expr.vars)
+              | _ -> None)
+          |> Set.union_list (module Var)
+        in
+        (k, s))
+
+  let assert_group ?group body =
     let%bind group =
       match group with Some g -> return g | None -> Group.create
     in
-    assert_ @@ annotate "interpolation-group" (Fmt.str "%a" Group.pp group) expr
+    add_stmt @@ Assert { body; group = Some group }
 end
 
 let read_input = Sexp.input_sexp

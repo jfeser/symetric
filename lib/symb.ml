@@ -33,15 +33,6 @@ module Bool_vector = struct
     |> and_
 
   let refine bits states op var =
-    print_s
-      [%message
-        "refine"
-          (op : Op.t)
-          (bits : Set.M(Smt.Var).t)
-          (var : t)
-          (states : Abs.Bool_vector.t list)
-          [%here]];
-
     let vbits = Set.of_list (module Smt.Var) var in
     let rbits = Set.inter vbits bits in
     let bit_idx =
@@ -62,9 +53,21 @@ module Bool_vector = struct
                 List.filter_map [ true; false ]
                   ~f:(Abs.Bool_vector.add state idx)))
     in
-    refined_states
-    |> List.dedup_and_sort ~compare:[%compare: Abs.Bool_vector.t]
-    |> List.map ~f:Abs.bool_vector
+    let out =
+      refined_states
+      |> List.dedup_and_sort ~compare:[%compare: Abs.Bool_vector.t]
+      |> List.map ~f:Abs.bool_vector
+    in
+    print_s
+      [%message
+        "refine"
+          (op : Op.t)
+          (bits : Set.M(Smt.Var).t)
+          (var : t)
+          (states : Abs.Bool_vector.t list)
+          (out : Abs.t list)
+          [%here]];
+    out
 end
 
 let offsets_of_type t =
