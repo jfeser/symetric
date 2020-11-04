@@ -45,7 +45,7 @@ module Op = struct
       | Sphere _ -> "sphere"
       | Cylinder _ -> "cylinder"
       | Cuboid _ -> "cuboid"
-      | Offset x -> sprintf "offset(%d)" x.type_.id
+      | Offset x -> sprintf "offset-%d" x.type_.id
     in
     Fmt.pf fmt "%s" str
 

@@ -170,20 +170,22 @@
     CLOSED: [2020-08-19 Wed 11:57]
 *** DONE Fix bit normalization Some/None
     CLOSED: [2020-08-21 Fri 17:14]
-
-* TODO Improve performance
+* DONE Improve performance
+  CLOSED: [2020-11-02 Mon 18:45]
 ** DONE Replace in_cone with a traversal of the cone
    CLOSED: [2020-08-25 Tue 15:32]
 ** DONE Don't repeat work when generating smt
    CLOSED: [2020-08-26 Wed 18:44]
 ** CANCELED Switch to multi-arg representation
    CLOSED: [2020-09-29 Tue 20:58]
-** TODO Reimplement cost cache
+** DONE Reimplement cost cache
+   CLOSED: [2020-11-02 Mon 18:45]
 * TODO Translate cad benchmarks for performance eval
 * TODO Writeup
 ** TODO BottomUp should return a program, since AbstractBottomUp needs the program structure to talk about refinements
 ** TODO Implement AbstractBottomUp in terms of an abstract refinement procedure that either splits a state into a disjoint union or removes a state
-** TODO Prove that with this simple refinement model, the abstract algorithm is correct
+** DONE Prove that with this simple refinement model, the abstract algorithm is correct
+   CLOSED: [2020-11-02 Mon 18:45]
     Key ideas:
     - When we hit a goal state, nondeterministically split a state or remove an unreachable state
 
@@ -206,3 +208,7 @@ are ordered lexicographically using the finer than order. Therefore, as the
 abstract search runs, its V state descends in the partial order. We know that
 there are no infinite descending chains in this order, so eventually it has to
 hit the concrete V.
+
+
+* TODO Finish implementing full CAD dsl
+  SCHEDULED: <2020-11-03 Tue>

@@ -90,8 +90,13 @@ module Offset = struct
   let lift x = { lo = x; hi = x }
 end
 
-type t = Bool_vector of Bool_vector.t | Offset of Offset.t
-[@@deriving compare, hash, sexp]
+module T = struct
+  type t = Bool_vector of Bool_vector.t | Offset of Offset.t
+  [@@deriving compare, hash, sexp]
+end
+
+include T
+include Comparator.Make (T)
 
 let bool_vector x = Bool_vector x
 

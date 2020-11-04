@@ -171,7 +171,7 @@ let refine search_state output refinement =
 
       List.iter edges ~f:(G.remove_edge_e graph);
 
-      List.iter r.splits ~f:(fun state ->
+      Set.iter r.splits ~f:(fun state ->
           let (Fresh v' | Stale v') = State.create state cost type_ in
           G.add_edge_e graph (Node.of_state v', -1, Node.of_args args_v));
 
@@ -224,15 +224,19 @@ let refute search_state output =
             let open Option.Let_syntax in
             let%map r =
               Refine.get_refinement search_state target output sep
-              |> Either.First.to_option
+              |> Either.First.to_option |> Option.join
             in
             (sep, r))
       in
       ( match refinement with
       | Some (_, r) -> refine search_state output r
       | None -> (
-          match Refine.get_refinement search_state target output last_sep with
-          | First r -> refine search_state output r
+          match
+            Refine.get_refinement ~use_fallback:true search_state target output
+              last_sep
+          with
+          | First (Some r) -> refine search_state output r
+          | First None -> failwith "fallback refinement failed"
           | Second selected_edges ->
               Fmt.epr "Could not refute: %a" Sexp.pp_hum
                 ( [%sexp_of: Program.t]

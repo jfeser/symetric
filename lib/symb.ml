@@ -1,42 +1,69 @@
 open Ast
 
 module Bool_vector = struct
-  type t = Smt.Var.t list [@@deriving sexp]
+  type elem = Free of Smt.Var.t | Fixed of bool [@@deriving sexp]
+
+  type t = elem list [@@deriving sexp]
+
+  let free x = Free x
+
+  let fixed x = Fixed x
+
+  let to_expr = function Free v -> Smt.var v | Fixed x -> Smt.bool x
 
   let create ?(prefix = sprintf "b%d") () =
-    List.init (Lazy.force Global.n_bits) ~f:(fun b ->
-        Smt.(fresh_decl ~prefix:(prefix b) ()))
-    |> Smt.all
+    Smt.(
+      List.init (Lazy.force Global.n_bits) ~f:(fun b ->
+          fresh_decl ~prefix:(prefix b) () >>| free)
+      |> all)
+
+  let of_abs ?(prefix = sprintf "b%d") x =
+    Smt.(
+      List.init (Lazy.force Global.n_bits) ~f:(fun b ->
+          match Map.find x b with
+          | Some v -> return @@ fixed v
+          | None -> fresh_decl ~prefix:(prefix b) () >>| free)
+      |> all)
 
   let union x x' =
     Smt.(
-      List.map2_exn x x' ~f:(fun v v' -> fresh_defn (var v || var v')) |> all)
+      List.map2_exn x x' ~f:(fun v v' ->
+          fresh_defn (to_expr v || to_expr v') >>| free)
+      |> all)
 
   let inter x x' =
     Smt.(
-      List.map2_exn x x' ~f:(fun v v' -> fresh_defn (var v || var v')) |> all)
+      List.map2_exn x x' ~f:(fun v v' ->
+          fresh_defn (to_expr v || to_expr v') >>| free)
+      |> all)
 
   let sub x x' =
     Smt.(
-      List.map2_exn x x' ~f:(fun v v' -> fresh_defn (var v && not (var v')))
+      List.map2_exn x x' ~f:(fun v v' ->
+          fresh_defn (to_expr v && not (to_expr v')) >>| free)
       |> all)
 
   let ( = ) x x' =
-    Smt.(List.map2_exn x x' ~f:(fun v v' -> var v = var v') |> and_)
+    Smt.(List.map2_exn x x' ~f:(fun v v' -> to_expr v = to_expr v') |> and_)
 
   let contained x by =
     let open Smt in
     List.filter_mapi x ~f:(fun b v ->
         match Map.find by b with
-        | Some x -> Some (bool x = var v)
+        | Some x -> Some (bool x = to_expr v)
         | None -> None)
     |> and_
 
   let refine bits states op var =
-    let vbits = Set.of_list (module Smt.Var) var in
+    let vbits =
+      Set.of_list (module Smt.Var)
+      @@ List.filter_map var ~f:(function Free x -> Some x | _ -> None)
+    in
     let rbits = Set.inter vbits bits in
     let bit_idx =
-      List.mapi var ~f:(fun i b -> (b, i)) |> Map.of_alist_exn (module Smt.Var)
+      List.filter_mapi var ~f:(fun i -> function
+        | Free b -> Some (b, i) | _ -> None)
+      |> Map.of_alist_exn (module Smt.Var)
     in
 
     let refined_states =
@@ -57,6 +84,7 @@ module Bool_vector = struct
       refined_states
       |> List.dedup_and_sort ~compare:[%compare: Abs.Bool_vector.t]
       |> List.map ~f:Abs.bool_vector
+      |> Set.of_list (module Abs)
     in
     print_s
       [%message
@@ -65,7 +93,7 @@ module Bool_vector = struct
           (bits : Set.M(Smt.Var).t)
           (var : t)
           (states : Abs.Bool_vector.t list)
-          (out : Abs.t list)
+          (out : Set.M(Abs).t)
           [%here]];
     out
 end
@@ -101,15 +129,23 @@ module Offset = struct
         Smt.(var in_set = bool is_in))
     |> Smt.and_
 
+  let index_of ~equal l x =
+    List.find_mapi l ~f:(fun i x' -> if equal x x' then Some i else None)
+
   let refine ivars states op var =
-    raise_s
+    print_s
       [%message
-        "unimplemented"
-          (ivars : Set.M(Smt.Var).t)
+        "refine"
           (states : Abs.Offset.t list)
           (op : Op.t)
           (var : t)
-          [%here]]
+          (ivars : Set.M(Smt.Var).t)
+          [%here]];
+    match op with
+    | Op.Offset x ->
+        [ Abs.Offset { lo = x.offset; hi = x.offset } ]
+        |> Set.of_list (module Abs)
+    | _ -> raise_s [%message "Expected an offset" (op : Op.t)]
 end
 
 type t = Bool_vector of Bool_vector.t | Offset of Offset.t [@@deriving sexp]
@@ -131,6 +167,12 @@ let create ?prefix =
   function
   | Type.Vector -> Bool_vector.create ?prefix () >>| bool_vector
   | Type.Offset t -> Offset.create ?prefix t >>| offset
+
+(* let of_abs ?prefix x =
+ *   let open Smt.Monad_infix in
+ *   function
+ *   | Type.Vector -> Bool_vector.of_abs ?prefix x >>| bool_vector
+ *   | Type.Offset t -> Offset.of_abs ?prefix t x >>| offset *)
 
 let map ~vector ~offset x =
   match x with Bool_vector x -> vector x | Offset x -> offset x
@@ -186,7 +228,8 @@ let cylinder (c : Op.cylinder) l h =
               above it are selected, and none of the high offsets that are below
               it are selected *)
            Smt.(
-             fresh_defn (bool in_radius && (not (or_ above)) && not (or_ below))))
+             fresh_defn (bool in_radius && (not (or_ above)) && not (or_ below))
+             >>| Bool_vector.free))
   in
   Smt.(all ret >>| bool_vector)
 
@@ -215,7 +258,8 @@ let cuboid (c : Op.cuboid) lx hx ly hy lz hz =
                && (not (or_ above_y))
                && (not (or_ below_y))
                && (not (or_ above_z))
-               && not (or_ below_z) )))
+               && not (or_ below_z) )
+             >>| Bool_vector.free))
   in
   Smt.(all ret >>| bool_vector)
 
@@ -223,8 +267,9 @@ let sphere (s : Op.sphere) =
   let ret =
     (Set_once.get_exn Global.bench [%here]).input |> Array.to_list
     |> List.map ~f:(fun v ->
-           Smt.fresh_defn
-             (Smt.bool Float.(Vector3.l2_dist s.center v <= s.radius)))
+           Smt.(
+             fresh_defn (bool Float.(Vector3.l2_dist s.center v <= s.radius))
+             >>| Bool_vector.free))
   in
   Smt.(all ret >>| bool_vector)
 
@@ -249,6 +294,7 @@ let eval op args =
   | Offset o -> offset o
 
 let refine ivars states op var =
+  let states = Set.to_list states in
   map
     ~vector:(fun v ->
       Bool_vector.refine ivars (List.map ~f:Abs.to_bool_vector_exn states) op v)

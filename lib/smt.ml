@@ -76,6 +76,8 @@ module Expr = struct
         let%bind lhs = parse lhs in
         let%bind rhs = parse rhs in
         return @@ Let (lhs, String_id.of_string var, rhs)
+    | Atom "true" -> return @@ Bool true
+    | Atom "false" -> return @@ Bool false
     | Atom x -> return @@ var_s x
     | inter -> Or_error.error "Unexpected interpolant" inter [%sexp_of: Sexp.t]
 

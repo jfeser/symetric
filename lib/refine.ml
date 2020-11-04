@@ -57,7 +57,7 @@ module E_foldable = struct
 end
 
 module Refinement = struct
-  type t = { context : Args.t * State.t list; splits : Abs.t list }
+  type t = { context : Args.t * State.t list; splits : Set.M(Abs).t }
   [@@deriving sexp_of]
 
   let pp fmt x = Sexp.pp_hum fmt @@ [%sexp_of: t] x
@@ -185,40 +185,47 @@ let forced_bits interpolant state =
         else (var, None))
   else List.map vars ~f:(fun v -> (v, None))
 
-let refinement_of_model graph separator interpolant forced vars =
+let refinement_of_interpolant graph separator ivars vars =
   let open Refinement in
-  let ivars = Smt.Expr.vars interpolant in
+  if Set.is_empty ivars then None
+  else
+    let open Option.Let_syntax in
+    let refinement =
+      List.map separator ~f:Node.to_args_exn
+      |> List.dedup_and_sort ~compare:[%compare: Args.t]
+      |> List.filter_map ~f:(fun arg_v ->
+             let var = Map.find_exn vars.arg_vars arg_v in
+             let state_vs =
+               Node.of_args arg_v |> G.pred graph
+               |> List.map ~f:Node.to_state_exn
+             in
+             let old_states =
+               List.map state_vs ~f:State.state |> Set.of_list (module Abs)
+             in
+             let new_states =
+               Symb.refine ivars old_states (Args.op arg_v) var
+             in
 
-  let open Option.Let_syntax in
-  let refinement =
-    List.map separator ~f:Node.to_args_exn
-    |> List.dedup_and_sort ~compare:[%compare: Args.t]
-    |> List.map ~f:(fun arg_v ->
-           let var = Map.find_exn vars.arg_vars arg_v in
-           let state_vs =
-             Node.of_args arg_v |> G.pred graph |> List.map ~f:Node.to_state_exn
-           in
-           let states = List.map state_vs ~f:State.state in
-           Refinement.
-             {
-               context = (arg_v, state_vs);
-               splits = Symb.refine ivars states (Args.op arg_v) var;
-             })
-  in
+             if Set.equal old_states new_states then None
+             else
+               Some
+                 Refinement.{ context = (arg_v, state_vs); splits = new_states })
+    in
 
-  let edges =
-    List.concat_map refinement ~f:(fun r ->
-        let args_v, state_vs = r.context in
-        List.map state_vs ~f:(fun v ->
-            (Node.of_state v, -1, Node.of_args args_v)))
-    |> Set.of_list (module E)
-  in
+    let edges =
+      List.concat_map refinement ~f:(fun r ->
+          let args_v, state_vs = r.context in
+          List.map state_vs ~f:(fun v ->
+              (Node.of_state v, -1, Node.of_args args_v)))
+      |> Set.of_list (module E)
+    in
 
-  Dump.dump_detailed ~suffix:"after-refine"
-    ~separator:(List.mem separator ~equal:[%equal: Node.t])
-    ~refinement:(Set.mem edges) graph;
-  Fmt.epr "Refinement: %a@." Fmt.Dump.(list Refinement.pp) refinement;
-  if List.is_empty refinement then failwith "No-op refinement" else refinement
+    Dump.dump_detailed ~suffix:"after-refine"
+      ~separator:(List.mem separator ~equal:[%equal: Node.t])
+      ~refinement:(Set.mem edges) graph;
+    Fmt.epr "Refinement: %a@." Fmt.Dump.(list Refinement.pp) refinement;
+
+    if List.is_empty refinement then None else Some refinement
 
 let assert_group_var g v = Smt.(Interpolant.assert_group ~group:g (var v))
 
@@ -236,7 +243,7 @@ let filter g ~f = G.fold_vertex (fun v vs -> if f v then v :: vs else vs) g []
 
 let to_list g = G.fold_vertex (fun v vs -> v :: vs) g []
 
-let assert_input_states_contained group vars graph =
+let assert_input_states_contained group vars =
   let open Smt in
   Map.to_alist vars.state_vars
   (* |> List.filter ~f:(fun (v, _) ->
@@ -318,7 +325,7 @@ let assert_args_output graph group =
   in
 
   let%bind vars = Vars.make graph in
-  let%bind () = assert_input_states_contained group vars graph in
+  let%bind () = assert_input_states_contained group vars in
 
   let%bind () =
     let module F = FoldM0 (Smt) (V_foldable) in
@@ -394,15 +401,18 @@ let synth_constrs graph target_node expected_output separator =
   in
 
   let%bind vars_of_group = Smt.Interpolant.group_vars in
-  print_s
-    [%message
-      "interpolant vars"
-        ( Set.inter (vars_of_group lo_group) (vars_of_group hi_group)
-          : Set.M(Smt.Var).t )];
+  let ivars = Set.inter (vars_of_group lo_group) (vars_of_group hi_group) in
+  print_s [%message "interpolant vars" (ivars : Set.M(Smt.Var).t)];
 
-  return (vars, lo_group)
+  return (vars, ivars, lo_group)
 
-let get_refinement state target_node expected_output separator =
+let random_subset ?(state = Random.State.default) s =
+  Set.filter ~f:(fun _ -> Random.State.bool state) s
+
+let choose_singleton cmp s = Set.singleton cmp (Set.choose_exn s)
+
+let get_refinement ?(use_fallback = false) state target_node expected_output
+    separator =
   (* Select the subset of the graph that can reach the target. *)
   let graph = cone state (Node.of_state target_node) separator in
   let separator = List.filter separator ~f:(G.mem_vertex graph) in
@@ -412,12 +422,17 @@ let get_refinement state target_node expected_output separator =
     graph;
   let open Smt in
   let open Let_syntax in
-  let process_interpolant state vars interpolant =
+  let process_interpolant vars all_ivars interpolant =
     let interpolant = ok_exn interpolant in
     Fmt.epr "Interpolant: %a@." Expr.pp interpolant;
-    refinement_of_model graph separator interpolant
-      (forced_bits interpolant state)
-      vars
+    let ivars = Expr.vars interpolant in
+    match refinement_of_interpolant graph separator ivars vars with
+    | Some r -> Some r
+    | None ->
+        if use_fallback then
+          let ivars = choose_singleton (module Var) all_ivars in
+          refinement_of_interpolant graph separator ivars vars
+        else None
   in
 
   let process_model vars model =
@@ -427,14 +442,14 @@ let get_refinement state target_node expected_output separator =
   in
 
   let get_interpolant =
-    let%bind vars, sep_group =
+    let%bind vars, all_ivars, sep_group =
       synth_constrs graph target_node expected_output separator
     in
     let%bind ret = Smt.get_interpolant_or_model [ sep_group ] in
-    return (vars, ret)
+    return (vars, all_ivars, ret)
   in
 
-  let (vars, ret), state = Smt.run get_interpolant in
+  let (vars, all_ivars, ret), _ = Smt.run get_interpolant in
   Either.map
-    ~first:(process_interpolant state vars)
+    ~first:(process_interpolant vars all_ivars)
     ~second:(process_model vars) ret
