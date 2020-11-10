@@ -54,48 +54,31 @@ module Bool_vector = struct
         | None -> None)
     |> and_
 
-  let refine bits states op var =
-    let vbits =
-      Set.of_list (module Smt.Var)
-      @@ List.filter_map var ~f:(function Free x -> Some x | _ -> None)
-    in
-    let rbits = Set.inter vbits bits in
+  let refine models abs symb =
     let bit_idx =
-      List.filter_mapi var ~f:(fun i -> function
+      List.filter_mapi symb ~f:(fun i -> function
         | Free b -> Some (b, i) | _ -> None)
       |> Map.of_alist_exn (module Smt.Var)
     in
 
     let refined_states =
-      if Int.(Op.arity op = 0) then
-        let conc = Conc.eval op [] |> Conc.to_bool_vector_exn in
-        Set.fold rbits ~init:states ~f:(fun states bit ->
-            let idx = Map.find_exn bit_idx bit in
-            List.filter_map states ~f:(fun state ->
-                Abs.Bool_vector.add state idx conc.(idx)))
-      else
-        Set.fold rbits ~init:states ~f:(fun states bit ->
-            let idx = Map.find_exn bit_idx bit in
-            List.concat_map states ~f:(fun state ->
-                List.filter_map [ true; false ]
-                  ~f:(Abs.Bool_vector.add state idx)))
-    in
-    let out =
-      refined_states
-      |> List.dedup_and_sort ~compare:[%compare: Abs.Bool_vector.t]
-      |> List.map ~f:Abs.bool_vector
+      Sequence.map models ~f:(fun model ->
+          Map.fold model ~init:abs ~f:(fun ~key:var ~data:value abs ->
+              let idx = Map.find_exn bit_idx var in
+              Option.value_exn (Abs.Bool_vector.add abs idx value)))
+      |> Sequence.map ~f:Abs.bool_vector
+      |> Sequence.to_list
       |> Set.of_list (module Abs)
     in
     print_s
       [%message
         "refine"
-          (op : Op.t)
-          (bits : Set.M(Smt.Var).t)
-          (var : t)
-          (states : Abs.Bool_vector.t list)
-          (out : Set.M(Abs).t)
+          (models : Smt.Model.t Sequence.t)
+          (symb : t)
+          (abs : Abs.Bool_vector.t)
+          (refined_states : Set.M(Abs).t)
           [%here]];
-    out
+    refined_states
 end
 
 let offsets_of_type t =
@@ -132,20 +115,24 @@ module Offset = struct
   let index_of ~equal l x =
     List.find_mapi l ~f:(fun i x' -> if equal x x' then Some i else None)
 
-  let refine ivars states op var =
-    print_s
-      [%message
-        "refine"
-          (states : Abs.Offset.t list)
-          (op : Op.t)
-          (var : t)
-          (ivars : Set.M(Smt.Var).t)
-          [%here]];
-    match op with
-    | Op.Offset x ->
-        [ Abs.Offset { lo = x.offset; hi = x.offset } ]
-        |> Set.of_list (module Abs)
-    | _ -> raise_s [%message "Expected an offset" (op : Op.t)]
+  let split (abs : Abs.Offset.t) symb var =
+    index_of ~equal:[%compare.equal: Smt.Var.t] symb.set var
+    |> Option.map ~f:(fun idx ->
+           let split_offset = List.nth_exn (offsets_of_type symb.type_) idx in
+           ( { Abs.Offset.lo = abs.lo; hi = split_offset },
+             { Abs.Offset.lo = split_offset; hi = abs.hi } ))
+
+  let refine_single (abs : Abs.Offset.t) symb var value =
+    split abs symb var |> Option.map ~f:(fun (f, t) -> if value then t else f)
+
+  let refine models old_abs symb =
+    Sequence.map models ~f:(fun model ->
+        Map.fold ~init:old_abs
+          ~f:(fun ~key:var ~data:value abs ->
+            refine_single abs symb var value |> Option.value ~default:abs)
+          model)
+    |> Sequence.map ~f:Abs.offset |> Sequence.to_list
+    |> Set.of_list (module Abs)
 end
 
 type t = Bool_vector of Bool_vector.t | Offset of Offset.t [@@deriving sexp]
@@ -247,10 +234,10 @@ let cuboid (c : Op.cuboid) lx hx ly hy lz hz =
            let rot = inverse_rotate v c.theta in
            let above_x = filter_offsets lx (fun o -> Float.(o > rot.x))
            and below_x = filter_offsets hx (fun o -> Float.(o < rot.x))
-           and above_y = filter_offsets ly (fun o -> Float.(o > rot.x))
-           and below_y = filter_offsets hy (fun o -> Float.(o < rot.x))
-           and above_z = filter_offsets lz (fun o -> Float.(o > rot.x))
-           and below_z = filter_offsets hz (fun o -> Float.(o < rot.x)) in
+           and above_y = filter_offsets ly (fun o -> Float.(o > rot.y))
+           and below_y = filter_offsets hy (fun o -> Float.(o < rot.y))
+           and above_z = filter_offsets lz (fun o -> Float.(o > rot.z))
+           and below_z = filter_offsets hz (fun o -> Float.(o < rot.z)) in
            Smt.(
              fresh_defn
                ( (not (or_ above_x))
@@ -293,11 +280,9 @@ let eval op args =
   | Sphere s -> sphere s
   | Offset o -> offset o
 
-let refine ivars states op var =
-  let states = Set.to_list states in
+let refine ivars old_state var =
   map
-    ~vector:(fun v ->
-      Bool_vector.refine ivars (List.map ~f:Abs.to_bool_vector_exn states) op v)
-    ~offset:(fun v ->
-      Offset.refine ivars (List.map ~f:Abs.to_offset_exn states) op v)
+    ~vector:(fun s ->
+      Bool_vector.refine ivars (Abs.to_bool_vector_exn old_state) s)
+    ~offset:(fun s -> Offset.refine ivars (Abs.to_offset_exn old_state) s)
     var

@@ -57,7 +57,6 @@ let fold_range ~init ~f lo hi =
   fold_range init lo
 
 let fill_cost (graph : Search_state.t) ops cost =
-  Fmt.epr "Filling cost %d\n" cost;
   let size = nb_vertex graph in
   ( if cost > 1 then
     let arg_cost = cost - 1 in
@@ -65,8 +64,8 @@ let fill_cost (graph : Search_state.t) ops cost =
     List.iter ops ~f:(fun op ->
         let arity = Op.arity op in
         let arg_types = Op.args_type op |> Array.of_list in
-        if arity >= arg_cost then
-          let module Comp = Combinat.Composition in
+        let module Comp = Combinat.Composition in
+        if arity > 0 then
           Comp.create ~n:arg_cost ~k:arity
           |> Comp.iter ~f:(fun arg_costs ->
                  let add_hyper_edges =
@@ -74,38 +73,26 @@ let fill_cost (graph : Search_state.t) ops cost =
                      ~init:(fun args -> create_hyper_edge graph cost op args)
                      ~f:(fun f i args ->
                        let type_ = arg_types.(i) in
-                       states_of_cost graph arg_costs.{i}
-                       |> List.iter ~f:(fun s ->
-                              if [%compare.equal: Type.t] (State.type_ s) type_
-                              then f (s :: args)))
+                       let states =
+                         states_of_cost graph
+                           (Combinat.Int_array.get arg_costs i)
+                       in
+                       (* print_s
+                        *   [%message
+                        *     "fill"
+                        *       (op : Op.t)
+                        *       (arity : int)
+                        *       (cost : int)
+                        *       (i : int)
+                        *       (type_ : Type.t)
+                        *       (states : State.t list)]; *)
+                       List.iter states ~f:(fun s ->
+                           if [%compare.equal: Type.t] (State.type_ s) type_
+                           then f (s :: args)))
                      0 arity
                  in
                  add_hyper_edges [])) );
 
-  (* let arg_cost = cost - 1 in
-   * let module Comp = Combinat.Composition in
-   * Comp.create ~n:arg_cost ~k:2
-   * |> Comp.iter ~f:(fun arg_costs ->
-   *        let c = arg_costs.{0} and c' = arg_costs.{1} in
-   *        states_of_cost graph c
-   *        |> List.iter ~f:(fun (a : State.t) ->
-   *               states_of_cost graph c'
-   *               |> List.iter ~f:(fun (a' : State.t) ->
-   *                      List.iter [ Op.Union; Inter; Sub ] ~f:(fun op ->
-   *                          let state =
-   *                            let s = State.state a and s' = State.state a' in
-   *                            match op with
-   *                            | Op.Union -> Abs.union s s'
-   *                            | Inter -> Abs.inter s s'
-   *                            | Sub -> Abs.sub s s'
-   *                            | _ -> assert false
-   *                          in
-   *                          let ret_t = Op.ret_type op in
-   *                          let state_v_out =
-   *                            State.create state cost ret_t |> Is_fresh.unwrap
-   *                          in
-   *                          insert_hyper_edge_if_not_exists graph [ a; a' ] op
-   *                            state_v_out)))); *)
   let size' = nb_vertex graph in
   Dump.dump_detailed ~suffix:(sprintf "after-fill-%d" cost) graph;
 
@@ -137,7 +124,7 @@ end
 exception Done of [ `Sat | `Unsat ]
 
 let separators graph target =
-  Seq.unfold ~init:(G.succ graph target) ~f:(fun sep ->
+  Seq.unfold ~init:[ target ] ~f:(fun sep ->
       if List.is_empty sep then None
       else
         let sep' =
@@ -145,6 +132,8 @@ let separators graph target =
           |> List.concat_map ~f:(G.succ graph)
         in
         Some (sep, sep'))
+  (* |> (fun s -> Seq.drop s 1) *)
+  |> Seq.map ~f:(List.map ~f:Node.to_state_exn)
 
 let refine_level n graph =
   V.fold graph ~init:(0, 0) ~f:(fun ((num, dem) as acc) ->
@@ -160,22 +149,31 @@ let refine search_state output refinement =
   let graph = search_state in
   let size = nb_vertex search_state in
 
+  let edge_is_good state_v arg_v =
+    G.out_degree graph @@ Node.of_args arg_v <> 0
+    || (Abs.contains (State.state state_v) @@ Conc.eval (Args.op arg_v) [])
+  in
+
   List.iteri refinement ~f:(fun i (r : Refine.Refinement.t) ->
-      let args_v, state_vs = r.context in
-      let edges =
-        List.map state_vs ~f:(fun v ->
-            (Node.of_state v, -1, Node.of_args args_v))
+      G.pred_e graph @@ Node.of_state r.old
+      |> List.iter ~f:(G.remove_edge_e graph);
+
+      let in_args =
+        G.succ graph @@ Node.of_state r.old |> List.map ~f:Node.to_args_exn
       in
-      let cost = List.hd_exn state_vs |> State.cost
-      and type_ = Args.output_type args_v in
+      let cost = State.cost r.old and type_ = State.type_ r.old in
 
-      List.iter edges ~f:(G.remove_edge_e graph);
-
-      Set.iter r.splits ~f:(fun state ->
+      G.remove_vertex graph (Node.of_state r.old);
+      Set.iter r.new_ ~f:(fun state ->
           let (Fresh v' | Stale v') = State.create state cost type_ in
-          G.add_edge_e graph (Node.of_state v', -1, Node.of_args args_v));
+          List.iter in_args ~f:(fun v ->
+              if edge_is_good v' v then
+                G.add_edge_e graph (Node.of_state v', -1, Node.of_args v)));
 
-      Dump.dump_detailed ~output ~suffix:(sprintf "fixup-%d" i) graph);
+      Dump.dump_detailed ~output ~suffix:(sprintf "fixup-%d" i) graph
+      (* [%test_result: bool] ~message:"graph still contains refined state"
+       *   ~expect:false
+       *   (G.mem_vertex graph @@ Node.of_state r.old) *));
 
   Dump.dump_detailed ~output ~suffix:"before-fixup" graph;
   fix_up search_state;
@@ -198,8 +196,7 @@ let rec extract_program graph selected_edges target =
         ( Args.op a,
           G.succ graph (Node.of_args a)
           |> List.map ~f:(extract_program graph selected_edges) )
-  | args ->
-      Error.create "Too many args" args [%sexp_of: Args.t list] |> Error.raise
+  | args -> raise_s [%message "expected one argument" (args : Args.t list)]
 
 let refute search_state output =
   let graph = search_state in

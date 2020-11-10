@@ -81,7 +81,7 @@ end
 module Offset = struct
   type t = { lo : float; hi : float } [@@deriving compare, hash, sexp]
 
-  let contains a c = Float.(a.lo <= c && c <= a.hi)
+  let contains a c = Float.(a.lo <= c && c < a.hi)
 
   let graphviz_pp fmt x = Fmt.pf fmt "[%f, %f]" x.lo x.hi
 
@@ -155,9 +155,9 @@ let cylinder (c : Op.cylinder) l h =
            Float.(square (rot.y - c.y) + square (rot.z - c.z) < square c.radius)
          in
          let below_lo = Float.(rot.x < l.lo)
-         and above_hi = Float.(rot.x > h.hi)
+         and above_hi = Float.(rot.x >= h.hi)
          and above_lo = Float.(rot.x >= l.hi)
-         and below_hi = Float.(rot.x <= h.lo) in
+         and below_hi = Float.(rot.x < h.lo) in
          let is_out = (not in_radius) || below_lo || above_hi
          and is_in = in_radius && above_lo && below_hi in
          if is_out then Some (i, false)
@@ -179,17 +179,17 @@ let cuboid (c : Op.cuboid) lx hx ly hy lz hz =
          let open Vector3 in
          let rot = inverse_rotate v c.theta in
          let below_lox = Float.(rot.x < lx.lo)
-         and above_hix = Float.(rot.x > hx.hi)
          and above_lox = Float.(rot.x >= lx.hi)
-         and below_hix = Float.(rot.x <= hx.lo)
+         and below_hix = Float.(rot.x < hx.lo)
+         and above_hix = Float.(rot.x >= hx.hi)
          and below_loy = Float.(rot.y < ly.lo)
-         and above_hiy = Float.(rot.y > hy.hi)
+         and above_hiy = Float.(rot.y >= hy.hi)
+         and below_hiy = Float.(rot.y < hy.lo)
          and above_loy = Float.(rot.y >= ly.hi)
-         and below_hiy = Float.(rot.y <= hy.lo)
          and below_loz = Float.(rot.z < lz.lo)
-         and above_hiz = Float.(rot.z > hz.hi)
-         and above_loz = Float.(rot.z >= lz.hi)
-         and below_hiz = Float.(rot.z <= hz.lo) in
+         and above_hiz = Float.(rot.z >= hz.hi)
+         and below_hiz = Float.(rot.z < hz.lo)
+         and above_loz = Float.(rot.z >= lz.hi) in
          let is_out =
            below_lox || above_hix || below_loy || above_hiy || below_loz
            || above_hiz
@@ -211,4 +211,5 @@ let eval op args =
   | Sub -> apply2 sub args
   | Cylinder c -> apply2 (cylinder c) args
   | Cuboid c -> apply6 (cuboid c) args
-  | Sphere _ | Offset _ -> failwith "leaf node"
+  | Sphere _ | Offset _ ->
+      raise_s [%message "leaf node" (op : Op.t) (args : t list)]

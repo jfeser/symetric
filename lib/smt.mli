@@ -8,12 +8,18 @@ end
 
 module Var = String_id
 
+module Model : sig
+  type t = bool Map.M(Var).t [@@deriving sexp]
+end
+
 module Expr : sig
   type t [@@deriving sexp]
 
   val vars : t -> Set.M(Var).t
 
   val pp : t Fmt.t
+
+  val models : t -> Model.t Sequence.t
 end
 
 type stmt

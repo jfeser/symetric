@@ -21,6 +21,10 @@ let pp_sig fmt (name, n_args) =
 
 module Var = String_id
 
+module Model = struct
+  type t = bool Map.M(Var).t [@@deriving sexp]
+end
+
 module Expr = struct
   type binop = Implies | Equals [@@deriving compare, sexp]
 
@@ -81,6 +85,43 @@ module Expr = struct
     | Atom x -> return @@ var_s x
     | inter -> Or_error.error "Unexpected interpolant" inter [%sexp_of: Sexp.t]
 
+  let rec eval ctx = function
+    | Bool v -> v
+    | Var x -> Map.find_exn ctx x
+    | Annot (e, _, _) -> eval ctx e
+    | Let (e, x, e') -> eval (Map.set ctx ~key:x ~data:(eval ctx e)) e'
+    | Binop (op, e, e') -> (
+        let v = eval ctx e and v' = eval ctx e' in
+        match op with
+        | Implies -> Bool.((not v) || v')
+        | Equals -> Bool.(v = v') )
+    | Unop (op, e) -> (
+        let v = eval ctx e in
+        match (op, v) with Not, v -> not v )
+    | Varop (op, es) -> (
+        let vs = List.map es ~f:(eval ctx) in
+        match op with
+        | And ->
+            List.sum
+              ( module struct
+                type t = bool
+
+                let ( + ) = ( && )
+
+                let zero = true
+              end )
+              ~f:Fun.id vs
+        | Or ->
+            List.sum
+              ( module struct
+                type t = bool
+
+                let ( + ) = ( || )
+
+                let zero = false
+              end )
+              ~f:Fun.id vs )
+
   let reduce reduce plus empty = function
     | Bool _ | Var _ -> empty
     | Binop (_, e, e') | Let (e, _, e') -> plus (reduce e) (reduce e')
@@ -102,6 +143,29 @@ module Expr = struct
     | Var v -> Set.singleton v
     | Let (e, v, e') -> Set.remove (Set.union (vars e) (vars e')) v
     | e -> reduce vars Set.union Set.empty e
+
+  let models e =
+    let bit m i = Int.((m lsr i) land 0x1 > 0) in
+    let open Sequence in
+    let vars = vars e |> Set.to_list in
+    range 0 (Int.pow 2 (List.length vars))
+    |> filter_map ~f:(fun m ->
+           let ctx =
+             List.mapi vars ~f:(fun i v -> (v, bit m i))
+             |> Map.of_alist_exn (module String_id)
+           in
+           if eval ctx e then Some ctx else None)
+
+  let%expect_test "" =
+    models (varop And [ var_s "x"; var_s "y" ])
+    |> [%sexp_of: bool Map.M(Var).t Sequence.t] |> print_s;
+    [%expect {| (((x true) (y true))) |}]
+
+  let%expect_test "" =
+    models (varop Or [ var_s "x"; var_s "y" ])
+    |> [%sexp_of: bool Map.M(Var).t Sequence.t] |> print_s;
+    [%expect
+      {| (((x true) (y false)) ((x false) (y true)) ((x true) (y true))) |}]
 
   let rec expand ctx = function
     | Var x as e -> (

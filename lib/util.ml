@@ -113,7 +113,9 @@ let input_sketch ch =
   end : Sigs.SKETCH )
 
 let apply2 f args =
-  match args with [ x; x' ] -> f x x' | _ -> failwith "Unexpected args"
+  match args with
+  | [ x; x' ] -> f x x'
+  | _ -> raise_s [%message "Unexpected args" (List.length args : int)]
 
 let apply6 f args =
   match args with
