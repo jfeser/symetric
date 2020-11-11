@@ -123,7 +123,7 @@ end
 
 exception Done of [ `Sat | `Unsat ]
 
-let separators graph target =
+let state_separators graph target =
   Seq.unfold ~init:[ target ] ~f:(fun sep ->
       if List.is_empty sep then None
       else
@@ -132,8 +132,19 @@ let separators graph target =
           |> List.concat_map ~f:(G.succ graph)
         in
         Some (sep, sep'))
-  (* |> (fun s -> Seq.drop s 1) *)
   |> Seq.map ~f:(List.map ~f:Node.to_state_exn)
+
+let arg_separators graph target =
+  Seq.unfold ~init:(G.succ graph target) ~f:(fun sep ->
+      if List.is_empty sep then None
+      else
+        let sep' =
+          List.concat_map sep ~f:(G.succ graph)
+          |> List.concat_map ~f:(G.succ graph)
+        in
+        Some (sep, sep'))
+  |> Seq.map ~f:(fun vs ->
+         List.map vs ~f:Node.to_args_exn |> Set.of_list (module Args))
 
 let refine_level n graph =
   V.fold graph ~init:(0, 0) ~f:(fun ((num, dem) as acc) ->
@@ -145,30 +156,31 @@ let refine_level n graph =
           | Bool_vector v -> (num + Abs.Bool_vector.width v, dem + n)
           | _ -> acc))
 
-let refine search_state output refinement =
-  let graph = search_state in
-  let size = nb_vertex search_state in
+let with_size graph f =
+  let size = nb_vertex graph in
+  let ret = f graph in
+  let size' = nb_vertex graph in
+  Fmt.epr "Pruning: size before=%d, after=%d, removed %f%%\n" size size'
+    Float.(100.0 - (of_int size' / of_int size * 100.0));
+  ret
 
-  let edge_is_good state_v arg_v =
-    G.out_degree graph @@ Node.of_args arg_v <> 0
-    || (Abs.contains (State.state state_v) @@ Conc.eval (Args.op arg_v) [])
-  in
-
+let refine graph output refinement =
   List.iteri refinement ~f:(fun i (r : Refine.Refinement.t) ->
-      G.pred_e graph @@ Node.of_state r.old
+      let cost, type_ =
+        let old_state =
+          G.pred graph @@ Node.of_args r.old |> List.hd_exn |> Node.to_state_exn
+        in
+        (State.cost old_state, State.type_ old_state)
+      in
+
+      (* Remove edges to old states *)
+      G.pred_e graph @@ Node.of_args r.old
       |> List.iter ~f:(G.remove_edge_e graph);
 
-      let in_args =
-        G.succ graph @@ Node.of_state r.old |> List.map ~f:Node.to_args_exn
-      in
-      let cost = State.cost r.old and type_ = State.type_ r.old in
-
-      G.remove_vertex graph (Node.of_state r.old);
+      (* Insert new states and add edges to args nodes. *)
       Set.iter r.new_ ~f:(fun state ->
           let (Fresh v' | Stale v') = State.create state cost type_ in
-          List.iter in_args ~f:(fun v ->
-              if edge_is_good v' v then
-                G.add_edge_e graph (Node.of_state v', -1, Node.of_args v)));
+          G.add_edge_e graph (Node.of_state v', -1, Node.of_args r.old));
 
       Dump.dump_detailed ~output ~suffix:(sprintf "fixup-%d" i) graph
       (* [%test_result: bool] ~message:"graph still contains refined state"
@@ -176,12 +188,11 @@ let refine search_state output refinement =
        *   (G.mem_vertex graph @@ Node.of_state r.old) *));
 
   Dump.dump_detailed ~output ~suffix:"before-fixup" graph;
-  fix_up search_state;
-  Dump.dump_detailed ~output ~suffix:"after-fixup" graph;
+  fix_up graph;
+  Dump.dump_detailed ~output ~suffix:"after-fixup" graph
 
-  let size' = nb_vertex search_state in
-  Fmt.epr "Pruning: size before=%d, after=%d, removed %f%%\n" size size'
-    Float.(100.0 - (of_int size' / of_int size * 100.0))
+let refine graph output refinement =
+  with_size graph @@ fun g -> refine g output refinement
 
 let rec extract_program graph selected_edges target =
   let args =
@@ -207,7 +218,7 @@ let refute search_state output =
         | _ -> None)
   with
   | Some target ->
-      let seps = separators graph (Node.of_state target) |> Seq.to_list in
+      let seps = arg_separators graph (Node.of_state target) |> Seq.to_list in
       let seps, last_sep =
         match List.rev seps with
         | last :: rest -> (List.rev rest, last)

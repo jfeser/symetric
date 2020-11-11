@@ -55,6 +55,13 @@ module Bool_vector = struct
     |> and_
 
   let refine models abs symb =
+    print_s
+      [%message
+        "refine"
+          (models : Smt.Model.t Sequence.t)
+          (symb : t)
+          (abs : Abs.Bool_vector.t)
+          [%here]];
     let bit_idx =
       List.filter_mapi symb ~f:(fun i -> function
         | Free b -> Some (b, i) | _ -> None)
@@ -64,20 +71,14 @@ module Bool_vector = struct
     let refined_states =
       Sequence.map models ~f:(fun model ->
           Map.fold model ~init:abs ~f:(fun ~key:var ~data:value abs ->
-              let idx = Map.find_exn bit_idx var in
-              Option.value_exn (Abs.Bool_vector.add abs idx value)))
+              Map.find bit_idx var
+              |> Option.map ~f:(fun idx ->
+                     Option.value_exn (Abs.Bool_vector.add abs idx value))
+              |> Option.value ~default:abs))
       |> Sequence.map ~f:Abs.bool_vector
       |> Sequence.to_list
       |> Set.of_list (module Abs)
     in
-    print_s
-      [%message
-        "refine"
-          (models : Smt.Model.t Sequence.t)
-          (symb : t)
-          (abs : Abs.Bool_vector.t)
-          (refined_states : Set.M(Abs).t)
-          [%here]];
     refined_states
 end
 

@@ -7,12 +7,12 @@ module FoldM0
 
       type elem
 
-      val fold_left : t -> init:'b -> f:('b -> elem -> 'b) -> 'b
+      val fold : t -> init:'b -> f:('b -> elem -> 'b) -> 'b
     end) =
 struct
   let fold ~f ~init c =
     let open M.Let_syntax in
-    F.fold_left
+    F.fold
       ~f:(fun acc x ->
         let%bind acc = acc in
         f acc x)
@@ -36,7 +36,7 @@ module FoldM
     (M : Monad.S) (F : sig
       type 'a t
 
-      val fold_left : 'a t -> init:'b -> f:('b -> 'a -> 'b) -> 'b
+      val fold : 'a t -> init:'b -> f:('b -> 'a -> 'b) -> 'b
     end) =
 struct
   let fold (type a) ~f ~init (c : a F.t) =
@@ -45,7 +45,28 @@ struct
 
       type elem = a
 
-      let fold_left = F.fold_left
+      let fold = F.fold
+    end in
+    let module Fold = FoldM0 (M) (F0) in
+    Fold.fold ~f ~init c
+
+  let iter ~f c = fold ~f:(fun () x -> f x) ~init:() c
+end
+
+module FoldM2
+    (M : Monad.S) (F : sig
+      type ('a, 'b) t
+
+      val fold : ('b, 'c) t -> init:'a -> f:('a -> 'b -> 'a) -> 'a
+    end) =
+struct
+  let fold (type a b) ~f ~init (c : (a, b) F.t) =
+    let module F0 = struct
+      type t = (a, b) F.t
+
+      type elem = a
+
+      let fold = F.fold
     end in
     let module Fold = FoldM0 (M) (F0) in
     Fold.fold ~f ~init c
@@ -58,7 +79,7 @@ module V_foldable = struct
 
   type elem = G.V.t
 
-  let fold_left g ~init ~f = G.fold_vertex (fun x acc -> f acc x) g init
+  let fold g ~init ~f = G.fold_vertex (fun x acc -> f acc x) g init
 end
 
 module E_foldable = struct
@@ -66,20 +87,18 @@ module E_foldable = struct
 
   type elem = G.E.t
 
-  let fold_left g ~init ~f = G.fold_edges_e (fun x acc -> f acc x) g init
+  let fold g ~init ~f = G.fold_edges_e (fun x acc -> f acc x) g init
 end
 
 module Refinement = struct
-  type t = { old : State.t; new_ : Set.M(Abs).t } [@@deriving sexp_of]
+  type t = { old : Args.t; new_ : Set.M(Abs).t } [@@deriving sexp_of]
 
   let pp fmt x = Sexp.pp_hum fmt @@ [%sexp_of: t] x
 end
 
 let cone graph target_node separator =
   let in_separator =
-    let sep =
-      Set.of_list (module Node) @@ List.map ~f:Node.of_state separator
-    in
+    let sep = Set.of_list (module Node) @@ List.map ~f:Node.of_args separator in
     Set.mem sep
   in
 
@@ -205,19 +224,18 @@ let refinement_of_interpolant graph separator interpolant vars =
 
   let open Option.Let_syntax in
   let refinement =
-    separator
-    |> List.dedup_and_sort ~compare:[%compare: State.t]
-    |> List.filter_map ~f:(fun state_v ->
-           let var = Map.find_exn vars.state_vars state_v in
-           let old_state = State.state state_v in
+    Set.to_list separator
+    |> List.filter_map ~f:(fun args_v ->
+           let var = Map.find_exn vars.arg_vars args_v in
+           let old_state =
+             match
+               Node.of_args args_v |> G.pred graph
+               |> List.map ~f:(fun v -> State.state @@ Node.to_state_exn v)
+             with
+             | [ s ] -> s
+             | ss -> raise_s [%message "expected one state" (ss : Abs.t list)]
+           in
 
-           (* let state_vs =
-            *   Node.of_args arg_v |> G.pred graph
-            *   |> List.map ~f:Node.to_state_exn
-            * in
-            * let old_states =
-            *   List.map state_vs ~f:State.state |> Set.of_list (module Abs)
-            * in *)
            let new_state = Symb.refine models old_state var in
            if Set.is_empty new_state then None
            else if
@@ -225,7 +243,7 @@ let refinement_of_interpolant graph separator interpolant vars =
                (Set.singleton (module Abs) old_state)
                new_state
            then None
-           else Some Refinement.{ old = state_v; new_ = new_state })
+           else Some Refinement.{ old = args_v; new_ = new_state })
   in
 
   (* let edges =
@@ -236,9 +254,7 @@ let refinement_of_interpolant graph separator interpolant vars =
    *   |> Set.of_list (module E)
    * in *)
   Dump.dump_detailed ~suffix:"after-refine"
-    ~separator:(fun v ->
-      Node.match_ v ~args:(Fun.const false)
-        ~state:(List.mem separator ~equal:[%equal: State.t]))
+    ~separator:(Node.match_ ~state:(Fun.const false) ~args:(Set.mem separator))
     (* ~refinement:(Set.mem edges) *) graph;
   Fmt.epr "Refinement: %a@." Fmt.Dump.(list Refinement.pp) refinement;
 
@@ -263,8 +279,6 @@ let to_list g = G.fold_vertex (fun v vs -> v :: vs) g []
 let assert_input_states_contained group vars =
   let open Smt in
   Map.to_alist vars.state_vars
-  (* |> List.filter ~f:(fun (v, _) ->
-   *        List.is_empty (G.succ graph @@ Node.of_state v)) *)
   |> List.map ~f:(fun (state_v, var) ->
          let state = State.state state_v in
          Symb.contained var ~by:state
@@ -339,44 +353,16 @@ let assert_args_semantics group vars graph v =
   let%bind eval_result = Symb.eval op incoming_states in
   fresh_defn ~prefix:name Symb.(eval_result = out) >>= assert_group_var group
 
-let assert_args_output graph group =
-  let open Smt.Let_syntax in
-  let target_node =
-    match filter graph ~f:(fun v -> G.in_degree graph v = 0) with
-    | [ v ] -> Node.to_args_exn v
-    | vs -> raise_s [%message "Expected one target node." (vs : Node.t list)]
-  in
-
-  let%bind vars = Vars.make graph in
-  let%bind () = assert_input_states_contained group vars in
-
-  let%bind () =
-    let module F = FoldM0 (Smt) (V_foldable) in
-    List.map (to_list graph) ~f:(fun v ->
-        Node.match_ v
-          ~state:(fun v ->
-            let%bind () =
-              assert_selected_state_selects_input group vars graph v
-            in
-            assert_state_semantics group vars graph v)
-          ~args:(fun v ->
-            let%bind () =
-              assert_selected_args_selects_inputs group vars graph v
-            in
-            assert_args_semantics group vars graph v))
-    |> Smt.all_unit
-  in
-  return @@ Map.find_exn vars.arg_vars target_node
-
 let in_separator s v =
   Node.match_ ~args:(Fun.const false)
     ~state:(List.mem s ~equal:[%compare.equal: State.t])
     v
 
 module FV = FoldM0 (Smt) (V_foldable)
-module F = FoldM (Smt) (List)
+module F = FoldM2 (Smt) (Set)
 
-let synth_constrs graph target_node expected_output separator =
+let synth_constrs graph target_node expected_output (separator : Set.M(Args).t)
+    =
   let open Smt.Let_syntax in
   let%bind lo_group = Smt.Interpolant.Group.create
   and hi_group = Smt.Interpolant.Group.create in
@@ -384,9 +370,9 @@ let synth_constrs graph target_node expected_output separator =
   let top_graph =
     let g = G.copy graph in
     (* Remove separator dependency edges. *)
-    List.iter separator ~f:(fun state_v ->
-        G.iter_succ_e (G.remove_edge_e g) g @@ Node.of_state state_v);
-    cone g (Node.of_state target_node) separator
+    Set.iter separator ~f:(fun args_v ->
+        G.iter_succ_e (G.remove_edge_e g) g @@ Node.of_args args_v);
+    cone g (Node.of_state target_node) (Set.to_list separator)
   in
   Dump.dump_detailed ~suffix:"top-graph"
     (* ~separator:(List.mem separator ~equal:[%equal: Node.t]) *)
@@ -406,18 +392,20 @@ let synth_constrs graph target_node expected_output separator =
             in
             assert_state_semantics hi_group vars top_graph v)
           ~args:(fun v ->
-            let%bind () =
-              assert_selected_args_selects_inputs hi_group vars top_graph v
-            in
-            assert_args_semantics hi_group vars top_graph v))
+            if Set.mem separator v then return ()
+            else
+              let%bind () =
+                assert_selected_args_selects_inputs hi_group vars top_graph v
+              in
+              assert_args_semantics hi_group vars top_graph v))
   in
 
   let%bind () =
-    F.iter separator ~f:(fun state_v ->
+    F.iter separator ~f:(fun args_v ->
         Dump.dump_detailed ~suffix:"full-graph"
           (* ~separator:(List.mem separator ~equal:[%equal: Node.t]) *)
           graph;
-        let local_graph = cone graph (Node.of_state state_v) [] in
+        let local_graph = cone graph (Node.of_args args_v) [] in
         Dump.dump_detailed ~suffix:"local-graph"
           (* ~separator:(List.mem separator ~equal:[%equal: Node.t]) *)
           local_graph;
@@ -426,9 +414,9 @@ let synth_constrs graph target_node expected_output separator =
           let%map vs = Vars.make local_graph in
           {
             vs with
-            state_vars =
-              Map.set vs.state_vars ~key:state_v
-                ~data:(Map.find_exn vars.state_vars state_v);
+            arg_vars =
+              Map.set vs.arg_vars ~key:args_v
+                ~data:(Map.find_exn vars.arg_vars args_v);
           }
         in
 
@@ -467,14 +455,11 @@ let get_refinement ?(use_fallback = false) state target_node expected_output
   let graph = cone state (Node.of_state target_node) [] in
 
   let separator =
-    List.filter separator ~f:(fun v -> G.mem_vertex graph @@ Node.of_state v)
+    Set.filter separator ~f:(fun v -> G.mem_vertex graph @@ Node.of_args v)
   in
 
   Dump.dump_detailed ~suffix:"before-refine"
-    ~separator:
-      (Node.match_
-         ~args:(fun _ -> false)
-         ~state:(List.mem separator ~equal:[%equal: State.t]))
+    ~separator:(Node.match_ ~state:(fun _ -> false) ~args:(Set.mem separator))
     graph;
   let open Smt in
   let open Let_syntax in
