@@ -227,37 +227,32 @@ let refinement_of_interpolant graph separator interpolant vars =
     Set.to_list separator
     |> List.filter_map ~f:(fun args_v ->
            let var = Map.find_exn vars.arg_vars args_v in
-           let old_state =
-             match
-               Node.of_args args_v |> G.pred graph
-               |> List.map ~f:(fun v -> State.state @@ Node.to_state_exn v)
-             with
-             | [ s ] -> s
-             | ss -> raise_s [%message "expected one state" (ss : Abs.t list)]
+           let old_states =
+             Node.of_args args_v |> G.pred graph
+             |> List.map ~f:(fun v -> State.state @@ Node.to_state_exn v)
+             |> Set.of_list (module Abs)
            in
 
-           let new_state = Symb.refine models old_state var in
-           if Set.is_empty new_state then None
-           else if
-             [%compare.equal: Set.M(Abs).t]
-               (Set.singleton (module Abs) old_state)
-               new_state
-           then None
-           else Some Refinement.{ old = args_v; new_ = new_state })
+           let new_state_sets =
+             Set.to_list old_states
+             |> List.map ~f:(fun old_state -> Symb.refine models old_state var)
+           in
+
+           print_s
+             [%message
+               "refining"
+                 (args_v : Args.t)
+                 (old_states : Set.M(Abs).t)
+                 (new_state_sets : Set.M(Abs).t list)];
+
+           if List.exists new_state_sets ~f:Set.is_empty then None
+           else
+             let new_ = Set.union_list (module Abs) new_state_sets in
+             if Set.is_subset new_ ~of_:old_states then None
+             else Some Refinement.{ old = args_v; new_ })
   in
 
-  (* let edges =
-   *   List.concat_map refinement ~f:(fun r ->
-   *       let args_v, state_vs = r.context in
-   *       List.map state_vs ~f:(fun v ->
-   *           (Node.of_state v, -1, Node.of_args args_v)))
-   *   |> Set.of_list (module E)
-   * in *)
-  Dump.dump_detailed ~suffix:"after-refine"
-    ~separator:(Node.match_ ~state:(Fun.const false) ~args:(Set.mem separator))
-    (* ~refinement:(Set.mem edges) *) graph;
   Fmt.epr "Refinement: %a@." Fmt.Dump.(list Refinement.pp) refinement;
-
   if List.is_empty refinement then None else Some refinement
 
 let assert_group_var g v = Smt.(Interpolant.assert_group ~group:g (var v))

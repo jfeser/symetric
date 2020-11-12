@@ -69,12 +69,13 @@ module Bool_vector = struct
     in
 
     let refined_states =
-      Sequence.map models ~f:(fun model ->
-          Map.fold model ~init:abs ~f:(fun ~key:var ~data:value abs ->
-              Map.find bit_idx var
-              |> Option.map ~f:(fun idx ->
-                     Option.value_exn (Abs.Bool_vector.add abs idx value))
-              |> Option.value ~default:abs))
+      Sequence.filter_map models ~f:(fun model ->
+          Map.fold model ~init:(Some abs) ~f:(fun ~key:var ~data:value abs ->
+              let open Option.Let_syntax in
+              let%bind abs = abs in
+              let%bind idx = Map.find bit_idx var in
+              let%bind abs' = Abs.Bool_vector.add abs idx value in
+              return abs'))
       |> Sequence.map ~f:Abs.bool_vector
       |> Sequence.to_list
       |> Set.of_list (module Abs)
@@ -202,7 +203,7 @@ let cylinder (c : Op.cylinder) l h =
     (Set_once.get_exn Global.bench [%here]).input |> Array.to_list
     |> List.map ~f:(fun v ->
            let open Vector3 in
-           let rot = inverse_rotate v c.theta in
+           let rot = inverse_rotate v ~theta:c.theta in
            (* Check whether point is in radius. *)
            let in_radius =
              Float.(
@@ -232,7 +233,7 @@ let cuboid (c : Op.cuboid) lx hx ly hy lz hz =
     (Set_once.get_exn Global.bench [%here]).input |> Array.to_list
     |> List.map ~f:(fun v ->
            let open Vector3 in
-           let rot = inverse_rotate v c.theta in
+           let rot = inverse_rotate v ~theta:c.theta in
            let above_x = filter_offsets lx (fun o -> Float.(o > rot.x))
            and below_x = filter_offsets hx (fun o -> Float.(o < rot.x))
            and above_y = filter_offsets ly (fun o -> Float.(o > rot.y))

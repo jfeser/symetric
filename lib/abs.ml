@@ -150,7 +150,7 @@ let cylinder (c : Op.cylinder) l h =
   (Set_once.get_exn Global.bench [%here]).input |> Array.to_sequence
   |> filter_mapi ~f:(fun i v ->
          let open Vector3 in
-         let rot = inverse_rotate v c.theta in
+         let rot = inverse_rotate v ~theta:c.theta in
          let in_radius =
            Float.(square (rot.y - c.y) + square (rot.z - c.z) < square c.radius)
          in
@@ -177,7 +177,7 @@ let cuboid (c : Op.cuboid) lx hx ly hy lz hz =
   (Set_once.get_exn Global.bench [%here]).input |> Array.to_sequence
   |> filter_mapi ~f:(fun i v ->
          let open Vector3 in
-         let rot = inverse_rotate v c.theta in
+         let rot = inverse_rotate v ~theta:c.theta in
          let below_lox = Float.(rot.x < lx.lo)
          and above_lox = Float.(rot.x >= lx.hi)
          and below_hix = Float.(rot.x < hx.lo)
