@@ -415,3 +415,28 @@ let insert_hyper_edge_if_not_exists graph state_v_ins op state_v_out =
   let hyper_edge = (state_v_ins, op, state_v_out) in
   if not (Hyper_edge.mem hyper_edge) then
     insert_hyper_edge graph state_v_ins op state_v_out
+
+let pp fmt g =
+  let pp_state fmt v = Fmt.pf fmt "x%d" (State.id v) in
+  let pp_args =
+    Fmt.list ~sep:(Fmt.any " | ") @@ fun fmt (op, args) ->
+    Fmt.pf fmt "%a(%a)" Op.pp op (Fmt.list ~sep:(Fmt.any ", ") pp_state) args
+  in
+  let work =
+    V.filter g ~f:(fun v -> G.in_degree g v = 0)
+    |> List.map ~f:Node.to_state_exn
+    |> Queue.of_list
+  in
+  let rec loop () =
+    Queue.dequeue work
+    |> Option.iter ~f:(fun v ->
+           let args =
+             G.succ g (Node.of_state v)
+             |> List.map ~f:(fun v' ->
+                    let args_v = Node.to_args_exn v' in
+                    (Args.op args_v, inputs g args_v))
+           in
+           Fmt.pf fmt "%a = %a\n" pp_state v pp_args args;
+           loop ())
+  in
+  loop ()

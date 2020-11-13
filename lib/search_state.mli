@@ -121,3 +121,5 @@ val fix_up : t -> unit
 
 val insert_hyper_edge_if_not_exists :
   t -> State.t list -> Op.t -> State.t -> unit
+
+val pp : t Fmt.t
