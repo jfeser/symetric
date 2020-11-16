@@ -1,5 +1,28 @@
 open Ast
 
+(* module ConcreteBidirectionalLabeled (V : sig
+ *   type t [@@deriving compare, hash, sexp_of]
+ * end) (L : sig
+ *   type t [@@deriving compare, sexp_of]
+ * 
+ *   val default : t
+ * end) =
+ * struct
+ *   module V_in = struct
+ *     include V
+ * 
+ *     let equal = [%compare.equal: t]
+ *   end
+ * 
+ *   include Graph.Imperative.Digraph.ConcreteBidirectionalLabeled (V_in) (L)
+ *   module L = L
+ *   module V = V_in
+ * 
+ *   module E = struct
+ *     include E
+ *   end
+ * end *)
+
 module Is_fresh = struct
   type 'a t = Fresh of 'a | Stale of 'a
 
@@ -383,9 +406,21 @@ let fix_up_states work add_work state state_v =
     work' )
   else work
 
+module Unique_queue = struct
+  let create m = Hash_queue.create (Base.Hashable.of_key m)
+
+  let enqueue q v = Hash_queue.enqueue_back q v v |> ignore
+
+  let enqueue_all q vs = List.iter vs ~f:(enqueue q)
+
+  let dequeue = Hash_queue.dequeue_front
+
+  let dequeue_back = Hash_queue.dequeue_back
+end
+
 let fix_up state =
-  let worklist = Hash_queue.create @@ Hashtbl.Hashable.of_key (module Node) in
-  let add_work () v = Hash_queue.enqueue_back worklist v v |> ignore in
+  let worklist = Unique_queue.create (module Node) in
+  let add_work () v = Unique_queue.enqueue worklist v in
   V.iter state ~f:(add_work ());
   let fix_node v =
     Node.match_
@@ -394,7 +429,7 @@ let fix_up state =
       v
   in
   let rec loop () =
-    match Hash_queue.dequeue_back worklist with
+    match Unique_queue.dequeue_back worklist with
     | Some v ->
         fix_node v;
         loop ()
@@ -416,27 +451,210 @@ let insert_hyper_edge_if_not_exists graph state_v_ins op state_v_out =
   if not (Hyper_edge.mem hyper_edge) then
     insert_hyper_edge graph state_v_ins op state_v_out
 
+let roots g = V.filter g ~f:(fun v -> G.in_degree g v = 0)
+
 let pp fmt g =
   let pp_state fmt v = Fmt.pf fmt "x%d" (State.id v) in
   let pp_args =
     Fmt.list ~sep:(Fmt.any " | ") @@ fun fmt (op, args) ->
     Fmt.pf fmt "%a(%a)" Op.pp op (Fmt.list ~sep:(Fmt.any ", ") pp_state) args
   in
-  let work =
-    V.filter g ~f:(fun v -> G.in_degree g v = 0)
-    |> List.map ~f:Node.to_state_exn
-    |> Queue.of_list
-  in
+
+  let work = Unique_queue.create (module State) in
+  roots g
+  |> List.map ~f:Node.to_state_exn
+  |> List.iter ~f:(Unique_queue.enqueue work);
+
   let rec loop () =
-    Queue.dequeue work
+    Unique_queue.dequeue work
     |> Option.iter ~f:(fun v ->
+           let args_vs = G.succ g (Node.of_state v) in
            let args =
-             G.succ g (Node.of_state v)
-             |> List.map ~f:(fun v' ->
-                    let args_v = Node.to_args_exn v' in
-                    (Args.op args_v, inputs g args_v))
+             List.map args_vs ~f:(fun v ->
+                 let args_v = Node.to_args_exn v in
+                 (Args.op args_v, inputs g args_v))
            in
            Fmt.pf fmt "%a = %a\n" pp_state v pp_args args;
+           List.iter args_vs ~f:(fun v ->
+               Unique_queue.enqueue_all work @@ G.succ g v);
            loop ())
   in
   loop ()
+
+module Unshare (G_condensed : sig
+  module V : sig
+    type t
+
+    val hash : t -> int
+
+    val compare : t -> t -> int
+
+    val sexp_of_t : t -> Sexp.t
+  end
+
+  module E : sig
+    type t = V.t * int * V.t
+  end
+
+  type t
+
+  val succ_e : t -> V.t -> E.t list
+
+  val in_degree : t -> V.t -> int
+
+  val iter_vertex : (V.t -> unit) -> t -> unit
+end) =
+struct
+  module G_replicated = struct
+    module Node_ref = struct
+      module T = struct
+        type t = { id : int; node : (G_condensed.V.t[@ignore] [@sexp.opaque]) }
+        [@@deriving compare, equal, hash, sexp_of]
+      end
+
+      include T
+      include Comparator.Make (T)
+
+      let create =
+        let id_ctr = ref 0 in
+        fun node ->
+          incr id_ctr;
+          { id = !id_ctr; node }
+
+      let pp pp_node fmt x = Fmt.pf fmt "%a@%d" pp_node x.node x.id
+    end
+
+    module Edge = struct
+      type t = int [@@deriving compare]
+
+      let default = -1
+    end
+
+    include Graph.Imperative.Digraph.ConcreteBidirectionalLabeled
+              (Node_ref)
+              (Edge)
+  end
+
+  let unshare ~kind g =
+    let g_replicated = G_replicated.create () in
+
+    let work =
+      Hash_queue.create
+        {
+          hash = G_condensed.V.hash;
+          compare = G_condensed.V.compare;
+          sexp_of_t = (fun _ -> assert false);
+        }
+    in
+
+    let update q key ~f =
+      let data' = Hash_queue.lookup q key |> f in
+      match Hash_queue.replace q key data' with
+      | `Ok -> ()
+      | `No_such_key -> Hash_queue.enqueue_back_exn q key data'
+    in
+
+    let rec loop () =
+      match Hash_queue.dequeue_front_with_key work with
+      | Some (vertex, in_edges) ->
+          let _any_overlap =
+            let _, ancestors = List.unzip in_edges in
+            let union_len =
+              ancestors
+              |> Set.union_list (module G_replicated.Node_ref)
+              |> Set.length
+            in
+            let total_len = List.sum (module Int) ~f:Set.length ancestors in
+            total_len > union_len
+          in
+
+          if List.is_empty in_edges then (
+            let this_ref = G_replicated.Node_ref.create vertex in
+
+            G_replicated.add_vertex g_replicated this_ref;
+
+            G_condensed.succ_e g vertex
+            |> List.iter ~f:(fun (_, idx', child) ->
+                   let child_in_edge =
+                     ( (this_ref, idx'),
+                       Set.singleton (module G_replicated.Node_ref) this_ref )
+                   in
+                   update work child ~f:(fun edges ->
+                       child_in_edge :: Option.value edges ~default:[])) )
+          else
+            List.iter in_edges ~f:(fun ((parent, idx), ancestors) ->
+                let this_ref = G_replicated.Node_ref.create vertex in
+
+                G_replicated.add_edge_e g_replicated (parent, idx, this_ref);
+
+                G_condensed.succ_e g vertex
+                |> List.iter ~f:(fun (_, idx', child) ->
+                       let child_in_edge =
+                         ((this_ref, idx'), Set.add ancestors this_ref)
+                       in
+                       update work child ~f:(fun edges ->
+                           child_in_edge :: Option.value edges ~default:[])));
+          loop ()
+      | None -> ()
+    in
+
+    G_condensed.iter_vertex
+      (fun v ->
+        if G_condensed.in_degree g v = 0 then
+          Hash_queue.enqueue_back_exn work v [])
+      g;
+    loop ();
+
+    g_replicated
+end
+
+let%test_module "unshare" =
+  ( module struct
+    module G = struct
+      module Vertex = Int
+
+      module Edge = struct
+        type t = int [@@deriving compare]
+
+        let default = -1
+      end
+
+      include Graph.Imperative.Digraph.ConcreteBidirectionalLabeled
+                (Vertex)
+                (Edge)
+
+      module V = struct
+        let sexp_of_t = [%sexp_of: int]
+
+        include V
+      end
+    end
+
+    module U = Unshare (G)
+
+    let pp fmt g =
+      let pp_vertex = U.G_replicated.Node_ref.pp Int.pp in
+      U.G_replicated.iter_edges
+        (fun v v' -> Fmt.pf fmt "%a -> %a@." pp_vertex v pp_vertex v')
+        g
+
+    let%expect_test "" =
+      let g = G.create () in
+      G.add_edge g 1 2;
+      G.add_edge g 1 3;
+      G.add_edge g 2 4;
+      G.add_edge g 3 4;
+      let g' = U.unshare g in
+      Fmt.pr "%a" pp g'
+
+    let%expect_test "" =
+      let g = G.create () in
+      G.add_edge g 1 2;
+      G.add_edge g 1 3;
+      G.add_edge g 2 4;
+      G.add_edge g 2 5;
+      G.add_edge g 3 5;
+      G.add_edge g 3 6;
+      let g' = U.unshare g in
+      Fmt.pr "%a" pp g'
+  end )

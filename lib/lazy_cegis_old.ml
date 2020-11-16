@@ -226,6 +226,7 @@ let refute search_state output =
       in
 
       Dump.dump_detailed ~output ~suffix:"before-refinement" ~depth:0 graph;
+      pp Fmt.stdout graph;
 
       let refinement =
         List.find_map seps ~f:(fun sep ->
