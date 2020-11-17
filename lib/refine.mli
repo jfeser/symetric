@@ -5,7 +5,6 @@ module Refinement : sig
 end
 
 val get_refinement :
-  ?use_fallback:bool ->
   t ->
   State.t ->
   Conc.t ->

@@ -1,28 +1,5 @@
 open Ast
 
-(* module ConcreteBidirectionalLabeled (V : sig
- *   type t [@@deriving compare, hash, sexp_of]
- * end) (L : sig
- *   type t [@@deriving compare, sexp_of]
- * 
- *   val default : t
- * end) =
- * struct
- *   module V_in = struct
- *     include V
- * 
- *     let equal = [%compare.equal: t]
- *   end
- * 
- *   include Graph.Imperative.Digraph.ConcreteBidirectionalLabeled (V_in) (L)
- *   module L = L
- *   module V = V_in
- * 
- *   module E = struct
- *     include E
- *   end
- * end *)
-
 module Is_fresh = struct
   type 'a t = Fresh of 'a | Stale of 'a
 

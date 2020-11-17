@@ -365,15 +365,14 @@ let synth_constrs graph target_node expected_output (separator : Set.M(Args).t)
   let ivars = Set.inter (vars_of_group lo_group) (vars_of_group hi_group) in
   print_s [%message "interpolant vars" (ivars : Set.M(Smt.Var).t)];
 
-  return (vars, ivars, lo_group)
+  return (vars, lo_group)
 
 let random_subset ?(state = Random.State.default) s =
   Set.filter ~f:(fun _ -> Random.State.bool state) s
 
 let choose_singleton cmp s = Set.singleton cmp (Set.choose_exn s)
 
-let get_refinement ?(use_fallback = false) state target_node expected_output
-    separator =
+let get_refinement state target_node expected_output separator =
   (* Select the subset of the graph that can reach the target. *)
   let graph = cone state (Node.of_state target_node) [] in
 
@@ -386,7 +385,7 @@ let get_refinement ?(use_fallback = false) state target_node expected_output
     graph;
   let open Smt in
   let open Let_syntax in
-  let process_interpolant vars all_ivars interpolant =
+  let process_interpolant vars interpolant =
     let interpolant = ok_exn interpolant in
     Fmt.epr "Interpolant: %a@." Expr.pp interpolant;
     match refinement_of_interpolant graph separator interpolant vars with
@@ -401,14 +400,12 @@ let get_refinement ?(use_fallback = false) state target_node expected_output
   in
 
   let get_interpolant =
-    let%bind vars, all_ivars, sep_group =
+    let%bind vars, sep_group =
       synth_constrs graph target_node expected_output separator
     in
     let%bind ret = Smt.get_interpolant_or_model [ sep_group ] in
-    return (vars, all_ivars, ret)
+    return (vars, ret)
   in
 
-  let (vars, all_ivars, ret), _ = Smt.run get_interpolant in
-  Either.map
-    ~first:(process_interpolant vars all_ivars)
-    ~second:(process_model vars) ret
+  let (vars, ret), _ = Smt.run get_interpolant in
+  Either.map ~first:(process_interpolant vars) ~second:(process_model vars) ret

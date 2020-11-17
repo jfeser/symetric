@@ -240,10 +240,7 @@ let refute search_state output =
       ( match refinement with
       | Some (_, r) -> refine search_state output r
       | None -> (
-          match
-            Refine.get_refinement ~use_fallback:true search_state target output
-              last_sep
-          with
+          match Refine.get_refinement search_state target output last_sep with
           | First (Some r) -> refine search_state output r
           | First None -> failwith "fallback refinement failed"
           | Second selected_edges ->
