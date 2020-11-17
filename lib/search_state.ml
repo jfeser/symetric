@@ -665,7 +665,13 @@ let%test_module "unshare" =
       G.add_edge g 2 4;
       G.add_edge g 3 4;
       let g' = U.unshare ~is_and:(function 1 | 4 -> true | _ -> false) g in
-      Fmt.pr "%a" pp g'
+      Fmt.pr "%a" pp g';
+      [%expect
+        {|
+        1@1 -> 3@2
+        1@1 -> 2@3
+        3@2 -> 4@5
+        2@3 -> 4@4 |}]
 
     let%expect_test "" =
       let g = G.create () in
@@ -676,5 +682,37 @@ let%test_module "unshare" =
       G.add_edge g 3 5;
       G.add_edge g 3 6;
       let g' = U.unshare ~is_and:(function 2 | 3 -> true | _ -> false) g in
-      Fmt.pr "%a" pp g'
+      Fmt.pr "%a" pp g';
+      [%expect
+        {|
+        2@8 -> 5@10
+        2@8 -> 4@11
+        3@7 -> 6@9
+        3@7 -> 5@10
+        1@6 -> 3@7
+                1@6 -> 2@8 |}]
+
+    let%expect_test "" =
+      let g = G.create () in
+      G.add_edge g 1 2;
+      G.add_edge g 1 5;
+      G.add_edge g 2 3;
+      G.add_edge g 2 4;
+      G.add_edge g 3 5;
+      G.add_edge g 4 5;
+      G.add_edge g 5 6;
+      G.add_edge g 5 7;
+      G.add_edge g 7 8;
+      let g' =
+        U.unshare ~is_and:(function 1 | 3 | 4 | 6 | 7 -> true | _ -> false) g
+      in
+      Fmt.pr "%a" pp g';
+      [%expect
+        {|
+                2@8 -> 5@10
+                2@8 -> 4@11
+                3@7 -> 6@9
+                3@7 -> 5@10
+                1@6 -> 3@7
+                1@6 -> 2@8 |}]
   end )
