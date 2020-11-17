@@ -124,4 +124,43 @@ val insert_hyper_edge_if_not_exists :
 
 val pp : t Fmt.t
 
-(* val unshare : t -> unit *)
+module Unshare (G_condensed : sig
+  module V : sig
+    type t [@@deriving sexp_of]
+
+    val hash : t -> int
+
+    val compare : t -> t -> int
+
+    val kind : t -> [ `Args | `State ]
+  end
+
+  module E : sig
+    type t = V.t * int * V.t
+  end
+
+  type t
+
+  val succ_e : t -> V.t -> E.t list
+
+  val in_degree : t -> V.t -> int
+
+  val iter_vertex : (V.t -> unit) -> t -> unit
+end) : sig
+  module V_ref : sig
+    type t
+
+    val pp : G_condensed.V.t Fmt.t -> t Fmt.t
+
+    val vertex : t -> G_condensed.V.t
+  end
+
+  module G_replicated :
+    Graph.Sig.I
+      with type V.t = V_ref.t
+       and type V.label = V_ref.t
+       and type E.t = V_ref.t * int * V_ref.t
+       and type E.label = int
+
+  val unshare : G_condensed.t -> G_replicated.t
+end

@@ -505,42 +505,41 @@ module Unshare (G_condensed : sig
   val iter_vertex : (V.t -> unit) -> t -> unit
 end) =
 struct
+  module V_ref = struct
+    module T = struct
+      type t = { id : int; node : (G_condensed.V.t[@ignore]) }
+      [@@deriving compare, equal, hash, sexp_of]
+    end
+
+    include T
+    include Comparator.Make (T)
+
+    let create =
+      let id_ctr = ref 0 in
+      fun node ->
+        incr id_ctr;
+        { id = !id_ctr; node }
+
+    let vertex x = x.node
+
+    let pp pp_node fmt x = Fmt.pf fmt "%a@%d" pp_node x.node x.id
+  end
+
   (** Represents graphs that can contain multiple instances of the same
        vertex. *)
   module G_replicated = struct
-    module Node_ref = struct
-      module T = struct
-        type t = { id : int; node : (G_condensed.V.t[@ignore]) }
-        [@@deriving compare, equal, hash, sexp_of]
-      end
-
-      include T
-      include Comparator.Make (T)
-
-      let create =
-        let id_ctr = ref 0 in
-        fun node ->
-          incr id_ctr;
-          { id = !id_ctr; node }
-
-      let pp pp_node fmt x = Fmt.pf fmt "%a@%d" pp_node x.node x.id
-    end
-
     module Edge = struct
       type t = int [@@deriving compare]
 
       let default = -1
     end
 
-    include Graph.Imperative.Digraph.ConcreteBidirectionalLabeled
-              (Node_ref)
-              (Edge)
+    include Graph.Imperative.Digraph.ConcreteBidirectionalLabeled (V_ref) (Edge)
   end
 
   module Port = struct
     module T = struct
-      type t = { node : G_replicated.Node_ref.t; port : int }
-      [@@deriving compare, sexp_of]
+      type t = { node : V_ref.t; port : int } [@@deriving compare, sexp_of]
     end
 
     include T
@@ -575,7 +574,7 @@ struct
     let exists_common_ancestor asets =
       Set.union_list (module Port) asets
       |> Set.fold_until
-           ~init:(Map.empty (module G_replicated.Node_ref))
+           ~init:(Map.empty (module V_ref))
            ~f:(fun ancestor_ports Port.{ node; port } ->
              match Map.find ancestor_ports node with
              | None -> Continue (Map.set ancestor_ports ~key:node ~data:port)
@@ -593,7 +592,7 @@ struct
           in
 
           if List.is_empty in_edges then (
-            let this_ref = G_replicated.Node_ref.create vertex in
+            let this_ref = V_ref.create vertex in
 
             G_replicated.add_vertex g_replicated this_ref;
 
@@ -606,7 +605,7 @@ struct
                    update work child ~f:(fun edges ->
                        child_in_edge :: Option.value edges ~default:[])) )
           else if not any_overlap then
-            let this_ref = G_replicated.Node_ref.create vertex in
+            let this_ref = V_ref.create vertex in
             List.iter in_edges
               ~f:(fun (Port.{ node = parent; port = idx }, ancestors) ->
                 G_replicated.add_edge_e g_replicated (parent, idx, this_ref);
@@ -622,7 +621,7 @@ struct
           else
             List.iter in_edges
               ~f:(fun (Port.{ node = parent; port = idx }, ancestors) ->
-                let this_ref = G_replicated.Node_ref.create vertex in
+                let this_ref = V_ref.create vertex in
 
                 G_replicated.add_edge_e g_replicated (parent, idx, this_ref);
 
@@ -675,7 +674,7 @@ let%test_module "unshare" =
     module U = Unshare (G)
 
     let pp fmt g =
-      let pp_vertex = U.G_replicated.Node_ref.pp Int.pp in
+      let pp_vertex = U.V_ref.pp Int.pp in
       U.G_replicated.iter_edges
         (fun v v' -> Fmt.pf fmt "%a -> %a@." pp_vertex v pp_vertex v')
         g
@@ -688,8 +687,7 @@ let%test_module "unshare" =
       G.add_edge g 3 4;
       let g' = U.unshare g in
       Fmt.pr "%a" pp g';
-      [%expect
-        {|
+      [%expect {|
 0@1 -> 3@2
 0@1 -> 1@3
 3@2 -> 4@5
