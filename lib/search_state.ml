@@ -535,7 +535,7 @@ struct
               (Edge)
   end
 
-  let unshare ~kind g =
+  let unshare ~is_and g =
     let g_replicated = G_replicated.create () in
 
     let work =
@@ -554,10 +554,14 @@ struct
       | `No_such_key -> Hash_queue.enqueue_back_exn q key data'
     in
 
+    let add_ancestor s a =
+      if is_and a.G_replicated.Node_ref.node then Set.add s a else s
+    in
+
     let rec loop () =
       match Hash_queue.dequeue_front_with_key work with
       | Some (vertex, in_edges) ->
-          let _any_overlap =
+          let any_overlap =
             let _, ancestors = List.unzip in_edges in
             let union_len =
               ancestors
@@ -568,6 +572,8 @@ struct
             total_len > union_len
           in
 
+          (* print_s
+           *   [%message "overlap" (vertex : G_condensed.V.t) (any_overlap : bool)]; *)
           if List.is_empty in_edges then (
             let this_ref = G_replicated.Node_ref.create vertex in
 
@@ -577,10 +583,24 @@ struct
             |> List.iter ~f:(fun (_, idx', child) ->
                    let child_in_edge =
                      ( (this_ref, idx'),
-                       Set.singleton (module G_replicated.Node_ref) this_ref )
+                       add_ancestor
+                         (Set.empty (module G_replicated.Node_ref))
+                         this_ref )
                    in
                    update work child ~f:(fun edges ->
                        child_in_edge :: Option.value edges ~default:[])) )
+          else if not any_overlap then
+            let this_ref = G_replicated.Node_ref.create vertex in
+            List.iter in_edges ~f:(fun ((parent, idx), ancestors) ->
+                G_replicated.add_edge_e g_replicated (parent, idx, this_ref);
+
+                G_condensed.succ_e g vertex
+                |> List.iter ~f:(fun (_, idx', child) ->
+                       let child_in_edge =
+                         ((this_ref, idx'), add_ancestor ancestors this_ref)
+                       in
+                       update work child ~f:(fun edges ->
+                           child_in_edge :: Option.value edges ~default:[])))
           else
             List.iter in_edges ~f:(fun ((parent, idx), ancestors) ->
                 let this_ref = G_replicated.Node_ref.create vertex in
@@ -590,7 +610,7 @@ struct
                 G_condensed.succ_e g vertex
                 |> List.iter ~f:(fun (_, idx', child) ->
                        let child_in_edge =
-                         ((this_ref, idx'), Set.add ancestors this_ref)
+                         ((this_ref, idx'), add_ancestor ancestors this_ref)
                        in
                        update work child ~f:(fun edges ->
                            child_in_edge :: Option.value edges ~default:[])));
@@ -644,7 +664,7 @@ let%test_module "unshare" =
       G.add_edge g 1 3;
       G.add_edge g 2 4;
       G.add_edge g 3 4;
-      let g' = U.unshare g in
+      let g' = U.unshare ~is_and:(function 1 | 4 -> true | _ -> false) g in
       Fmt.pr "%a" pp g'
 
     let%expect_test "" =
@@ -655,6 +675,6 @@ let%test_module "unshare" =
       G.add_edge g 2 5;
       G.add_edge g 3 5;
       G.add_edge g 3 6;
-      let g' = U.unshare g in
+      let g' = U.unshare ~is_and:(function 2 | 3 -> true | _ -> false) g in
       Fmt.pr "%a" pp g'
   end )
