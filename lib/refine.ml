@@ -66,8 +66,8 @@ let normalize_bits bits =
 
 module Vars = struct
   type t = {
-    edge_vars : String_id.t Map.M(E).t;
-    var_edges : E.t Map.M(String_id).t;
+    edge_vars : String_id.t Map.M(G.E).t;
+    var_edges : G.E.t Map.M(String_id).t;
     state_vars : Symb.t Map.M(State).t;
     arg_vars : Symb.t Map.M(Args).t;
   }
@@ -82,7 +82,7 @@ module Vars = struct
     let%bind edge_vars =
       let module F = FoldM0 (Smt) (E_foldable) in
       F.fold graph
-        ~init:(Map.empty (module E))
+        ~init:(Map.empty (module G.E))
         ~f:(fun m e ->
           let%map decl = Smt.fresh_decl ~prefix:"e" () in
           Map.set m ~key:e ~data:decl)
@@ -396,7 +396,7 @@ let get_refinement state target_node expected_output separator =
   let process_model vars model =
     List.filter_map model ~f:(fun (e, is_selected) ->
         if is_selected then Map.find vars.var_edges e else None)
-    |> Set.of_list (module E)
+    |> Set.of_list (module G.E)
   in
 
   let get_interpolant =

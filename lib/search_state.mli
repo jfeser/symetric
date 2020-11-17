@@ -76,36 +76,20 @@ module G : sig
   include
     Graph.Sig.I with type V.t = Node.t and type E.t = Node.t * int * Node.t
 
-  val has_changed : unit -> bool
+  include
+    Graph_ext.CHANGED
+      with type graph = t
+       and type vertex = V.t
+       and type edge = E.t
 
-  val reset_changed : unit -> unit
+  include
+    Graph_ext.FOLDS
+      with type graph = t
+       and type vertex = V.t
+       and type edge = E.t
 end
 
 type t = G.t
-
-module E : sig
-  include Comparator.S with type t := G.E.t
-
-  include Container.S0 with type t := G.t and type elt := G.E.t
-
-  type t = G.E.t
-end
-
-module V : sig
-  include Comparator.S with type t := G.V.t
-
-  include Container.S0 with type t := G.t and type elt := G.V.t
-
-  val filter_map : G.t -> f:(G.V.t -> 'a option) -> 'a list
-
-  val filter : G.t -> f:(G.V.t -> bool) -> G.V.t list
-
-  type t = G.V.t
-end
-
-module Pred : Container.S0 with type t := G.t * G.V.t and type elt := G.V.t
-
-module Succ : Container.S0 with type t := G.t * G.V.t and type elt := G.V.t
 
 val create : unit -> t
 

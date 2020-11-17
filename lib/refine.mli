@@ -9,4 +9,4 @@ val get_refinement :
   State.t ->
   Conc.t ->
   Set.M(Args).t ->
-  (Refinement.t list option, Set.M(E).t) Either.t
+  (Refinement.t list option, Set.M(G.E).t) Either.t
