@@ -147,7 +147,7 @@ let arg_separators graph target =
          List.map vs ~f:Node.to_args_exn |> Set.of_list (module Args))
 
 let refine_level n graph =
-  G.V.fold graph ~init:(0, 0) ~f:(fun ((num, dem) as acc) ->
+  G.Fold.V.fold graph ~init:(0, 0) ~f:(fun ((num, dem) as acc) ->
       Node.match_
         ~args:(fun _ -> acc)
         ~state:(fun v ->
@@ -212,7 +212,7 @@ let rec extract_program graph selected_edges target =
 let refute search_state output =
   let graph = search_state in
   match
-    G.V.find_map graph ~f:(fun v ->
+    G.Fold.V.find_map graph ~f:(fun v ->
         match Node.to_state v with
         | Some v when Abs.contains (State.state v) output -> Some v
         | _ -> None)
@@ -254,7 +254,7 @@ let refute search_state output =
 
 let count_compressible graph =
   let args =
-    G.V.filter_map graph ~f:Node.to_args
+    G.Fold.V.filter_map graph ~f:Node.to_args
     |> List.map ~f:(fun v ->
            let v = Node.of_args v in
            (G.pred graph v, G.succ graph v))
@@ -305,8 +305,8 @@ let synth () =
   let stats =
     Stats.
       {
-        n_state_nodes = G.V.filter graph ~f:Node.is_state |> List.length;
-        n_arg_nodes = G.V.filter graph ~f:Node.is_args |> List.length;
+        n_state_nodes = G.Fold.V.filter graph ~f:Node.is_state |> List.length;
+        n_arg_nodes = G.Fold.V.filter graph ~f:Node.is_args |> List.length;
         n_covered = -1;
         n_refuted = -1;
         min_width = -1;

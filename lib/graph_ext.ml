@@ -4,12 +4,16 @@ module type GRAPH = sig
   module V : sig
     type t [@@deriving compare, hash, sexp_of]
 
+    include Comparator.S with type t := t
+
     include Graph.Sig.VERTEX with type t := t
   end
   with type t = vertex
 
   module E : sig
     type t [@@deriving compare, hash, sexp_of]
+
+    include Comparator.S with type t := t
 
     include Graph.Sig.EDGE with type t := t and type vertex = V.t
   end
@@ -26,19 +30,11 @@ module type FOLDS = sig
   module E : sig
     type t = edge [@@deriving compare, hash, sexp_of]
 
-    include Graph.Sig.EDGE with type t := t and type vertex = vertex
-
-    include Comparator.S with type t := t
-
     include Container.S0 with type t := graph and type elt := t
   end
 
   module V : sig
     type t = vertex [@@deriving compare, hash, sexp_of]
-
-    include Graph.Sig.VERTEX with type t := t
-
-    include Comparator.S with type t := t
 
     include Container.S0 with type t := graph and type elt := t
 
@@ -62,10 +58,6 @@ module Folds (G : GRAPH) = struct
   type vertex = G.V.t
 
   module V = struct
-    include Comparator.Make (struct
-      type t = G.V.t [@@deriving compare, sexp_of]
-    end)
-
     include Container.Make0 (struct
       type nonrec t = G.t
 
@@ -92,10 +84,6 @@ module Folds (G : GRAPH) = struct
   end
 
   module E = struct
-    include Comparator.Make (struct
-      type t = G.E.t [@@deriving compare, sexp_of]
-    end)
-
     include Container.Make0 (struct
       type nonrec t = G.t
 

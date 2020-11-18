@@ -44,7 +44,7 @@ let make_output_graph ?(refinement = fun _ -> false) cone separator output =
 let step = ref 0
 
 let filter_depth g d =
-  let roots = G.V.filter g ~f:(fun v -> List.is_empty @@ G.succ g v) in
+  let roots = G.Fold.V.filter g ~f:(fun v -> List.is_empty @@ G.succ g v) in
   let module Inv_reachable =
     Graph.Fixpoint.Make
       (G)
@@ -73,7 +73,7 @@ let filter_depth g d =
         if List.mem roots ~equal:[%compare.equal: G.V.t] v then 0 else 100)
       g'
   in
-  G.V.iter g ~f:(fun v -> if f v > d then G.remove_vertex g' v);
+  G.Fold.V.iter g ~f:(fun v -> if f v > d then G.remove_vertex g' v);
   g'
 
 let dump_detailed ?suffix ?output ?(cone = fun _ -> false)

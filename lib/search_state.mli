@@ -74,7 +74,9 @@ end
 
 module G : sig
   include
-    Graph.Sig.I with type V.t = Node.t and type E.t = Node.t * int * Node.t
+    Graph_ext.GRAPH
+      with type vertex = Node.t
+       and type edge = Node.t * int * Node.t
 
   include
     Graph_ext.CHANGED
@@ -82,7 +84,7 @@ module G : sig
        and type vertex = V.t
        and type edge = E.t
 
-  include
+  module Fold :
     Graph_ext.FOLDS
       with type graph = t
        and type vertex = V.t
@@ -107,44 +109,3 @@ val insert_hyper_edge_if_not_exists :
   t -> State.t list -> Op.t -> State.t -> unit
 
 val pp : t Fmt.t
-
-module Unshare (G_condensed : sig
-  module V : sig
-    type t [@@deriving sexp_of]
-
-    val hash : t -> int
-
-    val compare : t -> t -> int
-
-    val kind : t -> [ `Args | `State ]
-  end
-
-  module E : sig
-    type t = V.t * int * V.t
-  end
-
-  type t
-
-  val succ_e : t -> V.t -> E.t list
-
-  val in_degree : t -> V.t -> int
-
-  val iter_vertex : (V.t -> unit) -> t -> unit
-end) : sig
-  module V_ref : sig
-    type t
-
-    val pp : G_condensed.V.t Fmt.t -> t Fmt.t
-
-    val vertex : t -> G_condensed.V.t
-  end
-
-  module G_replicated :
-    Graph.Sig.I
-      with type V.t = V_ref.t
-       and type V.label = V_ref.t
-       and type E.t = V_ref.t * int * V_ref.t
-       and type E.label = int
-
-  val unshare : G_condensed.t -> G_replicated.t
-end
