@@ -7,6 +7,10 @@ module type LABELED_GRAPH = sig
        and type edge = vertex * int * vertex
 end
 
+module One_to_many = struct
+  type ('a, 'b) t = { forward : 'a -> 'b Sequence.t; backward : 'b -> 'a }
+end
+
 module Make
     (G : LABELED_GRAPH) (K : sig
       val kind : G.V.t -> [ `Args | `State ]
@@ -21,28 +25,20 @@ struct
     include T
     include Comparator.Make (T)
 
-    let create =
-      let id_ctr = ref 0 in
-      fun node ->
-        incr id_ctr;
-        { id = !id_ctr; node }
-
     let vertex x = x.node
 
     let pp pp_node fmt x = Fmt.pf fmt "%a@%d" pp_node x.node x.id
   end
 
+  module E = struct
+    include Int
+
+    let default = -1
+  end
+
+  module G_replicated = Graph_ext.Make (V_ref) (E)
   (** Represents graphs that can contain multiple instances of the same
        vertex. *)
-  module G_replicated = struct
-    module Edge = struct
-      type t = int [@@deriving compare]
-
-      let default = -1
-    end
-
-    include Graph.Imperative.Digraph.ConcreteBidirectionalLabeled (V_ref) (Edge)
-  end
 
   module Port = struct
     module T = struct
@@ -54,6 +50,16 @@ struct
   end
 
   let unshare g =
+    let vrefs = ref (Map.empty (module G.V)) in
+    let create =
+      let id_ctr = ref 0 in
+      fun node ->
+        incr id_ctr;
+        let vref = V_ref.{ id = !id_ctr; node } in
+        vrefs := Map.add_multi !vrefs ~key:node ~data:vref;
+        vref
+    in
+
     let g_replicated = G_replicated.create () in
 
     let work =
@@ -99,7 +105,7 @@ struct
           in
 
           if List.is_empty in_edges then (
-            let this_ref = V_ref.create vertex in
+            let this_ref = create vertex in
 
             G_replicated.add_vertex g_replicated this_ref;
 
@@ -112,7 +118,7 @@ struct
                    update work child ~f:(fun edges ->
                        child_in_edge :: Option.value edges ~default:[])) )
           else if not any_overlap then
-            let this_ref = V_ref.create vertex in
+            let this_ref = create vertex in
             List.iter in_edges
               ~f:(fun (Port.{ node = parent; port = idx }, ancestors) ->
                 G_replicated.add_edge_e g_replicated (parent, idx, this_ref);
@@ -128,7 +134,7 @@ struct
           else
             List.iter in_edges
               ~f:(fun (Port.{ node = parent; port = idx }, ancestors) ->
-                let this_ref = V_ref.create vertex in
+                let this_ref = create vertex in
 
                 G_replicated.add_edge_e g_replicated (parent, idx, this_ref);
 
@@ -150,7 +156,12 @@ struct
       g;
     loop ();
 
-    g_replicated
+    let rel =
+      let forward v = Map.find_exn !vrefs v |> Sequence.of_list
+      and backward = V_ref.vertex in
+      One_to_many.{ forward; backward }
+    in
+    (g_replicated, rel)
 end
 
 let%test_module "unshare" =
@@ -209,7 +220,7 @@ let%test_module "unshare" =
       G.add_edge_e g (0, 1, 3);
       G.add_edge g 1 4;
       G.add_edge g 3 4;
-      let g' = U.unshare g in
+      let g', _ = U.unshare g in
       Fmt.pr "%a" pp g';
       [%expect {|
 0@1 -> 3@2
@@ -225,7 +236,7 @@ let%test_module "unshare" =
       G.add_edge g 1 4;
       G.add_edge g 3 4;
       G.add_edge g 3 6;
-      let g' = U.unshare g in
+      let g', _ = U.unshare g in
       Fmt.pr "%a" pp g';
       [%expect
         {|
@@ -241,7 +252,7 @@ let%test_module "unshare" =
       G.add_edge_e g (0, 0, 1);
       G.add_edge g 1 2;
       G.add_edge g 1 4;
-      let g' = U.unshare g in
+      let g', _ = U.unshare g in
       Fmt.pr "%a" pp g';
       [%expect
         {|
@@ -256,7 +267,7 @@ let%test_module "unshare" =
       G.add_edge g 1 4;
       G.add_edge g 2 3;
       G.add_edge g 4 3;
-      let g' = U.unshare g in
+      let g', _ = U.unshare g in
       Fmt.pr "%a" pp g';
       [%expect
         {|
@@ -278,7 +289,7 @@ let%test_module "unshare" =
       G.add_edge g 5 8;
       G.add_edge_e g (8, 0, 9);
       G.add_edge_e g (8, 1, 9);
-      let g' = U.unshare g in
+      let g', _ = U.unshare g in
       Fmt.pr "%a@." pp g';
       [%expect
         {|

@@ -2,6 +2,16 @@ open Ast
 open Search_state
 open Foldm
 
+module U =
+  Unshare.Make
+    (G)
+    (struct
+      let kind = Node.match_ ~args:(fun _ -> `Args) ~state:(fun _ -> `State)
+    end)
+
+module G = U.G_replicated
+module C = Cone.Make (U.G_replicated)
+
 module V_foldable = struct
   type t = G.t
 
@@ -23,31 +33,6 @@ module Refinement = struct
 
   let pp fmt x = Sexp.pp_hum fmt @@ [%sexp_of: t] x
 end
-
-let cone graph target_node separator =
-  let in_separator =
-    let sep = Set.of_list (module Node) @@ List.map ~f:Node.of_args separator in
-    Set.mem sep
-  in
-
-  let graph' = G.create () in
-  let work = Queue.create () in
-  Queue.enqueue work target_node;
-  let rec loop () =
-    match Queue.dequeue work with
-    | Some v ->
-        G.add_vertex graph' v;
-        let succ = G.succ_e graph v in
-        (* Add edges to the filtered graph. *)
-        List.iter succ ~f:(G.add_edge_e graph');
-        (* Add new nodes to the queue. *)
-        if not (in_separator v) then
-          List.iter succ ~f:(fun (_, _, v') -> Queue.enqueue work v');
-        loop ()
-    | None -> ()
-  in
-  loop ();
-  graph'
 
 let normalize_bits bits =
   Map.of_alist_multi (module Int) bits
@@ -77,7 +62,7 @@ module Vars = struct
         Smt.fresh_decl ~prefix:(prefix b) ())
     |> Smt.all
 
-  let make graph =
+  let make graph vertex_rel =
     let open Smt.Let_syntax in
     let%bind edge_vars =
       let module F = FoldM0 (Smt) (E_foldable) in
@@ -98,8 +83,9 @@ module Vars = struct
       F.fold graph
         ~init:(Map.empty (module State), Map.empty (module Args))
         ~f:(fun (ms, ma) v ->
-          let type_ = Node.type_ v in
-          Node.match_ v
+          let node = vertex_rel.Unshare.One_to_many.backward v in
+          let type_ = Node.type_ node in
+          Node.match_ node
             ~args:(fun args_v ->
               let%map vars =
                 Symb.create ~prefix:(sprintf "a%d_b%d_" (Args.id args_v)) type_
@@ -284,22 +270,28 @@ let in_separator s v =
 module FV = FoldM0 (Smt) (V_foldable)
 module F = FoldM2 (Smt) (Set)
 
-let synth_constrs graph target_node expected_output (separator : Set.M(Args).t)
-    =
+let synth_constrs graph rel target_node expected_output
+    (separator : Set.M(Args).t) =
+  let module G = U.G_replicated in
   let open Smt.Let_syntax in
+  (* Create interpolant groups for the lower and upper parts of the graph *)
   let%bind lo_group = Smt.Interpolant.Group.create
   and hi_group = Smt.Interpolant.Group.create in
 
   let top_graph =
     let g = G.copy graph in
+
     (* Remove separator dependency edges. *)
     Set.iter separator ~f:(fun args_v ->
-        G.iter_succ_e (G.remove_edge_e g) g @@ Node.of_args args_v);
-    cone g (Node.of_state target_node) (Set.to_list separator)
+        Node.of_args args_v |> R.forward
+        |> Sequence.iter ~f:(G.iter_succ_e (G.remove_edge_e g) g));
+
+    let target = Node.of_state target_node |> R.forward |> Sequence.hd_exn in
+    C.cone g target (Set.to_list separator)
   in
-  Dump.dump_detailed ~suffix:"top-graph"
-    (* ~separator:(List.mem separator ~equal:[%equal: Node.t]) *)
-    top_graph;
+  (* Dump.dump_detailed ~suffix:"top-graph"
+   *   (\* ~separator:(List.mem separator ~equal:[%equal: Node.t]) *\)
+   *   top_graph; *)
   let%bind vars = Vars.make top_graph in
 
   let%bind () =
@@ -325,14 +317,14 @@ let synth_constrs graph target_node expected_output (separator : Set.M(Args).t)
 
   let%bind () =
     F.iter separator ~f:(fun args_v ->
-        Dump.dump_detailed ~suffix:"full-graph"
-          (* ~separator:(List.mem separator ~equal:[%equal: Node.t]) *)
-          graph;
+        (* Dump.dump_detailed ~suffix:"full-graph"
+         *   (\* ~separator:(List.mem separator ~equal:[%equal: Node.t]) *\)
+         *   graph; *)
         let local_graph = cone graph (Node.of_args args_v) [] in
-        Dump.dump_detailed ~suffix:"local-graph"
-          (* ~separator:(List.mem separator ~equal:[%equal: Node.t]) *)
-          local_graph;
 
+        (* Dump.dump_detailed ~suffix:"local-graph"
+         *   (\* ~separator:(List.mem separator ~equal:[%equal: Node.t]) *\)
+         *   local_graph; *)
         let%bind local_vars =
           let%map vs = Vars.make local_graph in
           {
@@ -367,45 +359,50 @@ let synth_constrs graph target_node expected_output (separator : Set.M(Args).t)
 
   return (vars, lo_group)
 
-let random_subset ?(state = Random.State.default) s =
-  Set.filter ~f:(fun _ -> Random.State.bool state) s
+let process_interpolant graph separator vars interpolant =
+  let interpolant = ok_exn interpolant in
+  Fmt.epr "Interpolant: %a@." Smt.Expr.pp interpolant;
+  match refinement_of_interpolant graph separator interpolant vars with
+  | Some r -> Some r
+  | None -> None
 
-let choose_singleton cmp s = Set.singleton cmp (Set.choose_exn s)
+let process_model vars model =
+  List.filter_map model ~f:(fun (e, is_selected) ->
+      if is_selected then Map.find vars.var_edges e else None)
+  |> Set.of_list (module G.E)
 
 let get_refinement state target_node expected_output separator =
-  (* Select the subset of the graph that can reach the target. *)
-  let graph = cone state (Node.of_state target_node) [] in
+  (* Select the subset of the graph that can reach the target *)
+  let graph =
+    let module C = Cone (G) in
+    C.cone state (Node.of_state target_node) []
+  in
 
+  (* Filter the separator to this graph subset *)
   let separator =
     Set.filter separator ~f:(fun v -> G.mem_vertex graph @@ Node.of_args v)
   in
 
+  (* Remove sharing in the graph subset *)
+  let graph, rel = U.unshare graph in
+
   Dump.dump_detailed ~suffix:"before-refine"
     ~separator:(Node.match_ ~state:(fun _ -> false) ~args:(Set.mem separator))
     graph;
-  let open Smt in
-  let open Let_syntax in
-  let process_interpolant vars interpolant =
-    let interpolant = ok_exn interpolant in
-    Fmt.epr "Interpolant: %a@." Expr.pp interpolant;
-    match refinement_of_interpolant graph separator interpolant vars with
-    | Some r -> Some r
-    | None -> None
-  in
 
-  let process_model vars model =
-    List.filter_map model ~f:(fun (e, is_selected) ->
-        if is_selected then Map.find vars.var_edges e else None)
-    |> Set.of_list (module G.E)
-  in
-
-  let get_interpolant =
-    let%bind vars, sep_group =
-      synth_constrs graph target_node expected_output separator
+  let (vars, solver_output), _ =
+    let open Smt in
+    let open Let_syntax in
+    let get_interpolant =
+      let%bind vars, sep_group =
+        synth_constrs graph target_node expected_output separator
+      in
+      let%bind ret = Smt.get_interpolant_or_model [ sep_group ] in
+      return (vars, ret)
     in
-    let%bind ret = Smt.get_interpolant_or_model [ sep_group ] in
-    return (vars, ret)
+    Smt.run get_interpolant
   in
 
-  let (vars, ret), _ = Smt.run get_interpolant in
-  Either.map ~first:(process_interpolant vars) ~second:(process_model vars) ret
+  Either.map solver_output
+    ~first:(process_interpolant graph separator vars)
+    ~second:(process_model vars)

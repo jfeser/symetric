@@ -20,6 +20,62 @@ module type GRAPH = sig
   with type t = edge
 end
 
+module type LABELED_GRAPH = sig
+  type vertex
+
+  type label
+
+  include
+    GRAPH with type vertex := vertex and type edge = vertex * label * vertex
+end
+
+module Make (V' : sig
+  type t [@@deriving compare, hash, sexp_of]
+end) (E' : sig
+  type t [@@deriving compare, hash, sexp_of]
+
+  val default : t
+end) =
+struct
+  type label = E'.t
+
+  include Graph.Imperative.Digraph.ConcreteBidirectionalLabeled
+            (struct
+              type t = V'.t
+
+              let compare = [%compare: V'.t]
+
+              let hash = [%hash: V'.t]
+
+              let equal = [%compare.equal: V'.t]
+            end)
+            (struct
+              type t = E'.t
+
+              let compare = [%compare: E'.t]
+
+              let default = E'.default
+            end)
+
+  module V = struct
+    include V'
+    include Comparator.Make (V')
+
+    include (V : Graph.Sig.VERTEX with type t := t)
+  end
+
+  module E = struct
+    module T = struct
+      type t = V.t * E'.t * V.t [@@deriving compare, hash, sexp_of]
+    end
+
+    include T
+    include Comparator.Make (T)
+
+    include (E : Graph.Sig.EDGE with type t := t and type vertex = V.t)
+  end
+end
+
 module type FOLDS = sig
   type graph
 

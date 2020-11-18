@@ -20,6 +20,23 @@ module type GRAPH = sig
   with type t = edge
 end
 
+module type LABELED_GRAPH = sig
+  type vertex
+
+  type label
+
+  include
+    GRAPH with type vertex := vertex and type edge = vertex * label * vertex
+end
+
+module Make (V' : sig
+  type t [@@deriving compare, hash, sexp_of]
+end) (E' : sig
+  type t [@@deriving compare, hash, sexp_of]
+
+  val default : t
+end) : LABELED_GRAPH with type vertex = V'.t and type label = E'.t
+
 module type FOLDS = sig
   type graph
 

@@ -7,6 +7,10 @@ module type LABELED_GRAPH = sig
        and type edge = vertex * int * vertex
 end
 
+module One_to_many : sig
+  type ('a, 'b) t = { forward : 'a -> 'b Sequence.t; backward : 'b -> 'a }
+end
+
 module Make
     (G : LABELED_GRAPH) (K : sig
       val kind : G.V.t -> [ `Args | `State ]
@@ -20,11 +24,9 @@ module Make
   end
 
   module G_replicated :
-    Graph.Sig.I
-      with type V.t = V_ref.t
-       and type V.label = V_ref.t
-       and type E.t = V_ref.t * int * V_ref.t
-       and type E.label = int
+    LABELED_GRAPH
+      with type vertex = V_ref.t
+       and type edge = V_ref.t * int * V_ref.t
 
-  val unshare : G.t -> G_replicated.t
+  val unshare : G.t -> G_replicated.t * (G.V.t, V_ref.t) One_to_many.t
 end
