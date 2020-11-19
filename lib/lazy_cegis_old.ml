@@ -164,7 +164,7 @@ let with_size graph f =
     Float.(100.0 - (of_int size' / of_int size * 100.0));
   ret
 
-let refine graph output refinement =
+let refine graph refinement =
   List.iteri refinement ~f:(fun i (r : Refine.Refinement.t) ->
       let cost, type_ =
         let old_state =
@@ -182,17 +182,16 @@ let refine graph output refinement =
           let (Fresh v' | Stale v') = State.create state cost type_ in
           G.add_edge_e graph (Node.of_state v', -1, Node.of_args r.old));
 
-      Dump.dump_detailed ~output ~suffix:(sprintf "fixup-%d" i) graph
+      Dump.dump_detailed ~suffix:(sprintf "fixup-%d" i) graph
       (* [%test_result: bool] ~message:"graph still contains refined state"
        *   ~expect:false
        *   (G.mem_vertex graph @@ Node.of_state r.old) *));
 
-  Dump.dump_detailed ~output ~suffix:"before-fixup" graph;
+  Dump.dump_detailed ~suffix:"before-fixup" graph;
   fix_up graph;
-  Dump.dump_detailed ~output ~suffix:"after-fixup" graph
+  Dump.dump_detailed ~suffix:"after-fixup" graph
 
-let refine graph output refinement =
-  with_size graph @@ fun g -> refine g output refinement
+let refine graph refinement = with_size graph @@ fun g -> refine g refinement
 
 let rec extract_program graph selected_edges target =
   let args =
@@ -225,7 +224,7 @@ let refute search_state output =
         | _ -> failwith "No separators"
       in
 
-      Dump.dump_detailed ~output ~suffix:"before-refinement" ~depth:0 graph;
+      Dump.dump_detailed ~suffix:"before-refinement" ~depth:0 graph;
       pp Fmt.stdout graph;
 
       let refinement =
@@ -238,10 +237,10 @@ let refute search_state output =
             (sep, r))
       in
       ( match refinement with
-      | Some (_, r) -> refine search_state output r
+      | Some (_, r) -> refine search_state r
       | None -> (
           match Refine.get_refinement search_state target output last_sep with
-          | First (Some r) -> refine search_state output r
+          | First (Some r) -> refine search_state r
           | First None -> failwith "fallback refinement failed"
           | Second selected_edges ->
               Fmt.epr "Could not refute: %a" Sexp.pp_hum
