@@ -9,6 +9,7 @@ module U =
       let kind = Node.match_ ~args:(fun _ -> `Args) ~state:(fun _ -> `State)
     end)
 
+open Unshare.One_to_many
 module G = U.G_replicated
 module C = Cone.Make (U.G_replicated)
 
@@ -53,8 +54,8 @@ module Vars = struct
   type t = {
     edge_vars : String_id.t Map.M(G.E).t;
     var_edges : G.E.t Map.M(String_id).t;
-    state_vars : Symb.t Map.M(State).t;
-    arg_vars : Symb.t Map.M(Args).t;
+    state_vars : Symb.t Map.M(G.V).t;
+    arg_vars : Symb.t Map.M(G.V).t;
   }
 
   let make_bit_vars prefix =
@@ -81,7 +82,7 @@ module Vars = struct
     let%bind state_vars, arg_vars =
       let module F = FoldM0 (Smt) (V_foldable) in
       F.fold graph
-        ~init:(Map.empty (module State), Map.empty (module Args))
+        ~init:(Map.empty (module G.V), Map.empty (module G.V))
         ~f:(fun (ms, ma) v ->
           let node = vertex_rel.Unshare.One_to_many.backward v in
           let type_ = Node.type_ node in
@@ -90,14 +91,14 @@ module Vars = struct
               let%map vars =
                 Symb.create ~prefix:(sprintf "a%d_b%d_" (Args.id args_v)) type_
               in
-              (ms, Map.set ma ~key:args_v ~data:vars))
+              (ms, Map.set ma ~key:v ~data:vars))
             ~state:(fun state_v ->
               let%map vars =
                 Symb.create
                   ~prefix:(sprintf "s%d_b%d_" (State.id state_v))
                   type_
               in
-              (Map.set ms ~key:state_v ~data:vars, ma)))
+              (Map.set ms ~key:v ~data:vars, ma)))
     in
 
     return { edge_vars; var_edges; state_vars; arg_vars }
@@ -132,18 +133,19 @@ let forced_bits interpolant state =
         else (var, None))
   else List.map vars ~f:(fun v -> (v, None))
 
-let refinement_of_interpolant graph separator interpolant vars =
+let refinement_of_interpolant graph rel separator interpolant vars =
   let open Refinement in
   let models = Smt.Expr.models interpolant in
 
   let open Option.Let_syntax in
   let refinement =
     Set.to_list separator
-    |> List.filter_map ~f:(fun args_v ->
-           let var = Map.find_exn vars.arg_vars args_v in
+    |> List.filter_map ~f:(fun v ->
+           let var = Map.find_exn vars.arg_vars v in
            let old_states =
-             Node.of_args args_v |> G.pred graph
-             |> List.map ~f:(fun v -> State.state @@ Node.to_state_exn v)
+             G.pred graph v
+             |> List.map ~f:(fun v ->
+                    State.state @@ Node.to_state_exn @@ rel.backward v)
              |> Set.of_list (module Abs)
            in
 
@@ -155,7 +157,7 @@ let refinement_of_interpolant graph separator interpolant vars =
            print_s
              [%message
                "refining"
-                 (args_v : Args.t)
+                 (v : G.V.t)
                  (old_states : Set.M(Abs).t)
                  (new_state_sets : Set.M(Abs).t list)];
 
@@ -163,7 +165,9 @@ let refinement_of_interpolant graph separator interpolant vars =
            else
              let new_ = Set.union_list (module Abs) new_state_sets in
              if Set.is_subset new_ ~of_:old_states then None
-             else Some Refinement.{ old = args_v; new_ })
+             else
+               Some
+                 Refinement.{ old = Node.to_args_exn @@ rel.backward v; new_ })
   in
 
   Fmt.epr "Refinement: %a@." Fmt.Dump.(list Refinement.pp) refinement;
@@ -185,13 +189,14 @@ let filter g ~f = G.fold_vertex (fun v vs -> if f v then v :: vs else vs) g []
 
 let to_list g = G.fold_vertex (fun v vs -> v :: vs) g []
 
-let assert_input_states_contained group vars =
+let assert_input_states_contained group vars rel =
   let open Smt in
   Map.to_alist vars.state_vars
-  |> List.map ~f:(fun (state_v, var) ->
-         let state = State.state state_v in
+  |> List.map ~f:(fun (v, var) ->
+         let state_v = Node.to_state_exn @@ rel.backward v in
+         let state = State.state state_v and id = State.id state_v in
          Symb.contained var ~by:state
-         |> fresh_defn ~prefix:(Fmt.str "state-%d" @@ State.id state_v)
+         |> fresh_defn ~prefix:(Fmt.str "state-%d" id)
          >>= assert_group_var group)
   |> all_unit
 
@@ -202,9 +207,12 @@ let assert_output_state_contained group vars target_node expected =
     (Symb.contained var ~by:(Abs.lift expected))
   >>= assert_group_var group
 
-let assert_selected_state_selects_input group vars graph state_v =
+let assert_selected_state_selects_input group vars graph rel v =
   let open Smt in
-  let v = Node.of_state state_v in
+  let id =
+    let state_v = Node.to_state_exn @@ rel.backward v in
+    State.id state_v
+  in
   let parent_select =
     if G.in_degree graph v > 0 then or_ @@ pred_selected vars graph v else true_
   and child_select =
@@ -212,52 +220,60 @@ let assert_selected_state_selects_input group vars graph state_v =
     else true_
   in
   let body = parent_select => child_select
-  and name = sprintf "state-%d-deps" (State.id state_v) in
+  and name = sprintf "state-%d-deps" id in
   fresh_defn ~prefix:name body >>= assert_group_var group
 
-let assert_selected_args_selects_inputs group vars graph args_v =
+let assert_selected_args_selects_inputs group vars graph rel v =
   let open Smt in
-  let v = Node.of_args args_v in
+  let id =
+    let args_v = Node.to_args_exn @@ rel.backward v in
+    Args.id args_v
+  in
   let parent_select =
     if G.in_degree graph v > 0 then or_ @@ pred_selected vars graph v else true_
   and child_select = succ_selected vars graph v in
   let body = parent_select => and_ child_select
-  and name = sprintf "args-%d-deps" (Args.id args_v) in
+  and name = sprintf "args-%d-deps" id in
   fresh_defn ~prefix:name body >>= assert_group_var group
 
-let assert_state_semantics group vars graph v =
+let assert_state_semantics group vars graph rel v =
   let open Smt in
+  let id =
+    let state_v = Node.to_state_exn @@ rel.backward v in
+    State.id state_v
+  in
+  let state_vars = Map.find_exn vars.state_vars v in
   let body =
-    let state_vars = Map.find_exn vars.state_vars v in
-    G.succ_e graph (Node.of_state v)
+    G.succ_e graph v
     |> List.map ~f:(fun ((_, _, v) as e) ->
-           let args_v = Node.to_args_exn v in
-           let args_vars = Map.find_exn vars.arg_vars args_v in
+           let args_vars = Map.find_exn vars.arg_vars v in
            let is_selected = Map.find_exn vars.edge_vars e |> var in
            is_selected => Symb.(args_vars = state_vars))
     |> and_
-  and name = sprintf "state-%d-semantics" (State.id v) in
+  and name = sprintf "state-%d-semantics" id in
   fresh_defn ~prefix:name body >>= assert_group_var group
 
-let assert_args_semantics group vars graph v =
+let assert_args_semantics group vars graph rel v =
   let open Smt in
   let open Let_syntax in
-  let op = Args.op v in
-  let incoming_edges = G.succ_e graph (Node.of_args v) in
+  let op, id =
+    let args_v = Node.to_args_exn @@ rel.backward v in
+    (Args.op args_v, Args.id args_v)
+  in
 
   let incoming_states =
-    List.map incoming_edges ~f:(fun (_, n, v) -> (Node.to_state_exn v, n))
+    G.succ_e graph v
+    |> List.map ~f:(fun (_, n, v) -> (v, n))
     |> List.sort ~compare:(fun (_, n) (_, n') -> [%compare: int] n n')
     |> List.map ~f:(fun (v, _) -> Map.find_exn vars.state_vars v)
   in
 
   let out = Map.find_exn vars.arg_vars v in
-  let name = Fmt.str "semantics-%a-%d" Op.pp op (Args.id v) in
+  let name = Fmt.str "semantics-%a-%d" Op.pp op id in
 
-  if Op.arity op <> List.length incoming_states then (
-    Dump.dump_detailed ~suffix:"error" graph;
+  if Op.arity op <> List.length incoming_states then
     raise_s
-      [%message "unexpected args" (op : Op.t) (incoming_states : Symb.t list)] );
+      [%message "unexpected args" (op : Op.t) (incoming_states : Symb.t list)];
 
   let%bind eval_result = Symb.eval op incoming_states in
   fresh_defn ~prefix:name Symb.(eval_result = out) >>= assert_group_var group
@@ -270,87 +286,88 @@ let in_separator s v =
 module FV = FoldM0 (Smt) (V_foldable)
 module F = FoldM2 (Smt) (Set)
 
-let synth_constrs graph rel target_node expected_output
-    (separator : Set.M(Args).t) =
+let synth_constrs graph rel target_node expected_output separator =
   let module G = U.G_replicated in
   let open Smt.Let_syntax in
   (* Create interpolant groups for the lower and upper parts of the graph *)
   let%bind lo_group = Smt.Interpolant.Group.create
   and hi_group = Smt.Interpolant.Group.create in
 
+  (* There should only be one target even after unsharing *)
+  let target_node =
+    Node.of_state target_node |> rel.forward |> Sequence.hd_exn
+  in
+
   let top_graph =
     let g = G.copy graph in
 
     (* Remove separator dependency edges. *)
-    Set.iter separator ~f:(fun args_v ->
-        Node.of_args args_v |> R.forward
-        |> Sequence.iter ~f:(G.iter_succ_e (G.remove_edge_e g) g));
+    Set.iter separator ~f:(G.iter_succ_e (G.remove_edge_e g) g);
 
-    let target = Node.of_state target_node |> R.forward |> Sequence.hd_exn in
-    C.cone g target (Set.to_list separator)
+    C.cone g target_node (Set.to_list separator)
   in
   (* Dump.dump_detailed ~suffix:"top-graph"
    *   (\* ~separator:(List.mem separator ~equal:[%equal: Node.t]) *\)
    *   top_graph; *)
-  let%bind vars = Vars.make top_graph in
+  let%bind vars = Vars.make top_graph rel in
 
   let%bind () =
     let%bind () =
       assert_output_state_contained hi_group vars target_node expected_output
     in
-    let%bind () = assert_input_states_contained hi_group vars in
+    let%bind () = assert_input_states_contained hi_group vars rel in
     FV.iter top_graph ~f:(fun v ->
-        Node.match_ v
-          ~state:(fun v ->
+        Node.match_ (rel.backward v)
+          ~state:(fun _ ->
             let%bind () =
-              assert_selected_state_selects_input hi_group vars top_graph v
+              assert_selected_state_selects_input hi_group vars top_graph rel v
             in
-            assert_state_semantics hi_group vars top_graph v)
-          ~args:(fun v ->
+            assert_state_semantics hi_group vars top_graph rel v)
+          ~args:(fun _ ->
             if Set.mem separator v then return ()
             else
               let%bind () =
-                assert_selected_args_selects_inputs hi_group vars top_graph v
+                assert_selected_args_selects_inputs hi_group vars top_graph rel
+                  v
               in
-              assert_args_semantics hi_group vars top_graph v))
+              assert_args_semantics hi_group vars top_graph rel v))
   in
 
   let%bind () =
-    F.iter separator ~f:(fun args_v ->
+    F.iter separator ~f:(fun v ->
         (* Dump.dump_detailed ~suffix:"full-graph"
          *   (\* ~separator:(List.mem separator ~equal:[%equal: Node.t]) *\)
          *   graph; *)
-        let local_graph = cone graph (Node.of_args args_v) [] in
+        let local_graph = C.cone graph v [] in
 
         (* Dump.dump_detailed ~suffix:"local-graph"
          *   (\* ~separator:(List.mem separator ~equal:[%equal: Node.t]) *\)
          *   local_graph; *)
         let%bind local_vars =
-          let%map vs = Vars.make local_graph in
+          let%map vs = Vars.make local_graph rel in
           {
             vs with
             arg_vars =
-              Map.set vs.arg_vars ~key:args_v
-                ~data:(Map.find_exn vars.arg_vars args_v);
+              Map.set vs.arg_vars ~key:v ~data:(Map.find_exn vars.arg_vars v);
           }
         in
 
-        let%bind () = assert_input_states_contained lo_group vars in
+        let%bind () = assert_input_states_contained lo_group vars rel in
 
         FV.iter local_graph ~f:(fun v ->
-            Node.match_ v
-              ~state:(fun v ->
+            Node.match_ (rel.backward v)
+              ~state:(fun _ ->
                 let%bind () =
                   assert_selected_state_selects_input lo_group local_vars
-                    local_graph v
+                    local_graph rel v
                 in
-                assert_state_semantics lo_group local_vars local_graph v)
-              ~args:(fun v ->
+                assert_state_semantics lo_group local_vars local_graph rel v)
+              ~args:(fun _ ->
                 let%bind () =
                   assert_selected_args_selects_inputs lo_group local_vars
-                    local_graph v
+                    local_graph rel v
                 in
-                assert_args_semantics lo_group local_vars local_graph v)))
+                assert_args_semantics lo_group local_vars local_graph rel v)))
   in
 
   let%bind vars_of_group = Smt.Interpolant.group_vars in
@@ -359,43 +376,51 @@ let synth_constrs graph rel target_node expected_output
 
   return (vars, lo_group)
 
-let process_interpolant graph separator vars interpolant =
+let process_interpolant graph rel separator vars interpolant =
   let interpolant = ok_exn interpolant in
   Fmt.epr "Interpolant: %a@." Smt.Expr.pp interpolant;
-  match refinement_of_interpolant graph separator interpolant vars with
+  match refinement_of_interpolant graph rel separator interpolant vars with
   | Some r -> Some r
   | None -> None
 
-let process_model vars model =
+let process_model vars rel model =
+  let rel = Unshare.edge_relation rel in
   List.filter_map model ~f:(fun (e, is_selected) ->
       if is_selected then Map.find vars.var_edges e else None)
-  |> Set.of_list (module G.E)
+  |> List.map ~f:rel.backward
+  |> Set.of_list (module Search_state.G.E)
 
 let get_refinement state target_node expected_output separator =
   (* Select the subset of the graph that can reach the target *)
   let graph =
-    let module C = Cone (G) in
+    let module C = Cone.Make (Search_state.G) in
     C.cone state (Node.of_state target_node) []
   in
 
   (* Filter the separator to this graph subset *)
   let separator =
-    Set.filter separator ~f:(fun v -> G.mem_vertex graph @@ Node.of_args v)
+    Set.filter separator ~f:(fun v ->
+        Search_state.G.mem_vertex graph @@ Node.of_args v)
   in
 
   (* Remove sharing in the graph subset *)
   let graph, rel = U.unshare graph in
+  let separator =
+    Set.to_sequence separator
+    |> Sequence.concat_map ~f:(fun args_v -> rel.forward @@ Node.of_args args_v)
+    |> Sequence.to_list
+    |> Set.of_list (module G.V)
+  in
 
-  Dump.dump_detailed ~suffix:"before-refine"
-    ~separator:(Node.match_ ~state:(fun _ -> false) ~args:(Set.mem separator))
-    graph;
-
+  (* Dump.dump_detailed ~suffix:"before-refine"
+   *   ~separator:(Node.match_ ~state:(fun _ -> false) ~args:(Set.mem separator))
+   *   graph; *)
   let (vars, solver_output), _ =
     let open Smt in
     let open Let_syntax in
     let get_interpolant =
       let%bind vars, sep_group =
-        synth_constrs graph target_node expected_output separator
+        synth_constrs graph rel target_node expected_output separator
       in
       let%bind ret = Smt.get_interpolant_or_model [ sep_group ] in
       return (vars, ret)
@@ -404,5 +429,5 @@ let get_refinement state target_node expected_output separator =
   in
 
   Either.map solver_output
-    ~first:(process_interpolant graph separator vars)
-    ~second:(process_model vars)
+    ~first:(process_interpolant graph rel separator vars)
+    ~second:(process_model vars rel)

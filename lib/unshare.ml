@@ -4,6 +4,16 @@ module One_to_many = struct
   type ('a, 'b) t = { forward : 'a -> 'b Sequence.t; backward : 'b -> 'a }
 end
 
+let edge_relation vrel =
+  let open One_to_many in
+  let forward (v, x, v') =
+    vrel.forward v
+    |> Sequence.concat_map ~f:(fun w ->
+           vrel.forward v' |> Sequence.map ~f:(fun w' -> (w, x, w')))
+  in
+  let backward (w, x, w') = (vrel.backward w, x, vrel.backward w') in
+  { forward; backward }
+
 module Make
     (G : LABELED_GRAPH with type label = int) (K : sig
       val kind : G.V.t -> [ `Args | `State ]
