@@ -1,18 +1,11 @@
-module type LABELED_GRAPH = sig
-  type vertex
-
-  include
-    Graph_ext.GRAPH
-      with type vertex := vertex
-       and type edge = vertex * int * vertex
-end
+open Graph_ext
 
 module One_to_many = struct
   type ('a, 'b) t = { forward : 'a -> 'b Sequence.t; backward : 'b -> 'a }
 end
 
 module Make
-    (G : LABELED_GRAPH) (K : sig
+    (G : LABELED_GRAPH with type label = int) (K : sig
       val kind : G.V.t -> [ `Args | `State ]
     end) =
 struct
@@ -166,40 +159,14 @@ end
 
 let%test_module "unshare" =
   ( module struct
-    module G = struct
-      module Vertex = Int
+    module G =
+      Graph_ext.Make
+        (Int)
+        (struct
+          include Int
 
-      module Edge = struct
-        type t = int [@@deriving compare]
-
-        let default = -1
-      end
-
-      include Graph.Imperative.Digraph.ConcreteBidirectionalLabeled
-                (Vertex)
-                (Edge)
-
-      module V = struct
-        include Int
-        include V
-      end
-
-      module E = struct
-        module T = struct
-          type t = V.t * int * V.t [@@deriving compare, hash, sexp_of]
-        end
-
-        include T
-        include Comparator.Make (T)
-
-        include (
-          E :
-            sig
-              include module type of E
-            end
-            with type t := t )
-      end
-    end
+          let default = -1
+        end)
 
     module U =
       Make

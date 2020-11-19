@@ -73,10 +73,7 @@ module Node : sig
 end
 
 module G : sig
-  include
-    Graph_ext.GRAPH
-      with type vertex = Node.t
-       and type edge = Node.t * int * Node.t
+  include Graph_ext.LABELED_GRAPH with type vertex = Node.t and type label = int
 
   include
     Graph_ext.CHANGED

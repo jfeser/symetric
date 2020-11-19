@@ -1,4 +1,6 @@
-module Make (G : Unshare.LABELED_GRAPH) = struct
+open Graph_ext
+
+module Make (G : LABELED_GRAPH) = struct
   let cone graph target_node separator =
     let in_separator =
       let sep = Set.of_list (module G.V) separator in

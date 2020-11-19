@@ -181,35 +181,13 @@ module Node = struct
 end
 
 module Edge = struct
-  type t = int [@@deriving compare, equal, sexp]
+  type t = int [@@deriving compare, hash, sexp]
 
   let default = -1
 end
 
 module G = struct
-  module G0 = struct
-    include Graph.Imperative.Digraph.ConcreteBidirectionalLabeled (Node) (Edge)
-
-    module V = struct
-      type t = Node.t [@@deriving compare, hash, sexp_of]
-
-      include (Node : Comparator.S with type t := t)
-
-      include (V : Graph.Sig.VERTEX with type t := t)
-    end
-
-    module E = struct
-      module T = struct
-        type t = V.t * int * V.t [@@deriving compare, hash, sexp_of]
-      end
-
-      include T
-      include Comparator.Make (T)
-
-      include (E : Graph.Sig.EDGE with type t := t and type vertex = V.t)
-    end
-  end
-
+  module G0 = Graph_ext.Make (Node) (Edge)
   include G0
   module Fold = Graph_ext.Folds (G0)
 
