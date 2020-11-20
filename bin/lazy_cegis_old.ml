@@ -44,6 +44,8 @@ let () =
     [%map_open
       let enable_graph_output =
         flag "output-graph" no_arg ~doc:" enable output of dot graphs"
+      and hide_values =
+        flag "hide-values" no_arg ~doc:" hide abstract values in graph output"
       and enable_forced_bit_check =
         flag "enable-forced-bit-check" no_arg
           ~doc:" enable checking for forced bits when refining"
@@ -53,6 +55,7 @@ let () =
           ~doc:" maximum program cost"
       and print_header = flag "print-header" no_arg ~doc:" print csv header" in
 
+      Global.hide_values := hide_values;
       Global.enable_forced_bit_check := enable_forced_bit_check;
       Global.enable_dump := enable_graph_output;
       Global.max_cost := max_cost;

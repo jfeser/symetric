@@ -16,11 +16,15 @@ module Bool_vector = struct
     @@ Fmt.list ~sep:(Fmt.any " ")
     @@ Fmt.pair ~sep:Fmt.nop Fmt.int (Fmt.fmt "_%d")
 
-  let graphviz_pp : t Fmt.t =
-    Fmt.using (fun m ->
-        Map.to_alist m |> List.map ~f:(fun (k, v) -> (Bool.to_int v, k)))
-    @@ Fmt.list ~sep:(Fmt.any " ")
-    @@ Fmt.pair ~sep:Fmt.nop Fmt.int (Fmt.fmt "<sub>%d</sub>")
+  let graphviz_pp fmt m =
+    if not !Global.hide_values then
+      let pp =
+        Fmt.using (fun m ->
+            Map.to_alist m |> List.map ~f:(fun (k, v) -> (Bool.to_int v, k)))
+        @@ Fmt.list ~sep:(Fmt.any " ")
+        @@ Fmt.pair ~sep:Fmt.nop Fmt.int (Fmt.fmt "<sub>%d</sub>")
+      in
+      Fmt.pf fmt "%a" pp m
 
   let meet =
     Map.merge ~f:(fun ~key:_ -> function

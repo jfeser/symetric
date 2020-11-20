@@ -165,7 +165,7 @@ let with_size graph f =
   ret
 
 let refine graph refinement =
-  List.iteri refinement ~f:(fun i (r : Refine.Refinement.t) ->
+  List.iter refinement ~f:(fun (r : Refine.Refinement.t) ->
       let cost, type_ =
         let old_state =
           G.pred graph @@ Node.of_args r.old |> List.hd_exn |> Node.to_state_exn
@@ -180,16 +180,9 @@ let refine graph refinement =
       (* Insert new states and add edges to args nodes. *)
       Set.iter r.new_ ~f:(fun state ->
           let (Fresh v' | Stale v') = State.create state cost type_ in
-          G.add_edge_e graph (Node.of_state v', -1, Node.of_args r.old));
+          G.add_edge_e graph (Node.of_state v', -1, Node.of_args r.old)));
 
-      dump_detailed ~suffix:(sprintf "fixup-%d" i) graph
-      (* [%test_result: bool] ~message:"graph still contains refined state"
-       *   ~expect:false
-       *   (G.mem_vertex graph @@ Node.of_state r.old) *));
-
-  dump_detailed ~suffix:"before-fixup" graph;
-  fix_up graph;
-  dump_detailed ~suffix:"after-fixup" graph
+  fix_up graph
 
 let refine graph refinement = with_size graph @@ fun g -> refine g refinement
 

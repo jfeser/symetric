@@ -13,6 +13,17 @@ open Unshare.One_to_many
 module G = U.G_replicated
 module C = Cone.Make (U.G_replicated)
 
+let dump_detailed ~suffix ?separator graph rel =
+  let open Dump.Make
+             (U.G_replicated)
+             (struct
+               let vertex_name v = Fmt.str "%d" @@ U.id v
+
+               let vertex_attributes v =
+                 Attr.vertex_attributes @@ rel.backward v
+             end) in
+  dump_detailed ~suffix ?separator graph
+
 module V_foldable = struct
   type t = G.t
 
@@ -306,9 +317,9 @@ let synth_constrs graph rel target_node expected_output separator =
 
     C.cone g target_node (Set.to_list separator)
   in
-  (* Dump.dump_detailed ~suffix:"top-graph"
-   *   (\* ~separator:(List.mem separator ~equal:[%equal: Node.t]) *\)
-   *   top_graph; *)
+  dump_detailed ~suffix:"top-graph"
+    (* ~separator:(List.mem separator ~equal:[%equal: Node.t]) *)
+    top_graph rel;
   let%bind vars = Vars.make top_graph rel in
 
   let%bind () =
@@ -335,14 +346,11 @@ let synth_constrs graph rel target_node expected_output separator =
 
   let%bind () =
     F.iter separator ~f:(fun v ->
-        (* Dump.dump_detailed ~suffix:"full-graph"
-         *   (\* ~separator:(List.mem separator ~equal:[%equal: Node.t]) *\)
-         *   graph; *)
         let local_graph = C.cone graph v [] in
 
-        (* Dump.dump_detailed ~suffix:"local-graph"
-         *   (\* ~separator:(List.mem separator ~equal:[%equal: Node.t]) *\)
-         *   local_graph; *)
+        dump_detailed ~suffix:"local-graph"
+          (* ~separator:(List.mem separator ~equal:[%equal: Node.t]) *)
+          local_graph rel;
         let%bind local_vars =
           let%map vs = Vars.make local_graph rel in
           {
@@ -403,6 +411,8 @@ let get_refinement state target_node expected_output separator =
         Search_state.G.mem_vertex graph @@ Node.of_args v)
   in
 
+  Search_state.dump_detailed ~suffix:"before-unsharing" graph;
+
   (* Remove sharing in the graph subset *)
   let graph, rel = U.unshare graph in
   let separator =
@@ -412,9 +422,9 @@ let get_refinement state target_node expected_output separator =
     |> Set.of_list (module G.V)
   in
 
-  (* Dump.dump_detailed ~suffix:"before-refine"
-   *   ~separator:(Node.match_ ~state:(fun _ -> false) ~args:(Set.mem separator))
-   *   graph; *)
+  dump_detailed ~suffix:"after-unsharing" ~separator:(Set.mem separator) graph
+    rel;
+
   let (vars, solver_output), _ =
     let open Smt in
     let open Let_syntax in
