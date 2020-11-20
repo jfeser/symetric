@@ -1,3 +1,5 @@
+let step = ref 0
+
 module Make
     (G : Graph_ext.LABELED_GRAPH with type label = int) (Attr : sig
       val vertex_name : G.V.t -> string
@@ -39,8 +41,6 @@ struct
         end)
     in
     Viz.output_graph
-
-  let step = ref 0
 
   let filter_depth g d =
     let roots = F.V.filter g ~f:(fun v -> List.is_empty @@ G.succ g v) in
@@ -92,25 +92,3 @@ struct
       Out_channel.with_file fn ~f:(fun ch -> output_graph ch graph);
       incr step )
 end
-
-include Make
-          (Search_state.G)
-          (struct
-            open Search_state
-
-            let vertex_name n = Fmt.str "%d" @@ Node.id n
-
-            let vertex_attributes n =
-              Node.match_ n
-                ~args:(fun n ->
-                  [ `HtmlLabel (Fmt.str "%a" Args.graphviz_pp n); `Shape `Box ])
-                ~state:(fun n ->
-                  [ `HtmlLabel (Fmt.str "%a" State.graphviz_pp n) ]
-                  @
-                  if
-                    Abs.contains (State.state n)
-                    @@ Conc.bool_vector
-                    @@ (Set_once.get_exn Global.bench [%here]).Bench.output
-                  then [ `Style `Bold ]
-                  else [])
-          end)

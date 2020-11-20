@@ -315,3 +315,23 @@ let pp fmt g =
            loop ())
   in
   loop ()
+
+module Attr = struct
+  let vertex_name n = Fmt.str "%d" @@ Node.id n
+
+  let vertex_attributes n =
+    Node.match_ n
+      ~args:(fun n ->
+        [ `HtmlLabel (Fmt.str "%a" Args.graphviz_pp n); `Shape `Box ])
+      ~state:(fun n ->
+        [ `HtmlLabel (Fmt.str "%a" State.graphviz_pp n) ]
+        @
+        if
+          Abs.contains (State.state n)
+          @@ Conc.bool_vector
+          @@ (Set_once.get_exn Global.bench [%here]).Bench.output
+        then [ `Style `Bold ]
+        else [])
+end
+
+include Dump.Make (G) (Attr)

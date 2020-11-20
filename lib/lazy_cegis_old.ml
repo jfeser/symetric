@@ -94,7 +94,7 @@ let fill_cost (graph : Search_state.t) ops cost =
                  add_hyper_edges [])) );
 
   let size' = nb_vertex graph in
-  Dump.dump_detailed ~suffix:(sprintf "after-fill-%d" cost) graph;
+  dump_detailed ~suffix:(sprintf "after-fill-%d" cost) graph;
 
   Fmt.epr "Pruning: size before=%d, after=%d, removed %f%%\n" size size'
     Float.(100.0 - (of_int size' / of_int size * 100.0))
@@ -182,14 +182,14 @@ let refine graph refinement =
           let (Fresh v' | Stale v') = State.create state cost type_ in
           G.add_edge_e graph (Node.of_state v', -1, Node.of_args r.old));
 
-      Dump.dump_detailed ~suffix:(sprintf "fixup-%d" i) graph
+      dump_detailed ~suffix:(sprintf "fixup-%d" i) graph
       (* [%test_result: bool] ~message:"graph still contains refined state"
        *   ~expect:false
        *   (G.mem_vertex graph @@ Node.of_state r.old) *));
 
-  Dump.dump_detailed ~suffix:"before-fixup" graph;
+  dump_detailed ~suffix:"before-fixup" graph;
   fix_up graph;
-  Dump.dump_detailed ~suffix:"after-fixup" graph
+  dump_detailed ~suffix:"after-fixup" graph
 
 let refine graph refinement = with_size graph @@ fun g -> refine g refinement
 
@@ -224,7 +224,7 @@ let refute search_state output =
         | _ -> failwith "No separators"
       in
 
-      Dump.dump_detailed ~suffix:"before-refinement" ~depth:0 graph;
+      dump_detailed ~suffix:"before-refinement" ~depth:0 graph;
       pp Fmt.stdout graph;
 
       let refinement =

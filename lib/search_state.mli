@@ -106,3 +106,18 @@ val insert_hyper_edge_if_not_exists :
   t -> State.t list -> Op.t -> State.t -> unit
 
 val pp : t Fmt.t
+
+module Attr : sig
+  val vertex_name : G.V.t -> string
+
+  val vertex_attributes : G.V.t -> Graph.Graphviz.DotAttributes.vertex list
+end
+
+val dump_detailed :
+  ?suffix:string ->
+  ?cone:(G.V.t -> bool) ->
+  ?separator:(G.V.t -> bool) ->
+  ?refinement:(G.V.t * int * G.V.t -> bool) ->
+  ?depth:int ->
+  G.t ->
+  unit
