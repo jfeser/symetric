@@ -11,7 +11,9 @@ module U =
 
 open Unshare.One_to_many
 module G = U.G_replicated
-module C = Cone.Make (U.G_replicated)
+module UFold = Graph_ext.Folds (U.G_replicated)
+module UCone = Cone.Make (U.G_replicated)
+module USeparator = Separator.Make (U.G_replicated)
 
 let dump_detailed ~suffix ?separator graph rel =
   let open Dump.Make
@@ -315,11 +317,19 @@ let synth_constrs graph rel target_node expected_output separator =
     (* Remove separator dependency edges. *)
     Set.iter separator ~f:(G.iter_succ_e (G.remove_edge_e g) g);
 
-    C.cone g target_node (Set.to_list separator)
+    UCone.cone g target_node
   in
+
+  let separator = Set.filter separator ~f:(G.mem_vertex top_graph) in
+
   dump_detailed ~suffix:"top-graph"
     (* ~separator:(List.mem separator ~equal:[%equal: Node.t]) *)
     top_graph rel;
+
+  [%test_pred: Set.M(G.V).t] ~message:"separator not in top graph"
+    (Set.for_all ~f:(G.mem_vertex top_graph))
+    separator;
+
   let%bind vars = Vars.make top_graph rel in
 
   let%bind () =
@@ -346,7 +356,7 @@ let synth_constrs graph rel target_node expected_output separator =
 
   let%bind () =
     F.iter separator ~f:(fun v ->
-        let local_graph = C.cone graph v [] in
+        let local_graph = UCone.cone graph v in
 
         dump_detailed ~suffix:"local-graph"
           (* ~separator:(List.mem separator ~equal:[%equal: Node.t]) *)
@@ -398,46 +408,56 @@ let process_model vars rel model =
   |> List.map ~f:rel.backward
   |> Set.of_list (module Search_state.G.E)
 
-let get_refinement state target_node expected_output separator =
+let run_solver graph rel target_node expected_output separator =
+  let open Smt in
+  let open Let_syntax in
+  let get_interpolant =
+    let%bind vars, sep_group =
+      synth_constrs graph rel target_node expected_output separator
+    in
+    let%bind ret = Smt.get_interpolant_or_model [ sep_group ] in
+    return (vars, ret)
+  in
+  let ret, _ = Smt.run get_interpolant in
+  ret
+
+let get_refinement graph target_node =
   (* Select the subset of the graph that can reach the target *)
   let graph =
     let module C = Cone.Make (Search_state.G) in
-    C.cone state (Node.of_state target_node) []
-  in
-
-  (* Filter the separator to this graph subset *)
-  let separator =
-    Set.filter separator ~f:(fun v ->
-        Search_state.G.mem_vertex graph @@ Node.of_args v)
+    C.cone graph (Node.of_state target_node)
   in
 
   Search_state.dump_detailed ~suffix:"before-unsharing" graph;
 
   (* Remove sharing in the graph subset *)
   let graph, rel = U.unshare graph in
-  let separator =
-    Set.to_sequence separator
-    |> Sequence.concat_map ~f:(fun args_v -> rel.forward @@ Node.of_args args_v)
-    |> Sequence.to_list
-    |> Set.of_list (module G.V)
+  let top =
+    Option.value_exn ~message:"graph does not have a greatest element"
+      (UFold.V.find graph ~f:(fun v -> G.in_degree graph v = 0))
   in
 
-  dump_detailed ~suffix:"after-unsharing" ~separator:(Set.mem separator) graph
-    rel;
+  dump_detailed ~suffix:"after-unsharing" graph rel;
 
-  let (vars, solver_output), _ =
-    let open Smt in
-    let open Let_syntax in
-    let get_interpolant =
-      let%bind vars, sep_group =
-        synth_constrs graph rel target_node expected_output separator
-      in
-      let%bind ret = Smt.get_interpolant_or_model [ sep_group ] in
-      return (vars, ret)
-    in
-    Smt.run get_interpolant
+  let expected_output =
+    Conc.bool_vector (Set_once.get_exn Global.bench [%here]).output
   in
 
-  Either.map solver_output
-    ~first:(process_interpolant graph rel separator vars)
-    ~second:(process_model vars rel)
+  let m_refinement =
+    USeparator.simple graph top
+    |> Sequence.find_map ~f:(fun separator ->
+           match run_solver graph rel target_node expected_output separator with
+           | vars, First interpolant ->
+               process_interpolant graph rel separator vars interpolant
+           | _ -> None)
+  in
+
+  match m_refinement with
+  | Some r -> First r
+  | None -> (
+      match
+        run_solver graph rel target_node expected_output
+          (Set.empty (module G.V))
+      with
+      | _, First _ -> failwith "expected model"
+      | vars, Second model -> Second (process_model vars rel model) )

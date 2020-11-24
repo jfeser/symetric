@@ -187,37 +187,13 @@ let refute search_state output =
         | _ -> None)
   with
   | Some target ->
-      let seps = arg_separators graph (Node.of_state target) |> Seq.to_list in
-      let seps, last_sep =
-        match List.rev seps with
-        | last :: rest -> (List.rev rest, last)
-        | _ -> failwith "No separators"
-      in
-
-      dump_detailed ~suffix:"before-refinement" ~depth:0 graph;
-      pp Fmt.stdout graph;
-
-      let refinement =
-        List.find_map seps ~f:(fun sep ->
-            let open Option.Let_syntax in
-            let%map r =
-              Refine.get_refinement search_state target output sep
-              |> Either.First.to_option |> Option.join
-            in
-            (sep, r))
-      in
-      ( match refinement with
-      | Some (_, r) -> refine search_state r
-      | None -> (
-          match Refine.get_refinement search_state target output last_sep with
-          | First (Some r) -> refine search_state r
-          | First None -> failwith "fallback refinement failed"
-          | Second selected_edges ->
-              Fmt.epr "Could not refute: %a" Sexp.pp_hum
-                ( [%sexp_of: Program.t]
-                @@ extract_program graph selected_edges (Node.of_state target)
-                );
-              raise (Done `Sat) ) );
+      ( match Refine.get_refinement search_state target with
+      | First r -> refine search_state r
+      | Second selected_edges ->
+          Fmt.epr "Could not refute: %a" Sexp.pp_hum
+            ( [%sexp_of: Program.t]
+            @@ extract_program graph selected_edges (Node.of_state target) );
+          raise (Done `Sat) );
       true
   | None -> false
 
