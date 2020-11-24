@@ -123,29 +123,6 @@ end
 
 exception Done of [ `Sat | `Unsat ]
 
-let state_separators graph target =
-  Seq.unfold ~init:[ target ] ~f:(fun sep ->
-      if List.is_empty sep then None
-      else
-        let sep' =
-          List.concat_map sep ~f:(G.succ graph)
-          |> List.concat_map ~f:(G.succ graph)
-        in
-        Some (sep, sep'))
-  |> Seq.map ~f:(List.map ~f:Node.to_state_exn)
-
-let arg_separators graph target =
-  Seq.unfold ~init:(G.succ graph target) ~f:(fun sep ->
-      if List.is_empty sep then None
-      else
-        let sep' =
-          List.concat_map sep ~f:(G.succ graph)
-          |> List.concat_map ~f:(G.succ graph)
-        in
-        Some (sep, sep'))
-  |> Seq.map ~f:(fun vs ->
-         List.map vs ~f:Node.to_args_exn |> Set.of_list (module Args))
-
 let refine_level n graph =
   G.Fold.V.fold graph ~init:(0, 0) ~f:(fun ((num, dem) as acc) ->
       Node.match_
