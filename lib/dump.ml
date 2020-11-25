@@ -1,3 +1,5 @@
+open Params
+
 let step = ref 0
 
 module Make
@@ -76,9 +78,9 @@ struct
     g'
 
   let dump_detailed ?suffix ?(cone = fun _ -> false)
-      ?(separator = fun _ -> false) ?(refinement = fun _ -> false) ?depth graph
-      =
-    if !Global.enable_dump then (
+      ?(separator = fun _ -> false) ?(refinement = fun _ -> false) ?depth params
+      graph =
+    if params.enable_dump then (
       let output_graph = make_output_graph ~refinement cone separator in
       let graph =
         Option.map depth ~f:(filter_depth graph) |> Option.value ~default:graph

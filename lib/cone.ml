@@ -2,10 +2,10 @@ open Graph_ext
 
 module Make (G : LABELED_GRAPH) = struct
   (** Return the subset of `graph` that is reachable from `target`. *)
-  let cone graph target =
+  let cone graph targets =
     let graph' = G.create () in
     let work = Queue.create () in
-    Queue.enqueue work target;
+    Queue.enqueue_all work targets;
     let rec loop () =
       match Queue.dequeue work with
       | Some v ->

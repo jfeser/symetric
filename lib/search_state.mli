@@ -1,5 +1,7 @@
 open Ast
 
+type t
+
 module Is_fresh : sig
   type 'a t = Fresh of 'a | Stale of 'a
 
@@ -9,43 +11,51 @@ module Is_fresh : sig
 end
 
 module Args : sig
-  type t [@@deriving compare, equal, hash, sexp_of]
+  type t [@@deriving compare, hash, sexp_of]
 
   include Comparator.S with type t := t
 
-  val create : Op.t -> t
+  type ctx
+
+  val create : ctx -> Op.t -> t
 
   val id : t -> int
 
-  val op : t -> Op.t
+  val op : ctx -> t -> Op.t
 
-  val graphviz_pp : t Fmt.t
+  val graphviz_pp : ctx -> t Fmt.t
 
-  val output_type : t -> Type.t
+  val output_type : ctx -> t -> Type.t
 end
+with type ctx := t
 
 module State : sig
-  type t [@@deriving compare, equal, hash, sexp_of]
+  type t [@@deriving compare, hash, sexp_of]
 
   include Comparator.S with type t := t
 
-  val create : Abs.t -> int -> Type.t -> t Is_fresh.t
+  type ctx
+
+  val create : ctx -> Abs.t -> int -> Type.t -> t Is_fresh.t
 
   val id : t -> int
 
-  val state : t -> Abs.t
+  val state : ctx -> t -> Abs.t
 
-  val cost : t -> int
+  val cost : ctx -> t -> int
 
-  val type_ : t -> Type.t
+  val type_ : ctx -> t -> Type.t
 
-  val graphviz_pp : t Fmt.t
+  val graphviz_pp : ctx -> t Fmt.t
 end
+with type ctx := t
 
 module Node : sig
-  type t [@@deriving compare, equal, hash, sexp_of]
+  type t [@@deriving compare, hash, sexp_of]
 
   include Comparator.S with type t := t
+
+  type ctx
 
   val match_ : args:(Args.t -> 'a) -> state:(State.t -> 'a) -> t -> 'a
 
@@ -69,8 +79,9 @@ module Node : sig
 
   val to_state_exn : t -> State.t
 
-  val type_ : t -> Type.t
+  val type_ : ctx -> t -> Type.t
 end
+with type ctx := t
 
 module G : sig
   include Graph_ext.LABELED_GRAPH with type vertex = Node.t and type label = int
@@ -88,9 +99,11 @@ module G : sig
        and type edge = E.t
 end
 
-type t = G.t
+val create : Params.t -> t
 
-val create : unit -> t
+val params : t -> Params.t
+
+val graph : t -> G.t
 
 val states_of_cost : t -> int -> State.t list
 
@@ -107,11 +120,13 @@ val insert_hyper_edge_if_not_exists :
 
 val pp : t Fmt.t
 
-module Attr : sig
+module type ATTR = sig
   val vertex_name : G.V.t -> string
 
   val vertex_attributes : G.V.t -> Graph.Graphviz.DotAttributes.vertex list
 end
+
+val attr : t -> (module ATTR)
 
 val dump_detailed :
   ?suffix:string ->
@@ -119,5 +134,15 @@ val dump_detailed :
   ?separator:(G.V.t -> bool) ->
   ?refinement:(G.V.t * int * G.V.t -> bool) ->
   ?depth:int ->
+  t ->
+  unit
+
+val dump_detailed_graph :
+  ?suffix:string ->
+  ?cone:(G.V.t -> bool) ->
+  ?separator:(G.V.t -> bool) ->
+  ?refinement:(G.V.t * int * G.V.t -> bool) ->
+  ?depth:int ->
+  t ->
   G.t ->
   unit

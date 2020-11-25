@@ -2,6 +2,9 @@
 
 open Ast
 open Search_state
+open Params
+
+open Cone.Make (Search_state.G)
 
 module Seq = struct
   include Sequence
@@ -14,7 +17,8 @@ module Program = struct
     type t = [ `Apply of Op.t * t list ] [@@deriving compare, hash, sexp]
   end
 
-  let rec ceval (`Apply (op, args)) = Conc.eval op (List.map args ~f:ceval)
+  let rec ceval params (`Apply (op, args)) =
+    Conc.eval params op (List.map args ~f:(ceval params))
 
   let rec size (`Apply (_, args)) = 1 + List.sum (module Int) args ~f:size
 
@@ -35,17 +39,19 @@ let until_done f =
   in
   until_done false
 
-let iter_arg graph cost type_ ~f =
-  states_of_cost graph cost
-  |> List.iter ~f:(fun s ->
-         if [%compare.equal: Type.t] (State.type_ s) type_ then f s)
+let iter_arg ss cost type_ ~f =
+  states_of_cost ss cost
+  |> List.iter ~f:(fun v ->
+         if [%compare.equal: Type.t] (State.type_ ss v) type_ then f v)
 
-let create_hyper_edge graph cost op args =
-  let arg_states = List.map args ~f:State.state in
-  let out_state = Abs.eval op arg_states in
+let create_hyper_edge ss cost op args =
+  let arg_states = List.map args ~f:(State.state ss) in
+  let out_state = Abs.eval (params ss) op arg_states in
   let out_type = Op.ret_type op in
-  let state_v_out = State.create out_state cost out_type |> Is_fresh.unwrap in
-  insert_hyper_edge_if_not_exists graph args op state_v_out
+  let state_v_out =
+    State.create ss out_state cost out_type |> Is_fresh.unwrap
+  in
+  insert_hyper_edge_if_not_exists ss args op state_v_out
 
 let fold_range ~init ~f lo hi =
   let rec fold_range acc i =
@@ -56,8 +62,8 @@ let fold_range ~init ~f lo hi =
   in
   fold_range init lo
 
-let fill_cost (graph : Search_state.t) ops cost =
-  let size = nb_vertex graph in
+let fill_cost ss ops cost =
+  let size = nb_vertex ss in
   ( if cost > 1 then
     let arg_cost = cost - 1 in
 
@@ -70,40 +76,29 @@ let fill_cost (graph : Search_state.t) ops cost =
           |> Comp.iter ~f:(fun arg_costs ->
                  let add_hyper_edges =
                    fold_range
-                     ~init:(fun args -> create_hyper_edge graph cost op args)
+                     ~init:(fun args -> create_hyper_edge ss cost op args)
                      ~f:(fun f i args ->
                        let type_ = arg_types.(i) in
                        let states =
-                         states_of_cost graph
-                           (Combinat.Int_array.get arg_costs i)
+                         states_of_cost ss (Combinat.Int_array.get arg_costs i)
                        in
-                       (* print_s
-                        *   [%message
-                        *     "fill"
-                        *       (op : Op.t)
-                        *       (arity : int)
-                        *       (cost : int)
-                        *       (i : int)
-                        *       (type_ : Type.t)
-                        *       (states : State.t list)]; *)
-                       List.iter states ~f:(fun s ->
-                           if [%compare.equal: Type.t] (State.type_ s) type_
-                           then f (s :: args)))
+                       List.iter states ~f:(fun v ->
+                           if [%compare.equal: Type.t] (State.type_ ss v) type_
+                           then f (v :: args)))
                      0 arity
                  in
                  add_hyper_edges [])) );
 
-  let size' = nb_vertex graph in
-  dump_detailed ~suffix:(sprintf "after-fill-%d" cost) graph;
+  let size' = nb_vertex ss in
 
   Fmt.epr "Pruning: size before=%d, after=%d, removed %f%%\n" size size'
     Float.(100.0 - (of_int size' / of_int size * 100.0))
 
-let fill_up_to_cost (graph : Search_state.t) ops cost =
+let fill_up_to_cost ss ops cost =
   let rec fill c =
     if c > cost then false
     else
-      let changed, () = did_change @@ fun () -> fill_cost graph ops c in
+      let changed, () = did_change @@ fun () -> fill_cost ss ops c in
       changed || fill (c + 1)
   in
   fill 1
@@ -123,12 +118,12 @@ end
 
 exception Done of [ `Sat | `Unsat ]
 
-let refine_level n graph =
-  G.Fold.V.fold graph ~init:(0, 0) ~f:(fun ((num, dem) as acc) ->
+let refine_level n ss =
+  G.Fold.V.fold (graph ss) ~init:(0, 0) ~f:(fun ((num, dem) as acc) ->
       Node.match_
         ~args:(fun _ -> acc)
         ~state:(fun v ->
-          let state = State.state v in
+          let state = State.state ss v in
           match state with
           | Bool_vector v -> (num + Abs.Bool_vector.width v, dem + n)
           | _ -> acc))
@@ -141,31 +136,46 @@ let with_size graph f =
     Float.(100.0 - (of_int size' / of_int size * 100.0));
   ret
 
-let refine graph refinement =
-  List.iter refinement ~f:(fun (r : Refine.Refinement.t) ->
-      let cost, type_ =
-        let old_state =
-          G.pred graph @@ Node.of_args r.old |> List.hd_exn |> Node.to_state_exn
+let refine ss refinement =
+  let new_states =
+    List.concat_map refinement ~f:(fun (r : Refine.Refinement.t) ->
+        let cost, type_ =
+          let old_state =
+            G.pred (graph ss) @@ Node.of_args r.old
+            |> List.hd_exn |> Node.to_state_exn
+          in
+          (State.cost ss old_state, State.type_ ss old_state)
         in
-        (State.cost old_state, State.type_ old_state)
-      in
 
-      (* Remove edges to old states *)
-      G.pred_e graph @@ Node.of_args r.old
-      |> List.iter ~f:(G.remove_edge_e graph);
+        (* Remove edges to old states *)
+        G.pred_e (graph ss) @@ Node.of_args r.old
+        |> List.iter ~f:(G.remove_edge_e @@ graph ss);
 
-      (* Insert new states and add edges to args nodes. *)
-      Set.iter r.new_ ~f:(fun state ->
-          let (Fresh v' | Stale v') = State.create state cost type_ in
-          G.add_edge_e graph (Node.of_state v', -1, Node.of_args r.old)));
+        (* Insert new states and add edges to args nodes. *)
+        let new_states =
+          Set.to_list r.new_
+          |> List.map ~f:(fun state ->
+                 let (Fresh v' | Stale v') = State.create ss state cost type_ in
+                 G.add_edge_e (graph ss)
+                   (Node.of_state v', -1, Node.of_args r.old);
+                 v')
+        in
 
-  fix_up graph
+        new_states)
+  in
+
+  fix_up ss;
+
+  let refined_graph = cone (graph ss) @@ List.map ~f:Node.of_state new_states in
+  dump_detailed_graph ~suffix:"refined-graph"
+    (* ~separator:(List.mem separator ~equal:[%equal: Node.t]) *)
+    ss refined_graph
 
 let refine graph refinement = with_size graph @@ fun g -> refine g refinement
 
-let rec extract_program graph selected_edges target =
+let rec extract_program ss selected_edges target =
   let args =
-    G.succ_e graph target
+    G.succ_e (graph ss) target
     |> List.filter ~f:(Set.mem selected_edges)
     |> List.map ~f:(fun (_, _, v) -> v)
     |> List.map ~f:Node.to_args_exn
@@ -173,26 +183,25 @@ let rec extract_program graph selected_edges target =
   match args with
   | [ a ] ->
       `Apply
-        ( Args.op a,
-          G.succ graph (Node.of_args a)
-          |> List.map ~f:(extract_program graph selected_edges) )
+        ( Args.op ss a,
+          G.succ (graph ss) (Node.of_args a)
+          |> List.map ~f:(extract_program ss selected_edges) )
   | args -> raise_s [%message "expected one argument" (args : Args.t list)]
 
-let refute search_state output =
-  let graph = search_state in
+let refute ss output =
   match
-    G.Fold.V.find_map graph ~f:(fun v ->
+    G.Fold.V.find_map (graph ss) ~f:(fun v ->
         match Node.to_state v with
-        | Some v when Abs.contains (State.state v) output -> Some v
+        | Some v when Abs.contains (State.state ss v) output -> Some v
         | _ -> None)
   with
   | Some target ->
-      ( match Refine.get_refinement search_state target with
-      | First r -> refine search_state r
+      ( match Refine.get_refinement ss target with
+      | First r -> refine ss r
       | Second selected_edges ->
           Fmt.epr "Could not refute: %a" Sexp.pp_hum
             ( [%sexp_of: Program.t]
-            @@ extract_program graph selected_edges (Node.of_state target) );
+            @@ extract_program ss selected_edges (Node.of_state target) );
           raise (Done `Sat) );
       true
   | None -> false
@@ -216,29 +225,25 @@ let count_compressible graph =
   Fmt.epr "Compressed args: reduces %d to %d\n" (List.length args)
     (Set.length set_args)
 
-let synth () =
-  let bench = Set_once.get_exn Global.bench [%here] in
-  let search_state = create () in
-  let graph = search_state in
+let synth params =
+  let ss = Search_state.create params in
 
   (* Add inputs to the state space graph. *)
-  List.iter bench.ops ~f:(fun op ->
+  List.iter params.bench.ops ~f:(fun op ->
       match Op.type_ op with
       | [], ret_t ->
           let state = Abs.top ret_t in
-          let state_v_out = State.create state 1 ret_t |> Is_fresh.unwrap in
-          insert_hyper_edge_if_not_exists graph [] op state_v_out
+          let state_v_out = State.create ss state 1 ret_t |> Is_fresh.unwrap in
+          insert_hyper_edge_if_not_exists ss [] op state_v_out
       | _ -> ());
 
+  let output = Conc.bool_vector params.bench.output in
   let status =
     try
-      for cost = 1 to !Global.max_cost do
+      for cost = 1 to params.max_cost do
         ( until_done @@ fun () ->
-          let changed =
-            until_done @@ fun () ->
-            refute search_state @@ Conc.bool_vector bench.output
-          in
-          let changed' = fill_up_to_cost search_state bench.ops cost in
+          let changed = until_done @@ fun () -> refute ss output in
+          let changed' = fill_up_to_cost ss params.bench.ops cost in
           Fmt.epr "Changed: %b Cost: %d\n%!" (changed || changed') cost;
           changed || changed' )
         |> ignore
@@ -250,8 +255,9 @@ let synth () =
   let stats =
     Stats.
       {
-        n_state_nodes = G.Fold.V.filter graph ~f:Node.is_state |> List.length;
-        n_arg_nodes = G.Fold.V.filter graph ~f:Node.is_args |> List.length;
+        n_state_nodes =
+          G.Fold.V.filter (graph ss) ~f:Node.is_state |> List.length;
+        n_arg_nodes = G.Fold.V.filter (graph ss) ~f:Node.is_args |> List.length;
         n_covered = -1;
         n_refuted = -1;
         min_width = -1;
@@ -260,4 +266,4 @@ let synth () =
         sat = (match status with `Sat -> true | `Unsat -> false);
       }
   in
-  (search_state, stats)
+  (ss, stats)

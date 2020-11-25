@@ -1,4 +1,5 @@
 open Ast
+open Params
 
 module Bool_vector = struct
   module T = struct
@@ -16,8 +17,8 @@ module Bool_vector = struct
     @@ Fmt.list ~sep:(Fmt.any " ")
     @@ Fmt.pair ~sep:Fmt.nop Fmt.int (Fmt.fmt "_%d")
 
-  let graphviz_pp fmt m =
-    if not !Global.hide_values then
+  let graphviz_pp params fmt m =
+    if not params.hide_values then
       let pp =
         Fmt.using (fun m ->
             Map.to_alist m |> List.map ~f:(fun (k, v) -> (Bool.to_int v, k)))
@@ -87,7 +88,7 @@ module Offset = struct
 
   let contains a c = Float.(a.lo <= c && c < a.hi)
 
-  let graphviz_pp fmt x = Fmt.pf fmt "[%f, %f]" x.lo x.hi
+  let graphviz_pp fmt x = Fmt.pf fmt "[%f, %f)" x.lo x.hi
 
   let top = { lo = Float.min_value; hi = Float.max_value }
 
@@ -114,9 +115,9 @@ let top = function
   | Type.Vector -> bool_vector @@ Bool_vector.top
   | Offset _ -> offset Offset.top
 
-let graphviz_pp fmt =
+let graphviz_pp params fmt =
   map
-    ~bool_vector:(Bool_vector.graphviz_pp fmt)
+    ~bool_vector:(Bool_vector.graphviz_pp params fmt)
     ~offset:(Offset.graphviz_pp fmt)
 
 let to_bool_vector_exn = function
@@ -148,10 +149,10 @@ let lift = function
   | Conc.Bool_vector x -> bool_vector @@ Bool_vector.lift x
   | Offset x -> offset @@ Offset.lift x
 
-let cylinder (c : Op.cylinder) l h =
+let cylinder params (c : Op.cylinder) l h =
   let l = to_offset_exn l and h = to_offset_exn h in
   let open Sequence in
-  (Set_once.get_exn Global.bench [%here]).input |> Array.to_sequence
+  params.bench.input |> Array.to_sequence
   |> filter_mapi ~f:(fun i v ->
          let open Vector3 in
          let rot = inverse_rotate v ~theta:c.theta in
@@ -170,7 +171,7 @@ let cylinder (c : Op.cylinder) l h =
   |> Map.of_sequence_exn (module Int)
   |> bool_vector
 
-let cuboid (c : Op.cuboid) lx hx ly hy lz hz =
+let cuboid params (c : Op.cuboid) lx hx ly hy lz hz =
   let lx = to_offset_exn lx
   and hx = to_offset_exn hx
   and ly = to_offset_exn ly
@@ -178,7 +179,7 @@ let cuboid (c : Op.cuboid) lx hx ly hy lz hz =
   and lz = to_offset_exn lz
   and hz = to_offset_exn hz in
   let open Sequence in
-  (Set_once.get_exn Global.bench [%here]).input |> Array.to_sequence
+  params.bench.input |> Array.to_sequence
   |> filter_mapi ~f:(fun i v ->
          let open Vector3 in
          let rot = inverse_rotate v ~theta:c.theta in
@@ -207,13 +208,13 @@ let cuboid (c : Op.cuboid) lx hx ly hy lz hz =
   |> Map.of_sequence_exn (module Int)
   |> bool_vector
 
-let eval op args =
+let eval params op args =
   let open Util in
   match op with
   | Op.Union -> apply2 union args
   | Inter -> apply2 inter args
   | Sub -> apply2 sub args
-  | Cylinder c -> apply2 (cylinder c) args
-  | Cuboid c -> apply6 (cuboid c) args
+  | Cylinder c -> apply2 (cylinder params c) args
+  | Cuboid c -> apply6 (cuboid params c) args
   | Sphere _ | Offset _ ->
       raise_s [%message "leaf node" (op : Op.t) (args : t list)]

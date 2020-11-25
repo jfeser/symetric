@@ -1,5 +1,19 @@
 open Ast
 
+module Edge = struct
+  type t = int [@@deriving compare, hash, sexp]
+
+  let default = -1
+end
+
+module G = struct
+  module G0 = Graph_ext.Make (Int) (Edge)
+  include G0
+  module Fold = Graph_ext.Folds (G0)
+
+  include Graph_ext.Changed (G0) ()
+end
+
 module Is_fresh = struct
   type 'a t = Fresh of 'a | Stale of 'a
 
@@ -10,131 +24,144 @@ end
 
 open Is_fresh
 
-module State = struct
-  module State_and_type = struct
-    module T = struct
-      type t = Abs.t * Type.t [@@deriving compare, hash, sexp]
-    end
-
-    include T
-    include Comparator.Make (T)
-  end
-
-  let costs = Option_vector.create 128
-
-  let states = Option_vector.create 128
-
-  let types = Option_vector.create 128
-
-  let state_cost_idx =
-    lazy
-      (Array.init !Global.max_cost ~f:(fun _ ->
-           Hashtbl.create (module State_and_type)))
-
-  let id_ctr = ref 1
-
-  let state id = Option_vector.get_some_exn states (id / 2)
-
-  let cost id = Option_vector.get_some_exn costs (id / 2)
-
-  let type_ id = Option_vector.get_some_exn types (id / 2)
-
+module State_and_type = struct
   module T = struct
-    type t = int [@@deriving compare, equal, hash]
-
-    let sexp_of_t id = [%sexp_of: int * Abs.t * int] (id, state id, cost id)
+    type t = Abs.t * Type.t [@@deriving compare, hash, sexp]
   end
 
   include T
   include Comparator.Make (T)
+end
 
-  let get s c t =
+module State0 = struct
+  type t = int [@@deriving compare, hash, sexp_of]
+end
+
+module Args0 = struct
+  type t = int [@@deriving compare, hash, sexp_of]
+end
+
+module Hyper_edge0 = struct
+  type t = State0.t list * Op.t * State0.t [@@deriving compare, hash, sexp_of]
+end
+
+type t = {
+  params : Params.t;
+  graph : G.t;
+  (* State data *)
+  costs : int Option_vector.t;
+  states : Abs.t Option_vector.t;
+  types : Type.t Option_vector.t;
+  state_idx : State0.t Hashtbl.M(State_and_type).t array;
+  mutable state_id : int;
+  (* Hyper_edge data *)
+  hyper_edge_idx : Hyper_edge0.t Hash_set.t;
+  (* Args data *)
+  ops : Op.t Option_vector.t;
+  hyper_edges : Hyper_edge0.t Option_vector.t;
+  mutable args_id : int;
+}
+
+let create params =
+  {
+    params;
+    graph = G.create ();
+    costs = Option_vector.create 128;
+    states = Option_vector.create 128;
+    types = Option_vector.create 128;
+    state_idx =
+      Array.init params.max_cost ~f:(fun _ ->
+          Hashtbl.create (module State_and_type));
+    state_id = 1;
+    hyper_edge_idx = Hash_set.create (module Hyper_edge0);
+    ops = Option_vector.create 128;
+    hyper_edges = Option_vector.create 128;
+    args_id = 0;
+  }
+
+let params ctx = ctx.params
+
+let graph ctx = ctx.graph
+
+module State = struct
+  include State0
+  include Comparator.Make (State0)
+
+  let state ctx id = Option_vector.get_some_exn ctx.states (id / 2)
+
+  let cost ctx id = Option_vector.get_some_exn ctx.costs (id / 2)
+
+  let type_ ctx id = Option_vector.get_some_exn ctx.types (id / 2)
+
+  let get ctx s c t =
     let idx = c - 1 in
     [%test_pred: int] ~message:"index out of bounds"
-      (fun idx -> idx >= 0 && idx < Array.length (Lazy.force state_cost_idx))
+      (fun idx -> idx >= 0 && idx < Array.length ctx.state_idx)
       idx;
-    let state_idx = (Lazy.force state_cost_idx).(c - 1) in
-    Hashtbl.find state_idx (s, t)
+    Hashtbl.find ctx.state_idx.(c - 1) (s, t)
 
-  let set s c t id =
-    Hashtbl.set ~key:(s, t) ~data:id (Lazy.force state_cost_idx).(c - 1)
+  let set ctx s c t id = Hashtbl.set ~key:(s, t) ~data:id ctx.state_idx.(c - 1)
 
-  let of_cost c = Hashtbl.data (Lazy.force state_cost_idx).(c - 1)
+  let of_cost ctx c = Hashtbl.data ctx.state_idx.(c - 1)
 
-  let create s c t =
-    match get s c t with
+  let create ctx s c t =
+    match get ctx s c t with
     | Some id -> Stale id
     | None ->
-        let id = !id_ctr in
-        id_ctr := !id_ctr + 2;
+        let id = ctx.state_id in
+        ctx.state_id <- ctx.state_id + 2;
         let idx = id / 2 in
-        Option_vector.reserve states idx;
-        Option_vector.reserve costs idx;
-        Option_vector.reserve types idx;
-        Option_vector.set_some states idx s;
-        Option_vector.set_some costs idx c;
-        Option_vector.set_some types idx t;
-        set s c t id;
+        Option_vector.reserve ctx.states idx;
+        Option_vector.reserve ctx.costs idx;
+        Option_vector.reserve ctx.types idx;
+        Option_vector.set_some ctx.states idx s;
+        Option_vector.set_some ctx.costs idx c;
+        Option_vector.set_some ctx.types idx t;
+        set ctx s c t id;
         Fresh id
 
   let id = ident
 
-  let graphviz_pp fmt id =
-    Fmt.pf fmt "%a<br/>id=%d cost=%d" Abs.graphviz_pp (state id) id (cost id)
+  let graphviz_pp ctx fmt id =
+    Fmt.pf fmt "%a<br/>id=%d cost=%d"
+      (Abs.graphviz_pp ctx.params)
+      (state ctx id) id (cost ctx id)
 end
 
 module Hyper_edge = struct
-  module T = struct
-    type t = State.t list * Op.t * State.t [@@deriving compare, hash, sexp_of]
-  end
+  include Hyper_edge0
 
-  include T
+  let mem ctx = Hash_set.mem ctx.hyper_edge_idx
 
-  let hyper_edges = Hash_set.create (module T)
+  let add ctx = Hash_set.add ctx.hyper_edge_idx
 
-  let mem = Hash_set.mem hyper_edges
-
-  let add = Hash_set.add hyper_edges
-
-  let remove = Hash_set.remove hyper_edges
+  let remove ctx = Hash_set.remove ctx.hyper_edge_idx
 end
 
 module Args = struct
-  let ops = Option_vector.create 128
-
-  let hyper_edges = Option_vector.create 128
-
-  let id_ctr = ref 0
+  include Args0
+  include Comparator.Make (Args0)
 
   let id = ident
 
-  let op id = Option_vector.get_some_exn ops (id / 2)
+  let op ctx id = Option_vector.get_some_exn ctx.ops (id / 2)
 
-  let hyper_edge id = Option_vector.get hyper_edges (id / 2)
+  let hyper_edge ctx id = Option_vector.get ctx.hyper_edges (id / 2)
 
-  let set_hyper_edge id = Option_vector.set_some hyper_edges (id / 2)
+  let set_hyper_edge ctx id = Option_vector.set_some ctx.hyper_edges (id / 2)
 
-  module T = struct
-    type t = int [@@deriving compare, equal, hash]
+  let graphviz_pp ctx fmt x = Fmt.pf fmt "%a<br/>id=%d" Op.pp (op ctx x) (id x)
 
-    let sexp_of_t id = [%sexp_of: int * Op.t] (id, op id)
-  end
-
-  include T
-  include Comparator.Make (T)
-
-  let graphviz_pp fmt x = Fmt.pf fmt "%a<br/>id=%d" Op.pp (op x) (id x)
-
-  let create op =
-    let id = !id_ctr in
-    id_ctr := !id_ctr + 2;
+  let create ctx op =
+    let id = ctx.args_id in
+    ctx.args_id <- ctx.args_id + 2;
     let idx = id / 2 in
-    Option_vector.reserve ops idx;
-    Option_vector.set_some ops idx op;
-    Option_vector.reserve hyper_edges idx;
+    Option_vector.reserve ctx.ops idx;
+    Option_vector.set_some ctx.ops idx op;
+    Option_vector.reserve ctx.hyper_edges idx;
     id
 
-  let output_type id = op id |> Op.ret_type
+  let output_type ctx id = op ctx id |> Op.ret_type
 end
 
 module Node = struct
@@ -176,68 +203,43 @@ module Node = struct
         Error.create "Expected state" x [%sexp_of: Args.t] |> Error.raise)
       ~state:ident v
 
-  let type_ =
-    match_ ~args:(fun arg_v -> Args.op arg_v |> Op.ret_type) ~state:State.type_
+  let type_ ctx = match_ ~args:(Args.output_type ctx) ~state:(State.type_ ctx)
 end
 
-module Edge = struct
-  type t = int [@@deriving compare, hash, sexp]
+let filter ctx ~f =
+  G.Fold.V.filter ctx.graph ~f:(Fun.negate f)
+  |> List.iter ~f:(fun v ->
+         if G.mem_vertex ctx.graph v then G.remove_vertex ctx.graph v)
 
-  let default = -1
-end
+let nb_vertex ctx = G.nb_vertex ctx.graph
 
-module G = struct
-  module G0 = Graph_ext.Make (Node) (Edge)
-  include G0
-  module Fold = Graph_ext.Folds (G0)
+let states_of_cost ctx cost =
+  State.of_cost ctx cost |> List.filter ~f:(G.mem_vertex ctx.graph)
 
-  include Graph_ext.Changed (G0) ()
-
-  let iter_succ_e f g v =
-    try iter_succ_e f g v
-    with Invalid_argument msg ->
-      raise_s [%message "iter_succ_e failed" (msg : string) (v : Node.t)]
-end
-
-type t = G.t
-
-let create () = G.create ()
-
-let filter g ~f =
-  G.Fold.V.filter g ~f:(Fun.negate f)
-  |> List.iter ~f:(fun v -> if G.mem_vertex g v then G.remove_vertex g v)
-
-let nb_vertex = G.nb_vertex
-
-let states_of_cost g cost =
-  State.of_cost cost |> List.filter ~f:(G.mem_vertex g)
-
-let inputs g arg_v =
-  G.succ_e g (Node.of_args arg_v)
+let inputs ctx arg_v =
+  G.succ_e ctx.graph (Node.of_args arg_v)
   |> List.map ~f:(fun (_, n, v) -> (Node.to_state_exn v, n))
   |> List.sort ~compare:(fun (_, n) (_, n') -> [%compare: int] n n')
   |> List.map ~f:(fun (v, _) -> v)
 
-let remove_args g v =
-  Option.iter (Args.hyper_edge v) ~f:Hyper_edge.remove;
-  G.remove_vertex g (Node.of_args v)
+let remove_args ctx v =
+  Option.iter (Args.hyper_edge ctx v) ~f:(Hyper_edge.remove ctx);
+  G.remove_vertex ctx.graph (Node.of_args v)
 
-let fix_up_args work add_work state args_v =
-  let v = Node.of_args args_v in
-  if G.out_degree state v <> Op.arity (Args.op args_v) then (
-    let work' = G.fold_pred (fun v' w -> add_work w v') state v work in
-    remove_args state args_v;
+let fix_up_args ctx work add_work v =
+  if G.out_degree ctx.graph v <> Op.arity (Args.op ctx v) then (
+    let work' = G.fold_pred (fun v' w -> add_work w v') ctx.graph v work in
+    remove_args ctx v;
     work' )
-  else if G.in_degree state v = 0 then (
-    remove_args state args_v;
+  else if G.in_degree ctx.graph v = 0 then (
+    remove_args ctx v;
     work )
   else work
 
-let fix_up_states work add_work state state_v =
-  let v = Node.of_state state_v in
-  if G.out_degree state v = 0 then (
-    let work' = G.fold_pred (fun v' w -> add_work w v') state v work in
-    G.remove_vertex state v;
+let fix_up_states ctx work add_work v =
+  if G.out_degree ctx.graph v = 0 then (
+    let work' = G.fold_pred (fun v' w -> add_work w v') ctx.graph v work in
+    G.remove_vertex ctx.graph v;
     work' )
   else work
 
@@ -253,14 +255,14 @@ module Unique_queue = struct
   let dequeue_back = Hash_queue.dequeue_back
 end
 
-let fix_up state =
+let fix_up ctx =
   let worklist = Unique_queue.create (module Node) in
   let add_work () v = Unique_queue.enqueue worklist v in
-  G.Fold.V.iter state ~f:(add_work ());
+  G.Fold.V.iter ctx.graph ~f:(add_work ());
   let fix_node v =
     Node.match_
-      ~args:(fix_up_args () add_work state)
-      ~state:(fix_up_states () add_work state)
+      ~args:(fix_up_args ctx () add_work)
+      ~state:(fix_up_states ctx () add_work)
       v
   in
   let rec loop () =
@@ -272,23 +274,22 @@ let fix_up state =
   in
   loop ()
 
-let insert_hyper_edge graph state_v_ins op state_v_out =
-  let args_v = Args.create op |> Node.of_args in
+let insert_hyper_edge ctx state_v_ins op state_v_out =
+  let args_v = Args.create ctx op in
   let hyper_edge = (state_v_ins, op, state_v_out) in
-  Args.set_hyper_edge args_v hyper_edge;
-  Hyper_edge.add hyper_edge;
-  List.iteri state_v_ins ~f:(fun i v ->
-      G.add_edge_e graph (args_v, i, Node.of_state v));
-  G.add_edge_e graph (Node.of_state state_v_out, -1, args_v)
+  Args.set_hyper_edge ctx args_v hyper_edge;
+  Hyper_edge.add ctx hyper_edge;
+  List.iteri state_v_ins ~f:(fun i v -> G.add_edge_e ctx.graph (args_v, i, v));
+  G.add_edge_e ctx.graph (state_v_out, -1, args_v)
 
-let insert_hyper_edge_if_not_exists graph state_v_ins op state_v_out =
+let insert_hyper_edge_if_not_exists ctx state_v_ins op state_v_out =
   let hyper_edge = (state_v_ins, op, state_v_out) in
-  if not (Hyper_edge.mem hyper_edge) then
-    insert_hyper_edge graph state_v_ins op state_v_out
+  if not (Hyper_edge.mem ctx hyper_edge) then
+    insert_hyper_edge ctx state_v_ins op state_v_out
 
 let roots g = G.Fold.V.filter g ~f:(fun v -> G.in_degree g v = 0)
 
-let pp fmt g =
+let pp fmt ctx =
   let pp_state fmt v = Fmt.pf fmt "x%d" (State.id v) in
   let pp_args =
     Fmt.list ~sep:(Fmt.any " | ") @@ fun fmt (op, args) ->
@@ -296,42 +297,57 @@ let pp fmt g =
   in
 
   let work = Unique_queue.create (module State) in
-  roots g
+  roots ctx.graph
   |> List.map ~f:Node.to_state_exn
   |> List.iter ~f:(Unique_queue.enqueue work);
 
   let rec loop () =
     Unique_queue.dequeue work
     |> Option.iter ~f:(fun v ->
-           let args_vs = G.succ g (Node.of_state v) in
+           let args_vs = G.succ ctx.graph (Node.of_state v) in
            let args =
              List.map args_vs ~f:(fun v ->
                  let args_v = Node.to_args_exn v in
-                 (Args.op args_v, inputs g args_v))
+                 (Args.op ctx args_v, inputs ctx args_v))
            in
            Fmt.pf fmt "%a = %a\n" pp_state v pp_args args;
            List.iter args_vs ~f:(fun v ->
-               Unique_queue.enqueue_all work @@ G.succ g v);
+               Unique_queue.enqueue_all work @@ G.succ ctx.graph v);
            loop ())
   in
   loop ()
 
-module Attr = struct
-  let vertex_name n = Fmt.str "%d" @@ Node.id n
+module type ATTR = sig
+  val vertex_name : G.V.t -> string
 
-  let vertex_attributes n =
-    Node.match_ n
-      ~args:(fun n ->
-        [ `HtmlLabel (Fmt.str "%a" Args.graphviz_pp n); `Shape `Box ])
-      ~state:(fun n ->
-        [ `HtmlLabel (Fmt.str "%a" State.graphviz_pp n) ]
-        @
-        if
-          Abs.contains (State.state n)
-          @@ Conc.bool_vector
-          @@ (Set_once.get_exn Global.bench [%here]).Bench.output
-        then [ `Style `Bold ]
-        else [])
+  val vertex_attributes : G.V.t -> Graph.Graphviz.DotAttributes.vertex list
 end
 
-include Dump.Make (G) (Attr)
+let attr ctx =
+  ( module struct
+    let vertex_name n = Fmt.str "%d" @@ Node.id n
+
+    let vertex_attributes n =
+      Node.match_ n
+        ~args:(fun n ->
+          [ `HtmlLabel (Fmt.str "%a" (Args.graphviz_pp ctx) n); `Shape `Box ])
+        ~state:(fun n ->
+          [ `HtmlLabel (Fmt.str "%a" (State.graphviz_pp ctx) n) ]
+          @
+          if
+            Abs.contains (State.state ctx n)
+            @@ Conc.bool_vector ctx.params.bench.output
+          then [ `Style `Bold ]
+          else [])
+  end : ATTR )
+
+let dump_detailed ?suffix ?cone ?separator ?refinement ?depth ctx =
+  let (module Attr) = attr ctx in
+  let module D = Dump.Make (G) (Attr) in
+  D.dump_detailed ?suffix ?cone ?separator ?refinement ?depth ctx.params
+    ctx.graph
+
+let dump_detailed_graph ?suffix ?cone ?separator ?refinement ?depth ctx graph =
+  let (module Attr) = attr ctx in
+  let module D = Dump.Make (G) (Attr) in
+  D.dump_detailed ?suffix ?cone ?separator ?refinement ?depth ctx.params graph

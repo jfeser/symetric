@@ -1,4 +1,5 @@
 open Ast
+open Params
 
 module Bool_vector = struct
   module T = struct
@@ -49,14 +50,14 @@ let sub x x' =
   @@ Array.map2_exn (to_bool_vector_exn x) (to_bool_vector_exn x')
        ~f:(fun a b -> a && not b)
 
-let sphere (s : Op.sphere) =
-  (Set_once.get_exn Global.bench [%here]).input
+let sphere params (s : Op.sphere) =
+  params.bench.input
   |> Array.map ~f:(fun v -> Float.(Vector3.l2_dist s.center v <= s.radius))
   |> bool_vector
 
-let cylinder (c : Op.cylinder) l h =
+let cylinder params (c : Op.cylinder) l h =
   let l = to_offset_exn l and h = to_offset_exn h in
-  (Set_once.get_exn Global.bench [%here]).input
+  params.bench.input
   |> Array.map ~f:(fun v ->
          let open Vector3 in
          let rot = inverse_rotate v ~theta:c.theta in
@@ -67,14 +68,14 @@ let cylinder (c : Op.cylinder) l h =
          in_radius && above_lo && below_hi)
   |> bool_vector
 
-let cuboid (c : Op.cuboid) lx hx ly hy lz hz =
+let cuboid params (c : Op.cuboid) lx hx ly hy lz hz =
   let lx = to_offset_exn lx
   and hx = to_offset_exn hx
   and ly = to_offset_exn ly
   and hy = to_offset_exn hy
   and lz = to_offset_exn lz
   and hz = to_offset_exn hz in
-  (Set_once.get_exn Global.bench [%here]).input
+  params.bench.input
   |> Array.map ~f:(fun v ->
          let open Vector3 in
          let rot = inverse_rotate v ~theta:c.theta in
@@ -88,13 +89,13 @@ let cuboid (c : Op.cuboid) lx hx ly hy lz hz =
          && below_hiz)
   |> bool_vector
 
-let eval op args =
+let eval params op args =
   let open Util in
   match op with
   | Op.Union -> apply2 union args
   | Inter -> apply2 inter args
   | Sub -> apply2 sub args
-  | Cylinder c -> apply2 (cylinder c) args
-  | Cuboid c -> apply6 (cuboid c) args
-  | Sphere s -> sphere s
+  | Cylinder c -> apply2 (cylinder params c) args
+  | Cuboid c -> apply6 (cuboid params c) args
+  | Sphere s -> sphere params s
   | Offset x -> offset x.offset

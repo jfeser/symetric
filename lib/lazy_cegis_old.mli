@@ -11,4 +11,4 @@ module Stats : sig
   }
 end
 
-val synth : unit -> Search_state.t * Stats.t
+val synth : Params.t -> Search_state.t * Stats.t
