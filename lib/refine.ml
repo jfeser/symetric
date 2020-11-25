@@ -171,13 +171,12 @@ let refinement_of_interpolant ss graph rel separator interpolant vars =
                     Symb.refine (params ss) models old_state var)
            in
 
-           print_s
-             [%message
-               "refining"
-                 (v : G.V.t)
-                 (old_states : Set.M(Abs).t)
-                 (new_state_sets : Set.M(Abs).t list)];
-
+           (* print_s
+            *   [%message
+            *     "refining"
+            *       (v : G.V.t)
+            *       (old_states : Set.M(Abs).t)
+            *       (new_state_sets : Set.M(Abs).t list)]; *)
            if List.exists new_state_sets ~f:Set.is_empty then None
            else
              let new_ = Set.union_list (module Abs) new_state_sets in

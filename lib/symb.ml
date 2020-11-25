@@ -56,13 +56,6 @@ module Bool_vector = struct
     |> and_
 
   let refine models abs symb =
-    print_s
-      [%message
-        "refine"
-          (models : Smt.Model.t Sequence.t)
-          (symb : t)
-          (abs : Abs.Bool_vector.t)
-          [%here]];
     let bit_idx =
       List.filter_mapi symb ~f:(fun i -> function
         | Free b -> Some (b, i) | _ -> None)
@@ -130,7 +123,7 @@ module Offset = struct
 
   let refine_single params (abs : Abs.Offset.t) symb var value =
     split params abs symb var
-    |> Option.map ~f:(fun (f, t) -> if value then t else f)
+    |> Option.map ~f:(fun (t, f) -> if value then t else f)
 
   let refine params models old_abs symb =
     Sequence.map models ~f:(fun model ->
@@ -141,10 +134,31 @@ module Offset = struct
     |> Sequence.map ~f:Abs.offset |> Sequence.to_list
     |> Set.of_list (module Abs)
 
-  (* let%expect_test "" =
-   *   let s = String_id.of_string in
-   *   let models =
-   *     Map.of_alist_exn (module String_id) [s "x0", false] *)
+  let%expect_test "" =
+    let s = String_id.of_string in
+    let models =
+      Sequence.singleton
+      @@ Map.of_alist_exn (module String_id) [ (s "x0", false) ]
+    in
+    let type_ = Type.{ id = 0; kind = Cuboid_x } in
+    let params =
+      Params.create
+      @@ Bench.
+           {
+             ops =
+               [
+                 Offset { offset = 10.0; type_ };
+                 Offset { offset = 20.0; type_ };
+                 Offset { offset = 30.0; type_ };
+               ];
+             input = [||];
+             output = [||];
+           }
+    in
+    refine params models
+      { lo = Float.(-infinity); hi = Float.infinity }
+      { set = [ s "x0"; s "x1"; s "x2" ]; type_ }
+    |> [%sexp_of: Set.M(Abs).t] |> print_s
 end
 
 type t = Bool_vector of Bool_vector.t | Offset of Offset.t [@@deriving sexp]
@@ -295,10 +309,16 @@ let eval params op args =
   | Sphere s -> sphere params s
   | Offset o -> offset params o
 
-let refine params ivars old_state var =
+let refine params models abs symb =
+  print_s
+    [%message
+      "refine"
+        (models : Smt.Model.t Sequence.t)
+        (symb : t)
+        (abs : Abs.t)
+        [%here]];
+
   map
-    ~vector:(fun s ->
-      Bool_vector.refine ivars (Abs.to_bool_vector_exn old_state) s)
-    ~offset:(fun s ->
-      Offset.refine params ivars (Abs.to_offset_exn old_state) s)
-    var
+    ~vector:(fun s -> Bool_vector.refine models (Abs.to_bool_vector_exn abs) s)
+    ~offset:(fun s -> Offset.refine params models (Abs.to_offset_exn abs) s)
+    symb
