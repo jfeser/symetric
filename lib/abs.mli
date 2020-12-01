@@ -13,7 +13,7 @@ module Bool_vector : sig
 
   val meet : t -> t -> t
 
-  val is_subset_a : t -> of_:t -> bool
+  val is_subset : t -> of_:t -> bool
 
   val lift : concrete -> t
 
@@ -97,3 +97,5 @@ val cylinder : Params.t -> Ast.Op.cylinder -> t -> t -> t
 val cuboid : Params.t -> Ast.Op.cuboid -> t -> t -> t -> t -> t -> t -> t
 
 val eval : Params.t -> Offset.concrete Ast.Op.t -> t list -> t
+
+val is_subset : t -> of_:t -> bool

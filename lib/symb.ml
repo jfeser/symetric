@@ -18,9 +18,9 @@ module Bool_vector = struct
 
   let create ?prefix params = create_n ?prefix params.n_bits
 
-  let of_abs ?(prefix = sprintf "b%d") params x =
+  let of_abs ?(prefix = sprintf "b%d") n x =
     Smt.(
-      List.init params ~f:(fun b ->
+      List.init n ~f:(fun b ->
           match Map.find x b with
           | Some v -> return @@ fixed v
           | None -> fresh_decl ~prefix:(prefix b) () >>| free)
@@ -360,6 +360,10 @@ let eval params op args =
   | Sphere s -> sphere params s
   | Offset o -> offset params o
 
+let assert_refines =
+  [%test_pred: Abs.t * Set.M(Abs).t] (fun (old_abs, new_abs) ->
+      Set.for_all new_abs ~f:(fun a -> Abs.is_subset a ~of_:old_abs))
+
 let refine params models abs symb =
   let refined =
     map
@@ -368,6 +372,7 @@ let refine params models abs symb =
       ~offset:(fun s -> Offset.refine params models (Abs.to_offset_exn abs) s)
       symb
   in
+  assert_refines (abs, refined);
   print_s
     [%message
       "refine"

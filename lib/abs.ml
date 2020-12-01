@@ -33,15 +33,15 @@ module Bool_vector = struct
     Map.merge ~f:(fun ~key:_ -> function
       | `Left x | `Right x -> Some x | `Both _ -> None)
 
-  let is_subset_a s ~of_:s' =
-    if Map.length s > Map.length s' then false
+  let is_subset s ~of_:s' =
+    if Map.length s < Map.length s' then false
     else
       Map.fold2 s s' ~init:true ~f:(fun ~key:_ ~data acc ->
           acc
           &&
           match data with
-          | `Left _ -> false
-          | `Right _ -> true
+          | `Left _ -> true
+          | `Right _ -> false
           | `Both (x, x') -> Bool.(x = x'))
 
   let lift s =
@@ -129,6 +129,8 @@ module Offset = struct
 
   let exclude_exn x o =
     split_exn x o |> List.filter ~f:(fun x' -> not (contains x' o))
+
+  let is_subset x ~of_:x' = Float.(x.lo >= x'.lo && x.hi <= x'.hi)
 end
 
 module T = struct
@@ -180,6 +182,11 @@ let contains a c =
   | Bool_vector v, Conc.Bool_vector v' -> Bool_vector.contains v v'
   | Offset v, Conc.Offset v' -> Offset.contains v v'
   | _ -> false
+
+let is_subset a ~of_:a' =
+  map a
+    ~bool_vector:(fun v -> Bool_vector.is_subset v ~of_:(to_bool_vector_exn a'))
+    ~offset:(fun o -> Offset.is_subset o ~of_:(to_offset_exn a'))
 
 let lift = function
   | Conc.Bool_vector x -> bool_vector @@ Bool_vector.lift x
