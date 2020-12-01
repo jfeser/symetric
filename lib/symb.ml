@@ -108,18 +108,17 @@ module Offset = struct
   let refine_with_models params models old_abs symb =
     let should_keep =
       Sequence.fold models
-        ~init:(Map.empty (module Smt.Var))
+        ~init:
+          ( List.filter_map symb.set ~f:(function
+              | Free v -> Some (v, false)
+              | Fixed _ -> None)
+          |> Map.of_alist_exn (module Smt.Var) )
         ~f:(fun vs model ->
           Map.merge model vs ~f:(fun ~key -> function
             | `Both (false, false) -> Some false
             | `Both (false, true) | `Both (true, _) -> Some true
-            | `Left value -> Some value
-            | `Right _ ->
-                raise_s
-                  [%message
-                    "model missing variable"
-                      (key : Smt.Var.t)
-                      (model : Smt.Model.t)]))
+            | `Left _ -> None
+            | `Right x -> Some x))
     in
 
     let offset_of_var =
