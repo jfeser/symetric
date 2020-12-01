@@ -1,40 +1,9 @@
 module Type = struct
-  type offset_kind = Cuboid_x | Cuboid_y | Cuboid_z | Cylinder
-  [@@deriving compare, hash, sexp]
-
-  type offset_type = { id : int; kind : offset_kind }
-  [@@deriving compare, hash, sexp]
-
-  type t = Vector | Offset of offset_type [@@deriving compare, hash, sexp]
+  type t = Vector | Offset of Offset_type.t [@@deriving compare, hash, sexp]
 end
 
 module Op = struct
-  type offset = { offset : float; type_ : Type.offset_type }
-  [@@deriving compare, hash, sexp]
-
-  type cylinder = {
-    id : int;
-    theta : Vector3.t;
-    y : float;
-    z : float;
-    radius : float;
-  }
-  [@@deriving compare, hash, sexp]
-
-  type cuboid = { id : int; theta : Vector3.t } [@@deriving compare, hash, sexp]
-
-  type sphere = { center : Vector3.t; radius : float }
-  [@@deriving compare, hash, sexp]
-
-  type t =
-    | Union
-    | Inter
-    | Sub
-    | Sphere of sphere
-    | Cylinder of cylinder
-    | Cuboid of cuboid
-    | Offset of offset
-  [@@deriving compare, hash, sexp]
+  include Ast0.Op
 
   let pp fmt op =
     let str =
@@ -45,7 +14,7 @@ module Op = struct
       | Sphere _ -> "sphere"
       | Cylinder _ -> "cylinder"
       | Cuboid _ -> "cuboid"
-      | Offset x -> sprintf "offset_%f" x.offset
+      | Offset x -> sprintf "offset_%f" @@ Offset.offset x
     in
     Fmt.pf fmt "%s" str
 
@@ -58,7 +27,7 @@ module Op = struct
     let open Type in
     function
     | Union | Inter | Sub | Sphere _ | Cylinder _ | Cuboid _ -> Vector
-    | Offset x -> Offset x.type_
+    | Offset x -> Offset (Offset.type_ x)
 
   let args_type =
     let open Type in

@@ -2,7 +2,7 @@ open Ast
 open Params
 
 module Bool_vector = struct
-  type elem = Free of Smt.Var.t | Fixed of bool [@@deriving sexp]
+  type elem = Free of Smt.Var.t | Fixed of bool [@@deriving compare, sexp]
 
   type t = elem list [@@deriving sexp]
 
@@ -12,11 +12,11 @@ module Bool_vector = struct
 
   let to_expr = function Free v -> Smt.var v | Fixed x -> Smt.bool x
 
-  let create ?(prefix = sprintf "b%d") params =
+  let create_n ?(prefix = sprintf "b%d") n =
     Smt.(
-      List.init params.n_bits ~f:(fun b ->
-          fresh_decl ~prefix:(prefix b) () >>| free)
-      |> all)
+      List.init n ~f:(fun b -> fresh_decl ~prefix:(prefix b) () >>| free) |> all)
+
+  let create ?prefix params = create_n ?prefix params.n_bits
 
   let of_abs ?(prefix = sprintf "b%d") params x =
     Smt.(
@@ -46,6 +46,8 @@ module Bool_vector = struct
 
   let ( = ) x x' =
     Smt.(List.map2_exn x x' ~f:(fun v v' -> to_expr v = to_expr v') |> and_)
+
+  let get = List.nth_exn
 
   let contained x by =
     let open Smt in
@@ -77,68 +79,115 @@ module Bool_vector = struct
     refined_states
 end
 
-let offsets_of_type params t =
-  params.bench.ops
-  |> List.filter_map ~f:(function
-       | Op.Offset x when [%compare.equal: Type.offset_type] x.Op.type_ t ->
-           Some x.offset
-       | _ -> None)
-
 module Offset = struct
-  type t = { set : Smt.Var.t list; type_ : Type.offset_type } [@@deriving sexp]
+  type t = { set : Bool_vector.t; type_ : Offset_type.t } [@@deriving sexp]
 
   let n_offsets params t = offsets_of_type params t |> List.length
 
   let create ?(prefix = sprintf "o%d") params t =
     let open Smt in
     let open Let_syntax in
-    let%map set =
-      n_offsets params t
-      |> List.init ~f:(fun b -> fresh_decl ~prefix:(prefix b) ())
-      |> all
-    in
+    let%map set = Bool_vector.create_n ~prefix @@ n_offsets params t in
     { set; type_ = t }
 
-  let ( = ) x x' =
-    Smt.(List.map2_exn x.set x'.set ~f:(fun v v' -> var v = var v') |> and_)
+  let ( = ) x x' = Bool_vector.(x.set = x'.set)
 
   let contained params x by =
     List.map2_exn x.set (offsets_of_type params x.type_)
       ~f:(fun in_set offset ->
         let is_in = Abs.Offset.contains by offset in
-        Smt.(var in_set = bool is_in))
+        Smt.(Bool_vector.to_expr in_set = bool is_in))
     |> Smt.and_
 
-  let index_of ~equal l x =
-    List.find_mapi l ~f:(fun i x' -> if equal x x' then Some i else None)
+  let index_of_exn ~equal l x =
+    List.find_mapi_exn l ~f:(fun i x' -> if equal x x' then Some i else None)
 
-  let split params (abs : Abs.Offset.t) symb var =
-    index_of ~equal:[%compare.equal: Smt.Var.t] symb.set var
-    |> Option.map ~f:(fun idx ->
-           let split_offset =
-             List.nth_exn (offsets_of_type params symb.type_) idx
-           in
-           ( { Abs.Offset.lo = abs.lo; hi = split_offset },
-             { Abs.Offset.lo = split_offset; hi = abs.hi } ))
+  let split params symb var (abs : Abs.Offset.t) =
+    let idx =
+      index_of_exn ~equal:[%compare.equal: Bool_vector.elem] symb.set (Free var)
+    in
+    let split_offset = List.nth_exn (offsets_of_type params symb.type_) idx in
+    Option.to_list Abs.Offset.(create ~lo:(lo abs) ~hi:split_offset)
+    @ Option.to_list Abs.Offset.(create ~lo:split_offset ~hi:(hi abs))
 
-  let refine_single params (abs : Abs.Offset.t) symb var value =
-    split params abs symb var
-    |> Option.map ~f:(fun (t, f) -> if value then t else f)
+  let refine_with_models params models old_abs symb =
+    let should_keep =
+      Sequence.fold models
+        ~init:(Map.empty (module Smt.Var))
+        ~f:(fun vs model ->
+          Map.merge model vs ~f:(fun ~key -> function
+            | `Both (false, false) -> Some false
+            | `Both (false, true) | `Both (true, _) -> Some true
+            | `Left value -> Some value
+            | `Right _ ->
+                raise_s
+                  [%message
+                    "model missing variable"
+                      (key : Smt.Var.t)
+                      (model : Smt.Model.t)]))
+    in
 
-  let refine params models old_abs symb =
-    Sequence.map models ~f:(fun model ->
-        Map.fold ~init:old_abs
-          ~f:(fun ~key:var ~data:value abs ->
-            refine_single params abs symb var value |> Option.value ~default:abs)
-          model)
-    |> Sequence.map ~f:Abs.offset |> Sequence.to_list
-    |> Set.of_list (module Abs)
+    print_s [%message (should_keep : bool Map.M(Smt.Var).t)];
 
-  let%expect_test "" =
-    let s = String_id.of_string in
+    let offset_of_var =
+      let offsets = offsets_of_type params symb.type_ in
+      let offset_of_var =
+        List.zip_exn symb.set offsets
+        |> List.filter_map ~f:(fun (var, offset) ->
+               match var with
+               | Bool_vector.Free v -> Some (v, offset)
+               | Fixed _ -> None)
+        |> Map.of_alist_exn (module Smt.Var)
+      in
+      Map.find_exn offset_of_var
+    in
+
+    let refined =
+      Map.to_alist should_keep
+      |> List.fold ~init:[ old_abs ] ~f:(fun refined (var, keep) ->
+             let offset = offset_of_var var in
+             if keep then
+               List.concat_map refined ~f:(fun abs ->
+                   if Abs.Offset.contains abs offset then
+                     Abs.Offset.split_exn params abs offset
+                   else [ abs ])
+             else
+               List.concat_map refined ~f:(fun abs ->
+                   if Abs.Offset.contains abs offset then
+                     Abs.Offset.exclude_exn params abs offset
+                   else [ abs ]))
+    in
+
+    (* [%test_pred: Abs.Offset.t list] ~message:"all models contained" (fun refined ->
+     *     Sequence.for_all models ~f:(fun model ->
+     *         List.exists refined ~f:(fun abs -> Map.for_alli model ~f:(fun ~key ~data -> ))
+     *   )) refined; *)
+    refined |> List.map ~f:Abs.offset |> Set.of_list (module Abs)
+
+  let refine_simple params models old_abs symb =
+    let model = Sequence.hd_exn models in
+    let refined =
+      Map.keys model
+      |> List.fold ~init:[ old_abs ] ~f:(fun refined var ->
+             List.concat_map refined ~f:(split params symb var))
+    in
+
+    (* [%test_pred: Abs.Offset.t list] ~message:"all models contained" (fun refined ->
+     *     Sequence.for_all models ~f:(fun model ->
+     *         List.exists refined ~f:(fun abs -> Map.for_alli model ~f:(fun ~key ~data -> ))
+     *   )) refined; *)
+    refined |> List.map ~f:Abs.offset |> Set.of_list (module Abs)
+
+  let refine = refine_with_models
+
+  let v x = String_id.of_string x
+
+  let f x = Bool_vector.Free (v x)
+
+  let simple_test models =
     let models =
-      Sequence.singleton
-      @@ Map.of_alist_exn (module String_id) [ (s "x0", false) ]
+      Sequence.of_list models
+      |> Sequence.map ~f:(Map.of_alist_exn (module String_id))
     in
     let type_ = Type.{ id = 0; kind = Cuboid_x } in
     let params =
@@ -155,10 +204,18 @@ module Offset = struct
              output = [||];
            }
     in
-    refine params models
-      { lo = Float.(-infinity); hi = Float.infinity }
-      { set = [ s "x0"; s "x1"; s "x2" ]; type_ }
+    refine params models Abs.Offset.top
+      { set = [ f "x0"; f "x1"; f "x2" ]; type_ }
     |> [%sexp_of: Set.M(Abs).t] |> print_s
+
+  let%expect_test "" = simple_test [ [ (v "x0", false) ] ]
+
+  let%expect_test "" =
+    simple_test
+      [
+        [ (v "x0", false); (v "x1", true); (v "x2", true) ];
+        [ (v "x0", false); (v "x1", false); (v "x2", true) ];
+      ]
 end
 
 type t = Bool_vector of Bool_vector.t | Offset of Offset.t [@@deriving sexp]
@@ -180,12 +237,6 @@ let create ?prefix params =
   function
   | Type.Vector -> Bool_vector.create ?prefix params >>| bool_vector
   | Type.Offset t -> Offset.create ?prefix params t >>| offset
-
-(* let of_abs ?prefix x =
- *   let open Smt.Monad_infix in
- *   function
- *   | Type.Vector -> Bool_vector.of_abs ?prefix x >>| bool_vector
- *   | Type.Offset t -> Offset.of_abs ?prefix t x >>| offset *)
 
 let map ~vector ~offset x =
   match x with Bool_vector x -> vector x | Offset x -> offset x
@@ -219,7 +270,7 @@ let sub = bool_vector_3 Bool_vector.sub
 let filter_offsets params (var : Offset.t) pred =
   List.map2_exn (offsets_of_type params var.type_) var.set
     ~f:(fun offset in_set ->
-      if pred offset then Some (Smt.var in_set) else None)
+      if pred offset then Some (Bool_vector.to_expr in_set) else None)
   |> List.filter_map ~f:Fun.id
 
 let cylinder params (c : Op.cylinder) l h =
@@ -293,7 +344,10 @@ let offset params (o : Op.offset) =
   let open Smt.Let_syntax in
   let%map set =
     List.map (offsets_of_type params o.type_) ~f:(fun offset ->
-        Smt.fresh_defn (Smt.bool Float.(o.offset = offset)))
+        if Float.(o.offset = offset) then
+          let%map defn = Smt.fresh_defn (Smt.bool true) in
+          Bool_vector.free defn
+        else return @@ Bool_vector.fixed false)
     |> Smt.all
   in
   Offset.{ type_ = o.type_; set } |> offset

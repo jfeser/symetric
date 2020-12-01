@@ -17,11 +17,11 @@ module Args : sig
 
   type ctx
 
-  val create : ctx -> Op.t -> t
+  val create : ctx -> Offset.t Op.t -> t
 
   val id : t -> int
 
-  val op : ctx -> t -> Op.t
+  val op : ctx -> t -> Offset.t Op.t
 
   val graphviz_pp : ctx -> t Fmt.t
 
@@ -116,7 +116,7 @@ val inputs : t -> Args.t -> State.t list
 val fix_up : t -> unit
 
 val insert_hyper_edge_if_not_exists :
-  t -> State.t list -> Op.t -> State.t -> unit
+  t -> State.t list -> Offset.t Op.t -> State.t -> unit
 
 val pp : t Fmt.t
 

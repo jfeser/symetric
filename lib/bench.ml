@@ -1,15 +1,20 @@
-open Ast
+type offset = { offset : float; type_ : Offset_type.t }
+[@@deriving compare, sexp]
 
 module Serial = struct
   type t = {
-    ops : Op.t list;
+    ops : offset Ast0.Op.t list;
     input : (float * float * float) array;
     output : int array;
   }
   [@@deriving compare, sexp]
 end
 
-type t = { ops : Op.t list; input : Vector3.t array; output : bool array }
+type t = {
+  ops : offset Ast0.Op.t list;
+  input : Vector3.t array;
+  output : bool array;
+}
 [@@deriving compare]
 
 let of_serial (x : Serial.t) =

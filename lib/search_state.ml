@@ -42,7 +42,8 @@ module Args0 = struct
 end
 
 module Hyper_edge0 = struct
-  type t = State0.t list * Op.t * State0.t [@@deriving compare, hash, sexp_of]
+  type t = State0.t list * Offset.t Op.t * State0.t
+  [@@deriving compare, hash, sexp_of]
 end
 
 type t = {
@@ -57,7 +58,7 @@ type t = {
   (* Hyper_edge data *)
   hyper_edge_idx : Hyper_edge0.t Hash_set.t;
   (* Args data *)
-  ops : Op.t Option_vector.t;
+  ops : Offset.t Op.t Option_vector.t;
   hyper_edges : Hyper_edge0.t Option_vector.t;
   mutable args_id : int;
 }

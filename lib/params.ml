@@ -6,6 +6,7 @@ type t = {
   hide_values : bool;
   bench : Bench.t;
   n_bits : int;
+  offsets : Offset.ctx;
 }
 
 let create ?(enable_dump = false) ?(max_cost = 10)
@@ -18,4 +19,5 @@ let create ?(enable_dump = false) ?(max_cost = 10)
     hide_values;
     bench;
     n_bits = Array.length bench.input;
+    offsets = Offset.of_bench bench;
   }

@@ -9,6 +9,8 @@ module Bool_vector = struct
   include T
   include Comparator.Make (T)
 
+  type concrete = bool array
+
   let top = Map.empty (module Int)
 
   let pp : t Fmt.t =
@@ -86,13 +88,34 @@ end
 module Offset = struct
   type t = { lo : float; hi : float } [@@deriving compare, hash, sexp]
 
-  let contains a c = Float.(a.lo <= c && c < a.hi)
+  type concrete = Offset.t
+
+  let contains a c = Float.(a.lo <= Offset.offset c && Offset.offset c < a.hi)
 
   let graphviz_pp fmt x = Fmt.pf fmt "[%f, %f)" x.lo x.hi
 
   let top = { lo = Float.min_value; hi = Float.max_value }
 
   let lift x = { lo = x; hi = x }
+
+  let create ~lo ~hi = if Float.(hi < lo) then None else Some { lo; hi }
+
+  let lo x = x.lo
+
+  let hi x = x.hi
+
+  (** Given a range r and a point p in r, return r1 and r2 such that
+     r1 and r2 are disjoint, r1 + r2 = r, and p is in exactly one of
+     r1, r2. *)
+  let split_exn x o =
+    if not (contains x o) then
+      raise_s [%message "range does not contain point" (x : t) (o : Offset.t)];
+    match Option.first_some (Offset.next o) (Offset.prev o) with
+    | Some o' ->
+        let r1 = { x with hi = Offset.offset o' } in
+        let r2 = { x with lo = Offset.offset o' } in
+        (r1, r2)
+    | None -> raise_s [%message "cannot split" (x : t) (o : Offset.t)]
 end
 
 module T = struct

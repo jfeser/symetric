@@ -20,10 +20,10 @@ module Bool_vector = struct
   let pp = Fmt.(array ~sep:(any " ") bool)
 end
 
-module Offset = Float
+module Offset = Offset
 
 type t = Bool_vector of Bool_vector.t | Offset of Offset.t
-[@@deriving compare, hash, sexp, show]
+[@@deriving compare, hash, sexp]
 
 let bool_vector x = Bool_vector x
 
@@ -64,7 +64,8 @@ let cylinder params (c : Op.cylinder) l h =
          let in_radius =
            Float.(square (rot.y - c.y) + square (rot.z - c.z) < square c.radius)
          in
-         let above_lo = Float.(rot.x >= l) and below_hi = Float.(rot.x <= h) in
+         let above_lo = Float.(rot.x >= Offset.offset l)
+         and below_hi = Float.(rot.x <= Offset.offset h) in
          in_radius && above_lo && below_hi)
   |> bool_vector
 
@@ -79,12 +80,12 @@ let cuboid params (c : Op.cuboid) lx hx ly hy lz hz =
   |> Array.map ~f:(fun v ->
          let open Vector3 in
          let rot = inverse_rotate v ~theta:c.theta in
-         let above_lox = Float.(rot.x >= lx)
-         and below_hix = Float.(rot.x <= hx)
-         and above_loy = Float.(rot.y >= ly)
-         and below_hiy = Float.(rot.y <= hy)
-         and above_loz = Float.(rot.z >= lz)
-         and below_hiz = Float.(rot.z <= hz) in
+         let above_lox = Float.(rot.x >= Offset.offset lx)
+         and below_hix = Float.(rot.x <= Offset.offset hx)
+         and above_loy = Float.(rot.y >= Offset.offset ly)
+         and below_hiy = Float.(rot.y <= Offset.offset hy)
+         and above_loz = Float.(rot.z >= Offset.offset lz)
+         and below_hiz = Float.(rot.z <= Offset.offset hz) in
          above_lox && below_hix && above_loy && below_hiy && above_loz
          && below_hiz)
   |> bool_vector
@@ -98,4 +99,4 @@ let eval params op args =
   | Cylinder c -> apply2 (cylinder params c) args
   | Cuboid c -> apply6 (cuboid params c) args
   | Sphere s -> sphere params s
-  | Offset x -> offset x.offset
+  | Offset x -> offset x
