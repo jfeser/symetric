@@ -1,17 +1,14 @@
-type offset = { offset : float; type_ : Offset_type.t }
-[@@deriving compare, sexp]
-
 module Serial = struct
   type t = {
-    ops : offset Ast0.Op.t list;
+    ops : Bench0.offset Ast0.Op.t list;
     input : (float * float * float) array;
     output : int array;
   }
   [@@deriving compare, sexp]
 end
 
-type t = {
-  ops : offset Ast0.Op.t list;
+type 'o t = {
+  ops : 'o Ast0.Op.t list;
   input : Vector3.t array;
   output : bool array;
 }

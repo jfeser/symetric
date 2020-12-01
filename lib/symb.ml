@@ -79,10 +79,12 @@ module Bool_vector = struct
     refined_states
 end
 
+module Offset' = Offset
+
 module Offset = struct
   type t = { set : Bool_vector.t; type_ : Offset_type.t } [@@deriving sexp]
 
-  let n_offsets params t = offsets_of_type params t |> List.length
+  let n_offsets params = Offset.of_type_count params.offsets
 
   let create ?(prefix = sprintf "o%d") params t =
     let open Smt in
@@ -93,22 +95,15 @@ module Offset = struct
   let ( = ) x x' = Bool_vector.(x.set = x'.set)
 
   let contained params x by =
-    List.map2_exn x.set (offsets_of_type params x.type_)
-      ~f:(fun in_set offset ->
-        let is_in = Abs.Offset.contains by offset in
-        Smt.(Bool_vector.to_expr in_set = bool is_in))
-    |> Smt.and_
+    Sequence.zip (Sequence.of_list x.set)
+      (Offset.of_type params.offsets x.type_)
+    |> Sequence.map ~f:(fun (in_set, offset) ->
+           let is_in = Abs.Offset.contains by offset in
+           Smt.(Bool_vector.to_expr in_set = bool is_in))
+    |> Sequence.to_list |> Smt.and_
 
   let index_of_exn ~equal l x =
     List.find_mapi_exn l ~f:(fun i x' -> if equal x x' then Some i else None)
-
-  let split params symb var (abs : Abs.Offset.t) =
-    let idx =
-      index_of_exn ~equal:[%compare.equal: Bool_vector.elem] symb.set (Free var)
-    in
-    let split_offset = List.nth_exn (offsets_of_type params symb.type_) idx in
-    Option.to_list Abs.Offset.(create ~lo:(lo abs) ~hi:split_offset)
-    @ Option.to_list Abs.Offset.(create ~lo:split_offset ~hi:(hi abs))
 
   let refine_with_models params models old_abs symb =
     let should_keep =
@@ -127,17 +122,15 @@ module Offset = struct
                       (model : Smt.Model.t)]))
     in
 
-    print_s [%message (should_keep : bool Map.M(Smt.Var).t)];
-
     let offset_of_var =
-      let offsets = offsets_of_type params symb.type_ in
+      let offsets = Offset.of_type params.offsets symb.type_ in
       let offset_of_var =
-        List.zip_exn symb.set offsets
-        |> List.filter_map ~f:(fun (var, offset) ->
+        Sequence.zip (Sequence.of_list symb.set) offsets
+        |> Sequence.filter_map ~f:(fun (var, offset) ->
                match var with
                | Bool_vector.Free v -> Some (v, offset)
                | Fixed _ -> None)
-        |> Map.of_alist_exn (module Smt.Var)
+        |> Map.of_sequence_exn (module Smt.Var)
       in
       Map.find_exn offset_of_var
     in
@@ -149,33 +142,15 @@ module Offset = struct
              if keep then
                List.concat_map refined ~f:(fun abs ->
                    if Abs.Offset.contains abs offset then
-                     Abs.Offset.split_exn params abs offset
+                     Abs.Offset.split_exn abs offset
                    else [ abs ])
              else
                List.concat_map refined ~f:(fun abs ->
                    if Abs.Offset.contains abs offset then
-                     Abs.Offset.exclude_exn params abs offset
+                     Abs.Offset.exclude_exn abs offset
                    else [ abs ]))
     in
 
-    (* [%test_pred: Abs.Offset.t list] ~message:"all models contained" (fun refined ->
-     *     Sequence.for_all models ~f:(fun model ->
-     *         List.exists refined ~f:(fun abs -> Map.for_alli model ~f:(fun ~key ~data -> ))
-     *   )) refined; *)
-    refined |> List.map ~f:Abs.offset |> Set.of_list (module Abs)
-
-  let refine_simple params models old_abs symb =
-    let model = Sequence.hd_exn models in
-    let refined =
-      Map.keys model
-      |> List.fold ~init:[ old_abs ] ~f:(fun refined var ->
-             List.concat_map refined ~f:(split params symb var))
-    in
-
-    (* [%test_pred: Abs.Offset.t list] ~message:"all models contained" (fun refined ->
-     *     Sequence.for_all models ~f:(fun model ->
-     *         List.exists refined ~f:(fun abs -> Map.for_alli model ~f:(fun ~key ~data -> ))
-     *   )) refined; *)
     refined |> List.map ~f:Abs.offset |> Set.of_list (module Abs)
 
   let refine = refine_with_models
@@ -189,13 +164,15 @@ module Offset = struct
       Sequence.of_list models
       |> Sequence.map ~f:(Map.of_alist_exn (module String_id))
     in
-    let type_ = Type.{ id = 0; kind = Cuboid_x } in
+    let type_ = Offset_type.{ id = 0; kind = Cuboid_x } in
     let params =
       Params.create
       @@ Bench.
            {
              ops =
                [
+                 Offset { offset = 2.0; type_ };
+                 Offset { offset = 5.0; type_ };
                  Offset { offset = 10.0; type_ };
                  Offset { offset = 20.0; type_ };
                  Offset { offset = 30.0; type_ };
@@ -205,17 +182,23 @@ module Offset = struct
            }
     in
     refine params models Abs.Offset.top
-      { set = [ f "x0"; f "x1"; f "x2" ]; type_ }
+      { set = [ f "y0"; f "y1"; f "x0"; f "x1"; f "x2" ]; type_ }
     |> [%sexp_of: Set.M(Abs).t] |> print_s
 
-  let%expect_test "" = simple_test [ [ (v "x0", false) ] ]
+  let%expect_test "" =
+    simple_test [ [ (v "x0", false) ] ];
+    [%expect {| ((Offset ((lo -INF) (hi 5))) (Offset ((lo 20) (hi INF)))) |}]
 
   let%expect_test "" =
     simple_test
       [
         [ (v "x0", false); (v "x1", true); (v "x2", true) ];
         [ (v "x0", false); (v "x1", false); (v "x2", true) ];
-      ]
+      ];
+    [%expect
+      {|
+      ((Offset ((lo -INF) (hi 5))) (Offset ((lo 20) (hi 20)))
+       (Offset ((lo 30) (hi 30)))) |}]
 end
 
 type t = Bool_vector of Bool_vector.t | Offset of Offset.t [@@deriving sexp]
@@ -268,10 +251,12 @@ let inter = bool_vector_3 Bool_vector.inter
 let sub = bool_vector_3 Bool_vector.sub
 
 let filter_offsets params (var : Offset.t) pred =
-  List.map2_exn (offsets_of_type params var.type_) var.set
-    ~f:(fun offset in_set ->
-      if pred offset then Some (Bool_vector.to_expr in_set) else None)
-  |> List.filter_map ~f:Fun.id
+  Sequence.zip
+    (Offset'.of_type params.offsets var.type_)
+    (Sequence.of_list var.set)
+  |> Sequence.filter_map ~f:(fun (offset, in_set) ->
+         if pred offset then Some (Bool_vector.to_expr in_set) else None)
+  |> Sequence.to_list
 
 let cylinder params (c : Op.cylinder) l h =
   let l = to_offset_exn l and h = to_offset_exn h in
@@ -286,9 +271,13 @@ let cylinder params (c : Op.cylinder) l h =
                square (rot.y - c.y) + square (rot.z - c.z) < square c.radius)
            in
            (* Collect offsets that are above this point. *)
-           let above = filter_offsets params l (fun o -> Float.(rot.x < o)) in
+           let above =
+             filter_offsets params l (fun o -> Float.(rot.x < Offset'.offset o))
+           in
            (* Collect offsets that are below this point. *)
-           let below = filter_offsets params h (fun o -> Float.(rot.x > o)) in
+           let below =
+             filter_offsets params h (fun o -> Float.(rot.x > Offset'.offset o))
+           in
            (* Point is in if it is in the radius, none of the low offsets that are
               above it are selected, and none of the high offsets that are below
               it are selected *)
@@ -310,13 +299,24 @@ let cuboid params (c : Op.cuboid) lx hx ly hy lz hz =
     |> List.map ~f:(fun v ->
            let open Vector3 in
            let rot = inverse_rotate v ~theta:c.theta in
-           let above_x = filter_offsets params lx (fun o -> Float.(o > rot.x))
-           and below_x = filter_offsets params hx (fun o -> Float.(o < rot.x))
-           and above_y = filter_offsets params ly (fun o -> Float.(o > rot.y))
-           and below_y = filter_offsets params hy (fun o -> Float.(o < rot.y))
-           and above_z = filter_offsets params lz (fun o -> Float.(o > rot.z))
+           let above_x =
+             filter_offsets params lx (fun o ->
+                 Float.(Offset'.offset o > rot.x))
+           and below_x =
+             filter_offsets params hx (fun o ->
+                 Float.(Offset'.offset o < rot.x))
+           and above_y =
+             filter_offsets params ly (fun o ->
+                 Float.(Offset'.offset o > rot.y))
+           and below_y =
+             filter_offsets params hy (fun o ->
+                 Float.(Offset'.offset o < rot.y))
+           and above_z =
+             filter_offsets params lz (fun o ->
+                 Float.(Offset'.offset o > rot.z))
            and below_z =
-             filter_offsets params hz (fun o -> Float.(o < rot.z))
+             filter_offsets params hz (fun o ->
+                 Float.(Offset'.offset o < rot.z))
            in
            Smt.(
              fresh_defn
@@ -340,17 +340,18 @@ let sphere params (s : Op.sphere) =
   in
   Smt.(all ret >>| bool_vector)
 
-let offset params (o : Op.offset) =
+let offset params o =
   let open Smt.Let_syntax in
+  let type_ = Offset'.type_ o in
   let%map set =
-    List.map (offsets_of_type params o.type_) ~f:(fun offset ->
-        if Float.(o.offset = offset) then
+    Sequence.map (Offset'.of_type params.offsets type_) ~f:(fun offset ->
+        if [%compare.equal: Offset'.t] o offset then
           let%map defn = Smt.fresh_defn (Smt.bool true) in
           Bool_vector.free defn
         else return @@ Bool_vector.fixed false)
-    |> Smt.all
+    |> Sequence.to_list |> Smt.all
   in
-  Offset.{ type_ = o.type_; set } |> offset
+  Offset.{ type_; set } |> offset
 
 let eval params op args =
   let open Util in

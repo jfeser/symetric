@@ -56,6 +56,10 @@ module Offset : sig
   val lift : concrete -> t
 
   val create : lo:float -> hi:float -> t option
+
+  val split_exn : t -> concrete -> t list
+
+  val exclude_exn : t -> concrete -> t list
 end
 
 type t = Bool_vector of Bool_vector.t | Offset of Offset.t

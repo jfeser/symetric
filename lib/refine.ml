@@ -289,7 +289,7 @@ let assert_args_semantics ss group vars graph rel v =
 
   if Op.arity op <> List.length incoming_states then
     raise_s
-      [%message "unexpected args" (op : Op.t) (incoming_states : Symb.t list)];
+      [%message "unexpected args" (op : _ Op.t) (incoming_states : Symb.t list)];
 
   let%bind eval_result = Symb.eval (params ss) op incoming_states in
   fresh_defn ~prefix:name Symb.(eval_result = out) >>= assert_group_var group

@@ -90,32 +90,45 @@ module Offset = struct
 
   type concrete = Offset.t
 
-  let contains a c = Float.(a.lo <= Offset.offset c && Offset.offset c < a.hi)
+  let contains a c = Float.(a.lo <= Offset.offset c && Offset.offset c <= a.hi)
 
   let graphviz_pp fmt x = Fmt.pf fmt "[%f, %f)" x.lo x.hi
 
   let top = { lo = Float.min_value; hi = Float.max_value }
 
-  let lift x = { lo = x; hi = x }
+  let lift x = { lo = Offset.offset x; hi = Offset.offset x }
 
   let create ~lo ~hi = if Float.(hi < lo) then None else Some { lo; hi }
+
+  let copy ?lo ?hi x =
+    create
+      ~lo:(Option.value lo ~default:x.lo)
+      ~hi:(Option.value hi ~default:x.hi)
 
   let lo x = x.lo
 
   let hi x = x.hi
 
-  (** Given a range r and a point p in r, return r1 and r2 such that
-     r1 and r2 are disjoint, r1 + r2 = r, and p is in exactly one of
-     r1, r2. *)
   let split_exn x o =
     if not (contains x o) then
       raise_s [%message "range does not contain point" (x : t) (o : Offset.t)];
-    match Option.first_some (Offset.next o) (Offset.prev o) with
-    | Some o' ->
-        let r1 = { x with hi = Offset.offset o' } in
-        let r2 = { x with lo = Offset.offset o' } in
-        (r1, r2)
-    | None -> raise_s [%message "cannot split" (x : t) (o : Offset.t)]
+    [
+      Option.bind (Offset.prev o) ~f:(fun o' -> copy x ~hi:(Offset.offset o'));
+      create ~lo:(Offset.offset o) ~hi:(Offset.offset o);
+      Option.bind (Offset.next o) ~f:(fun o' -> copy x ~lo:(Offset.offset o'));
+    ]
+    |> List.filter_map ~f:Fun.id
+
+  let%expect_test "" =
+    let type_ = Offset_type.{ id = 0; kind = Cylinder } in
+    let ctx = Offset.of_list type_ [ 0.0; 4.0; 6.0; 10.0 ] in
+    let offset = Offset.of_type ctx type_ |> fun s -> Sequence.nth_exn s 2 in
+    split_exn { lo = 0.0; hi = Float.infinity } offset
+    |> [%sexp_of: t list] |> print_s;
+    [%expect {| (((lo 0) (hi 4)) ((lo 6) (hi 6)) ((lo 10) (hi INF))) |}]
+
+  let exclude_exn x o =
+    split_exn x o |> List.filter ~f:(fun x' -> not (contains x' o))
 end
 
 module T = struct
@@ -240,4 +253,4 @@ let eval params op args =
   | Cylinder c -> apply2 (cylinder params c) args
   | Cuboid c -> apply6 (cuboid params c) args
   | Sphere _ | Offset _ ->
-      raise_s [%message "leaf node" (op : Op.t) (args : t list)]
+      raise_s [%message "leaf node" (op : _ Op.t) (args : t list)]
