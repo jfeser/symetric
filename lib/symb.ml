@@ -107,18 +107,15 @@ module Offset = struct
 
   let refine_with_models params models old_abs symb =
     let should_keep =
-      Sequence.fold models
-        ~init:
-          ( List.filter_map symb.set ~f:(function
-              | Free v -> Some (v, false)
-              | Fixed _ -> None)
-          |> Map.of_alist_exn (module Smt.Var) )
-        ~f:(fun vs model ->
-          Map.merge model vs ~f:(fun ~key -> function
-            | `Both (false, false) -> Some false
-            | `Both (false, true) | `Both (true, _) -> Some true
-            | `Left _ -> None
-            | `Right x -> Some x))
+      Sequence.reduce_exn models
+        ~f:
+          (Map.merge ~f:(fun ~key:_ -> function
+             | `Both (false, false) -> Some false
+             | `Both (false, true) | `Both (true, _) -> Some true
+             | `Left _ | `Right _ -> None))
+      |> Map.filter_keys ~f:(fun v ->
+             List.mem symb.set ~equal:[%compare.equal: Bool_vector.elem]
+               (Free v))
     in
 
     let offset_of_var =
@@ -364,15 +361,19 @@ let eval params op args =
   | Offset o -> offset params o
 
 let refine params models abs symb =
+  let refined =
+    map
+      ~vector:(fun s ->
+        Bool_vector.refine models (Abs.to_bool_vector_exn abs) s)
+      ~offset:(fun s -> Offset.refine params models (Abs.to_offset_exn abs) s)
+      symb
+  in
   print_s
     [%message
       "refine"
         (models : Smt.Model.t Sequence.t)
         (symb : t)
         (abs : Abs.t)
+        (refined : Set.M(Abs).t)
         [%here]];
-
-  map
-    ~vector:(fun s -> Bool_vector.refine models (Abs.to_bool_vector_exn abs) s)
-    ~offset:(fun s -> Offset.refine params models (Abs.to_offset_exn abs) s)
-    symb
+  refined
