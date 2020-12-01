@@ -19,7 +19,7 @@ module Expr : sig
 
   val pp : t Fmt.t
 
-  val models : t -> Model.t Sequence.t
+  val models : ?vars:Set.M(Var).t -> t -> Model.t Sequence.t
 end
 
 type stmt

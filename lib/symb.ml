@@ -65,24 +65,27 @@ module Bool_vector = struct
     in
 
     let refined_states =
-      Sequence.filter_map models ~f:(fun model ->
-          Map.fold model ~init:(Some abs) ~f:(fun ~key:var ~data:value abs ->
-              let open Option.Let_syntax in
-              let%bind abs = abs in
-              let%bind idx = Map.find bit_idx var in
-              let%bind abs' = Abs.Bool_vector.add abs idx value in
-              return abs'))
-      |> Sequence.map ~f:Abs.bool_vector
+      Sequence.map models ~f:(fun model ->
+          Map.fold model ~init:abs ~f:(fun ~key:var ~data:value abs ->
+              let idx = Map.find_exn bit_idx var in
+              Abs.Bool_vector.add_exn abs idx value)
+          |> Abs.bool_vector)
       |> Sequence.to_list
       |> Set.of_list (module Abs)
     in
     refined_states
+
+  let vars x =
+    List.filter_map x ~f:(function Free v -> Some v | Fixed _ -> None)
+    |> Set.of_list (module Smt.Var)
 end
 
 module Offset' = Offset
 
 module Offset = struct
   type t = { set : Bool_vector.t; type_ : Offset_type.t } [@@deriving sexp]
+
+  let vars x = Bool_vector.vars x.set
 
   let n_offsets params = Offset.of_type_count params.offsets
 
@@ -364,7 +367,11 @@ let assert_refines =
   [%test_pred: Abs.t * Set.M(Abs).t] (fun (old_abs, new_abs) ->
       Set.for_all new_abs ~f:(fun a -> Abs.is_subset a ~of_:old_abs))
 
-let refine params models abs symb =
+let refine params interpolant abs symb =
+  let models =
+    let vars = map ~vector:Bool_vector.vars ~offset:Offset.vars symb in
+    Smt.Expr.models ~vars interpolant
+  in
   let refined =
     map
       ~vector:(fun s ->

@@ -22,7 +22,12 @@ let pp_sig fmt (name, n_args) =
 module Var = String_id
 
 module Model = struct
-  type t = bool Map.M(Var).t [@@deriving sexp]
+  module T = struct
+    type t = bool Map.M(Var).t [@@deriving compare, sexp]
+  end
+
+  include T
+  include Comparable.Make (T)
 end
 
 module Expr = struct
@@ -144,17 +149,30 @@ module Expr = struct
     | Let (e, v, e') -> Set.remove (Set.union (vars e) (vars e')) v
     | e -> reduce vars Set.union Set.empty e
 
-  let models e =
+  let expr_vars = vars
+
+  let models ?vars e =
     let bit m i = Int.((m lsr i) land 0x1 > 0) in
     let open Sequence in
-    let vars = vars e |> Set.to_list in
-    range 0 (Int.pow 2 (List.length vars))
+    let all_vars = expr_vars e |> Set.to_list in
+    let post_filter =
+      match vars with
+      | Some vars ->
+          fun models ->
+            map models ~f:(Map.filter_keys ~f:(Set.mem vars))
+            |> to_list
+            |> Set.of_list (module Model)
+            |> Set.to_sequence
+      | None -> Fun.id
+    in
+    range 0 (Int.pow 2 (List.length all_vars))
     |> filter_map ~f:(fun m ->
            let ctx =
-             List.mapi vars ~f:(fun i v -> (v, bit m i))
+             List.mapi all_vars ~f:(fun i v -> (v, bit m i))
              |> Map.of_alist_exn (module String_id)
            in
            if eval ctx e then Some ctx else None)
+    |> post_filter
 
   let%expect_test "" =
     models (varop And [ var_s "x"; var_s "y" ])

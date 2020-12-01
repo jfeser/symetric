@@ -151,8 +151,6 @@ let forced_bits params interpolant state =
 
 let refinement_of_interpolant ss graph rel separator interpolant vars =
   let open Refinement in
-  let models = Smt.Expr.models interpolant in
-
   let open Option.Let_syntax in
   let refinement =
     Set.to_list separator
@@ -168,7 +166,7 @@ let refinement_of_interpolant ss graph rel separator interpolant vars =
            let new_state_sets =
              Set.to_list old_states
              |> List.map ~f:(fun old_state ->
-                    Symb.refine (params ss) models old_state var)
+                    Symb.refine (params ss) interpolant old_state var)
            in
 
            (* print_s
