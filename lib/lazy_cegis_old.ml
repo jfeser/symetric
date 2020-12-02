@@ -102,7 +102,7 @@ module Stats = struct
   }
 end
 
-exception Done of [ `Sat | `Unsat ]
+exception Done of [ `Sat of Program.t | `Unsat ]
 
 let refine_level n ss =
   G.Fold.V.fold (graph ss) ~init:(0, 0) ~f:(fun ((num, dem) as acc) ->
@@ -171,7 +171,7 @@ let refute ss output =
       | First r -> refine ss r
       | Second p ->
           Fmt.epr "Could not refute: %a" Sexp.pp_hum ([%sexp_of: Program.t] p);
-          raise (Done `Sat) );
+          raise @@ Done (`Sat p) );
       true
   | None -> false
 
@@ -221,6 +221,8 @@ let synth params =
     with Done status -> status
   in
 
+  (match status with `Sat p -> Program.check params p | _ -> ());
+
   let stats =
     Stats.
       {
@@ -232,7 +234,7 @@ let synth params =
         min_width = -1;
         max_width = -1;
         median_width = -1;
-        sat = (match status with `Sat -> true | `Unsat -> false);
+        sat = (match status with `Sat _ -> true | `Unsat -> false);
       }
   in
   (ss, stats)

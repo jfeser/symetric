@@ -9,5 +9,10 @@ let rec ceval params (`Apply (op, args)) =
 
 let rec size (`Apply (_, args)) = 1 + List.sum (module Int) args ~f:size
 
+let check params prog =
+  [%test_result: Conc.t] ~message:"checking program failed"
+    ~expect:(Conc.bool_vector params.Params.bench.Bench.output)
+    (ceval params prog)
+
 include T
 include Comparator.Make (T)

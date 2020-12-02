@@ -380,11 +380,6 @@ let synth_constrs ss graph rel target_node expected_output separator =
                 assert_args_semantics ss lo_group local_vars local_graph rel v)))
   in
   let%bind () = lower_constr in
-
-  let%bind vars_of_group = Smt.Interpolant.group_vars in
-  let ivars = Set.inter (vars_of_group lo_group) (vars_of_group hi_group) in
-  print_s [%message "interpolant vars" (ivars : Set.M(Smt.Var).t)];
-
   return
     ( vars,
       lo_group,
