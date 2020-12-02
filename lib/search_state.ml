@@ -207,6 +207,10 @@ module Node = struct
   let type_ ctx = match_ ~args:(Args.output_type ctx) ~state:(State.type_ ctx)
 end
 
+let args ctx =
+  G.Fold.V.filter_map ctx.graph
+    ~f:(Node.match_ ~args:Option.some ~state:(fun _ -> None))
+
 let filter ctx ~f =
   G.Fold.V.filter ctx.graph ~f:(Fun.negate f)
   |> List.iter ~f:(fun v ->
@@ -352,3 +356,42 @@ let dump_detailed_graph ?suffix ?cone ?separator ?refinement ?depth ctx graph =
   let (module Attr) = attr ctx in
   let module D = Dump.Make (G) (Attr) in
   D.dump_detailed ?suffix ?cone ?separator ?refinement ?depth ctx.params graph
+
+let sample_program ctx =
+  let value_exn x =
+    Option.value_exn ~here:[%here] ~message:"malformed state space" x
+  in
+  let rec sample arg =
+    let inputs =
+      G.succ ctx.graph arg
+      |> List.map ~f:(fun state_v ->
+             let p, _ =
+               G.succ ctx.graph state_v |> List.random_element |> value_exn
+               |> sample
+             in
+             p)
+    in
+    let op = Args.op ctx arg in
+    (`Apply (op, inputs), arg)
+  in
+
+  args ctx |> List.random_element |> value_exn |> sample
+
+let validate ?(k = 100) ctx =
+  for _ = 1 to k do
+    let p, arg_v = sample_program ctx in
+    let conc = Program.ceval ctx.params p in
+    let abs =
+      G.pred ctx.graph arg_v
+      |> List.map ~f:(fun state_v ->
+             Node.to_state_exn state_v |> State.state ctx)
+    in
+    let contained = List.exists abs ~f:(fun abs -> Abs.contains abs conc) in
+    if not contained then
+      raise_s
+        [%message
+          "not an overapproximation"
+            (p : Program.t)
+            (arg_v : Args.t)
+            (conc : Conc.t)]
+  done

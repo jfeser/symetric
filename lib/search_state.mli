@@ -146,3 +146,5 @@ val dump_detailed_graph :
   t ->
   G.t ->
   unit
+
+val validate : ?k:int -> t -> unit

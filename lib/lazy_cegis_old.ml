@@ -168,7 +168,9 @@ let refute ss output =
   with
   | Some target ->
       ( match Refine.get_refinement ss target with
-      | First r -> refine ss r
+      | First r ->
+          refine ss r;
+          validate ss
       | Second p ->
           Fmt.epr "Could not refute: %a" Sexp.pp_hum ([%sexp_of: Program.t] p);
           raise @@ Done (`Sat p) );
