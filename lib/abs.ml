@@ -76,7 +76,11 @@ module Bool_vector = struct
     | Some v' -> if Bool.(v = v') then Some m else None
     | None -> Some (set m k v)
 
-  let add_exn m k v = Option.value_exn (add m k v)
+  let add_exn m k v =
+    Option.value_exn (add m k v)
+      ~error:
+        (Error.create_s
+           [%message "could not add bit" (m : t) (k : int) (v : bool)])
 
   let contains a c = Map.for_alli a ~f:(fun ~key:i ~data:v -> Bool.(c.(i) = v))
 

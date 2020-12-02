@@ -65,11 +65,11 @@ module Bool_vector = struct
     in
 
     let refined_states =
-      Sequence.map models ~f:(fun model ->
-          Map.fold model ~init:abs ~f:(fun ~key:var ~data:value abs ->
+      Sequence.filter_map models ~f:(fun model ->
+          Map.fold model ~init:(Some abs) ~f:(fun ~key:var ~data:value abs ->
               let idx = Map.find_exn bit_idx var in
-              Abs.Bool_vector.add_exn abs idx value)
-          |> Abs.bool_vector)
+              Option.bind abs ~f:(fun abs -> Abs.Bool_vector.add abs idx value)))
+      |> Sequence.map ~f:Abs.bool_vector
       |> Sequence.to_list
       |> Set.of_list (module Abs)
     in
@@ -367,16 +367,27 @@ let assert_refines =
   [%test_pred: Abs.t * Set.M(Abs).t] (fun (old_abs, new_abs) ->
       Set.for_all new_abs ~f:(fun a -> Abs.is_subset a ~of_:old_abs))
 
-let refine params interpolant abs symb =
+let refine params interpolant lower_constr abs symb =
   let models =
     let vars = map ~vector:Bool_vector.vars ~offset:Offset.vars symb in
-    Smt.Expr.models ~vars interpolant
+    Smt.Model.of_ ~vars interpolant
+  in
+  let filtered_models =
+    Sequence.filter models ~f:(fun m ->
+        let check_model =
+          let open Smt.Let_syntax in
+          let%bind () = lower_constr in
+          let%bind () = Smt.assert_ (Smt.Model.to_expr m) in
+          Smt.check_sat
+        in
+        Smt.eval check_model)
   in
   let refined =
     map
       ~vector:(fun s ->
-        Bool_vector.refine models (Abs.to_bool_vector_exn abs) s)
-      ~offset:(fun s -> Offset.refine params models (Abs.to_offset_exn abs) s)
+        Bool_vector.refine filtered_models (Abs.to_bool_vector_exn abs) s)
+      ~offset:(fun s ->
+        Offset.refine params filtered_models (Abs.to_offset_exn abs) s)
       symb
   in
   assert_refines (abs, refined);
@@ -384,6 +395,7 @@ let refine params interpolant abs symb =
     [%message
       "refine"
         (models : Smt.Model.t Sequence.t)
+        (filtered_models : Smt.Model.t Sequence.t)
         (symb : t)
         (abs : Abs.t)
         (refined : Set.M(Abs).t)

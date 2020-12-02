@@ -149,7 +149,8 @@ let forced_bits params interpolant state =
         else (var, None))
   else List.map vars ~f:(fun v -> (v, None))
 
-let refinement_of_interpolant ss graph rel separator interpolant vars =
+let refinement_of_interpolant ss graph rel separator interpolant lower_constr
+    vars =
   let open Refinement in
   let open Option.Let_syntax in
   let refinement =
@@ -163,29 +164,18 @@ let refinement_of_interpolant ss graph rel separator interpolant vars =
              |> Set.of_list (module Abs)
            in
 
-           let new_state_sets =
+           let new_ =
              Set.to_list old_states
              |> List.map ~f:(fun old_state ->
-                    Symb.refine (params ss) interpolant old_state var)
+                    Symb.refine (params ss) interpolant lower_constr old_state
+                      var)
+             |> Set.union_list (module Abs)
            in
-
-           (* print_s
-            *   [%message
-            *     "refining"
-            *       (v : G.V.t)
-            *       (old_states : Set.M(Abs).t)
-            *       (new_state_sets : Set.M(Abs).t list)]; *)
-           if List.exists new_state_sets ~f:Set.is_empty then None
-           else
-             let new_ = Set.union_list (module Abs) new_state_sets in
-             if Set.is_subset new_ ~of_:old_states then None
-             else
-               Some
-                 Refinement.{ old = Node.to_args_exn @@ rel.backward v; new_ })
+           Some Refinement.{ old = Node.to_args_exn @@ rel.backward v; new_ })
   in
 
   Fmt.epr "Refinement: %a@." Fmt.Dump.(list Refinement.pp) refinement;
-  if List.is_empty refinement then None else Some refinement
+  Some refinement
 
 let assert_group_var g v = Smt.(Interpolant.assert_group ~group:g (var v))
 
@@ -331,14 +321,15 @@ let synth_constrs ss graph rel target_node expected_output separator =
     (Set.for_all ~f:(G.mem_vertex top_graph))
     separator;
 
-  let%bind vars = Vars.make ss top_graph rel in
+  let m_vars = Vars.make ss top_graph rel in
+  let%bind vars = m_vars in
 
   let%bind () =
     let%bind () =
       assert_output_state_contained (params ss) hi_group vars target_node
         expected_output
     in
-    let%bind () = assert_input_states_contained ss hi_group vars rel in
+    (* let%bind () = assert_input_states_contained ss hi_group vars rel in *)
     FV.iter top_graph ~f:(fun v ->
         Node.match_ (rel.backward v)
           ~state:(fun _ ->
@@ -356,7 +347,7 @@ let synth_constrs ss graph rel target_node expected_output separator =
               assert_args_semantics ss hi_group vars top_graph rel v))
   in
 
-  let%bind () =
+  let lower_constr =
     F.iter separator ~f:(fun v ->
         let local_graph = UCone.cone graph [ v ] in
 
@@ -372,8 +363,7 @@ let synth_constrs ss graph rel target_node expected_output separator =
           }
         in
 
-        let%bind () = assert_input_states_contained ss lo_group vars rel in
-
+        (* let%bind () = assert_input_states_contained ss lo_group vars rel in *)
         FV.iter local_graph ~f:(fun v ->
             Node.match_ (rel.backward v)
               ~state:(fun _ ->
@@ -389,18 +379,25 @@ let synth_constrs ss graph rel target_node expected_output separator =
                 in
                 assert_args_semantics ss lo_group local_vars local_graph rel v)))
   in
+  let%bind () = lower_constr in
 
   let%bind vars_of_group = Smt.Interpolant.group_vars in
   let ivars = Set.inter (vars_of_group lo_group) (vars_of_group hi_group) in
   print_s [%message "interpolant vars" (ivars : Set.M(Smt.Var).t)];
 
-  return (vars, lo_group)
+  return
+    ( vars,
+      lo_group,
+      let%bind _ = m_vars in
+      lower_constr )
 
-let process_interpolant params graph rel separator vars interpolant =
+let process_interpolant params graph rel separator vars interpolant lower_constr
+    =
   let interpolant = ok_exn interpolant in
   Fmt.epr "Interpolant: %a@." Smt.Expr.pp interpolant;
   match
-    refinement_of_interpolant params graph rel separator interpolant vars
+    refinement_of_interpolant params graph rel separator interpolant
+      lower_constr vars
   with
   | Some r -> Some r
   | None -> None
@@ -416,11 +413,11 @@ let run_solver params graph rel target_node expected_output separator =
   let open Smt in
   let open Let_syntax in
   let get_interpolant =
-    let%bind vars, sep_group =
+    let%bind vars, sep_group, lower_constr =
       synth_constrs params graph rel target_node expected_output separator
     in
     let%bind ret = Smt.get_interpolant_or_model [ sep_group ] in
-    return (vars, ret)
+    return (vars, ret, lower_constr)
   in
   let ret, _ = Smt.run get_interpolant in
   ret
@@ -451,8 +448,9 @@ let get_refinement ss target_node =
            match
              run_solver ss graph rel target_node expected_output separator
            with
-           | vars, First interpolant ->
+           | vars, First interpolant, lower_constr ->
                process_interpolant ss graph rel separator vars interpolant
+                 lower_constr
            | _ -> None)
   in
 
@@ -463,5 +461,5 @@ let get_refinement ss target_node =
         run_solver ss graph rel target_node expected_output
           (Set.empty (module G.V))
       with
-      | _, First _ -> failwith "expected model"
-      | vars, Second model -> Second (process_model vars rel model) )
+      | _, First _, _ -> failwith "expected model"
+      | vars, Second model, _ -> Second (process_model vars rel model) )

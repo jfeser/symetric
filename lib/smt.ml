@@ -21,14 +21,7 @@ let pp_sig fmt (name, n_args) =
 
 module Var = String_id
 
-module Model = struct
-  module T = struct
-    type t = bool Map.M(Var).t [@@deriving compare, sexp]
-  end
-
-  include T
-  include Comparable.Make (T)
-end
+module Model0 = struct end
 
 module Expr = struct
   type binop = Implies | Equals [@@deriving compare, sexp]
@@ -97,9 +90,7 @@ module Expr = struct
     | Let (e, x, e') -> eval (Map.set ctx ~key:x ~data:(eval ctx e)) e'
     | Binop (op, e, e') -> (
         let v = eval ctx e and v' = eval ctx e' in
-        match op with
-        | Implies -> Bool.((not v) || v')
-        | Equals -> Bool.(v = v') )
+        match op with Implies -> (not v) || v' | Equals -> Bool.(v = v') )
     | Unop (op, e) -> (
         let v = eval ctx e in
         match (op, v) with Not, v -> not v )
@@ -150,40 +141,6 @@ module Expr = struct
     | e -> reduce vars Set.union Set.empty e
 
   let expr_vars = vars
-
-  let models ?vars e =
-    let bit m i = Int.((m lsr i) land 0x1 > 0) in
-    let open Sequence in
-    let all_vars = expr_vars e |> Set.to_list in
-    let post_filter =
-      match vars with
-      | Some vars ->
-          fun models ->
-            map models ~f:(Map.filter_keys ~f:(Set.mem vars))
-            |> to_list
-            |> Set.of_list (module Model)
-            |> Set.to_sequence
-      | None -> Fun.id
-    in
-    range 0 (Int.pow 2 (List.length all_vars))
-    |> filter_map ~f:(fun m ->
-           let ctx =
-             List.mapi all_vars ~f:(fun i v -> (v, bit m i))
-             |> Map.of_alist_exn (module String_id)
-           in
-           if eval ctx e then Some ctx else None)
-    |> post_filter
-
-  let%expect_test "" =
-    models (varop And [ var_s "x"; var_s "y" ])
-    |> [%sexp_of: bool Map.M(Var).t Sequence.t] |> print_s;
-    [%expect {| (((x true) (y true))) |}]
-
-  let%expect_test "" =
-    models (varop Or [ var_s "x"; var_s "y" ])
-    |> [%sexp_of: bool Map.M(Var).t Sequence.t] |> print_s;
-    [%expect
-      {| (((x true) (y false)) ((x false) (y true)) ((x true) (y true))) |}]
 
   let rec expand ctx = function
     | Var x as e -> (
@@ -448,7 +405,9 @@ let with_mathsat f =
   let proc = Unix.open_process "mathsat" in
   let stdout, stdin = proc in
   let ret =
-    Out_channel.with_file (debug_out_file ()) ~f:(fun log ->
+    let fn = debug_out_file () in
+    print_s [%message "logging smt" (fn : string)];
+    Out_channel.with_file fn ~f:(fun log ->
         let log_fmt = Format.formatter_of_out_channel log in
 
         let[@landmark "with_mathsat.write"] write stmts =
@@ -552,3 +511,53 @@ let check_sat =
     | Atom "unsat" -> false
     | Atom "sat" -> true
     | x -> error x )
+
+module Model = struct
+  module T = struct
+    module T0 = struct
+      type t = bool Map.M(Var).t [@@deriving compare, sexp]
+    end
+
+    include T0
+    include Comparator.Make (T0)
+  end
+
+  include T
+
+  let of_ ?vars e =
+    let bit m i = Int.((m lsr i) land 0x1 > 0) in
+    let open Sequence in
+    let all_vars = expr_vars e |> Set.to_list in
+    let post_filter =
+      match vars with
+      | Some vars ->
+          fun models ->
+            map models ~f:(Map.filter_keys ~f:(Set.mem vars))
+            |> to_list
+            |> Set.of_list (module T)
+            |> Set.to_sequence
+      | None -> Fun.id
+    in
+    range 0 (Int.pow 2 (List.length all_vars))
+    |> filter_map ~f:(fun m ->
+           let ctx =
+             List.mapi all_vars ~f:(fun i v -> (v, bit m i))
+             |> Map.of_alist_exn (module String_id)
+           in
+           if Expr.eval ctx e then Some ctx else None)
+    |> post_filter
+
+  let%expect_test "" =
+    of_ (varop And [ var_s "x"; var_s "y" ])
+    |> [%sexp_of: bool Map.M(Var).t Sequence.t] |> print_s;
+    [%expect {| (((x true) (y true))) |}]
+
+  let%expect_test "" =
+    of_ (varop Or [ var_s "x"; var_s "y" ])
+    |> [%sexp_of: bool Map.M(Var).t Sequence.t] |> print_s;
+    [%expect
+      {| (((x true) (y false)) ((x false) (y true)) ((x true) (y true))) |}]
+
+  let to_expr m =
+    Map.to_alist m |> List.map ~f:(fun (k, v) -> var k = bool v) |> and_
+end
