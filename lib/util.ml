@@ -5,7 +5,7 @@ let clang_format src =
   Out_channel.output_string write src;
   Out_channel.close write;
   let ret = In_channel.input_all read in
-  ignore (Unix.close_process (read, write));
+  ignore (Unix.close_process (read, write) : _ result);
   ret
 
 let clang_build ?(args = "-std=c++17 -Wall -Wextra -c") src =
@@ -13,7 +13,7 @@ let clang_build ?(args = "-std=c++17 -Wall -Wextra -c") src =
   Out_channel.output_string write src;
   Out_channel.close write;
   let ret = In_channel.input_all read in
-  ignore (Unix.close_process (read, write));
+  ignore (Unix.close_process (read, write) : _ result);
   ret
 
 let clang_exec
@@ -31,7 +31,7 @@ let clang_exec
     Out_channel.output_string write src;
     Out_channel.close write;
     let out = In_channel.input_all read in
-    ignore (Unix.close_process (read, write));
+    ignore (Unix.close_process (read, write) : _ result);
     out
   in
 
@@ -40,7 +40,7 @@ let clang_exec
     Option.iter input ~f:(Out_channel.output_string write);
     Out_channel.close write;
     let out = In_channel.input_all read in
-    ignore (Unix.close_process (read, write));
+    ignore (Unix.close_process (read, write) : _ result);
     out
   in
 

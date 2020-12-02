@@ -251,7 +251,8 @@ let fix_up_states ctx work add_work v =
 module Unique_queue = struct
   let create m = Hash_queue.create (Base.Hashable.of_key m)
 
-  let enqueue q v = Hash_queue.enqueue_back q v v |> ignore
+  let enqueue q v =
+    (Hash_queue.enqueue_back q v v : [ `Key_already_present | `Ok ]) |> ignore
 
   let enqueue_all q vs = List.iter vs ~f:(enqueue q)
 
@@ -387,11 +388,12 @@ let validate ?(k = 100) ctx =
              Node.to_state_exn state_v |> State.state ctx)
     in
     let contained = List.exists abs ~f:(fun abs -> Abs.contains abs conc) in
-    if not contained then
+    if not contained then (
+      dump_detailed ~suffix:"error" ctx;
       raise_s
         [%message
           "not an overapproximation"
             (p : Program.t)
             (arg_v : Args.t)
-            (conc : Conc.t)]
+            (conc : Conc.t)] )
   done

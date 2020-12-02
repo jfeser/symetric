@@ -212,12 +212,14 @@ let synth params =
   let status =
     try
       for cost = 1 to params.max_cost do
-        ( until_done @@ fun () ->
+        let _changed =
+          until_done @@ fun () ->
           let changed = until_done @@ fun () -> refute ss output in
           let changed' = fill_up_to_cost ss params.bench.ops cost in
           Fmt.epr "Changed: %b Cost: %d\n%!" (changed || changed') cost;
-          changed || changed' )
-        |> ignore
+          changed || changed'
+        in
+        ()
       done;
       `Unsat
     with Done status -> status

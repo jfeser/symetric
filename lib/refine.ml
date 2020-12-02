@@ -313,10 +313,6 @@ let synth_constrs ss graph rel target_node expected_output separator =
 
   let separator = Set.filter separator ~f:(G.mem_vertex top_graph) in
 
-  dump_detailed ~suffix:"top-graph"
-    (* ~separator:(List.mem separator ~equal:[%equal: Node.t]) *)
-    ss top_graph rel;
-
   [%test_pred: Set.M(G.V).t] ~message:"separator not in top graph"
     (Set.for_all ~f:(G.mem_vertex top_graph))
     separator;
@@ -351,9 +347,6 @@ let synth_constrs ss graph rel target_node expected_output separator =
     F.iter separator ~f:(fun v ->
         let local_graph = UCone.cone graph [ v ] in
 
-        dump_detailed ss ~suffix:"local-graph"
-          (* ~separator:(List.mem separator ~equal:[%equal: Node.t]) *)
-          local_graph rel;
         let%bind local_vars =
           let%map vs = Vars.make ss local_graph rel in
           {

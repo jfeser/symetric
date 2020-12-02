@@ -425,7 +425,7 @@ let with_mathsat f =
 
         f read write)
   in
-  Unix.close_process proc |> ignore;
+  Unix.close_process proc |> Unix.Exit_or_signal.or_error |> Or_error.ok_exn;
   ret
 
 let error sexp =
