@@ -402,12 +402,31 @@ let process_interpolant params graph rel separator vars interpolant lower_constr
   | Some r -> Some r
   | None -> None
 
-let process_model vars rel model =
-  let rel = Unshare.edge_relation rel in
-  List.filter_map model ~f:(fun (e, is_selected) ->
-      if is_selected then Map.find vars.var_edges e else None)
-  |> List.map ~f:rel.backward
-  |> Set.of_list (module Search_state.G.E)
+let rec extract_program ss graph rel selected_edges target =
+  let args =
+    G.succ_e graph target
+    |> List.filter ~f:(Set.mem selected_edges)
+    |> List.map ~f:(fun (_, _, v) -> v)
+  in
+  match args with
+  | [ a ] ->
+      `Apply
+        ( Args.op ss @@ Node.to_args_exn @@ rel.backward a,
+          G.succ graph a
+          |> List.map ~f:(extract_program ss graph rel selected_edges) )
+  | args ->
+      let args =
+        List.map args ~f:(fun v -> Node.to_args_exn @@ rel.backward v)
+      in
+      raise_s [%message "expected one argument" (args : Args.t list)]
+
+let process_model vars model ss graph rel target =
+  let selected_edges =
+    List.filter_map model ~f:(fun (e, is_selected) ->
+        if is_selected then Map.find vars.var_edges e else None)
+    |> Set.of_list (module G.E)
+  in
+  extract_program ss graph rel selected_edges target
 
 let run_solver params graph rel target_node expected_output separator =
   let open Smt in
@@ -462,4 +481,5 @@ let get_refinement ss target_node =
           (Set.empty (module G.V))
       with
       | _, First _, _ -> failwith "expected model"
-      | vars, Second model, _ -> Second (process_model vars rel model) )
+      | vars, Second model, _ ->
+          Second (process_model vars model ss graph rel top) )

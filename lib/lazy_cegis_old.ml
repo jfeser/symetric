@@ -12,21 +12,6 @@ module Seq = struct
   let of_array a = init (Array.length a) ~f:(fun i -> a.(i))
 end
 
-module Program = struct
-  module T = struct
-    type t = [ `Apply of Offset.t Op.t * t list ]
-    [@@deriving compare, hash, sexp]
-  end
-
-  let rec ceval params (`Apply (op, args)) =
-    Conc.eval params op (List.map args ~f:(ceval params))
-
-  let rec size (`Apply (_, args)) = 1 + List.sum (module Int) args ~f:size
-
-  include T
-  include Comparator.Make (T)
-end
-
 let did_change f =
   G.reset_changed ();
   let ret = f () in
@@ -174,21 +159,6 @@ let refine ss refinement =
 
 let refine graph refinement = with_size graph @@ fun g -> refine g refinement
 
-let rec extract_program ss selected_edges target =
-  let args =
-    G.succ_e (graph ss) target
-    |> List.filter ~f:(Set.mem selected_edges)
-    |> List.map ~f:(fun (_, _, v) -> v)
-    |> List.map ~f:Node.to_args_exn
-  in
-  match args with
-  | [ a ] ->
-      `Apply
-        ( Args.op ss a,
-          G.succ (graph ss) (Node.of_args a)
-          |> List.map ~f:(extract_program ss selected_edges) )
-  | args -> raise_s [%message "expected one argument" (args : Args.t list)]
-
 let refute ss output =
   match
     G.Fold.V.find_map (graph ss) ~f:(fun v ->
@@ -199,10 +169,8 @@ let refute ss output =
   | Some target ->
       ( match Refine.get_refinement ss target with
       | First r -> refine ss r
-      | Second selected_edges ->
-          Fmt.epr "Could not refute: %a" Sexp.pp_hum
-            ( [%sexp_of: Program.t]
-            @@ extract_program ss selected_edges (Node.of_state target) );
+      | Second p ->
+          Fmt.epr "Could not refute: %a" Sexp.pp_hum ([%sexp_of: Program.t] p);
           raise (Done `Sat) );
       true
   | None -> false
