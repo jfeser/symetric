@@ -1,7 +1,17 @@
 open! Core
+open Base_quickcheck
 
 module T = struct
-  type t = { x : float; y : float; z : float } [@@deriving compare, hash, sexp]
+  type t = { x : float; y : float; z : float }
+  [@@deriving compare, hash, quickcheck, sexp]
+
+  let quickcheck_generator =
+    let open Generator in
+    let open Let_syntax in
+    let%bind x = float_uniform_exclusive (-25.0) 25.0
+    and y = float_uniform_exclusive (-25.0) 25.0
+    and z = float_uniform_exclusive (-25.0) 25.0 in
+    return { x; y; z }
 end
 
 include T

@@ -92,9 +92,19 @@ val contains : t -> Conc.t -> bool
 
 val lift : Conc.t -> t
 
-val cylinder : Params.t -> Ast.Op.cylinder -> t -> t -> t
+val cylinder :
+  Ast.Op.cylinder -> Vector3.t array -> Offset.t -> Offset.t -> Bool_vector.t
 
-val cuboid : Params.t -> Ast.Op.cuboid -> t -> t -> t -> t -> t -> t -> t
+val cuboid :
+  Ast.Op.cuboid ->
+  Vector3.t array ->
+  Offset.t ->
+  Offset.t ->
+  Offset.t ->
+  Offset.t ->
+  Offset.t ->
+  Offset.t ->
+  Bool_vector.t
 
 val eval : Params.t -> Offset.concrete Ast.Op.t -> t list -> t
 

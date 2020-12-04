@@ -196,10 +196,9 @@ let lift = function
   | Conc.Bool_vector x -> bool_vector @@ Bool_vector.lift x
   | Offset x -> offset @@ Offset.lift x
 
-let cylinder params (c : Op.cylinder) l h =
-  let l = to_offset_exn l and h = to_offset_exn h in
+let cylinder (c : Op.cylinder) input (l : Offset.t) (h : Offset.t) =
   let open Sequence in
-  params.bench.input |> Array.to_sequence
+  Array.to_sequence input
   |> filter_mapi ~f:(fun i v ->
          let open Vector3 in
          let rot = inverse_rotate v ~theta:c.theta in
@@ -216,17 +215,11 @@ let cylinder params (c : Op.cylinder) l h =
          else if is_in then Some (i, true)
          else None)
   |> Map.of_sequence_exn (module Int)
-  |> bool_vector
 
-let cuboid params (c : Op.cuboid) lx hx ly hy lz hz =
-  let lx = to_offset_exn lx
-  and hx = to_offset_exn hx
-  and ly = to_offset_exn ly
-  and hy = to_offset_exn hy
-  and lz = to_offset_exn lz
-  and hz = to_offset_exn hz in
+let cuboid (c : Op.cuboid) input (lx : Offset.t) (hx : Offset.t) (ly : Offset.t)
+    (hy : Offset.t) (lz : Offset.t) (hz : Offset.t) =
   let open Sequence in
-  params.bench.input |> Array.to_sequence
+  Array.to_sequence input
   |> filter_mapi ~f:(fun i v ->
          let open Vector3 in
          let rot = inverse_rotate v ~theta:c.theta in
@@ -253,15 +246,17 @@ let cuboid params (c : Op.cuboid) lx hx ly hy lz hz =
          else if is_in then Some (i, true)
          else None)
   |> Map.of_sequence_exn (module Int)
-  |> bool_vector
 
 let eval params op args =
   let open Util in
+  let eval_offsets = List.map ~f:to_offset_exn in
   match op with
   | Op.Union -> apply2 union args
   | Inter -> apply2 inter args
   | Sub -> apply2 sub args
-  | Cylinder c -> apply2 (cylinder params c) args
-  | Cuboid c -> apply6 (cuboid params c) args
+  | Cylinder c ->
+      apply2 (cylinder c params.bench.input) @@ eval_offsets args |> bool_vector
+  | Cuboid c ->
+      apply6 (cuboid c params.bench.input) @@ eval_offsets args |> bool_vector
   | Sphere _ | Offset _ ->
       raise_s [%message "leaf node" (op : _ Op.t) (args : t list)]
