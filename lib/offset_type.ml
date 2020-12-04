@@ -7,3 +7,5 @@ end
 
 include T
 include Comparator.Make (T)
+
+let dummy = { id = -1; kind = Cylinder }

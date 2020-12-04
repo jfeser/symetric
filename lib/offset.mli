@@ -1,6 +1,6 @@
 type t [@@deriving compare, hash, sexp]
 
-type ctx
+type ctx [@@deriving sexp_of]
 
 val of_bench : Bench0.offset Bench.t -> t Bench.t * ctx
 

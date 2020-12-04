@@ -90,7 +90,8 @@ module Bool_vector = struct
 end
 
 module Offset = struct
-  type t = { lo : float; hi : float } [@@deriving compare, hash, sexp]
+  type t = { lo : float; hi : float; type_ : Offset_type.t }
+  [@@deriving compare, hash, sexp]
 
   type concrete = Offset.t
 
@@ -98,16 +99,19 @@ module Offset = struct
 
   let graphviz_pp fmt x = Fmt.pf fmt "[%f, %f)" x.lo x.hi
 
-  let top = { lo = Float.min_value; hi = Float.max_value }
+  let top t = { lo = Float.min_value; hi = Float.max_value; type_ = t }
 
-  let lift x = { lo = Offset.offset x; hi = Offset.offset x }
+  let lift x =
+    { lo = Offset.offset x; hi = Offset.offset x; type_ = Offset.type_ x }
 
-  let create ~lo ~hi = if Float.(hi < lo) then None else Some { lo; hi }
+  let create ~lo ~hi ~type_ =
+    if Float.(hi < lo) then None else Some { lo; hi; type_ }
 
   let copy ?lo ?hi x =
     create
       ~lo:(Option.value lo ~default:x.lo)
       ~hi:(Option.value hi ~default:x.hi)
+      ~type_:x.type_
 
   let lo x = x.lo
 
@@ -118,7 +122,7 @@ module Offset = struct
       raise_s [%message "range does not contain point" (x : t) (o : Offset.t)];
     [
       Option.bind (Offset.prev o) ~f:(fun o' -> copy x ~hi:(Offset.offset o'));
-      create ~lo:(Offset.offset o) ~hi:(Offset.offset o);
+      create ~type_:x.type_ ~lo:(Offset.offset o) ~hi:(Offset.offset o);
       Option.bind (Offset.next o) ~f:(fun o' -> copy x ~lo:(Offset.offset o'));
     ]
     |> List.filter_map ~f:Fun.id
@@ -127,14 +131,21 @@ module Offset = struct
     let type_ = Offset_type.{ id = 0; kind = Cylinder } in
     let ctx = Offset.of_list type_ [ 0.0; 4.0; 6.0; 10.0 ] in
     let offset = Offset.of_type ctx type_ |> fun s -> Sequence.nth_exn s 2 in
-    split_exn { lo = 0.0; hi = Float.infinity } offset
+    split_exn
+      { type_ = Offset_type.dummy; lo = 0.0; hi = Float.infinity }
+      offset
     |> [%sexp_of: t list] |> print_s;
-    [%expect {| (((lo 0) (hi 4)) ((lo 6) (hi 6)) ((lo 10) (hi INF))) |}]
+    [%expect {|
+      (((lo 0) (hi 4) (type_ ((id -1) (kind Cylinder))))
+       ((lo 6) (hi 6) (type_ ((id -1) (kind Cylinder))))
+       ((lo 10) (hi INF) (type_ ((id -1) (kind Cylinder))))) |}]
 
   let exclude_exn x o =
     split_exn x o |> List.filter ~f:(fun x' -> not (contains x' o))
 
   let is_subset x ~of_:x' = Float.(x.lo >= x'.lo && x.hi <= x'.hi)
+
+  let type_ x = x.type_
 end
 
 module T = struct
@@ -155,7 +166,7 @@ let map ~bool_vector ~offset = function
 
 let top = function
   | Type.Vector -> bool_vector @@ Bool_vector.top
-  | Offset _ -> offset Offset.top
+  | Offset t -> offset @@ Offset.top t
 
 let graphviz_pp params fmt =
   map

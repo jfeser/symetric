@@ -5,7 +5,7 @@ type t = {
 }
 [@@deriving compare, hash, sexp]
 
-type ctx = float array Map.M(Offset_type).t
+type ctx = float array Map.M(Offset_type).t [@@deriving sexp_of]
 
 let of_bench bench =
   let ctx =

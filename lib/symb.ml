@@ -95,6 +95,20 @@ module Offset = struct
     let%map set = Bool_vector.create_n ~prefix @@ n_offsets params t in
     { set; type_ = t }
 
+  let of_abs ?(prefix = sprintf "o%d") offsets abs =
+    let open Smt.Let_syntax in
+    let type_ = Abs.Offset.type_ abs in
+    let n = Offset.of_type_count offsets type_ in
+    let%map set =
+      Offset.of_type offsets type_
+      |> Sequence.filter_mapi ~f:(fun i conc ->
+             if not (Abs.Offset.contains abs conc) then Some (i, false)
+             else None)
+      |> Map.of_sequence_exn (module Int)
+      |> Bool_vector.of_abs ~prefix n
+    in
+    { set; type_ }
+
   let ( = ) x x' = Bool_vector.(x.set = x'.set)
 
   let contained params x by =
@@ -180,13 +194,15 @@ module Offset = struct
              output = [||];
            }
     in
-    refine params models Abs.Offset.top
+    refine params models (Abs.Offset.top type_)
       { set = [ f "y0"; f "y1"; f "x0"; f "x1"; f "x2" ]; type_ }
     |> [%sexp_of: Set.M(Abs).t] |> print_s
 
   let%expect_test "" =
     simple_test [ [ (v "x0", false) ] ];
-    [%expect {| ((Offset ((lo -INF) (hi 5))) (Offset ((lo 20) (hi INF)))) |}]
+    [%expect {|
+      ((Offset ((lo -INF) (hi 5) (type_ ((id 0) (kind Cuboid_x)))))
+       (Offset ((lo 20) (hi INF) (type_ ((id 0) (kind Cuboid_x)))))) |}]
 
   let%expect_test "" =
     simple_test
@@ -196,8 +212,9 @@ module Offset = struct
       ];
     [%expect
       {|
-      ((Offset ((lo -INF) (hi 5))) (Offset ((lo 20) (hi 20)))
-       (Offset ((lo 30) (hi 30)))) |}]
+      ((Offset ((lo -INF) (hi 5) (type_ ((id 0) (kind Cuboid_x)))))
+       (Offset ((lo 20) (hi 20) (type_ ((id 0) (kind Cuboid_x)))))
+       (Offset ((lo 30) (hi 30) (type_ ((id 0) (kind Cuboid_x)))))) |}]
 end
 
 type t = Bool_vector of Bool_vector.t | Offset of Offset.t [@@deriving sexp]
@@ -249,85 +266,65 @@ let inter = bool_vector_3 Bool_vector.inter
 
 let sub = bool_vector_3 Bool_vector.sub
 
-let filter_offsets params (var : Offset.t) pred =
-  Sequence.zip
-    (Offset'.of_type params.offsets var.type_)
-    (Sequence.of_list var.set)
+let filter_offsets offsets (var : Offset.t) pred =
+  Sequence.zip (Offset'.of_type offsets var.type_) (Sequence.of_list var.set)
   |> Sequence.filter_map ~f:(fun (offset, in_set) ->
          if pred offset then Some (Bool_vector.to_expr in_set) else None)
   |> Sequence.to_list
 
-let cylinder params (c : Op.cylinder) l h =
-  let l = to_offset_exn l and h = to_offset_exn h in
-  let ret =
-    params.bench.input |> Array.to_list
-    |> List.map ~f:(fun v ->
-           let open Vector3 in
-           let rot = inverse_rotate v ~theta:c.theta in
-           (* Check whether point is in radius. *)
-           let in_radius =
-             Float.(
-               square (rot.y - c.y) + square (rot.z - c.z) < square c.radius)
-           in
-           (* Collect offsets that are above this point. *)
-           let above =
-             filter_offsets params l (fun o -> Float.(rot.x < Offset'.offset o))
-           in
-           (* Collect offsets that are below this point. *)
-           let below =
-             filter_offsets params h (fun o -> Float.(rot.x > Offset'.offset o))
-           in
-           (* Point is in if it is in the radius, none of the low offsets that are
-              above it are selected, and none of the high offsets that are below
-              it are selected *)
-           Smt.(
-             fresh_defn (bool in_radius && (not (or_ above)) && not (or_ below))
-             >>| Bool_vector.free))
-  in
-  Smt.(all ret >>| bool_vector)
+let cylinder (c : Op.cylinder) input offsets l h =
+  let open Smt.Monad_infix in
+  List.map (Array.to_list input) ~f:(fun v ->
+      let open Vector3 in
+      let rot = inverse_rotate v ~theta:c.theta in
+      (* Check whether point is in radius. *)
+      let in_radius =
+        Float.(square (rot.y - c.y) + square (rot.z - c.z) < square c.radius)
+      in
+      (* Collect offsets that are above this point. *)
+      let above =
+        filter_offsets offsets l (fun o -> Float.(rot.x < Offset'.offset o))
+      in
+      (* Collect offsets that are below this point. *)
+      let below =
+        filter_offsets offsets h (fun o -> Float.(rot.x > Offset'.offset o))
+      in
+      (* Point is in if it is in the radius, none of the low offsets that are
+         above it are selected, and none of the high offsets that are below it
+         are selected *)
+      Smt.(fresh_defn (bool in_radius && (not (or_ above)) && not (or_ below)))
+      >>| Bool_vector.free)
+  |> Smt.all >>| bool_vector
 
-let cuboid params (c : Op.cuboid) lx hx ly hy lz hz =
-  let lx = to_offset_exn lx
-  and hx = to_offset_exn hx
-  and ly = to_offset_exn ly
-  and hy = to_offset_exn hy
-  and lz = to_offset_exn lz
-  and hz = to_offset_exn hz in
-  let ret =
-    params.bench.input |> Array.to_list
-    |> List.map ~f:(fun v ->
-           let open Vector3 in
-           let rot = inverse_rotate v ~theta:c.theta in
-           let above_x =
-             filter_offsets params lx (fun o ->
-                 Float.(Offset'.offset o > rot.x))
-           and below_x =
-             filter_offsets params hx (fun o ->
-                 Float.(Offset'.offset o < rot.x))
-           and above_y =
-             filter_offsets params ly (fun o ->
-                 Float.(Offset'.offset o > rot.y))
-           and below_y =
-             filter_offsets params hy (fun o ->
-                 Float.(Offset'.offset o < rot.y))
-           and above_z =
-             filter_offsets params lz (fun o ->
-                 Float.(Offset'.offset o > rot.z))
-           and below_z =
-             filter_offsets params hz (fun o ->
-                 Float.(Offset'.offset o < rot.z))
-           in
-           Smt.(
-             fresh_defn
-               ( (not (or_ above_x))
-               && (not (or_ below_x))
-               && (not (or_ above_y))
-               && (not (or_ below_y))
-               && (not (or_ above_z))
-               && not (or_ below_z) )
-             >>| Bool_vector.free))
-  in
-  Smt.(all ret >>| bool_vector)
+let cuboid (c : Op.cuboid) input offsets lx hx ly hy lz hz =
+  let open Smt.Monad_infix in
+  Array.to_list input
+  |> List.map ~f:(fun v ->
+         let open Vector3 in
+         let rot = inverse_rotate v ~theta:c.theta in
+         let above_x =
+           filter_offsets offsets lx (fun o -> Float.(Offset'.offset o > rot.x))
+         and below_x =
+           filter_offsets offsets hx (fun o -> Float.(Offset'.offset o < rot.x))
+         and above_y =
+           filter_offsets offsets ly (fun o -> Float.(Offset'.offset o > rot.y))
+         and below_y =
+           filter_offsets offsets hy (fun o -> Float.(Offset'.offset o < rot.y))
+         and above_z =
+           filter_offsets offsets lz (fun o -> Float.(Offset'.offset o > rot.z))
+         and below_z =
+           filter_offsets offsets hz (fun o -> Float.(Offset'.offset o < rot.z))
+         in
+         Smt.(
+           fresh_defn
+             ( (not (or_ above_x))
+             && (not (or_ below_x))
+             && (not (or_ above_y))
+             && (not (or_ below_y))
+             && (not (or_ above_z))
+             && not (or_ below_z) ))
+         >>| Bool_vector.free)
+  |> Smt.all >>| bool_vector
 
 let sphere params (s : Op.sphere) =
   let ret =
@@ -354,12 +351,15 @@ let offset params o =
 
 let eval params op args =
   let open Util in
+  let eval_offsets = List.map ~f:to_offset_exn in
   match op with
   | Op.Union -> apply2 union args
   | Inter -> apply2 inter args
   | Sub -> apply2 sub args
-  | Cylinder c -> apply2 (cylinder params c) args
-  | Cuboid c -> apply6 (cuboid params c) args
+  | Cylinder c ->
+      apply2 (cylinder c params.bench.input params.offsets) @@ eval_offsets args
+  | Cuboid c ->
+      apply6 (cuboid c params.bench.input params.offsets) @@ eval_offsets args
   | Sphere s -> sphere params s
   | Offset o -> offset params o
 

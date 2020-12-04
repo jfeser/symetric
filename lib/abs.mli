@@ -47,7 +47,7 @@ module Offset : sig
 
   val graphviz_pp : t Fmt.t
 
-  val top : t
+  val top : Offset_type.t -> t
 
   val lo : t -> float
 
@@ -55,11 +55,13 @@ module Offset : sig
 
   val lift : concrete -> t
 
-  val create : lo:float -> hi:float -> t option
+  val create : lo:float -> hi:float -> type_:Offset_type.t -> t option
 
   val split_exn : t -> concrete -> t list
 
   val exclude_exn : t -> concrete -> t list
+
+  val type_ : t -> Offset_type.t
 end
 
 type t = Bool_vector of Bool_vector.t | Offset of Offset.t

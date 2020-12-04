@@ -395,5 +395,6 @@ let validate ?(k = 100) ctx =
           "not an overapproximation"
             (p : Program.t)
             (arg_v : Args.t)
+            (abs : Abs.t list)
             (conc : Conc.t)] )
   done
