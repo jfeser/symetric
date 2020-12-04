@@ -406,7 +406,6 @@ let with_mathsat f =
   let stdout, stdin = proc in
   let ret =
     let fn = debug_out_file () in
-    print_s [%message "logging smt" (fn : string)];
     Out_channel.with_file fn ~f:(fun log ->
         let log_fmt = Format.formatter_of_out_channel log in
 

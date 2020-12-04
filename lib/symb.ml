@@ -200,7 +200,8 @@ module Offset = struct
 
   let%expect_test "" =
     simple_test [ [ (v "x0", false) ] ];
-    [%expect {|
+    [%expect
+      {|
       ((Offset ((lo -INF) (hi 5) (type_ ((id 0) (kind Cuboid_x)))))
        (Offset ((lo 20) (hi INF) (type_ ((id 0) (kind Cuboid_x)))))) |}]
 
@@ -294,7 +295,7 @@ let cylinder (c : Op.cylinder) input offsets l h =
          are selected *)
       Smt.(fresh_defn (bool in_radius && (not (or_ above)) && not (or_ below)))
       >>| Bool_vector.free)
-  |> Smt.all >>| bool_vector
+  |> Smt.all
 
 let cuboid (c : Op.cuboid) input offsets lx hx ly hy lz hz =
   let open Smt.Monad_infix in
@@ -350,6 +351,7 @@ let offset params o =
   Offset.{ type_; set } |> offset
 
 let eval params op args =
+  let open Smt.Monad_infix in
   let open Util in
   let eval_offsets = List.map ~f:to_offset_exn in
   match op with
@@ -358,6 +360,7 @@ let eval params op args =
   | Sub -> apply2 sub args
   | Cylinder c ->
       apply2 (cylinder c params.bench.input params.offsets) @@ eval_offsets args
+      >>| bool_vector
   | Cuboid c ->
       apply6 (cuboid c params.bench.input params.offsets) @@ eval_offsets args
   | Sphere s -> sphere params s
