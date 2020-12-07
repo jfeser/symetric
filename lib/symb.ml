@@ -26,6 +26,10 @@ module Bool_vector = struct
           | None -> fresh_decl ~prefix:(prefix b) () >>| free)
       |> all)
 
+  let exactly_one x =
+    List.map x ~f:(function Fixed x -> Smt.bool x | Free v -> Smt.var v)
+    |> Smt.exactly_one
+
   let union x x' =
     Smt.(
       List.map2_exn x x' ~f:(fun v v' ->
@@ -99,7 +103,7 @@ module Offset = struct
     let open Smt.Let_syntax in
     let type_ = Abs.Offset.type_ abs in
     let n = Offset.of_type_count offsets type_ in
-    let%map set =
+    let%bind set =
       Offset.of_type offsets type_
       |> Sequence.filter_mapi ~f:(fun i conc ->
              if not (Abs.Offset.contains abs conc) then Some (i, false)
@@ -107,6 +111,7 @@ module Offset = struct
       |> Map.of_sequence_exn (module Int)
       |> Bool_vector.of_abs ~prefix n
     in
+    let%map () = Smt.assert_ @@ Bool_vector.exactly_one set in
     { set; type_ }
 
   let ( = ) x x' = Bool_vector.(x.set = x'.set)
