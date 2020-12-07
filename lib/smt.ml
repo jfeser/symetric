@@ -448,6 +448,12 @@ let parse_model sexp =
           | s -> error s)
   | s -> error s
 
+let smtlib =
+  let%map stmts = get_stmts in
+  Revlist.to_list stmts
+  |> List.map ~f:(fun (_, str) -> str)
+  |> String.concat ~sep:"\n"
+
 let get_interpolant_or_model_inner groups stmts read write =
   let open Sexp in
   write

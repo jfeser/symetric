@@ -119,3 +119,5 @@ val get_interpolant_or_model :
 val get_model : (Var.t * bool) list option t
 
 val check_sat : bool t
+
+val smtlib : string t
