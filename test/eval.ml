@@ -123,39 +123,39 @@ let%test_unit "cylinder symbolic" =
           Smt.eval smt)
         (Abs.cylinder cyl input al ah))
 
-let%test_unit "cuboid symbolic" =
-  Test.run_exn
-    ~config:{ Test.default_config with test_count = 150 }
-    ( module struct
-      type t =
-        Op.cuboid
-        * offset_ctx_with_pair
-        * offset_ctx_with_pair
-        * offset_ctx_with_pair
-        * input
-      [@@deriving quickcheck, sexp_of]
-    end )
-    ~f:(fun (cub, (ctx, xl, xh, yl, yh, zl, zh), input) ->
-      let ctx = Offset.of_list Offset_type.dummy ctx
-      and axl = abstract_offset xl
-      and axh = abstract_offset xh
-      and ayl = abstract_offset yl
-      and ayh = abstract_offset yh
-      and azl = abstract_offset zl
-      and azh = abstract_offset zh
-      and input = Array.of_list input in
-      [%test_pred: Abs.Bool_vector.t]
-        (fun abs ->
-          let open Smt.Let_syntax in
-          let smt =
-            let%bind sxl = Symb.Offset.of_abs xctx axl
-            and sxh = Symb.Offset.of_abs xctx axh
-            and syl = Symb.Offset.of_abs yctx ayl
-            and syh = Symb.Offset.of_abs yctx ayh
-            and szl = Symb.Offset.of_abs zctx azl
-            and szh = Symb.Offset.of_abs zctx azh in
-            let%bind symb = Symb.cuboid cub input ctx sl sh in
-            abs_contains_symb abs symb
-          in
-          Smt.eval smt)
-        (Abs.cylinder cyl input al ah))
+(* let%test_unit "cuboid symbolic" =
+ *   Test.run_exn
+ *     ~config:{ Test.default_config with test_count = 150 }
+ *     ( module struct
+ *       type t =
+ *         Op.cuboid
+ *         * offset_ctx_with_pair
+ *         * offset_ctx_with_pair
+ *         * offset_ctx_with_pair
+ *         * input
+ *       [@@deriving quickcheck, sexp_of]
+ *     end )
+ *     ~f:(fun (cub, (xctx, xl, xh), (yctx, yl, yh), (zctx, zl, zh), input) ->
+ *       let ctx = Offset.of_list Offset_type.dummy xctx
+ *       and axl = abstract_offset xl
+ *       and axh = abstract_offset xh
+ *       and ayl = abstract_offset yl
+ *       and ayh = abstract_offset yh
+ *       and azl = abstract_offset zl
+ *       and azh = abstract_offset zh
+ *       and input = Array.of_list input in
+ *       [%test_pred: Abs.Bool_vector.t]
+ *         (fun abs ->
+ *           let open Smt.Let_syntax in
+ *           let smt =
+ *             let%bind sxl = Symb.Offset.of_abs xctx axl
+ *             and sxh = Symb.Offset.of_abs xctx axh
+ *             and syl = Symb.Offset.of_abs yctx ayl
+ *             and syh = Symb.Offset.of_abs yctx ayh
+ *             and szl = Symb.Offset.of_abs zctx azl
+ *             and szh = Symb.Offset.of_abs zctx azh in
+ *             let%bind symb = Symb.cuboid cub input ctx sl sh in
+ *             abs_contains_symb abs symb
+ *           in
+ *           Smt.eval smt)
+ *         (Abs.cylinder cyl input al ah)) *)
