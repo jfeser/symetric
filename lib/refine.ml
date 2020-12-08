@@ -356,7 +356,7 @@ let synth_constrs ss graph rel target_node expected_output separator =
           }
         in
 
-        (* let%bind () = assert_input_states_contained ss lo_group vars rel in *)
+        let%bind () = assert_input_states_contained ss lo_group vars rel in
         FV.iter local_graph ~f:(fun v ->
             Node.match_ (rel.backward v)
               ~state:(fun _ ->
