@@ -135,7 +135,8 @@ module Offset = struct
       { type_ = Offset_type.dummy; lo = 0.0; hi = Float.infinity }
       offset
     |> [%sexp_of: t list] |> print_s;
-    [%expect {|
+    [%expect
+      {|
       (((lo 0) (hi 4) (type_ ((id -1) (kind Cylinder))))
        ((lo 6) (hi 6) (type_ ((id -1) (kind Cylinder))))
        ((lo 10) (hi INF) (type_ ((id -1) (kind Cylinder))))) |}]
