@@ -121,3 +121,5 @@ val get_model : (Var.t * bool) list option t
 val check_sat : bool t
 
 val smtlib : string t
+
+val with_comment_block : name:string -> ?descr:Sexp.t -> 'a t -> 'a t

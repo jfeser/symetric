@@ -5,18 +5,16 @@ end
 module Op = struct
   include Ast0.Op
 
-  let pp fmt op =
-    let str =
-      match op with
-      | Union -> "or"
-      | Inter -> "and"
-      | Sub -> "sub"
-      | Sphere _ -> "sphere"
-      | Cylinder _ -> "cylinder"
-      | Cuboid _ -> "cuboid"
-      | Offset x -> sprintf "offset_%f" @@ Offset.offset x
-    in
-    Fmt.pf fmt "%s" str
+  let pp fmt = function
+    | Union -> Fmt.pf fmt "or"
+    | Inter -> Fmt.pf fmt "and"
+    | Sub -> Fmt.pf fmt "sub"
+    | Sphere s ->
+        Fmt.pf fmt "sphere_x%f_y%f_z%f_r%f" s.center.x s.center.y s.center.z
+          s.radius
+    | Cylinder _ -> Fmt.pf fmt "cylinder"
+    | Cuboid _ -> Fmt.pf fmt "cuboid"
+    | Offset x -> Fmt.pf fmt "offset_%f" @@ Offset.offset x
 
   let arity = function
     | Sphere _ | Offset _ -> 0

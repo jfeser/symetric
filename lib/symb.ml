@@ -352,11 +352,9 @@ let offset params o =
   let open Smt.Let_syntax in
   let type_ = Offset'.type_ o in
   let%map set =
-    Sequence.map (Offset'.of_type params.offsets type_) ~f:(fun offset ->
-        if [%compare.equal: Offset'.t] o offset then
-          let%map defn = Smt.fresh_defn (Smt.bool true) in
-          Bool_vector.free defn
-        else return @@ Bool_vector.fixed false)
+    Offset'.of_type params.offsets type_
+    |> Sequence.map ~f:(fun offset ->
+           return @@ Bool_vector.fixed @@ [%compare.equal: Offset'.t] o offset)
     |> Sequence.to_list |> Smt.all
   in
   Offset.{ type_; set } |> offset

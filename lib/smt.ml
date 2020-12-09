@@ -261,6 +261,8 @@ module Revlist : sig
 
   val append : 'a t -> 'a -> 'a t
 
+  val append_many : 'a t -> 'a list -> 'a t
+
   val to_list : 'a t -> 'a list
 
   val filter : 'a t -> f:('a -> bool) -> 'a t
@@ -271,12 +273,19 @@ end = struct
 
   let append x l = l :: x
 
+  let append_many xs xs' = List.fold_left xs' ~init:xs ~f:(fun xs x -> x :: xs)
+
   let to_list = List.rev
 
   let filter = List.filter
 end
 
-type stmt = Decl of Decl.t | Defn of Defn.t | Assert of Assert.t
+type stmt =
+  | Decl of Decl.t
+  | Defn of Defn.t
+  | Assert of Assert.t
+  | Comment of string
+  | Newline
 
 type state = {
   stmts : (stmt * string) Revlist.t;
@@ -321,15 +330,25 @@ let clear_asserts =
 
 open Let_syntax
 
+let string_of_stmt = function
+  | Decl d -> Fmt.str "%a" Decl.to_smtlib d
+  | Defn d -> Fmt.str "%a" Defn.to_smtlib d
+  | Assert a -> Fmt.str "%a" Assert.to_smtlib a
+  | Comment c ->
+      String.split_lines c
+      |> List.map ~f:(Fmt.str "; %s")
+      |> String.concat ~sep:"\n"
+  | Newline -> ""
+
 let add_stmt stmt =
-  let stmt_str =
-    match stmt with
-    | Decl d -> Fmt.str "%a" Decl.to_smtlib d
-    | Defn d -> Fmt.str "%a" Defn.to_smtlib d
-    | Assert a -> Fmt.str "%a" Assert.to_smtlib a
-  in
+  let stmt_str = string_of_stmt stmt in
   State
     (fun s -> ((), { s with stmts = Revlist.append s.stmts (stmt, stmt_str) }))
+
+let add_stmts stmts =
+  let stmt_strs = List.map stmts ~f:(fun stmt -> (stmt, string_of_stmt stmt)) in
+  State
+    (fun s -> ((), { s with stmts = Revlist.append_many s.stmts stmt_strs }))
 
 let get_stmts = State (fun s -> (s.stmts, s))
 
@@ -354,6 +373,30 @@ let fresh_defn ?n_args ?(prefix = "x") body =
   let%bind ctr = fresh_num in
   let name = sprintf "%s%d" prefix ctr in
   make_defn ?n_args name body
+
+let with_comment_block ~name ?descr body =
+  let sep = String.make 80 '*' in
+  let header =
+    [ Newline; Comment sep; Comment (Fmt.str "Begin: %s" name); Comment sep ]
+    @ ( Option.map descr ~f:(fun d ->
+            [ Comment (Sexp.to_string_hum d); Comment sep ])
+      |> Option.value ~default:[] )
+    @ [ Newline ]
+  in
+  let footer =
+    [
+      Newline;
+      Comment sep;
+      Comment (Fmt.str "End: %s" name);
+      Comment sep;
+      Newline;
+    ]
+  in
+
+  let%bind () = add_stmts header in
+  let%bind ret = body in
+  let%map () = add_stmts footer in
+  ret
 
 let annotate key value term = Annot (term, key, value)
 
@@ -530,6 +573,9 @@ module Model = struct
   include T
 
   let of_ ?vars e =
+    let vars = Option.map vars ~f:(Set.inter (Expr.vars e)) in
+    print_s
+      [%message "enumerating models" (vars : Set.M(Var).t option) (e : Expr.t)];
     let bit m i = Int.((m lsr i) land 0x1 > 0) in
     let open Sequence in
     let all_vars = expr_vars e |> Set.to_list in

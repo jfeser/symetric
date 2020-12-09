@@ -247,16 +247,20 @@ let assert_selected_state_selects_input group vars graph rel v =
 
 let assert_selected_args_selects_inputs group vars graph rel v =
   let open Smt in
-  let id =
-    let args_v = Node.to_args_exn @@ rel.backward v in
-    Args.id args_v
-  in
-  let parent_select =
-    if G.in_degree graph v > 0 then or_ @@ pred_selected vars graph v else true_
-  and child_select = succ_selected vars graph v in
-  let body = parent_select => and_ child_select
-  and name = sprintf "args-%d-deps" id in
-  fresh_defn ~prefix:name body >>= assert_group_var group
+  (* Args with no dependencies don't generate a constraint. *)
+  if List.is_empty @@ G.succ graph v then return ()
+  else
+    let id =
+      let args_v = Node.to_args_exn @@ rel.backward v in
+      Args.id args_v
+    in
+    let parent_select =
+      if G.in_degree graph v > 0 then or_ @@ pred_selected vars graph v
+      else true_
+    and child_select = succ_selected vars graph v in
+    let body = parent_select => and_ child_select
+    and name = sprintf "args-%d-deps" id in
+    fresh_defn ~prefix:name body >>= assert_group_var group
 
 let assert_state_semantics group vars graph rel v =
   let open Smt in
@@ -297,8 +301,11 @@ let assert_args_semantics ss group vars graph rel v =
     raise_s
       [%message "unexpected args" (op : _ Op.t) (incoming_states : Symb.t list)];
 
-  let%bind eval_result = Symb.eval (params ss) op incoming_states in
-  fresh_defn ~prefix:name Symb.(eval_result = out) >>= assert_group_var group
+  with_comment_block
+    ~name:(Fmt.str "semantics %a %d" Op.pp op id)
+    ~descr:[%message (op : Offset.t Op.t)]
+    (let%bind eval_result = Symb.eval (params ss) op incoming_states in
+     fresh_defn ~prefix:name Symb.(eval_result = out) >>= assert_group_var group)
 
 let in_separator s v =
   Node.match_ ~args:(Fun.const false)
@@ -368,15 +375,20 @@ let synth_constrs ss graph rel target_node expected_output separator =
         let local_graph = UCone.cone graph [ v ] in
 
         let%bind local_vars =
-          let%map vs = Vars.make ss local_graph rel in
-          {
-            vs with
-            arg_vars =
-              Map.set vs.arg_vars ~key:v ~data:(Map.find_exn vars.arg_vars v);
-          }
+          Smt.with_comment_block ~name:"vars"
+            (let%map vs = Vars.make ss local_graph rel in
+             {
+               vs with
+               arg_vars =
+                 Map.set vs.arg_vars ~key:v ~data:(Map.find_exn vars.arg_vars v);
+             })
         in
 
-        let%bind () = assert_input_states_contained ss lo_group vars rel in
+        let%bind () =
+          Smt.with_comment_block ~name:"assert input states"
+          @@ assert_input_states_contained ss lo_group vars rel
+        in
+
         FV.iter local_graph ~f:(fun v ->
             Node.match_ (rel.backward v)
               ~state:(fun _ ->
