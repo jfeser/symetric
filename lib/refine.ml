@@ -45,7 +45,7 @@ module E_foldable = struct
 end
 
 module Refinement = struct
-  type t = { old : Args.t; new_ : Set.M(Abs).t } [@@deriving sexp_of]
+  type t = Set.M(Abs).t Map.M(Args).t [@@deriving sexp_of]
 
   let pp fmt x = Sexp.pp_hum fmt @@ [%sexp_of: t] x
 end
@@ -149,13 +149,22 @@ let forced_bits params interpolant state =
         else (var, None))
   else List.map vars ~f:(fun v -> (v, None))
 
+let inter_partition p p' =
+  Set.to_sequence p
+  |> Sequence.concat_map ~f:(fun v ->
+         Set.to_sequence p'
+         |> Sequence.map ~f:(Abs.meet v)
+         |> Sequence.filter ~f:(Fun.negate Abs.is_bottom))
+  |> Sequence.to_list
+  |> Set.of_list (module Abs)
+
 let refinement_of_interpolant ss graph rel separator interpolant lower_constr
     vars =
   let open Refinement in
   let open Option.Let_syntax in
   let refinement =
     Set.to_list separator
-    |> List.filter_map ~f:(fun v ->
+    |> List.map ~f:(fun v ->
            let var = Map.find_exn vars.arg_vars v in
            let old_states =
              G.pred graph v
@@ -171,11 +180,14 @@ let refinement_of_interpolant ss graph rel separator interpolant lower_constr
                       var)
              |> Set.union_list (module Abs)
            in
-           Some Refinement.{ old = Node.to_args_exn @@ rel.backward v; new_ })
+           let old = Node.to_args_exn @@ rel.backward v in
+           (old, new_))
+    |> Map.of_alist_reduce (module Args) ~f:inter_partition
   in
 
-  Fmt.epr "Refinement: %a@." Fmt.Dump.(list Refinement.pp) refinement;
-  Some refinement
+  print_s [%message (refinement : Refinement.t)];
+
+  refinement
 
 let assert_group_var g v = Smt.(Interpolant.assert_group ~group:g (var v))
 
@@ -383,12 +395,8 @@ let process_interpolant params graph rel separator vars interpolant lower_constr
     =
   let interpolant = ok_exn interpolant in
   Fmt.epr "Interpolant: %a@." Smt.Expr.pp interpolant;
-  match
-    refinement_of_interpolant params graph rel separator interpolant
-      lower_constr vars
-  with
-  | Some r -> Some r
-  | None -> None
+  refinement_of_interpolant params graph rel separator interpolant lower_constr
+    vars
 
 let rec extract_program ss graph rel selected_edges target =
   let args =
@@ -458,6 +466,7 @@ let get_refinement ss target_node =
            | vars, First interpolant, lower_constr ->
                process_interpolant ss graph rel separator vars interpolant
                  lower_constr
+               |> Option.some
            | _ -> None)
   in
 

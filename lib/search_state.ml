@@ -398,3 +398,5 @@ let validate ?(k = 100) ctx =
             (abs : Abs.t list)
             (conc : Conc.t)] )
   done
+
+let validate ?k:_ _ = ()

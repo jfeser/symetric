@@ -55,11 +55,14 @@ module Bool_vector = struct
 
   let contained x by =
     let open Smt in
-    List.filter_mapi x ~f:(fun b v ->
-        match Map.find by b with
-        | Some x -> Some (bool x = to_expr v)
-        | None -> None)
-    |> and_
+    match by with
+    | Abs.Bool_vector.Map m ->
+        List.filter_mapi x ~f:(fun b v ->
+            match Map.find m b with
+            | Some x -> Some (bool x = to_expr v)
+            | None -> None)
+        |> and_
+    | Bottom -> bool false
 
   let refine models abs symb =
     let bit_idx =
@@ -72,7 +75,10 @@ module Bool_vector = struct
       Sequence.filter_map models ~f:(fun model ->
           Map.fold model ~init:(Some abs) ~f:(fun ~key:var ~data:value abs ->
               let idx = Map.find_exn bit_idx var in
-              Option.bind abs ~f:(fun abs -> Abs.Bool_vector.add abs idx value)))
+              Option.bind abs ~f:(fun abs ->
+                  let open Abs.Bool_vector in
+                  let abs' = add abs idx value in
+                  if [%compare.equal: t] abs' bot then None else Some abs')))
       |> Sequence.map ~f:Abs.bool_vector
       |> Sequence.to_list
       |> Set.of_list (module Abs)

@@ -3,7 +3,8 @@ open Params
 
 module Bool_vector = struct
   module T = struct
-    type t = bool Map.M(Int).t [@@deriving compare, hash, sexp]
+    type t = Map of bool Map.M(Int).t | Bottom
+    [@@deriving compare, hash, sexp]
   end
 
   include T
@@ -11,82 +12,126 @@ module Bool_vector = struct
 
   type concrete = bool array
 
-  let top = Map.empty (module Int)
+  let top = Map (Map.empty (module Int))
+
+  let bot = Bottom
+
+  let is_bottom = function Bottom -> true | _ -> false
 
   let pp : t Fmt.t =
-    Fmt.using (fun m ->
-        Map.to_alist m |> List.map ~f:(fun (k, v) -> (Bool.to_int v, k)))
+    Fmt.using (function
+      | Map m ->
+          Map.to_alist m |> List.map ~f:(fun (k, v) -> (Bool.to_int v, k))
+      | Bottom -> [])
     @@ Fmt.list ~sep:(Fmt.any " ")
     @@ Fmt.pair ~sep:Fmt.nop Fmt.int (Fmt.fmt "_%d")
 
   let graphviz_pp params fmt m =
     if not params.hide_values then
       let pp =
-        Fmt.using (fun m ->
-            Map.to_alist m |> List.map ~f:(fun (k, v) -> (Bool.to_int v, k)))
+        Fmt.using (function
+          | Bottom -> []
+          | Map m ->
+              Map.to_alist m |> List.map ~f:(fun (k, v) -> (Bool.to_int v, k)))
         @@ Fmt.list ~sep:(Fmt.any " ")
         @@ Fmt.pair ~sep:Fmt.nop Fmt.int (Fmt.fmt "<sub>%d</sub>")
       in
       Fmt.pf fmt "%a" pp m
 
-  let meet =
-    Map.merge ~f:(fun ~key:_ -> function
-      | `Left x | `Right x -> Some x | `Both _ -> None)
+  let meet x x' =
+    match (x, x') with
+    | Map m, Map m' ->
+        let ks = Map.key_set m and ks' = Map.key_set m' in
+        Set.inter ks ks' |> Set.to_list
+        |> List.map ~f:(fun k ->
+               let v = Map.find_exn m k and v' = Map.find_exn m' k in
+               if Bool.(v = v') then Some (k, v) else None)
+        |> Option.all
+        |> Option.map ~f:(fun kv -> Map (Map.of_alist_exn (module Int) kv))
+        |> Option.value ~default:Bottom
+    | Bottom, _ | _, Bottom -> Bottom
+
+  let%test_unit "meet" =
+    [%test_result: t]
+      ~expect:(Map (Map.of_alist_exn (module Int) [ (0, true); (1, false) ]))
+      (meet
+         (Map
+            (Map.of_alist_exn (module Int) [ (0, true); (1, false); (2, true) ]))
+         (Map
+            (Map.of_alist_exn (module Int) [ (0, true); (1, false); (3, true) ])))
 
   let is_subset s ~of_:s' =
-    if Map.length s < Map.length s' then false
-    else
-      Map.fold2 s s' ~init:true ~f:(fun ~key:_ ~data acc ->
-          acc
-          &&
-          match data with
-          | `Left _ -> true
-          | `Right _ -> false
-          | `Both (x, x') -> Bool.(x = x'))
+    match (s, s') with
+    | Bottom, _ -> true
+    | Map _, Bottom -> false
+    | Map s, Map s' ->
+        if Map.length s < Map.length s' then false
+        else
+          Map.fold2 s s' ~init:true ~f:(fun ~key:_ ~data acc ->
+              acc
+              &&
+              match data with
+              | `Left _ -> true
+              | `Right _ -> false
+              | `Both (x, x') -> Bool.(x = x'))
 
   let lift s =
-    Array.mapi s ~f:(fun i x -> (i, x))
-    |> Array.to_list
-    |> Map.of_alist_exn (module Int)
+    Map
+      ( Array.mapi s ~f:(fun i x -> (i, x))
+      |> Array.to_list
+      |> Map.of_alist_exn (module Int) )
 
-  let union =
-    Map.merge ~f:(fun ~key:_ -> function
-      | `Both (x, x') -> Some (x || x')
-      | `Left true | `Right true -> Some true
-      | `Left false | `Right false -> None)
+  let union x x' =
+    match (x, x') with
+    | Bottom, _ | _, Bottom -> Bottom
+    | Map x, Map x' ->
+        Map
+          (Map.merge x x' ~f:(fun ~key:_ -> function
+             | `Both (x, x') -> Some (x || x')
+             | `Left true | `Right true -> Some true
+             | `Left false | `Right false -> None))
 
-  let inter =
-    Map.merge ~f:(fun ~key:_ -> function
-      | `Both (x, x') -> Some (x && x')
-      | `Left false | `Right false -> Some false
-      | `Left true | `Right true -> None)
+  let inter x x' =
+    match (x, x') with
+    | Bottom, _ | _, Bottom -> Bottom
+    | Map x, Map x' ->
+        Map
+          (Map.merge x x' ~f:(fun ~key:_ -> function
+             | `Both (x, x') -> Some (x && x')
+             | `Left false | `Right false -> Some false
+             | `Left true | `Right true -> None))
 
-  let sub =
-    Map.merge ~f:(fun ~key:_ -> function
-      | `Both (x, x') -> Some (x && not x')
-      | `Left false | `Right true -> Some false
-      | `Left true | `Right false -> None)
+  let sub x x' =
+    match (x, x') with
+    | Bottom, _ | _, Bottom -> Bottom
+    | Map x, Map x' ->
+        Map
+          (Map.merge x x' ~f:(fun ~key:_ -> function
+             | `Both (x, x') -> Some (x && not x')
+             | `Left false | `Right true -> Some false
+             | `Left true | `Right false -> None))
 
-  let mem v i = Map.mem v i
+  let mem v i = match v with Bottom -> false | Map v -> Map.mem v i
 
-  let set m k v = Map.set m ~key:k ~data:v
+  let set m k v =
+    match m with Map m -> Map (Map.set m ~key:k ~data:v) | Bottom -> Bottom
 
   let add m k v =
-    match Map.find m k with
-    | Some v' -> if Bool.(v = v') then Some m else None
-    | None -> Some (set m k v)
+    match m with
+    | Map m -> (
+        match Map.find m k with
+        | Some v' -> if Bool.(v = v') then Map m else Bottom
+        | None -> set (Map m) k v )
+    | Bottom -> Bottom
 
-  let add_exn m k v =
-    Option.value_exn (add m k v)
-      ~error:
-        (Error.create_s
-           [%message "could not add bit" (m : t) (k : int) (v : bool)])
+  let contains a c =
+    match a with
+    | Map a -> Map.for_alli a ~f:(fun ~key:i ~data:v -> Bool.(c.(i) = v))
+    | Bottom -> false
 
-  let contains a c = Map.for_alli a ~f:(fun ~key:i ~data:v -> Bool.(c.(i) = v))
+  let width a = match a with Map m -> Map.length m | Bottom -> 0
 
-  let width = Map.length
-
-  let of_list_exn l = Map.of_alist_exn (module Int) l
+  let of_list_exn l = Map (Map.of_alist_exn (module Int) l)
 end
 
 module Offset = struct
@@ -101,11 +146,17 @@ module Offset = struct
 
   let top t = { lo = Float.min_value; hi = Float.max_value; type_ = t }
 
+  let bot t = { lo = Float.max_value; hi = Float.min_value; type_ = t }
+
+  let is_bottom x = Float.(x.lo > x.hi)
+
   let lift x =
     { lo = Offset.offset x; hi = Offset.offset x; type_ = Offset.type_ x }
 
   let create ~lo ~hi ~type_ =
     if Float.(hi < lo) then None else Some { lo; hi; type_ }
+
+  let create_exn ~lo ~hi ~type_ = Option.value_exn (create ~lo ~hi ~type_)
 
   let copy ?lo ?hi x =
     create
@@ -147,6 +198,17 @@ module Offset = struct
   let is_subset x ~of_:x' = Float.(x.lo >= x'.lo && x.hi <= x'.hi)
 
   let type_ x = x.type_
+
+  let meet x x' =
+    [%test_result: Offset_type.t] ~expect:x.type_ x'.type_;
+    { x with lo = Float.max x.lo x'.lo; hi = Float.min x.hi x'.hi }
+
+  let%test_unit "" =
+    [%test_result: t]
+      ~expect:(create_exn ~lo:1.0 ~hi:2.0 ~type_:Offset_type.dummy)
+      (meet
+         (create_exn ~lo:0.0 ~hi:2.0 ~type_:Offset_type.dummy)
+         (create_exn ~lo:1.0 ~hi:3.0 ~type_:Offset_type.dummy))
 end
 
 module T = struct
@@ -161,7 +223,7 @@ let bool_vector x = Bool_vector x
 
 let offset x = Offset x
 
-let map ~bool_vector ~offset = function
+let bind ~bool_vector ~offset = function
   | Bool_vector x -> bool_vector x
   | Offset x -> offset x
 
@@ -170,7 +232,7 @@ let top = function
   | Offset t -> offset @@ Offset.top t
 
 let graphviz_pp params fmt =
-  map
+  bind
     ~bool_vector:(Bool_vector.graphviz_pp params fmt)
     ~offset:(Offset.graphviz_pp fmt)
 
@@ -200,18 +262,26 @@ let contains a c =
   | _ -> false
 
 let is_subset a ~of_:a' =
-  map a
+  bind a
     ~bool_vector:(fun v -> Bool_vector.is_subset v ~of_:(to_bool_vector_exn a'))
     ~offset:(fun o -> Offset.is_subset o ~of_:(to_offset_exn a'))
+
+let meet a a' =
+  match (a, a') with
+  | Bool_vector a, Bool_vector a' -> bool_vector @@ Bool_vector.meet a a'
+  | Offset a, Offset a' -> offset @@ Offset.meet a a'
+  | _ -> raise_s [%message "unexpected inputs" (a : t) (a' : t)]
+
+let is_bottom a =
+  bind a ~bool_vector:Bool_vector.is_bottom ~offset:Offset.is_bottom
 
 let lift = function
   | Conc.Bool_vector x -> bool_vector @@ Bool_vector.lift x
   | Offset x -> offset @@ Offset.lift x
 
 let cylinder (c : Op.cylinder) input (l : Offset.t) (h : Offset.t) =
-  let open Sequence in
-  Array.to_sequence input
-  |> filter_mapi ~f:(fun i v ->
+  Array.to_list input
+  |> List.filter_mapi ~f:(fun i v ->
          let open Vector3 in
          let rot = inverse_rotate v ~theta:c.theta in
          let in_radius =
@@ -226,13 +296,12 @@ let cylinder (c : Op.cylinder) input (l : Offset.t) (h : Offset.t) =
          if is_out then Some (i, false)
          else if is_in then Some (i, true)
          else None)
-  |> Map.of_sequence_exn (module Int)
+  |> Bool_vector.of_list_exn
 
 let cuboid (c : Op.cuboid) input (lx : Offset.t) (hx : Offset.t) (ly : Offset.t)
     (hy : Offset.t) (lz : Offset.t) (hz : Offset.t) =
-  let open Sequence in
-  Array.to_sequence input
-  |> filter_mapi ~f:(fun i v ->
+  Array.to_list input
+  |> List.filter_mapi ~f:(fun i v ->
          let open Vector3 in
          let rot = inverse_rotate v ~theta:c.theta in
          let below_lox = Float.(rot.x < lx.lo)
@@ -257,7 +326,7 @@ let cuboid (c : Op.cuboid) input (lx : Offset.t) (hx : Offset.t) (ly : Offset.t)
          if is_out then Some (i, false)
          else if is_in then Some (i, true)
          else None)
-  |> Map.of_sequence_exn (module Int)
+  |> Bool_vector.of_list_exn
 
 let eval params op args =
   let open Util in

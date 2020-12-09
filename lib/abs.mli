@@ -1,11 +1,13 @@
 module Bool_vector : sig
-  type t = bool Map.M(Int).t [@@deriving compare, hash, sexp]
+  type t = Map of bool Map.M(Int).t | Bottom [@@deriving compare, hash, sexp]
 
   type concrete = bool array
 
   include Comparator.S with type t := t
 
   val top : t
+
+  val bot : t
 
   val pp : t Fmt.t
 
@@ -27,9 +29,7 @@ module Bool_vector : sig
 
   val set : t -> int -> bool -> t
 
-  val add : t -> int -> bool -> t option
-
-  val add_exn : t -> int -> bool -> t
+  val add : t -> int -> bool -> t
 
   val contains : t -> concrete -> bool
 
@@ -73,10 +73,11 @@ val bool_vector : Bool_vector.t -> t
 
 val offset : Offset.t -> t
 
-val map :
-  bool_vector:(Bool_vector.t -> 'a) -> offset:(Offset.t -> 'a) -> t -> 'a
-
 val top : Ast.Type.t -> t
+
+val meet : t -> t -> t
+
+val is_bottom : t -> bool
 
 val graphviz_pp : Params.t -> t Fmt.t
 

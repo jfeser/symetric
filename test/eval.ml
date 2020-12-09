@@ -78,26 +78,29 @@ let%test_unit "cuboid abstract" =
           Conc.cuboid c input xl xh yl yh zl zh ))
 
 let abs_contains_symb abs symb =
-  let open Smt.Let_syntax in
-  let%bind () =
-    (* Check if the symbolic can differ from the abstract on any bit *)
-    List.mapi symb ~f:(fun i v ->
-        match v with
-        | Symb.Bool_vector.Fixed b ->
-            Map.find abs i
-            |> Option.iter ~f:(fun b' -> [%test_result: bool] ~expect:b' b);
-            Smt.bool false
-        | Free v ->
-            (* Check if the symbolic output can differ from the abstract output
-               on the ith bit. The default is false. *)
-            Map.find abs i
-            |> Option.map ~f:(fun b -> Smt.(not (var v = bool b)))
-            |> Option.value ~default:(Smt.bool false))
-    |> Smt.or_ |> Smt.assert_
-  in
-  (* If the symbolic can differ from the abstract, then the abstract does not
-     contain the symbolic behavior *)
-  Smt.(check_sat) >>| not
+  match abs with
+  | Abs.Bool_vector.Bottom -> Smt.return false
+  | Map abs ->
+      let open Smt.Let_syntax in
+      let%bind () =
+        (* Check if the symbolic can differ from the abstract on any bit *)
+        List.mapi symb ~f:(fun i v ->
+            match v with
+            | Symb.Bool_vector.Fixed b ->
+                Map.find abs i
+                |> Option.iter ~f:(fun b' -> [%test_result: bool] ~expect:b' b);
+                Smt.bool false
+            | Free v ->
+                (* Check if the symbolic output can differ from the abstract output
+                   on the ith bit. The default is false. *)
+                Map.find abs i
+                |> Option.map ~f:(fun b -> Smt.(not (var v = bool b)))
+                |> Option.value ~default:(Smt.bool false))
+        |> Smt.or_ |> Smt.assert_
+      in
+      (* If the symbolic can differ from the abstract, then the abstract does not
+         contain the symbolic behavior *)
+      Smt.(check_sat) >>| not
 
 let%test_unit "cylinder symbolic" =
   Test.run_exn

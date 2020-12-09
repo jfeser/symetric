@@ -124,30 +124,33 @@ let with_size graph f =
 
 let refine ss refinement =
   let new_states =
-    List.concat_map refinement ~f:(fun (r : Refine.Refinement.t) ->
-        let cost, type_ =
-          let old_state =
-            G.pred (graph ss) @@ Node.of_args r.old
-            |> List.hd_exn |> Node.to_state_exn
-          in
-          (State.cost ss old_state, State.type_ ss old_state)
-        in
+    Map.to_alist refinement
+    |> List.concat_map ~f:(fun (old, new_) ->
+           let cost, type_ =
+             let old_state =
+               G.pred (graph ss) @@ Node.of_args old
+               |> List.hd_exn |> Node.to_state_exn
+             in
+             (State.cost ss old_state, State.type_ ss old_state)
+           in
 
-        (* Remove edges to old states *)
-        G.pred_e (graph ss) @@ Node.of_args r.old
-        |> List.iter ~f:(G.remove_edge_e @@ graph ss);
+           (* Remove edges to old states *)
+           G.pred_e (graph ss) @@ Node.of_args old
+           |> List.iter ~f:(G.remove_edge_e @@ graph ss);
 
-        (* Insert new states and add edges to args nodes. *)
-        let new_states =
-          Set.to_list r.new_
-          |> List.map ~f:(fun state ->
-                 let (Fresh v' | Stale v') = State.create ss state cost type_ in
-                 G.add_edge_e (graph ss)
-                   (Node.of_state v', -1, Node.of_args r.old);
-                 v')
-        in
+           (* Insert new states and add edges to args nodes. *)
+           let new_states =
+             Set.to_list new_
+             |> List.map ~f:(fun state ->
+                    let (Fresh v' | Stale v') =
+                      State.create ss state cost type_
+                    in
+                    G.add_edge_e (graph ss)
+                      (Node.of_state v', -1, Node.of_args old);
+                    v')
+           in
 
-        new_states)
+           new_states)
   in
 
   fix_up ss;
