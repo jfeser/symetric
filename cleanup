@@ -1,0 +1,5 @@
+#!/bin/sh
+
+rm -rf *dot
+rm -rf *smt2
+rm -rf *png
