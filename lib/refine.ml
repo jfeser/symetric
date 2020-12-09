@@ -309,6 +309,8 @@ let synth_constrs ss graph rel target_node expected_output separator =
   let%bind lo_group = Smt.Interpolant.Group.create
   and hi_group = Smt.Interpolant.Group.create in
 
+  print_s [%message (separator : Set.M(G.V).t)];
+
   (* There should only be one target even after unsharing *)
   let target_node =
     Node.of_state target_node |> rel.forward |> Sequence.hd_exn
@@ -337,7 +339,7 @@ let synth_constrs ss graph rel target_node expected_output separator =
       assert_output_state_contained (params ss) hi_group vars target_node
         expected_output
     in
-    (* let%bind () = assert_input_states_contained ss hi_group vars rel in *)
+    let%bind () = assert_input_states_contained ss hi_group vars rel in
     FV.iter top_graph ~f:(fun v ->
         Node.match_ (rel.backward v)
           ~state:(fun _ ->
@@ -395,6 +397,12 @@ let process_interpolant params graph rel separator vars interpolant lower_constr
     =
   let interpolant = ok_exn interpolant in
   Fmt.epr "Interpolant: %a@." Smt.Expr.pp interpolant;
+
+  [%test_pred: Set.M(Smt.Var).t]
+    ~message:"interpolant vars are not all arg outputs"
+    (Set.for_all ~f:(fun v -> Char.((String_id.to_string v).[0] = 'a')))
+    (Smt.Expr.vars interpolant);
+
   refinement_of_interpolant params graph rel separator interpolant lower_constr
     vars
 
@@ -458,16 +466,24 @@ let get_refinement ss target_node =
   let expected_output = Conc.bool_vector (params ss).bench.output in
 
   let m_refinement =
-    USeparator.simple graph top
-    |> Sequence.find_map ~f:(fun separator ->
-           match
-             run_solver ss graph rel target_node expected_output separator
-           with
-           | vars, First interpolant, lower_constr ->
-               process_interpolant ss graph rel separator vars interpolant
-                 lower_constr
-               |> Option.some
-           | _ -> None)
+    let separators = USeparator.simple graph top in
+
+    [%test_pred: Set.M(G.V).t Sequence.t]
+      ~message:"separator isn't all args nodes"
+      (Sequence.for_all
+         ~f:
+           (Set.for_all ~f:(fun v ->
+                rel.backward v
+                |> Node.match_ ~args:(Fun.const true) ~state:(Fun.const false))))
+      separators;
+
+    Sequence.find_map separators ~f:(fun separator ->
+        match run_solver ss graph rel target_node expected_output separator with
+        | vars, First interpolant, lower_constr ->
+            process_interpolant ss graph rel separator vars interpolant
+              lower_constr
+            |> Option.some
+        | _ -> None)
   in
 
   match m_refinement with
