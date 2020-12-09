@@ -39,7 +39,7 @@ module Bool_vector = struct
   let inter x x' =
     Smt.(
       List.map2_exn x x' ~f:(fun v v' ->
-          fresh_defn (to_expr v || to_expr v') >>| free)
+          fresh_defn (to_expr v && to_expr v') >>| free)
       |> all)
 
   let sub x x' =
