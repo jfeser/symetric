@@ -216,10 +216,9 @@ let assert_input_states_contained ss group vars rel =
   Map.to_alist vars.state_vars
   |> List.map ~f:(fun (v, var) ->
          let state_v = Node.to_state_exn @@ rel.backward v in
-         let state = State.state ss state_v and id = State.id state_v in
-         Symb.contained (params ss) var ~by:state
-         |> fresh_defn ~prefix:(Fmt.str "state-%d" id)
-         >>= assert_group_var group)
+         let state = State.state ss state_v in
+         Interpolant.assert_group ~group
+           (Symb.contained (params ss) var ~by:state))
   |> all_unit
 
 let assert_output_state_contained params group vars target_node expected =
@@ -295,7 +294,6 @@ let assert_args_semantics ss group vars graph rel v =
   in
 
   let out = Map.find_exn vars.arg_vars v in
-  let name = Fmt.str "semantics-%a-%d" Op.pp op id in
 
   if Op.arity op <> List.length incoming_states then
     raise_s
@@ -305,7 +303,7 @@ let assert_args_semantics ss group vars graph rel v =
     ~name:(Fmt.str "semantics %a %d" Op.pp op id)
     ~descr:[%message (op : Offset.t Op.t)]
     (let%bind eval_result = Symb.eval (params ss) op incoming_states in
-     fresh_defn ~prefix:name Symb.(eval_result = out) >>= assert_group_var group)
+     Symb.(eval_result = out) |> Interpolant.assert_group ~group)
 
 let in_separator s v =
   Node.match_ ~args:(Fun.const false)
@@ -434,8 +432,10 @@ let rec extract_program ss graph rel selected_edges target =
   | [ a ] ->
       `Apply
         ( Args.op ss @@ Node.to_args_exn @@ rel.backward a,
-          G.succ graph a
-          |> List.map ~f:(extract_program ss graph rel selected_edges) )
+          G.succ_e graph a
+          |> List.sort ~compare:(fun (_, i, _) (_, j, _) -> [%compare: int] i j)
+          |> List.map ~f:(fun (_, _, v) ->
+                 extract_program ss graph rel selected_edges v) )
   | args ->
       let args =
         List.map args ~f:(fun v -> Node.to_args_exn @@ rel.backward v)
