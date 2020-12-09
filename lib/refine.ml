@@ -162,8 +162,14 @@ let refinement_of_interpolant ss graph rel separator interpolant lower_constr
     vars =
   let open Refinement in
   let open Option.Let_syntax in
+  let interpolant_vars = Smt.Expr.vars interpolant in
   let refinement =
     Set.to_list separator
+    (* Only consider refining symbolic vars that are mentioned in the
+       interpolant *)
+    |> List.filter ~f:(fun v ->
+           let var = Map.find_exn vars.arg_vars v in
+           Set.inter (Symb.vars var) interpolant_vars |> Set.is_empty |> not)
     |> List.map ~f:(fun v ->
            let var = Map.find_exn vars.arg_vars v in
            let old_states =

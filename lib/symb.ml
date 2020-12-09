@@ -415,3 +415,7 @@ let refine params interpolant lower_constr abs symb =
         (refined : Set.M(Abs).t)
         [%here]];
   refined
+
+let vars = function
+  | Bool_vector v -> Bool_vector.vars v
+  | Offset v -> Offset.vars v
