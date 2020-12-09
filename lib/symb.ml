@@ -125,9 +125,10 @@ module Offset = struct
   let contained params x by =
     Sequence.zip (Sequence.of_list x.set)
       (Offset.of_type params.offsets x.type_)
-    |> Sequence.map ~f:(fun (in_set, offset) ->
-           let is_in = Abs.Offset.contains by offset in
-           Smt.(Bool_vector.to_expr in_set = bool is_in))
+    |> Sequence.filter_map ~f:(fun (in_set, offset) ->
+           if not (Abs.Offset.contains by offset) then
+             Some Smt.(not (Bool_vector.to_expr in_set))
+           else None)
     |> Sequence.to_list |> Smt.and_
 
   let index_of_exn ~equal l x =
