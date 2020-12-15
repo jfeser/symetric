@@ -213,3 +213,5 @@ hit the concrete V.
   CLOSED: [2020-12-07 Mon 18:25] SCHEDULED: <2020-11-03 Tue>
 
 * TODO Multiple output states should be represented by a single union state instead
+* DONE Encode cad dsl examples
+  CLOSED: [2020-12-10 Thu 16:37]

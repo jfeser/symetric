@@ -3,8 +3,8 @@
 open Ast
 open Search_state
 open Params
-
-open Cone.Make (Search_state.G)
+module C = Cone.Make (Search_state.G)
+open C
 
 module Seq = struct
   include Sequence

@@ -1,3 +1,5 @@
+[@@@landmark "auto"]
+
 open Ast
 open Params
 open Search_state
@@ -18,14 +20,16 @@ module USeparator = Separator.Make (U.G_replicated)
 
 let dump_detailed ~suffix ?separator ss graph rel =
   let (module Attr) = attr ss in
-  let open Dump.Make
-             (U.G_replicated)
-             (struct
-               let vertex_name v = Fmt.str "%d" @@ U.id v
+  let module D =
+    Dump.Make
+      (U.G_replicated)
+      (struct
+        let vertex_name v = Fmt.str "%d" @@ U.id v
 
-               let vertex_attributes v =
-                 Attr.vertex_attributes @@ rel.backward v
-             end) in
+        let vertex_attributes v = Attr.vertex_attributes @@ rel.backward v
+      end)
+  in
+  let open D in
   dump_detailed ~suffix ?separator (params ss) graph
 
 module V_foldable = struct
@@ -122,33 +126,6 @@ end
 
 open Vars
 
-let check_true interpolant v state =
-  let open Smt.Let_syntax in
-  let prob =
-    let%bind () = Smt.clear_asserts in
-    let%bind () = Smt.(assert_ (not (interpolant => var v))) in
-    Smt.check_sat
-  in
-  not (Smt.eval_with_state state prob)
-
-let check_false interpolant v state =
-  let open Smt.Let_syntax in
-  let prob =
-    let%bind () = Smt.clear_asserts in
-    let%bind () = Smt.(assert_ (not (interpolant => not (var v)))) in
-    Smt.check_sat
-  in
-  not (Smt.eval_with_state state prob)
-
-let forced_bits params interpolant state =
-  let vars = Smt.Expr.vars interpolant |> Set.to_list in
-  if params.enable_forced_bit_check then
-    List.map vars ~f:(fun var ->
-        if check_true interpolant var state then (var, Some true)
-        else if check_false interpolant var state then (var, Some false)
-        else (var, None))
-  else List.map vars ~f:(fun v -> (v, None))
-
 let inter_partition p p' =
   Set.to_sequence p
   |> Sequence.concat_map ~f:(fun v ->
@@ -160,8 +137,6 @@ let inter_partition p p' =
 
 let refinement_of_interpolant ss graph rel separator interpolant lower_constr
     vars =
-  let open Refinement in
-  let open Option.Let_syntax in
   let interpolant_vars = Smt.Expr.vars interpolant in
   let refinement =
     Set.to_list separator
@@ -279,8 +254,7 @@ let assert_state_semantics group vars graph rel v =
   fresh_defn ~prefix:name body >>= assert_group_var group
 
 let assert_args_semantics ss group vars graph rel v =
-  let open Smt in
-  let open Let_syntax in
+  let open Smt.Let_syntax in
   let op, id =
     let args_v = Node.to_args_exn @@ rel.backward v in
     (Args.op ss args_v, Args.id args_v)
@@ -299,11 +273,11 @@ let assert_args_semantics ss group vars graph rel v =
     raise_s
       [%message "unexpected args" (op : _ Op.t) (incoming_states : Symb.t list)];
 
-  with_comment_block
+  Smt.with_comment_block
     ~name:(Fmt.str "semantics %a %d" Op.pp op id)
     ~descr:[%message (op : Offset.t Op.t)]
     (let%bind eval_result = Symb.eval (params ss) op incoming_states in
-     Symb.(eval_result = out) |> Interpolant.assert_group ~group)
+     Symb.(eval_result = out) |> Smt.Interpolant.assert_group ~group)
 
 let in_separator s v =
   Node.match_ ~args:(Fun.const false)

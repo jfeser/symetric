@@ -1,7 +1,5 @@
 open! Core
 
-[@@@landmark "auto"]
-
 let debug_out_file =
   let ctr = ref 0 in
   fun () ->
@@ -293,24 +291,21 @@ type state = {
   group_ctr : int;
 }
 
-type 'a t = State of (state -> 'a * state) [@@unboxed]
+type 'a t = state -> 'a * state
 
 include Monad.Make (struct
   type nonrec 'a t = 'a t
 
-  let bind (State run) ~f =
-    State
-      (fun s ->
-        let x, s' = run s in
-        let (State run') = f x in
-        run' s')
+  let bind run ~f s =
+    let x, s' = run s in
+    f x s'
 
-  let return x = State (fun s -> (x, s))
+  let return x s = (x, s)
 
   let map = `Define_using_bind
 end)
 
-let with_state s (State f) = f s
+let with_state s f = f s
 
 let run c = with_state { stmts = Revlist.empty; var_ctr = 0; group_ctr = 0 } c
 
@@ -318,15 +313,12 @@ let eval c = Tuple.T2.get1 @@ run c
 
 let eval_with_state s c = Tuple.T2.get1 @@ with_state s c
 
-let clear_asserts =
-  let f s =
-    let stmts' =
-      Revlist.filter s.stmts ~f:(fun (stmt, _) ->
-          match stmt with Assert _ -> false | _ -> true)
-    in
-    ((), { s with stmts = stmts' })
+let clear_asserts s =
+  let stmts' =
+    Revlist.filter s.stmts ~f:(fun (stmt, _) ->
+        match stmt with Assert _ -> false | _ -> true)
   in
-  State f
+  ((), { s with stmts = stmts' })
 
 open Let_syntax
 
@@ -342,17 +334,15 @@ let string_of_stmt = function
 
 let add_stmt stmt =
   let stmt_str = string_of_stmt stmt in
-  State
-    (fun s -> ((), { s with stmts = Revlist.append s.stmts (stmt, stmt_str) }))
+  fun s -> ((), { s with stmts = Revlist.append s.stmts (stmt, stmt_str) })
 
 let add_stmts stmts =
   let stmt_strs = List.map stmts ~f:(fun stmt -> (stmt, string_of_stmt stmt)) in
-  State
-    (fun s -> ((), { s with stmts = Revlist.append_many s.stmts stmt_strs }))
+  fun s -> ((), { s with stmts = Revlist.append_many s.stmts stmt_strs })
 
-let get_stmts = State (fun s -> (s.stmts, s))
+let get_stmts s = (s.stmts, s)
 
-let fresh_num = State (fun s -> (s.var_ctr, { s with var_ctr = s.var_ctr + 1 }))
+let fresh_num s = (s.var_ctr, { s with var_ctr = s.var_ctr + 1 })
 
 let make_decl ?n_args name =
   let name = String_id.of_string name in
@@ -408,32 +398,29 @@ module Interpolant = struct
   module Group = struct
     type t = int
 
-    let create =
-      State (fun s -> (s.group_ctr, { s with group_ctr = s.group_ctr + 1 }))
+    let create s = (s.group_ctr, { s with group_ctr = s.group_ctr + 1 })
 
     let pp fmt x = Fmt.pf fmt "g%d" x
   end
 
-  let group_vars =
-    State
-      (fun s ->
-        let stmts = s.stmts |> Revlist.to_list in
-        let ctx =
-          List.filter_map stmts ~f:(fun (stmt, _) ->
-              match stmt with
-              | Defn ({ name; _ }, body) -> Some (name, body)
-              | _ -> None)
-          |> Map.of_alist_exn (module String_id)
-        in
-        let k g =
-          List.filter_map stmts ~f:(fun (stmt, _) ->
-              match stmt with
-              | Assert { group = Some gid; body } when Int.(g = gid) ->
-                  Some (expand ctx body |> Expr.vars)
-              | _ -> None)
-          |> Set.union_list (module Var)
-        in
-        (k, s))
+  let group_vars s =
+    let stmts = s.stmts |> Revlist.to_list in
+    let ctx =
+      List.filter_map stmts ~f:(fun (stmt, _) ->
+          match stmt with
+          | Defn ({ name; _ }, body) -> Some (name, body)
+          | _ -> None)
+      |> Map.of_alist_exn (module String_id)
+    in
+    let k g =
+      List.filter_map stmts ~f:(fun (stmt, _) ->
+          match stmt with
+          | Assert { group = Some gid; body } when Int.(g = gid) ->
+              Some (expand ctx body |> Expr.vars)
+          | _ -> None)
+      |> Set.union_list (module Var)
+    in
+    (k, s)
 
   let assert_group ?group body =
     let%bind group =

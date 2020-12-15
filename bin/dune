@@ -31,16 +31,10 @@
 
 (executable
  (name lazy_cegis)
+ (public_name lazy_cegis)
  (modules lazy_cegis)
  (libraries core staged_synth)
- (preprocess (pps ppx_compare ppx_hash ppx_sexp_conv ppx_let)))
-
-(executable
- (name lazy_cegis_old)
- (public_name lazy_cegis_old)
- (modules lazy_cegis_old)
- (libraries core staged_synth)
- (preprocess (pps ppx_compare ppx_hash ppx_sexp_conv ppx_let ppx_here)))
+ (preprocess (pps ppx_jane landmarks.ppx --auto)))
 
 (executable
  (name mk_simple_cad_bench)
