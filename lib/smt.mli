@@ -21,7 +21,7 @@ module Model : sig
 
   val to_expr : t -> Expr.t
 
-  val of_ : ?vars:Set.M(Var).t -> Expr.t -> t Sequence.t
+  val of_ : ?vars:Set.M(Var).t -> Expr.t -> t list
 end
 
 type stmt
@@ -49,6 +49,14 @@ val fresh_decl : ?n_args:int -> ?prefix:string -> unit -> Var.t t
 val make_defn : ?n_args:int -> string -> Expr.t -> Var.t t
 
 val fresh_defn : ?n_args:int -> ?prefix:string -> Expr.t -> Var.t t
+
+val fresh_defn_or_literal :
+  ?n_args:int ->
+  ?prefix:string ->
+  literal:(bool -> 'a t) ->
+  defn:(Var.t -> 'a t) ->
+  Expr.t ->
+  'a t
 
 val annotate : string -> string -> Expr.t -> Expr.t
 

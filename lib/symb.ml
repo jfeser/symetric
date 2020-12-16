@@ -12,6 +12,11 @@ module Bool_vector = struct
 
   let to_expr = function Free v -> Smt.var v | Fixed x -> Smt.bool x
 
+  let elem_of_expr =
+    Smt.fresh_defn_or_literal
+      ~defn:(fun v -> free v |> Smt.return)
+      ~literal:(fun v -> fixed v |> Smt.return)
+
   let create_n ?(prefix = sprintf "b%d") n =
     Smt.(
       List.init n ~f:(fun b -> fresh_decl ~prefix:(prefix b) () >>| free) |> all)
@@ -34,20 +39,18 @@ module Bool_vector = struct
 
   let union x x' =
     Smt.(
-      List.map2_exn x x' ~f:(fun v v' ->
-          fresh_defn (to_expr v || to_expr v') >>| free)
+      List.map2_exn x x' ~f:(fun v v' -> elem_of_expr (to_expr v || to_expr v'))
       |> all)
 
   let inter x x' =
     Smt.(
-      List.map2_exn x x' ~f:(fun v v' ->
-          fresh_defn (to_expr v && to_expr v') >>| free)
+      List.map2_exn x x' ~f:(fun v v' -> elem_of_expr (to_expr v && to_expr v'))
       |> all)
 
   let sub x x' =
     Smt.(
       List.map2_exn x x' ~f:(fun v v' ->
-          fresh_defn (to_expr v && not (to_expr v')) >>| free)
+          elem_of_expr (to_expr v && not (to_expr v')))
       |> all)
 
   let ( = ) x x' =
@@ -74,15 +77,14 @@ module Bool_vector = struct
     in
 
     let refined_states =
-      Sequence.filter_map models ~f:(fun model ->
+      List.filter_map models ~f:(fun model ->
           Map.fold model ~init:(Some abs) ~f:(fun ~key:var ~data:value abs ->
               let idx = Map.find_exn bit_idx var in
               Option.bind abs ~f:(fun abs ->
                   let open Abs.Bool_vector in
                   let abs' = add abs idx value in
                   if [%compare.equal: t] abs' bot then None else Some abs')))
-      |> Sequence.map ~f:Abs.bool_vector
-      |> Sequence.to_list
+      |> List.map ~f:Abs.bool_vector
       |> Set.of_list (module Abs)
     in
     refined_states
@@ -142,7 +144,7 @@ module Offset = struct
 
   let refine_with_models params models old_abs symb =
     let should_keep =
-      Sequence.reduce_exn models
+      List.reduce_exn models
         ~f:
           (Map.merge ~f:(fun ~key:_ -> function
              | `Both (false, false) -> Some false
@@ -191,10 +193,7 @@ module Offset = struct
   let f x = Bool_vector.Free (v x)
 
   let simple_test models =
-    let models =
-      Sequence.of_list models
-      |> Sequence.map ~f:(Map.of_alist_exn (module String_id))
-    in
+    let models = List.map models ~f:(Map.of_alist_exn (module String_id)) in
     let type_ = Offset_type.{ id = 0; kind = Cuboid_x } in
     let params =
       Params.create
@@ -318,8 +317,8 @@ let cylinder (c : Op.cylinder) input offsets l h =
       (* Point is in if it is in the radius, none of the low offsets that are
          above it are selected, and none of the high offsets that are below it
          are selected *)
-      Smt.(fresh_defn (bool in_radius && (not (or_ above)) && not (or_ below)))
-      >>| Bool_vector.free)
+      Bool_vector.elem_of_expr
+        Smt.(bool in_radius && (not (or_ above)) && not (or_ below)))
   |> Smt.all
 
 let cuboid (c : Op.cuboid) input offsets lx hx ly hy lz hz =
@@ -341,24 +340,22 @@ let cuboid (c : Op.cuboid) input offsets lx hx ly hy lz hz =
          and below_z =
            filter_offsets offsets hz (fun o -> Float.(Offset'.offset o < rot.z))
          in
-         Smt.(
-           fresh_defn
-             ( (not (or_ above_x))
+         Bool_vector.elem_of_expr
+           Smt.(
+             (not (or_ above_x))
              && (not (or_ below_x))
              && (not (or_ above_y))
              && (not (or_ below_y))
              && (not (or_ above_z))
-             && not (or_ below_z) ))
-         >>| Bool_vector.free)
+             && not (or_ below_z)))
   |> Smt.all >>| bool_vector
 
 let sphere params (s : Op.sphere) =
   let ret =
     params.bench.input |> Array.to_list
     |> List.map ~f:(fun v ->
-           Smt.(
-             fresh_defn (bool Float.(Vector3.l2_dist s.center v <= s.radius))
-             >>| Bool_vector.free))
+           Bool_vector.elem_of_expr
+           @@ Smt.bool Float.(Vector3.l2_dist s.center v <= s.radius))
   in
   Smt.(all ret >>| bool_vector)
 
@@ -393,20 +390,19 @@ let assert_refines =
   [%test_pred: Abs.t * Set.M(Abs).t] (fun (old_abs, new_abs) ->
       Set.for_all new_abs ~f:(fun a -> Abs.is_subset a ~of_:old_abs))
 
-let refine params interpolant lower_constr abs symb =
+let refine params interpolant smt_state abs symb =
   let models =
     let vars = map ~vector:Bool_vector.vars ~offset:Offset.vars symb in
     Smt.Model.of_ ~vars interpolant
   in
   let filtered_models =
-    Sequence.filter models ~f:(fun m ->
+    List.filter models ~f:(fun m ->
         let check_model =
           let open Smt.Let_syntax in
-          let%bind () = lower_constr in
           let%bind () = Smt.assert_ (Smt.Model.to_expr m) in
           Smt.check_sat
         in
-        Smt.eval check_model)
+        Smt.eval_with_state smt_state check_model)
   in
   let refined =
     map
@@ -420,8 +416,8 @@ let refine params interpolant lower_constr abs symb =
   print_s
     [%message
       "refine"
-        (models : Smt.Model.t Sequence.t)
-        (filtered_models : Smt.Model.t Sequence.t)
+        (models : Smt.Model.t list)
+        (filtered_models : Smt.Model.t list)
         (symb : t)
         (abs : Abs.t)
         (refined : Set.M(Abs).t)

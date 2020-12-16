@@ -137,6 +137,7 @@ let inter_partition p p' =
 let refinement_of_interpolant ss graph rel separator interpolant lower_constr
     vars =
   let interpolant_vars = Smt.Expr.vars interpolant in
+  let _, smt_state = Smt.run lower_constr in
   let refinement =
     Set.to_list separator
     (* Only consider refining symbolic vars that are mentioned in the
@@ -156,8 +157,7 @@ let refinement_of_interpolant ss graph rel separator interpolant lower_constr
            let new_ =
              Set.to_list old_states
              |> List.map ~f:(fun old_state ->
-                    Symb.refine (params ss) interpolant lower_constr old_state
-                      var)
+                    Symb.refine (params ss) interpolant smt_state old_state var)
              |> Set.union_list (module Abs)
            in
            let old = Node.to_args_exn @@ rel.backward v in

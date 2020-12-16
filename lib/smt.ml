@@ -364,6 +364,15 @@ let fresh_defn ?n_args ?(prefix = "x") body =
   let name = sprintf "%s%d" prefix ctr in
   make_defn ?n_args name body
 
+let fresh_defn_or_literal ?n_args ?(prefix = "x") ~literal ~defn body =
+  match body with
+  | Bool v -> literal v
+  | body ->
+      let%bind ctr = fresh_num in
+      let name = sprintf "%s%d" prefix ctr in
+      let%bind var = make_defn ?n_args name body in
+      defn var
+
 let with_comment_block ~name ?descr body =
   let sep = String.make 80 '*' in
   let header =
@@ -564,20 +573,17 @@ module Model = struct
     print_s
       [%message "enumerating models" (vars : Set.M(Var).t option) (e : Expr.t)];
     let bit m i = Int.((m lsr i) land 0x1 > 0) in
-    let open Sequence in
     let all_vars = expr_vars e |> Set.to_list in
     let post_filter =
       match vars with
       | Some vars ->
           fun models ->
-            map models ~f:(Map.filter_keys ~f:(Set.mem vars))
-            |> to_list
-            |> Set.of_list (module T)
-            |> Set.to_sequence
+            List.map models ~f:(Map.filter_keys ~f:(Set.mem vars))
+            |> List.dedup_and_sort ~compare:[%compare: bool Map.M(Var).t]
       | None -> Fun.id
     in
-    range 0 (Int.pow 2 (List.length all_vars))
-    |> filter_map ~f:(fun m ->
+    List.range 0 (Int.pow 2 (List.length all_vars))
+    |> List.filter_map ~f:(fun m ->
            let ctx =
              List.mapi all_vars ~f:(fun i v -> (v, bit m i))
              |> Map.of_alist_exn (module String_id)
@@ -585,14 +591,73 @@ module Model = struct
            if Expr.eval ctx e then Some ctx else None)
     |> post_filter
 
+  let of_ ?vars e =
+    let vars = Option.map vars ~f:(Set.inter (Expr.vars e)) in
+    print_s
+      [%message "enumerating models" (vars : Set.M(Var).t option) (e : Expr.t)];
+    let bit m i = Int.((m lsr i) land 0x1 > 0) in
+    let all_vars = expr_vars e |> Set.to_list in
+    let post_filter =
+      match vars with
+      | Some vars ->
+          fun models ->
+            List.map models ~f:(Map.filter_keys ~f:(Set.mem vars))
+            |> List.dedup_and_sort ~compare:[%compare: bool Map.M(Var).t]
+      | None -> Fun.id
+    in
+    List.range 0 (Int.pow 2 (List.length all_vars))
+    |> List.filter_map ~f:(fun m ->
+           let ctx =
+             List.mapi all_vars ~f:(fun i v -> (v, bit m i))
+             |> Map.of_alist_exn (module String_id)
+           in
+           if Expr.eval ctx e then Some ctx else None)
+    |> post_filter
+
+  let of_ ?vars e =
+    let expr_vars = Expr.vars e in
+    let vars =
+      Option.map vars ~f:(Set.inter expr_vars)
+      |> Option.value ~default:expr_vars
+      |> Set.to_list
+    in
+
+    let (), smt_ctx =
+      (let%bind _ =
+         Set.to_list expr_vars
+         |> List.map ~f:(fun v -> make_decl (String_id.to_string v))
+         |> all
+       in
+       assert_ e)
+      |> run
+    in
+
+    print_s [%message "enumerating models" (vars : Var.t list) (e : Expr.t)];
+    let bit m i = Int.((m lsr i) land 0x1 > 0) in
+    List.range 0 (Int.pow 2 (List.length vars))
+    |> List.filter_map ~f:(fun m ->
+           let is_model =
+             (let%bind () =
+                assert_
+                  (List.mapi vars ~f:(fun i v -> var v = bool (bit m i)) |> and_)
+              in
+              check_sat)
+             |> eval_with_state smt_ctx
+           in
+           if is_model then
+             List.mapi vars ~f:(fun i v -> (v, bit m i))
+             |> Map.of_alist_exn (module Var)
+             |> Option.return
+           else None)
+
   let%expect_test "" =
     of_ (varop And [ var_s "x"; var_s "y" ])
-    |> [%sexp_of: bool Map.M(Var).t Sequence.t] |> print_s;
+    |> [%sexp_of: bool Map.M(Var).t list] |> print_s;
     [%expect {| (((x true) (y true))) |}]
 
   let%expect_test "" =
     of_ (varop Or [ var_s "x"; var_s "y" ])
-    |> [%sexp_of: bool Map.M(Var).t Sequence.t] |> print_s;
+    |> [%sexp_of: bool Map.M(Var).t list] |> print_s;
     [%expect
       {| (((x true) (y false)) ((x false) (y true)) ((x true) (y true))) |}]
 
