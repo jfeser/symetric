@@ -18,13 +18,15 @@ module Bool_vector = struct
 
   let create ?prefix params = create_n ?prefix params.n_bits
 
-  let of_abs ?(prefix = sprintf "b%d") n x =
-    Smt.(
-      List.init n ~f:(fun b ->
-          match Map.find x b with
-          | Some v -> return @@ fixed v
-          | None -> fresh_decl ~prefix:(prefix b) () >>| free)
-      |> all)
+  let of_abs ?(prefix = sprintf "b%d") ~n_bits = function
+    | Abs.Bool_vector.Map m ->
+        Smt.(
+          List.init n_bits ~f:(fun b ->
+              match Map.find m b with
+              | Some v -> return @@ fixed v
+              | None -> fresh_decl ~prefix:(prefix b) () >>| free)
+          |> all)
+    | Bottom -> failwith "bottom"
 
   let exactly_one x =
     List.map x ~f:(function Fixed x -> Smt.bool x | Free v -> Smt.var v)
@@ -105,19 +107,23 @@ module Offset = struct
     let%map set = Bool_vector.create_n ~prefix @@ n_offsets params t in
     { set; type_ = t }
 
-  let of_abs ?(prefix = sprintf "o%d") offsets abs =
+  let of_abs ?(prefix = sprintf "o%d") offsets group abs =
     let open Smt.Let_syntax in
     let type_ = Abs.Offset.type_ abs in
     let n = Offset.of_type_count offsets type_ in
     let%bind set =
-      Offset.of_type offsets type_
-      |> Sequence.filter_mapi ~f:(fun i conc ->
-             if not (Abs.Offset.contains abs conc) then Some (i, false)
-             else None)
-      |> Map.of_sequence_exn (module Int)
-      |> Bool_vector.of_abs ~prefix n
+      let map =
+        Offset.of_type offsets type_
+        |> Sequence.filter_mapi ~f:(fun i conc ->
+               if not (Abs.Offset.contains abs conc) then Some (i, false)
+               else None)
+        |> Map.of_sequence_exn (module Int)
+      in
+      Bool_vector.of_abs ~prefix ~n_bits:n (Map map)
     in
-    let%map () = Smt.assert_ @@ Bool_vector.exactly_one set in
+    let%map () =
+      Smt.Interpolant.assert_group ~group @@ Bool_vector.exactly_one set
+    in
     { set; type_ }
 
   let ( = ) x x' = Bool_vector.(x.set = x'.set)
@@ -249,6 +255,13 @@ let create ?prefix params =
   function
   | Type.Vector -> Bool_vector.create ?prefix params >>| bool_vector
   | Type.Offset t -> Offset.create ?prefix params t >>| offset
+
+let of_abs ?prefix params group =
+  let open Smt.Monad_infix in
+  function
+  | Abs.Bool_vector v ->
+      Bool_vector.of_abs ?prefix ~n_bits:params.Params.n_bits v >>| bool_vector
+  | Abs.Offset v -> Offset.of_abs ?prefix params.offsets group v >>| offset
 
 let map ~vector ~offset x =
   match x with Bool_vector x -> vector x | Offset x -> offset x

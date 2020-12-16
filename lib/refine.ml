@@ -81,7 +81,7 @@ module Vars = struct
     List.init params.n_bits ~f:(fun b -> Smt.fresh_decl ~prefix:(prefix b) ())
     |> Smt.all
 
-  let make ss graph vertex_rel =
+  let make ss group graph vertex_rel =
     let open Smt.Let_syntax in
     let%bind edge_vars =
       let module F = FoldM0 (Smt) (E_foldable) in
@@ -103,20 +103,19 @@ module Vars = struct
         ~init:(Map.empty (module G.V), Map.empty (module G.V))
         ~f:(fun (ms, ma) v ->
           let node = vertex_rel.Unshare.One_to_many.backward v in
-          let type_ = Node.type_ ss node in
           Node.match_ node
             ~args:(fun args_v ->
               let%map vars =
                 Symb.create (params ss)
                   ~prefix:(sprintf "a%d_b%d_" (Args.id args_v))
-                  type_
+                @@ Args.output_type ss args_v
               in
               (ms, Map.set ma ~key:v ~data:vars))
             ~state:(fun state_v ->
               let%map vars =
-                Symb.create (params ss)
+                Symb.of_abs (params ss) group
                   ~prefix:(sprintf "s%d_b%d_" (State.id state_v))
-                  type_
+                @@ State.state ss state_v
               in
               (Map.set ms ~key:v ~data:vars, ma)))
     in
@@ -316,7 +315,7 @@ let synth_constrs ss graph rel target_node expected_output separator =
     (Set.for_all ~f:(G.mem_vertex top_graph))
     separator;
 
-  let m_vars = Vars.make ss top_graph rel in
+  let m_vars = Vars.make ss hi_group top_graph rel in
   let%bind vars = m_vars in
 
   let%bind () =
@@ -324,7 +323,6 @@ let synth_constrs ss graph rel target_node expected_output separator =
       assert_output_state_contained (params ss) hi_group vars target_node
         expected_output
     in
-    let%bind () = assert_input_states_contained ss hi_group vars rel in
     FV.iter top_graph ~f:(fun v ->
         Node.match_ (rel.backward v)
           ~state:(fun _ ->
@@ -348,17 +346,12 @@ let synth_constrs ss graph rel target_node expected_output separator =
 
         let%bind local_vars =
           Smt.with_comment_block ~name:"vars"
-            (let%map vs = Vars.make ss local_graph rel in
+            (let%map vs = Vars.make ss lo_group local_graph rel in
              {
                vs with
                arg_vars =
                  Map.set vs.arg_vars ~key:v ~data:(Map.find_exn vars.arg_vars v);
              })
-        in
-
-        let%bind () =
-          Smt.with_comment_block ~name:"assert input states"
-          @@ assert_input_states_contained ss lo_group vars rel
         in
 
         FV.iter local_graph ~f:(fun v ->
