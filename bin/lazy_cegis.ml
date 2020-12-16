@@ -4,6 +4,8 @@ open Lazy_cegis_old
 open Ast
 open Params
 
+let () = Signal.Expert.handle Signal.int (fun _ -> exit 1)
+
 let print_header () =
   Fmt.pr
     "k,n,seed,max_cost,abstraction,n_state_nodes,n_arg_nodes,n_covered,n_refuted,min_width,max_width,median_width,check,sat\n"
