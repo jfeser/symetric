@@ -155,6 +155,8 @@ let refinement_of_interpolant ss graph rel interpolant lower_constr vars =
            let new_ =
              Set.to_list old_states
              |> List.map ~f:(fun old_state ->
+                    print_s [%message "learning refinement" (old_state : Abs.t)];
+
                     Symb.refine (params ss) interpolant state old_state var)
              |> Set.union_list (module Abs)
            in
@@ -371,6 +373,8 @@ let run_solver ss graph rel target_node expected_output separator =
   in
 
   let interpolant_or_model =
+    print_s [%message "seeking interpolant"];
+
     (let%bind () = high_constr vars in
      let%bind () = Smt.Interpolant.set_group lo_group in
      let%bind () = FL.iter (lower_constrs vars) ~f:(fun (_, c) -> c) in
@@ -442,6 +446,9 @@ let get_refinement ss target_node =
     Option.value_exn ~message:"graph does not have a greatest element"
       (UFold.V.find graph ~f:(fun v -> G.in_degree graph v = 0))
   in
+
+  let size = G.nb_vertex graph and top_out_degree = G.out_degree graph top in
+  print_s [%message "conflict graph" (size : int) (top_out_degree : int)];
 
   dump_detailed ss ~suffix:"after-unsharing" graph rel;
 
