@@ -288,7 +288,7 @@ type stmt =
 type state = {
   stmts : (stmt * string) Revlist.t;
   var_ctr : int;
-  group_ctr : int;
+  group : int option;
 }
 
 type 'a t = state -> 'a * state
@@ -307,7 +307,7 @@ end)
 
 let with_state s f = f s
 
-let run c = with_state { stmts = Revlist.empty; var_ctr = 0; group_ctr = 0 } c
+let run c = with_state { stmts = Revlist.empty; var_ctr = 0; group = None } c
 
 let eval c = Tuple.T2.get1 @@ run c
 
@@ -401,13 +401,11 @@ let annotate key value term = Annot (term, key, value)
 
 let comment = annotate "comment"
 
-let assert_ body = add_stmt @@ Assert { body; group = None }
+let assert_ body s = add_stmt (Assert { body; group = s.group }) s
 
 module Interpolant = struct
   module Group = struct
     type t = int
-
-    let create s = (s.group_ctr, { s with group_ctr = s.group_ctr + 1 })
 
     let pp fmt x = Fmt.pf fmt "g%d" x
   end
@@ -431,11 +429,7 @@ module Interpolant = struct
     in
     (k, s)
 
-  let assert_group ?group body =
-    let%bind group =
-      match group with Some g -> return g | None -> Group.create
-    in
-    add_stmt @@ Assert { body; group = Some group }
+  let set_group g s = ((), { s with group = Some g })
 end
 
 let read_input = Sexp.input_sexp
@@ -632,7 +626,7 @@ module Model = struct
       |> run
     in
 
-    print_s [%message "enumerating models" (vars : Var.t list) (e : Expr.t)];
+    (* print_s [%message "enumerating models" (vars : Var.t list) (e : Expr.t)]; *)
     let bit m i = Int.((m lsr i) land 0x1 > 0) in
     List.range 0 (Int.pow 2 (List.length vars))
     |> List.filter_map ~f:(fun m ->

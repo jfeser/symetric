@@ -109,7 +109,7 @@ module Offset = struct
     let%map set = Bool_vector.create_n ~prefix @@ n_offsets params t in
     { set; type_ = t }
 
-  let of_abs ?(prefix = sprintf "o%d") offsets group abs =
+  let of_abs ?(prefix = sprintf "o%d") offsets abs =
     let open Smt.Let_syntax in
     let type_ = Abs.Offset.type_ abs in
     let n = Offset.of_type_count offsets type_ in
@@ -123,9 +123,7 @@ module Offset = struct
       in
       Bool_vector.of_abs ~prefix ~n_bits:n (Map map)
     in
-    let%map () =
-      Smt.Interpolant.assert_group ~group @@ Bool_vector.exactly_one set
-    in
+    let%map () = Smt.assert_ @@ Bool_vector.exactly_one set in
     { set; type_ }
 
   let ( = ) x x' = Bool_vector.(x.set = x'.set)
@@ -255,12 +253,12 @@ let create ?prefix params =
   | Type.Vector -> Bool_vector.create ?prefix params >>| bool_vector
   | Type.Offset t -> Offset.create ?prefix params t >>| offset
 
-let of_abs ?prefix params group =
+let of_abs ?prefix params =
   let open Smt.Monad_infix in
   function
   | Abs.Bool_vector v ->
       Bool_vector.of_abs ?prefix ~n_bits:params.Params.n_bits v >>| bool_vector
-  | Abs.Offset v -> Offset.of_abs ?prefix params.offsets group v >>| offset
+  | Abs.Offset v -> Offset.of_abs ?prefix params.offsets v >>| offset
 
 let map ~vector ~offset x =
   match x with Bool_vector x -> vector x | Offset x -> offset x
@@ -413,15 +411,15 @@ let refine params interpolant smt_state abs symb =
       symb
   in
   assert_refines (abs, refined);
-  print_s
-    [%message
-      "refine"
-        (models : Smt.Model.t list)
-        (filtered_models : Smt.Model.t list)
-        (symb : t)
-        (abs : Abs.t)
-        (refined : Set.M(Abs).t)
-        [%here]];
+  (* print_s
+   *   [%message
+   *     "refine"
+   *       (models : Smt.Model.t list)
+   *       (filtered_models : Smt.Model.t list)
+   *       (symb : t)
+   *       (abs : Abs.t)
+   *       (refined : Set.M(Abs).t)
+   *       [%here]]; *)
   refined
 
 let vars = function

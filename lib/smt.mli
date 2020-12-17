@@ -92,15 +92,10 @@ val assert_ : Expr.t -> unit t
 
 module Interpolant : sig
   module Group : sig
-    type t
-
-    type 'a s
-
-    val create : t s
+    type t = int
   end
-  with type 'a s := 'a t
 
-  val assert_group : ?group:Group.t -> Expr.t -> unit t
+  val set_group : Group.t -> unit t
 
   val group_vars : (Group.t -> Set.M(Var).t) t
 end
