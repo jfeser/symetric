@@ -13,7 +13,7 @@ module U =
     end)
 
 open Unshare.One_to_many
-module G = U.G_replicated
+module UG = U.G_replicated
 module UFold = Graph_ext.Folds (U.G_replicated)
 module UCone = Cone.Make (U.G_replicated)
 module USeparator = Separator.Make (U.G_replicated)
@@ -33,19 +33,19 @@ let dump_detailed ~suffix ?separator ss graph rel =
   dump_detailed ~suffix ?separator (params ss) graph
 
 module V_foldable = struct
-  type t = G.t
+  type t = UG.t
 
-  type elem = G.V.t
+  type elem = UG.V.t
 
-  let fold g ~init ~f = G.fold_vertex (fun x acc -> f acc x) g init
+  let fold g ~init ~f = UG.fold_vertex (fun x acc -> f acc x) g init
 end
 
 module E_foldable = struct
-  type t = G.t
+  type t = UG.t
 
-  type elem = G.E.t
+  type elem = UG.E.t
 
-  let fold g ~init ~f = G.fold_edges_e (fun x acc -> f acc x) g init
+  let fold g ~init ~f = UG.fold_edges_e (fun x acc -> f acc x) g init
 end
 
 module Refinement = struct
@@ -71,10 +71,10 @@ let normalize_bits bits =
 
 module Vars = struct
   type t = {
-    edge_vars : String_id.t Map.M(G.E).t;
-    var_edges : G.E.t Map.M(String_id).t;
-    state_vars : Symb.t Map.M(G.V).t;
-    arg_vars : Symb.t Map.M(G.V).t;
+    edge_vars : String_id.t Map.M(UG.E).t;
+    var_edges : UG.E.t Map.M(String_id).t;
+    state_vars : Symb.t Map.M(UG.V).t;
+    arg_vars : Symb.t Map.M(UG.V).t;
   }
 
   let make_bit_vars params prefix =
@@ -86,7 +86,7 @@ module Vars = struct
     let%bind edge_vars =
       let module F = FoldM0 (Smt) (E_foldable) in
       F.fold graph
-        ~init:(Map.empty (module G.E))
+        ~init:(Map.empty (module UG.E))
         ~f:(fun m e ->
           let%map decl = Smt.fresh_decl ~prefix:"e" () in
           Map.set m ~key:e ~data:decl)
@@ -100,7 +100,7 @@ module Vars = struct
     let%bind state_vars, arg_vars =
       let module F = FoldM0 (Smt) (V_foldable) in
       F.fold graph
-        ~init:(Map.empty (module G.V), Map.empty (module G.V))
+        ~init:(Map.empty (module UG.V), Map.empty (module UG.V))
         ~f:(fun (ms, ma) v ->
           let node = vertex_rel.Unshare.One_to_many.backward v in
           Node.match_ node
@@ -146,7 +146,7 @@ let refinement_of_interpolant ss graph rel interpolant lower_constr vars =
     |> List.map ~f:(fun (v, state) ->
            let var = Map.find_exn vars.arg_vars v in
            let old_states =
-             G.pred graph v
+             UG.pred graph v
              |> List.map ~f:(fun v ->
                     State.state ss @@ Node.to_state_exn @@ rel.backward v)
              |> Set.of_list (module Abs)
@@ -174,10 +174,10 @@ let vars_to_exprs = List.map ~f:Smt.var
 let find_edge_vars vars = List.map ~f:(Map.find_exn vars.edge_vars)
 
 let pred_selected vars g v =
-  G.pred_e g v |> find_edge_vars vars |> vars_to_exprs
+  UG.pred_e g v |> find_edge_vars vars |> vars_to_exprs
 
 let succ_selected vars g v =
-  G.succ_e g v |> find_edge_vars vars |> vars_to_exprs
+  UG.succ_e g v |> find_edge_vars vars |> vars_to_exprs
 
 let filter g ~f = G.fold_vertex (fun v vs -> if f v then v :: vs else vs) g []
 
@@ -206,9 +206,10 @@ let assert_selected_state_selects_input vars graph rel v =
     State.id state_v
   in
   let parent_select =
-    if G.in_degree graph v > 0 then or_ @@ pred_selected vars graph v else true_
+    if UG.in_degree graph v > 0 then or_ @@ pred_selected vars graph v
+    else true_
   and child_select =
-    if G.out_degree graph v > 0 then exactly_one @@ succ_selected vars graph v
+    if UG.out_degree graph v > 0 then exactly_one @@ succ_selected vars graph v
     else true_
   in
   let body = parent_select => child_select
@@ -218,14 +219,14 @@ let assert_selected_state_selects_input vars graph rel v =
 let assert_selected_args_selects_inputs vars graph rel v =
   let open Smt in
   (* Args with no dependencies don't generate a constraint. *)
-  if List.is_empty @@ G.succ graph v then return ()
+  if List.is_empty @@ UG.succ graph v then return ()
   else
     let id =
       let args_v = Node.to_args_exn @@ rel.backward v in
       Args.id args_v
     in
     let parent_select =
-      if G.in_degree graph v > 0 then or_ @@ pred_selected vars graph v
+      if UG.in_degree graph v > 0 then or_ @@ pred_selected vars graph v
       else true_
     and child_select = succ_selected vars graph v in
     let body = parent_select => and_ child_select
@@ -240,7 +241,7 @@ let assert_state_semantics vars graph rel v =
   in
   let state_vars = Map.find_exn vars.state_vars v in
   let body =
-    G.succ_e graph v
+    UG.succ_e graph v
     |> List.map ~f:(fun ((_, _, v) as e) ->
            let args_vars = Map.find_exn vars.arg_vars v in
            let is_selected = Map.find_exn vars.edge_vars e |> var in
@@ -257,7 +258,7 @@ let assert_args_semantics ss vars graph rel v =
   in
 
   let incoming_states =
-    G.succ_e graph v
+    UG.succ_e graph v
     |> List.map ~f:(fun (_, n, v) -> (v, n))
     |> List.sort ~compare:(fun (_, n) (_, n') -> [%compare: int] n n')
     |> List.map ~f:(fun (v, _) -> Map.find_exn vars.state_vars v)
@@ -285,9 +286,8 @@ module F = FoldM2 (Smt) (Set)
 module FL = FoldM (Smt) (List)
 
 let run_solver ss graph rel target_node expected_output separator =
-  let module G = U.G_replicated in
   let open Smt.Let_syntax in
-  print_s [%message (separator : Set.M(G.V).t)];
+  print_s [%message (separator : Set.M(UG.V).t)];
 
   (* There should only be one target even after unsharing *)
   let target_node =
@@ -295,18 +295,18 @@ let run_solver ss graph rel target_node expected_output separator =
   in
 
   let top_graph =
-    let g = G.copy graph in
+    let g = UG.copy graph in
 
     (* Remove separator dependency edges. *)
-    Set.iter separator ~f:(G.iter_succ_e (G.remove_edge_e g) g);
+    Set.iter separator ~f:(UG.iter_succ_e (UG.remove_edge_e g) g);
 
     UCone.cone g [ target_node ]
   in
 
-  let separator = Set.filter separator ~f:(G.mem_vertex top_graph) in
+  let separator = Set.filter separator ~f:(UG.mem_vertex top_graph) in
 
-  [%test_pred: Set.M(G.V).t] ~message:"separator not in top graph"
-    (Set.for_all ~f:(G.mem_vertex top_graph))
+  [%test_pred: Set.M(UG.V).t] ~message:"separator not in top graph"
+    (Set.for_all ~f:(UG.mem_vertex top_graph))
     separator;
 
   let high_constr vars =
@@ -405,7 +405,7 @@ let process_interpolant params graph rel (interpolant, lower_constr, vars) =
 
 let rec extract_program ss graph rel selected_edges target =
   let args =
-    G.succ_e graph target
+    UG.succ_e graph target
     |> List.filter ~f:(Set.mem selected_edges)
     |> List.map ~f:(fun (_, _, v) -> v)
   in
@@ -413,7 +413,7 @@ let rec extract_program ss graph rel selected_edges target =
   | [ a ] ->
       `Apply
         ( Args.op ss @@ Node.to_args_exn @@ rel.backward a,
-          G.succ_e graph a
+          UG.succ_e graph a
           |> List.sort ~compare:(fun (_, i, _) (_, j, _) -> [%compare: int] i j)
           |> List.map ~f:(fun (_, _, v) ->
                  extract_program ss graph rel selected_edges v) )
@@ -427,28 +427,32 @@ let process_model ss graph rel target (model, vars) =
   let selected_edges =
     List.filter_map model ~f:(fun (e, is_selected) ->
         if is_selected then Map.find vars.var_edges e else None)
-    |> Set.of_list (module G.E)
+    |> Set.of_list (module UG.E)
   in
   extract_program ss graph rel selected_edges target
 
 let get_refinement ss target_node =
   (* Select the subset of the graph that can reach the target *)
-  let graph =
+  let shared_graph =
     let module C = Cone.Make (Search_state.G) in
     C.cone (graph ss) [ Node.of_state target_node ]
   in
 
-  Search_state.dump_detailed_graph ~suffix:"before-unsharing" ss graph;
+  Search_state.dump_detailed_graph ~suffix:"before-unsharing" ss shared_graph;
 
   (* Remove sharing in the graph subset *)
-  let graph, rel = U.unshare graph in
+  let graph, rel = U.unshare shared_graph in
   let top =
     Option.value_exn ~message:"graph does not have a greatest element"
-      (UFold.V.find graph ~f:(fun v -> G.in_degree graph v = 0))
+      (UFold.V.find graph ~f:(fun v -> UG.in_degree graph v = 0))
   in
 
-  let size = G.nb_vertex graph and top_out_degree = G.out_degree graph top in
-  print_s [%message "conflict graph" (size : int) (top_out_degree : int)];
+  let size = G.nb_vertex shared_graph
+  and unshared_size = UG.nb_vertex graph
+  and top_out_degree = UG.out_degree graph top in
+  print_s
+    [%message
+      "conflict graph" (size : int) (unshared_size : int) (top_out_degree : int)];
 
   dump_detailed ss ~suffix:"after-unsharing" graph rel;
 
@@ -457,7 +461,7 @@ let get_refinement ss target_node =
   let m_refinement =
     let separators = USeparator.simple graph top in
 
-    [%test_pred: Set.M(G.V).t Sequence.t]
+    [%test_pred: Set.M(UG.V).t Sequence.t]
       ~message:"separator isn't all args nodes"
       (Sequence.for_all
          ~f:
@@ -477,7 +481,7 @@ let get_refinement ss target_node =
   | None -> (
       match
         run_solver ss graph rel target_node expected_output
-          (Set.empty (module G.V))
+          (Set.empty (module UG.V))
       with
       | First _ -> failwith "expected model"
       | Second x -> Second (process_model ss graph rel top x) )
