@@ -15,4 +15,5 @@ module Make (G : GRAPH) = struct
             |> Set.of_list (module G.V)
           in
           Some (sep, sep'))
+    |> Sequence.to_list |> List.rev |> Sequence.of_list
 end

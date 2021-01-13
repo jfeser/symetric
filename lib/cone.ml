@@ -5,7 +5,7 @@ module Make (G : LABELED_GRAPH) = struct
   let cone graph targets =
     let graph' = G.create () in
     let work = Queue.create () in
-    Queue.enqueue_all work targets;
+    Queue.enqueue_all work @@ List.filter ~f:(G.mem_vertex graph) targets;
     let rec loop () =
       match Queue.dequeue work with
       | Some v ->

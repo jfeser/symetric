@@ -50,7 +50,25 @@ let fold_range ~init ~f lo hi =
 
 let fill_cost ss ops cost =
   let size = nb_vertex ss in
-  ( if cost > 1 then
+  ( if cost = 1 then
+    List.filter ops ~f:(fun op ->
+        match op with Op.Cuboid _ | Cylinder _ -> true | _ -> false)
+    |> List.iter ~f:(fun op ->
+           let arity = Op.arity op in
+           let arg_types = Op.args_type op |> Array.of_list in
+           let add_hyper_edges =
+             fold_range
+               ~init:(fun args -> create_hyper_edge ss cost op args)
+               ~f:(fun f i args ->
+                 let type_ = arg_types.(i) in
+                 let states = states_of_cost ss 1 in
+                 List.iter states ~f:(fun v ->
+                     if [%compare.equal: Type.t] (State.type_ ss v) type_ then
+                       f (v :: args)))
+               0 arity
+           in
+           add_hyper_edges [])
+  else if cost > 1 then
     let arg_cost = cost - 1 in
 
     List.iter ops ~f:(fun op ->
@@ -77,7 +95,7 @@ let fill_cost ss ops cost =
 
   let size' = nb_vertex ss in
 
-  Fmt.epr "Pruning: size before=%d, after=%d, removed %f%%\n" size size'
+  Fmt.epr "Filling: size before=%d, after=%d, removed %f%%\n" size size'
     Float.(100.0 - (of_int size' / of_int size * 100.0))
 
 let fill_up_to_cost ss ops cost =
@@ -118,7 +136,7 @@ let with_size graph f =
   let size = nb_vertex graph in
   let ret = f graph in
   let size' = nb_vertex graph in
-  Fmt.epr "Pruning: size before=%d, after=%d, removed %f%%\n" size size'
+  Fmt.pr "Pruning: size before=%d, after=%d, removed %f%%\n" size size'
     Float.(100.0 - (of_int size' / of_int size * 100.0));
   ret
 

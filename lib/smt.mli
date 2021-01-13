@@ -9,7 +9,21 @@ end
 module Var = String_id
 
 module Expr : sig
-  type t [@@deriving sexp]
+  type binop = Implies | Equals [@@deriving compare, sexp]
+
+  type unop = Not [@@deriving compare, sexp]
+
+  type varop = And | Or [@@deriving compare, sexp]
+
+  type t = private
+    | Bool of bool
+    | Var of Var.t
+    | Binop of binop * t * t
+    | Unop of unop * t
+    | Varop of varop * t list
+    | Let of (t * Var.t * t)
+    | Annot of t * string * string
+  [@@deriving compare, sexp]
 
   val vars : t -> Set.M(Var).t
 

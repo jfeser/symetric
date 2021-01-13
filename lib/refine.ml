@@ -162,8 +162,10 @@ let refinement_of_interpolant ss graph rel interpolant lower_constr vars =
            in
            let old = Node.to_args_exn @@ rel.backward v in
            (old, new_))
-    |> Map.of_alist_reduce (module Args) ~f:inter_partition
+    |> Map.of_alist_reduce (module Args) ~f:Set.union
   in
+
+  print_s [%message "refinement" (refinement : Refinement.t)];
 
   refinement
 
@@ -372,28 +374,39 @@ let run_solver ss graph rel target_node expected_output separator =
     |> Smt.run
   in
 
-  let interpolant_or_model =
-    print_s [%message "seeking interpolant"];
-
+  let upper_ok =
     (let%bind () = high_constr vars in
-     let%bind () = Smt.Interpolant.set_group lo_group in
-     let%bind () = FL.iter (lower_constrs vars) ~f:(fun (_, c) -> c) in
-     Smt.get_interpolant_or_model [ lo_group ])
+     Smt.check_sat)
     |> Smt.eval_with_state vars_state
   in
 
-  match interpolant_or_model with
-  | First interpolant ->
-      let lower_constr_states =
-        List.map (lower_constrs vars) ~f:(fun (v, c) ->
-            let (), state = Smt.with_state vars_state c in
-            (v, state))
-      in
-      First (interpolant, lower_constr_states, vars)
-  | Second model -> Second (model, vars)
+  if upper_ok then
+    let interpolant_or_model =
+      print_s [%message "seeking interpolant"];
+
+      (let%bind () = high_constr vars in
+       let%bind () = Smt.Interpolant.set_group lo_group in
+       let%bind () = FL.iter (lower_constrs vars) ~f:(fun (_, c) -> c) in
+       Smt.get_interpolant_or_model [ lo_group ])
+      |> Smt.eval_with_state vars_state
+    in
+
+    match interpolant_or_model with
+    | First interpolant -> (
+        let interpolant = Or_error.ok_exn interpolant in
+        match interpolant with
+        | Smt.Expr.Bool _ -> Second ([], vars)
+        | _ ->
+            let lower_constr_states =
+              List.map (lower_constrs vars) ~f:(fun (v, c) ->
+                  let (), state = Smt.with_state vars_state c in
+                  (v, state))
+            in
+            First (interpolant, lower_constr_states, vars) )
+    | Second model -> Second (model, vars)
+  else Second ([], vars)
 
 let process_interpolant params graph rel (interpolant, lower_constr, vars) =
-  let interpolant = ok_exn interpolant in
   Fmt.epr "Interpolant: %a@." Smt.Expr.pp interpolant;
 
   [%test_pred: Set.M(Smt.Var).t]
