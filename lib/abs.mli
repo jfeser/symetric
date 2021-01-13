@@ -47,7 +47,7 @@ module Offset : sig
 
   val graphviz_pp : t Fmt.t
 
-  val top : Offset_type.t -> t
+  val top : Offset.ctx -> Offset_type.t -> t
 
   val lo : t -> float
 
@@ -73,7 +73,7 @@ val bool_vector : Bool_vector.t -> t
 
 val offset : Offset.t -> t
 
-val top : Ast.Type.t -> t
+val top : Params.t -> Ast.Type.t -> t
 
 val meet : t -> t -> t
 

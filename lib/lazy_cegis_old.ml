@@ -99,7 +99,7 @@ let fill_cost ss ops cost =
 
   let size' = nb_vertex ss in
 
-  Fmt.epr "Filling: size before=%d, after=%d, removed %f%%\n" size size'
+  Fmt.pr "Filling: size before=%d, after=%d, removed %f%%\n" size size'
     Float.(100.0 - (of_int size' / of_int size * 100.0))
 
 let fill_up_to_cost ss ops cost =
@@ -190,7 +190,7 @@ let refute ss target =
       refine ss r;
       validate ss
   | Second p ->
-      Fmt.epr "Could not refute: %a" Sexp.pp_hum ([%sexp_of: Program.t] p);
+      Fmt.pr "Could not refute: %a" Sexp.pp_hum ([%sexp_of: Program.t] p);
       raise @@ Done (`Sat p)
 
 let count_compressible graph =
@@ -209,7 +209,7 @@ let count_compressible graph =
     include Comparator.Make (T)
   end in
   let set_args = Set.of_list (module Key) args in
-  Fmt.epr "Compressed args: reduces %d to %d\n" (List.length args)
+  Fmt.pr "Compressed args: reduces %d to %d\n" (List.length args)
     (Set.length set_args)
 
 let synth params =
@@ -219,7 +219,7 @@ let synth params =
   List.iter params.bench.ops ~f:(fun op ->
       match Op.type_ op with
       | [], ret_t ->
-          let state = Abs.top ret_t in
+          let state = Abs.top params ret_t in
           let state_v_out = State.create ss state 1 ret_t |> Is_fresh.unwrap in
           (insert_hyper_edge_if_not_exists ss [] op state_v_out : bool)
           |> ignore
@@ -235,7 +235,7 @@ let synth params =
             refute ss state_v;
             true
         in
-        Fmt.epr "Finished cost %d\n" cost
+        Fmt.pr "Finished cost %d\n" cost
       done;
       `Unsat
     with Done status -> status

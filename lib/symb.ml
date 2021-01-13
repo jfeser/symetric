@@ -209,7 +209,8 @@ module Offset = struct
              output = [||];
            }
     in
-    refine params models (Abs.Offset.top type_)
+    refine params models
+      (Abs.Offset.top params.offsets type_)
       { set = [ f "y0"; f "y1"; f "x0"; f "x1"; f "x2" ]; type_ }
     |> [%sexp_of: Set.M(Abs).t] |> print_s
 

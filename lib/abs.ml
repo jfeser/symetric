@@ -144,7 +144,20 @@ module Offset = struct
 
   let graphviz_pp fmt x = Fmt.pf fmt "[%f, %f)" x.lo x.hi
 
-  let top t = { lo = Float.min_value; hi = Float.max_value; type_ = t }
+  let top ctx t =
+    let min =
+      Option.value_exn
+        ( Offset.of_type ctx t
+        |> Sequence.map ~f:Offset.offset
+        |> Sequence.min_elt ~compare:[%compare: float] )
+    in
+    let max =
+      Option.value_exn
+        ( Offset.of_type ctx t
+        |> Sequence.map ~f:Offset.offset
+        |> Sequence.max_elt ~compare:[%compare: float] )
+    in
+    { lo = min; hi = max; type_ = t }
 
   let bot t = { lo = Float.max_value; hi = Float.min_value; type_ = t }
 
@@ -227,9 +240,9 @@ let bind ~bool_vector ~offset = function
   | Bool_vector x -> bool_vector x
   | Offset x -> offset x
 
-let top = function
+let top params = function
   | Type.Vector -> bool_vector @@ Bool_vector.top
-  | Offset t -> offset @@ Offset.top t
+  | Offset t -> offset @@ Offset.top params.offsets t
 
 let graphviz_pp params fmt =
   bind
