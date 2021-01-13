@@ -290,8 +290,10 @@ let insert_hyper_edge ctx state_v_ins op state_v_out =
 
 let insert_hyper_edge_if_not_exists ctx state_v_ins op state_v_out =
   let hyper_edge = (state_v_ins, op, state_v_out) in
-  if not (Hyper_edge.mem ctx hyper_edge) then
-    insert_hyper_edge ctx state_v_ins op state_v_out
+  if not (Hyper_edge.mem ctx hyper_edge) then (
+    insert_hyper_edge ctx state_v_ins op state_v_out;
+    true )
+  else false
 
 let roots g = G.Fold.V.filter g ~f:(fun v -> G.in_degree g v = 0)
 

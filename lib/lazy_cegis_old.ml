@@ -30,6 +30,8 @@ let iter_arg ss cost type_ ~f =
   |> List.iter ~f:(fun v ->
          if [%compare.equal: Type.t] (State.type_ ss v) type_ then f v)
 
+exception Found_target of State.t
+
 let create_hyper_edge ss cost op args =
   let arg_states = List.map args ~f:(State.state ss) in
   let out_state = Abs.eval (params ss) op arg_states in
@@ -37,7 +39,9 @@ let create_hyper_edge ss cost op args =
   let state_v_out =
     State.create ss out_state cost out_type |> Is_fresh.unwrap
   in
-  insert_hyper_edge_if_not_exists ss args op state_v_out
+  if insert_hyper_edge_if_not_exists ss args op state_v_out then
+    let output = Conc.bool_vector (params ss).bench.output in
+    if Abs.contains out_state output then raise (Found_target state_v_out)
 
 let fold_range ~init ~f lo hi =
   let rec fold_range acc i =
@@ -180,23 +184,14 @@ let refine ss refinement =
 
 let refine graph refinement = with_size graph @@ fun g -> refine g refinement
 
-let refute ss output =
-  match
-    G.Fold.V.find_map (graph ss) ~f:(fun v ->
-        match Node.to_state v with
-        | Some v when Abs.contains (State.state ss v) output -> Some v
-        | _ -> None)
-  with
-  | Some target ->
-      ( match Refine.get_refinement ss target with
-      | First r ->
-          refine ss r;
-          validate ss
-      | Second p ->
-          Fmt.epr "Could not refute: %a" Sexp.pp_hum ([%sexp_of: Program.t] p);
-          raise @@ Done (`Sat p) );
-      true
-  | None -> false
+let refute ss target =
+  match Refine.get_refinement ss target with
+  | First r ->
+      refine ss r;
+      validate ss
+  | Second p ->
+      Fmt.epr "Could not refute: %a" Sexp.pp_hum ([%sexp_of: Program.t] p);
+      raise @@ Done (`Sat p)
 
 let count_compressible graph =
   let args =
@@ -226,21 +221,21 @@ let synth params =
       | [], ret_t ->
           let state = Abs.top ret_t in
           let state_v_out = State.create ss state 1 ret_t |> Is_fresh.unwrap in
-          insert_hyper_edge_if_not_exists ss [] op state_v_out
+          (insert_hyper_edge_if_not_exists ss [] op state_v_out : bool)
+          |> ignore
       | _ -> ());
 
-  let output = Conc.bool_vector params.bench.output in
   let status =
     try
       for cost = 1 to params.max_cost do
         let _changed =
           until_done @@ fun () ->
-          let changed = until_done @@ fun () -> refute ss output in
-          let changed' = fill_up_to_cost ss params.bench.ops cost in
-          Fmt.epr "Changed: %b Cost: %d\n%!" (changed || changed') cost;
-          changed || changed'
+          try fill_up_to_cost ss params.bench.ops cost
+          with Found_target state_v ->
+            refute ss state_v;
+            true
         in
-        ()
+        Fmt.epr "Finished cost %d\n" cost
       done;
       `Unsat
     with Done status -> status
