@@ -1,7 +1,7 @@
 (library
  (name staged_synth)
  (libraries core combinat utils ocamlgraph delimcc fmt landmarks)
- (preprocess (pps ppx_jane ppx_deriving.show landmarks.ppx --auto))
+ (preprocess (pps ppx_jane ppx_deriving.show landmarks.ppx))
  (inline_tests)
  (flags :standard -g -open Core -w -9))
 

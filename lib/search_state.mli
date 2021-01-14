@@ -116,7 +116,7 @@ val inputs : t -> Args.t -> State.t list
 val fix_up : t -> unit
 
 val insert_hyper_edge_if_not_exists :
-  t -> State.t list -> Offset.t Op.t -> State.t -> bool
+  ?state:Abs.t -> t -> State.t list -> Offset.t Op.t -> int -> State.t option
 
 val pp : t Fmt.t
 

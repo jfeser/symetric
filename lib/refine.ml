@@ -1,5 +1,3 @@
-[@@@landmark "auto"]
-
 open Ast
 open Params
 open Search_state
@@ -134,7 +132,8 @@ let inter_partition p p' =
   |> Sequence.to_list
   |> Set.of_list (module Abs)
 
-let refinement_of_interpolant ss graph rel interpolant lower_constr vars =
+let[@landmark "process-interpolant"] refinement_of_interpolant ss graph rel
+    interpolant lower_constr vars =
   let interpolant_vars = Smt.Expr.vars interpolant in
   let refinement =
     lower_constr
@@ -287,7 +286,8 @@ module FV = FoldM0 (Smt) (V_foldable)
 module F = FoldM2 (Smt) (Set)
 module FL = FoldM (Smt) (List)
 
-let run_solver ss graph rel target_node expected_output separator =
+let[@landmark "find-interpolant"] run_solver ss graph rel target_node
+    expected_output separator =
   let open Smt.Let_syntax in
   print_s [%message (separator : Set.M(UG.V).t)];
 
@@ -375,20 +375,22 @@ let run_solver ss graph rel target_node expected_output separator =
   in
 
   let upper_ok =
-    (let%bind () = high_constr vars in
-     Smt.check_sat)
-    |> Smt.eval_with_state vars_state
+    ( (let%bind () = high_constr vars in
+       Smt.check_sat)
+    |> Smt.eval_with_state vars_state )
+    [@landmark "check-separator"]
   in
 
   if upper_ok then
     let interpolant_or_model =
-      print_s [%message "seeking interpolant"];
+      ( (print_s [%message "seeking interpolant"];
 
-      (let%bind () = high_constr vars in
-       let%bind () = Smt.Interpolant.set_group lo_group in
-       let%bind () = FL.iter (lower_constrs vars) ~f:(fun (_, c) -> c) in
-       Smt.get_interpolant_or_model [ lo_group ])
-      |> Smt.eval_with_state vars_state
+         (let%bind () = high_constr vars in
+          let%bind () = Smt.Interpolant.set_group lo_group in
+          let%bind () = FL.iter (lower_constrs vars) ~f:(fun (_, c) -> c) in
+          Smt.get_interpolant_or_model [ lo_group ])
+         |> Smt.eval_with_state vars_state)
+      [@landmark "get-interpolant"] )
     in
 
     match interpolant_or_model with
@@ -444,7 +446,7 @@ let process_model ss graph rel target (model, vars) =
   in
   extract_program ss graph rel selected_edges target
 
-let get_refinement ss target_node =
+let[@landmark "refine"] get_refinement ss target_node =
   (* Select the subset of the graph that can reach the target *)
   let shared_graph =
     let module C = Cone.Make (Search_state.G) in

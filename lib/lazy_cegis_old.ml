@@ -1,5 +1,3 @@
-[@@@landmark "auto"]
-
 open Ast
 open Search_state
 open Params
@@ -33,15 +31,12 @@ let iter_arg ss cost type_ ~f =
 exception Found_target of State.t
 
 let create_hyper_edge ss cost op args =
-  let arg_states = List.map args ~f:(State.state ss) in
-  let out_state = Abs.eval (params ss) op arg_states in
-  let out_type = Op.ret_type op in
-  let state_v_out =
-    State.create ss out_state cost out_type |> Is_fresh.unwrap
-  in
-  if insert_hyper_edge_if_not_exists ss args op state_v_out then
-    let output = Conc.bool_vector (params ss).bench.output in
-    if Abs.contains out_state output then raise (Found_target state_v_out)
+  match insert_hyper_edge_if_not_exists ss args op cost with
+  | Some state_v_out ->
+      let output = Conc.bool_vector (params ss).bench.output in
+      if Abs.contains (State.state ss state_v_out) output then
+        raise (Found_target state_v_out)
+  | None -> ()
 
 let fold_range ~init ~f lo hi =
   let rec fold_range acc i =
@@ -102,7 +97,7 @@ let fill_cost ss ops cost =
   Fmt.pr "Filling: size before=%d, after=%d, removed %f%%\n" size size'
     Float.(100.0 - (of_int size' / of_int size * 100.0))
 
-let fill_up_to_cost ss ops cost =
+let[@landmark "fill"] fill_up_to_cost ss ops cost =
   let rec fill c =
     if c > cost then false
     else
@@ -220,8 +215,7 @@ let synth params =
       match Op.type_ op with
       | [], ret_t ->
           let state = Abs.top params ret_t in
-          let state_v_out = State.create ss state 1 ret_t |> Is_fresh.unwrap in
-          (insert_hyper_edge_if_not_exists ss [] op state_v_out : bool)
+          (insert_hyper_edge_if_not_exists ss [] op 1 ~state : _ option)
           |> ignore
       | _ -> ());
 

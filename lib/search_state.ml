@@ -42,8 +42,7 @@ module Args0 = struct
 end
 
 module Hyper_edge0 = struct
-  type t = State0.t list * Offset.t Op.t * State0.t
-  [@@deriving compare, hash, sexp_of]
+  type t = State0.t list * Offset.t Op.t [@@deriving compare, hash, sexp_of]
 end
 
 type t = {
@@ -280,20 +279,29 @@ let fix_up ctx =
   in
   loop ()
 
-let insert_hyper_edge ctx state_v_ins op state_v_out =
+let insert_hyper_edge ?state ctx state_v_ins op cost =
+  let state_v_out =
+    let out_state =
+      match state with
+      | Some s -> s
+      | None ->
+          Abs.eval (params ctx) op @@ List.map ~f:(State.state ctx) state_v_ins
+    and out_type = Op.ret_type op in
+    State.create ctx out_state cost out_type |> Is_fresh.unwrap
+  in
   let args_v = Args.create ctx op in
-  let hyper_edge = (state_v_ins, op, state_v_out) in
+  let hyper_edge = (state_v_ins, op) in
   Args.set_hyper_edge ctx args_v hyper_edge;
   Hyper_edge.add ctx hyper_edge;
   List.iteri state_v_ins ~f:(fun i v -> G.add_edge_e ctx.graph (args_v, i, v));
-  G.add_edge_e ctx.graph (state_v_out, -1, args_v)
+  G.add_edge_e ctx.graph (state_v_out, -1, args_v);
+  state_v_out
 
-let insert_hyper_edge_if_not_exists ctx state_v_ins op state_v_out =
-  let hyper_edge = (state_v_ins, op, state_v_out) in
-  if not (Hyper_edge.mem ctx hyper_edge) then (
-    insert_hyper_edge ctx state_v_ins op state_v_out;
-    true )
-  else false
+let insert_hyper_edge_if_not_exists ?state ctx state_v_ins op cost =
+  let hyper_edge = (state_v_ins, op) in
+  if not (Hyper_edge.mem ctx hyper_edge) then
+    Some (insert_hyper_edge ?state ctx state_v_ins op cost)
+  else None
 
 let roots g = G.Fold.V.filter g ~f:(fun v -> G.in_degree g v = 0)
 

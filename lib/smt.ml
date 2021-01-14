@@ -46,7 +46,7 @@ module Expr = struct
 
   let pp_varop fmt = function And -> Fmt.pf fmt "and" | Or -> Fmt.pf fmt "or"
 
-  let rec pp fmt = function
+  let[@landmark "serialize"] rec pp fmt = function
     | Bool true -> Fmt.pf fmt "true"
     | Bool false -> Fmt.pf fmt "false"
     | Binop (op, x, x') -> Fmt.pf fmt "(%a %a %a)" pp_binop op pp x pp x'
@@ -305,7 +305,7 @@ include Monad.Make (struct
   let map = `Define_using_bind
 end)
 
-let with_state s f = f s
+let[@landmark "smt"] with_state s f = f s
 
 let run c = with_state { stmts = Revlist.empty; var_ctr = 0; group = None } c
 
@@ -434,7 +434,7 @@ end
 
 let read_input = Sexp.input_sexp
 
-let with_mathsat f =
+let[@landmark "mathsat"] with_mathsat f =
   let proc = Unix.open_process "mathsat" in
   let stdout, stdin = proc in
   let ret =
@@ -449,7 +449,7 @@ let with_mathsat f =
         in
 
         let[@landmark "with_mathsat.read"] read () =
-          let sexp = (read_input stdout [@landmark "mathsat"]) in
+          let sexp = read_input stdout in
           Sexp.to_string_hum sexp |> String.split_lines
           |> List.iter ~f:(Fmt.pf log_fmt "; %s@.");
           sexp
