@@ -47,7 +47,51 @@ let fold_range ~init ~f lo hi =
   in
   fold_range init lo
 
-let fill_cost ss ops cost =
+let roots ss =
+  let is_subset v ~of_:v' =
+    State.cost ss v = State.cost ss v'
+    && Abs.is_subset (State.state ss v) ~of_:(State.state ss v')
+  in
+  G.Fold.V.filter_map (graph ss)
+    ~f:(Node.match_ ~state:Option.return ~args:(fun _ -> None))
+  |> List.fold_left ~init:[] ~f:(fun roots v ->
+         match List.find roots ~f:(fun v' -> is_subset v ~of_:v') with
+         | Some _ -> roots
+         | None ->
+             v :: List.filter roots ~f:(fun v' -> not (is_subset v' ~of_:v)))
+
+let root_states ss = roots ss |> List.map ~f:(State.state ss)
+
+module State_set = struct
+  type t = type_:Type.t -> cost:int -> State.t list
+end
+
+let state_set_full ss =
+  let cost_tbl = Hashtbl.create (module Int) in
+  fun ~type_ ~cost ->
+    let type_tbl =
+      match Hashtbl.find cost_tbl cost with
+      | Some type_tbl -> type_tbl
+      | None ->
+          let states = states_of_cost ss cost in
+          let type_tbl = Hashtbl.create (module Type) in
+          List.iter states ~f:(fun s ->
+              Hashtbl.add_multi type_tbl ~key:(State.type_ ss s) ~data:s);
+          type_tbl
+    in
+    Hashtbl.find type_tbl type_ |> Option.value ~default:[]
+
+let state_set_roots ss : State_set.t =
+  let module Key = struct
+    type t = int * Type.t [@@deriving compare, hash, sexp]
+  end in
+  let tbl = Hashtbl.create (module Key) in
+  let root_states = roots ss in
+  List.iter root_states ~f:(fun s ->
+      Hashtbl.add_multi tbl ~key:(State.cost ss s, State.type_ ss s) ~data:s);
+  fun ~type_ ~cost -> Hashtbl.find tbl (cost, type_) |> Option.value ~default:[]
+
+let fill_cost ss (state_set : State_set.t) ops cost =
   let size = nb_vertex ss in
   ( if cost = 1 then
     List.filter ops ~f:(fun op ->
@@ -59,11 +103,8 @@ let fill_cost ss ops cost =
              fold_range
                ~init:(fun args -> create_hyper_edge ss cost op args)
                ~f:(fun f i args ->
-                 let type_ = arg_types.(i) in
-                 let states = states_of_cost ss 1 in
-                 List.iter states ~f:(fun v ->
-                     if [%compare.equal: Type.t] (State.type_ ss v) type_ then
-                       f (v :: args)))
+                 state_set ~cost:1 ~type_:arg_types.(i)
+                 |> List.iter ~f:(fun v -> f (v :: args)))
                0 arity
            in
            add_hyper_edges [])
@@ -81,27 +122,25 @@ let fill_cost ss ops cost =
                    fold_range
                      ~init:(fun args -> create_hyper_edge ss cost op args)
                      ~f:(fun f i args ->
-                       let type_ = arg_types.(i) in
-                       let states =
-                         states_of_cost ss (Combinat.Int_array.get arg_costs i)
-                       in
-                       List.iter states ~f:(fun v ->
-                           if [%compare.equal: Type.t] (State.type_ ss v) type_
-                           then f (v :: args)))
+                       state_set
+                         ~cost:(Combinat.Int_array.get arg_costs i)
+                         ~type_:arg_types.(i)
+                       |> List.iter ~f:(fun v -> f (v :: args)))
                      0 arity
                  in
                  add_hyper_edges [])) );
 
   let size' = nb_vertex ss in
 
-  Fmt.pr "Filling: size before=%d, after=%d, removed %f%%\n" size size'
+  Fmt.pr "Filling: size before=%d, after=%d, removed %f%%\n%!" size size'
     Float.(100.0 - (of_int size' / of_int size * 100.0))
 
 let[@landmark "fill"] fill_up_to_cost ss ops cost =
   let rec fill c =
     if c > cost then false
     else
-      let changed, () = did_change @@ fun () -> fill_cost ss ops c in
+      let state_set = state_set_roots ss in
+      let changed, () = did_change @@ fun () -> fill_cost ss state_set ops c in
       changed || fill (c + 1)
   in
   fill 1
@@ -111,6 +150,7 @@ module Stats = struct
     n_state_nodes : int;
     n_arg_nodes : int;
     n_roots : int;
+    roots : Abs.t list;
     n_refuted : int;
     min_width : int;
     max_width : int;
@@ -128,6 +168,7 @@ module Stats = struct
         n_state_nodes = -1;
         n_arg_nodes = -1;
         n_roots = -1;
+        roots = [];
         n_refuted = -1;
         min_width = -1;
         max_width = -1;
@@ -154,7 +195,7 @@ let with_size graph f =
   let size = nb_vertex graph in
   let ret = f graph in
   let size' = nb_vertex graph in
-  Fmt.pr "Pruning: size before=%d, after=%d, removed %f%%\n" size size'
+  Fmt.pr "Pruning: size before=%d, after=%d, removed %f%%\n%!" size size'
     Float.(100.0 - (of_int size' / of_int size * 100.0));
   ret
 
@@ -199,31 +240,14 @@ let refine ss refinement =
 
 let refine graph refinement = with_size graph @@ fun g -> refine g refinement
 
-let count_roots ss =
-  let states =
-    G.Fold.V.filter_map (graph ss)
-      ~f:
-        (Node.match_
-           ~state:(fun s -> State.state ss s |> Option.return)
-           ~args:(fun _ -> None))
-  in
-  let roots =
-    List.fold_left states ~init:[] ~f:(fun roots state ->
-        if List.exists roots ~f:(fun state' -> Abs.is_subset state ~of_:state')
-        then roots
-        else
-          state
-          :: List.filter roots ~f:(fun state' ->
-                 not (Abs.is_subset state' ~of_:state)))
-  in
-  List.length roots
-
 let refute ss target =
   Stats.global := { !Stats.global with n_refuted = !Stats.global.n_refuted + 1 };
   match Refine.get_refinement ss target with
   | First r ->
       refine ss r;
-      Stats.global := { !Stats.global with n_roots = count_roots ss };
+      let roots = roots ss in
+      let n_roots = List.length roots in
+      Stats.global := { !Stats.global with n_roots; roots = root_states ss };
       validate ss
   | Second p ->
       Fmt.pr "Could not refute: %a" Sexp.pp_hum ([%sexp_of: Program.t] p);
@@ -303,7 +327,7 @@ let synth params =
             refute ss state_v;
             true
         in
-        Fmt.pr "Finished cost %d\n" cost
+        Fmt.pr "Finished cost %d\n%!" cost
       done;
       `Unsat
     with Done status -> status

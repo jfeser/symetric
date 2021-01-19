@@ -19,6 +19,5 @@ module Make (G : GRAPH) = struct
     in
 
     let seps = gen_seps [ G.succ graph target |> Set.of_list (module G.V) ] in
-    print_s [%message (seps : Set.M(G.V).t list)];
     Sequence.of_list seps
 end

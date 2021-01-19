@@ -289,8 +289,6 @@ module FL = FoldM (Smt) (List)
 let[@landmark "find-interpolant"] run_solver ss graph rel target_node
     expected_output separator =
   let open Smt.Let_syntax in
-  print_s [%message (separator : Set.M(UG.V).t)];
-
   (* There should only be one target even after unsharing *)
   let target_node =
     Node.of_state target_node |> rel.forward |> Sequence.hd_exn

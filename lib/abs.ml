@@ -208,7 +208,9 @@ module Offset = struct
   let exclude_exn x o =
     split_exn x o |> List.filter ~f:(fun x' -> not (contains x' o))
 
-  let is_subset x ~of_:x' = Float.(x.lo >= x'.lo && x.hi <= x'.hi)
+  let is_subset x ~of_:x' =
+    [%compare.equal: Offset_type.t] x.type_ x'.type_
+    && Float.(x.lo >= x'.lo && x.hi <= x'.hi)
 
   let type_ x = x.type_
 
