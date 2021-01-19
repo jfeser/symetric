@@ -10,18 +10,6 @@ let print_header () =
   Fmt.pr
     "k,n,seed,max_cost,abstraction,n_state_nodes,n_arg_nodes,n_covered,n_refuted,min_width,max_width,median_width,check,sat\n"
 
-let print_stats ?(check_output = None) ?(k = -1) ?(n = -1) ?(seed = -1) params
-    stats =
-  Fmt.pr "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d\n" k n seed params.max_cost
-    stats.Stats.n_state_nodes stats.Stats.n_arg_nodes stats.Stats.n_covered
-    stats.Stats.n_refuted stats.Stats.min_width stats.Stats.max_width
-    stats.Stats.median_width
-    ( match check_output with
-    | Some (Ok ()) -> "1"
-    | Some (Error _) -> "0"
-    | None -> "" )
-    (if stats.Stats.sat then 1 else 0)
-
 let random ~n ~seed ~k ~check () = failwith "Unimplemented"
 
 (* let state = Random.State.make [| seed |] in
@@ -39,7 +27,7 @@ let random ~n ~seed ~k ~check () = failwith "Unimplemented"
  * print_stats ~k ~n ~seed ~check_output stats *)
 
 let cad create_params bench () =
-  (create_params bench |> synth : Search_state.t * Stats.t) |> ignore
+  (create_params bench |> synth : Search_state.t) |> ignore
 
 let () =
   let open Command.Let_syntax in

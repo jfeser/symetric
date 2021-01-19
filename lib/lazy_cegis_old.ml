@@ -110,18 +110,37 @@ module Stats = struct
   type t = {
     n_state_nodes : int;
     n_arg_nodes : int;
-    n_covered : int;
+    n_roots : int;
     n_refuted : int;
     min_width : int;
     max_width : int;
     median_width : int;
+    refinement_level : int * int;
     sat : bool;
   }
+  [@@deriving sexp]
+
+  let pp fmt stats = Sexp.pp_hum fmt @@ [%sexp_of: t] stats
+
+  let global =
+    ref
+      {
+        n_state_nodes = -1;
+        n_arg_nodes = -1;
+        n_roots = -1;
+        n_refuted = -1;
+        min_width = -1;
+        max_width = -1;
+        median_width = -1;
+        refinement_level = (-1, -1);
+        sat = false;
+      }
 end
 
 exception Done of [ `Sat of Program.t | `Unsat ]
 
-let refine_level n ss =
+let refine_level ss =
+  let n = (params ss).n_bits in
   G.Fold.V.fold (graph ss) ~init:(0, 0) ~f:(fun ((num, dem) as acc) ->
       Node.match_
         ~args:(fun _ -> acc)
@@ -173,16 +192,38 @@ let refine ss refinement =
   fix_up ss;
 
   let refined_graph = cone (graph ss) @@ List.map ~f:Node.of_state new_states in
+
   dump_detailed_graph ~suffix:"refined-graph"
     (* ~separator:(List.mem separator ~equal:[%equal: Node.t]) *)
     ss refined_graph
 
 let refine graph refinement = with_size graph @@ fun g -> refine g refinement
 
+let count_roots ss =
+  let states =
+    G.Fold.V.filter_map (graph ss)
+      ~f:
+        (Node.match_
+           ~state:(fun s -> State.state ss s |> Option.return)
+           ~args:(fun _ -> None))
+  in
+  let roots =
+    List.fold_left states ~init:[] ~f:(fun roots state ->
+        if List.exists roots ~f:(fun state' -> Abs.is_subset state ~of_:state')
+        then roots
+        else
+          state
+          :: List.filter roots ~f:(fun state' ->
+                 not (Abs.is_subset state' ~of_:state)))
+  in
+  List.length roots
+
 let refute ss target =
+  Stats.global := { !Stats.global with n_refuted = !Stats.global.n_refuted + 1 };
   match Refine.get_refinement ss target with
   | First r ->
       refine ss r;
+      Stats.global := { !Stats.global with n_roots = count_roots ss };
       validate ss
   | Second p ->
       Fmt.pr "Could not refute: %a" Sexp.pp_hum ([%sexp_of: Program.t] p);
@@ -207,8 +248,41 @@ let count_compressible graph =
   Fmt.pr "Compressed args: reduces %d to %d\n" (List.length args)
     (Set.length set_args)
 
+let width_stats ss =
+  let widths =
+    G.Fold.V.filter_map (graph ss)
+      ~f:
+        (Node.match_
+           ~state:(fun s ->
+             match State.state ss s with Bool_vector v -> Some v | _ -> None)
+           ~args:(fun _ -> None))
+    |> List.map ~f:Abs.Bool_vector.width
+  in
+  let min = Option.value_exn (List.min_elt widths ~compare:[%compare: int])
+  and max = Option.value_exn (List.max_elt widths ~compare:[%compare: int])
+  and median =
+    List.nth_exn
+      (List.sort widths ~compare:[%compare: int])
+      (List.length widths / 2)
+  in
+  (min, max, median)
+
 let synth params =
   let ss = Search_state.create params in
+
+  ( at_exit @@ fun () ->
+    let min_width, max_width, median_width = width_stats ss in
+    Fmt.pr "%a%!" Stats.pp
+      {
+        !Stats.global with
+        n_state_nodes =
+          G.Fold.V.filter (graph ss) ~f:Node.is_state |> List.length;
+        n_arg_nodes = G.Fold.V.filter (graph ss) ~f:Node.is_args |> List.length;
+        refinement_level = refine_level ss;
+        min_width;
+        max_width;
+        median_width;
+      } );
 
   (* Add inputs to the state space graph. *)
   List.iter params.bench.ops ~f:(fun op ->
@@ -237,18 +311,4 @@ let synth params =
 
   (match status with `Sat p -> Program.check params p | _ -> ());
 
-  let stats =
-    Stats.
-      {
-        n_state_nodes =
-          G.Fold.V.filter (graph ss) ~f:Node.is_state |> List.length;
-        n_arg_nodes = G.Fold.V.filter (graph ss) ~f:Node.is_args |> List.length;
-        n_covered = -1;
-        n_refuted = -1;
-        min_width = -1;
-        max_width = -1;
-        median_width = -1;
-        sat = (match status with `Sat _ -> true | `Unsat -> false);
-      }
-  in
-  (ss, stats)
+  ss

@@ -312,6 +312,7 @@ let[@landmark "find-interpolant"] run_solver ss graph rel target_node
     separator;
 
   let high_constr vars =
+    let%bind () = assert_input_states_contained ss vars rel in
     let%bind () =
       assert_output_state_contained (params ss) vars target_node expected_output
     in

@@ -275,9 +275,10 @@ let contains a c =
   | _ -> false
 
 let is_subset a ~of_:a' =
-  bind a
-    ~bool_vector:(fun v -> Bool_vector.is_subset v ~of_:(to_bool_vector_exn a'))
-    ~offset:(fun o -> Offset.is_subset o ~of_:(to_offset_exn a'))
+  match (a, a') with
+  | Bool_vector x, Bool_vector x' -> Bool_vector.is_subset x ~of_:x'
+  | Offset x, Offset x' -> Offset.is_subset x ~of_:x'
+  | _ -> false
 
 let meet a a' =
   match (a, a') with
