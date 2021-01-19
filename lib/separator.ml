@@ -2,18 +2,23 @@ open Graph_ext
 
 module Make (G : GRAPH) = struct
   let simple graph target =
-    Sequence.unfold
-      ~init:(G.succ graph target |> Set.of_list (module G.V))
-      ~f:(fun sep ->
-        if Set.is_empty sep then None
-        else
-          let sep' =
-            Set.to_sequence sep
-            |> Sequence.map ~f:(fun v ->
-                   G.succ graph v |> List.concat_map ~f:(G.succ graph))
-            |> Sequence.to_list |> List.concat
-            |> Set.of_list (module G.V)
-          in
-          Some (sep, sep'))
-    |> Sequence.to_list |> List.rev |> Sequence.of_list
+    let next_sep s =
+      Set.to_list s
+      |> List.concat_map ~f:(fun v ->
+             match G.succ graph v with
+             | [] -> [ v ]
+             | vs -> List.concat_map vs ~f:(G.succ graph))
+      |> Set.of_list (module G.V)
+    in
+    let rec gen_seps seps =
+      match seps with
+      | x :: xs ->
+          let x' = next_sep x in
+          if Set.equal x x' then seps else gen_seps (x' :: x :: xs)
+      | [] -> failwith "no start"
+    in
+
+    let seps = gen_seps [ G.succ graph target |> Set.of_list (module G.V) ] in
+    print_s [%message (seps : Set.M(G.V).t list)];
+    Sequence.of_list seps
 end
