@@ -139,7 +139,7 @@ let[@landmark "fill"] fill_up_to_cost ss ops cost =
   let rec fill c =
     if c > cost then false
     else
-      let state_set = state_set_roots ss in
+      let state_set = state_set_full ss in
       let changed, () = did_change @@ fun () -> fill_cost ss state_set ops c in
       changed || fill (c + 1)
   in
@@ -150,7 +150,6 @@ module Stats = struct
     n_state_nodes : int;
     n_arg_nodes : int;
     n_roots : int;
-    roots : Abs.t list;
     n_refuted : int;
     min_width : int;
     max_width : int;
@@ -168,7 +167,6 @@ module Stats = struct
         n_state_nodes = -1;
         n_arg_nodes = -1;
         n_roots = -1;
-        roots = [];
         n_refuted = -1;
         min_width = -1;
         max_width = -1;
@@ -199,20 +197,22 @@ let with_size graph f =
     Float.(100.0 - (of_int size' / of_int size * 100.0));
   ret
 
-let refine ss refinement =
+let refine ss (refinement : Refine.Refinement.t) =
   let new_states =
     Map.to_alist refinement
-    |> List.concat_map ~f:(fun (old, new_) ->
+    |> List.concat_map ~f:(fun (arg_v, { old; new_ }) ->
            let cost, type_ =
              let old_state =
-               G.pred (graph ss) @@ Node.of_args old
+               G.pred (graph ss) @@ Node.of_args arg_v
                |> List.hd_exn |> Node.to_state_exn
              in
              (State.cost ss old_state, State.type_ ss old_state)
            in
 
            (* Remove edges to old states *)
-           G.pred_e (graph ss) @@ Node.of_args old
+           G.pred_e (graph ss) @@ Node.of_args arg_v
+           |> List.filter ~f:(fun (state_v, _, _) ->
+                  Set.mem old (Node.to_state_exn state_v |> State.state ss))
            |> List.iter ~f:(G.remove_edge_e @@ graph ss);
 
            (* Insert new states and add edges to args nodes. *)
@@ -223,7 +223,7 @@ let refine ss refinement =
                       State.create ss state cost type_
                     in
                     G.add_edge_e (graph ss)
-                      (Node.of_state v', -1, Node.of_args old);
+                      (Node.of_state v', -1, Node.of_args arg_v);
                     v')
            in
 
@@ -247,7 +247,7 @@ let refute ss target =
       refine ss r;
       let roots = roots ss in
       let n_roots = List.length roots in
-      Stats.global := { !Stats.global with n_roots; roots = root_states ss };
+      Stats.global := { !Stats.global with n_roots };
       validate ss
   | Second p ->
       Fmt.pr "Could not refute: %a" Sexp.pp_hum ([%sexp_of: Program.t] p);
@@ -322,7 +322,10 @@ let synth params =
       for cost = 1 to params.max_cost do
         let _changed =
           until_done @@ fun () ->
-          try fill_up_to_cost ss params.bench.ops cost
+          try
+            let did_change = fill_up_to_cost ss params.bench.ops cost in
+            validate ss;
+            did_change
           with Found_target state_v ->
             refute ss state_v;
             true

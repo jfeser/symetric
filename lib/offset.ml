@@ -15,9 +15,8 @@ let of_bench bench =
          | _ -> None)
     |> Map.of_alist_multi (module Offset_type)
     |> Map.map ~f:(fun offsets ->
-           let offsets = Array.of_list offsets in
-           Array.sort offsets ~compare:[%compare: float];
-           offsets)
+           List.dedup_and_sort ~compare:[%compare: float] offsets
+           |> List.to_array)
   in
   let of_offset (o : Bench0.offset) =
     let type_ = o.type_ in

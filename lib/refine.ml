@@ -47,7 +47,9 @@ module E_foldable = struct
 end
 
 module Refinement = struct
-  type t = Set.M(Abs).t Map.M(Args).t [@@deriving sexp_of]
+  type s = { old : Set.M(Abs).t; new_ : Set.M(Abs).t } [@@deriving sexp]
+
+  type t = s Map.M(Args).t [@@deriving sexp_of]
 
   let pp fmt x = Sexp.pp_hum fmt @@ [%sexp_of: t] x
 end
@@ -132,6 +134,11 @@ let inter_partition p p' =
   |> Sequence.to_list
   |> Set.of_list (module Abs)
 
+let set_concat_map m s ~f =
+  Set.to_sequence s |> Sequence.map ~f
+  |> Sequence.reduce ~f:Set.union
+  |> Option.value ~default:(Set.empty m)
+
 let[@landmark "process-interpolant"] refinement_of_interpolant ss graph rel
     interpolant lower_constr vars =
   let interpolant_vars = Smt.Expr.vars interpolant in
@@ -151,17 +158,27 @@ let[@landmark "process-interpolant"] refinement_of_interpolant ss graph rel
              |> Set.of_list (module Abs)
            in
 
-           let new_ =
-             Set.to_list old_states
-             |> List.map ~f:(fun old_state ->
-                    print_s [%message "learning refinement" (old_state : Abs.t)];
+           let new_states =
+             set_concat_map
+               (module Abs)
+               old_states
+               ~f:(fun old_state ->
+                 print_s [%message "learning refinement" (old_state : Abs.t)];
 
-                    Symb.refine (params ss) interpolant state old_state var)
-             |> Set.union_list (module Abs)
+                 let new_state =
+                   Symb.refine (params ss) interpolant state old_state var
+                 in
+                 [%test_pred: Set.M(Abs).t]
+                   (fun s -> not (Set.is_empty s))
+                   new_state;
+                 new_state)
            in
            let old = Node.to_args_exn @@ rel.backward v in
-           (old, new_))
-    |> Map.of_alist_reduce (module Args) ~f:Set.union
+           (old, { Refinement.old = old_states; new_ = new_states }))
+    |> Map.of_alist_reduce
+         (module Args)
+         ~f:(fun { old = o; new_ = n } { old = o'; new_ = n' } ->
+           { old = Set.union o o'; new_ = Set.union n n' })
   in
 
   print_s [%message "refinement" (refinement : Refinement.t)];
@@ -346,7 +363,7 @@ let[@landmark "find-interpolant"] run_solver ss graph rel target_node
                         ~data:(Map.find_exn vars.arg_vars v);
                   })
              in
-
+             let%bind () = assert_input_states_contained ss local_vars rel in
              FV.iter local_graph ~f:(fun v ->
                  Node.match_ (rel.backward v)
                    ~state:(fun _ ->
@@ -377,10 +394,17 @@ let[@landmark "find-interpolant"] run_solver ss graph rel target_node
     ( (let%bind () = high_constr vars in
        Smt.check_sat)
     |> Smt.eval_with_state vars_state )
-    [@landmark "check-separator"]
+    [@landmark "check-separator-upper"]
   in
 
-  if upper_ok then
+  let lower_ok =
+    ( (let%bind () = FL.iter (lower_constrs vars) ~f:(fun (_, c) -> c) in
+       Smt.check_sat)
+    |> Smt.eval_with_state vars_state )
+    [@landmark "check-separator-lower"]
+  in
+
+  if upper_ok && lower_ok then
     let interpolant_or_model =
       ( (print_s [%message "seeking interpolant"];
 

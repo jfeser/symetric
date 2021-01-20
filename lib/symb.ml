@@ -403,6 +403,7 @@ let refine params interpolant smt_state abs symb =
         in
         Smt.eval_with_state smt_state check_model)
   in
+  let filtered_models = models in
   let refined =
     map
       ~vector:(fun s ->
@@ -412,15 +413,15 @@ let refine params interpolant smt_state abs symb =
       symb
   in
   assert_refines (abs, refined);
-  (* print_s
-   *   [%message
-   *     "refine"
-   *       (models : Smt.Model.t list)
-   *       (filtered_models : Smt.Model.t list)
-   *       (symb : t)
-   *       (abs : Abs.t)
-   *       (refined : Set.M(Abs).t)
-   *       [%here]]; *)
+  print_s
+    [%message
+      "refine"
+        (models : Smt.Model.t list)
+        (filtered_models : Smt.Model.t list)
+        (symb : t)
+        (abs : Abs.t)
+        (refined : Set.M(Abs).t)
+        [%here]];
   refined
 
 let vars = function

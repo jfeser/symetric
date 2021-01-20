@@ -368,45 +368,55 @@ let dump_detailed_graph ?suffix ?cone ?separator ?refinement ?depth ctx graph =
   let module D = Dump.Make (G) (Attr) in
   D.dump_detailed ?suffix ?cone ?separator ?refinement ?depth ctx.params graph
 
+type program = Apply of Offset.t Op.t * Abs.t * program list [@@deriving sexp]
+
 let sample_program ctx =
   let value_exn x =
     Option.value_exn ~here:[%here] ~message:"malformed state space" x
   in
-  let rec sample arg =
+  let rec sample state arg =
     let inputs =
-      G.succ ctx.graph arg
+      inputs ctx arg
       |> List.map ~f:(fun state_v ->
              let p, _ =
                G.succ ctx.graph state_v |> List.random_element |> value_exn
-               |> sample
+               |> sample (State.state ctx state_v)
              in
              p)
     in
-    let op = Args.op ctx arg in
-    (`Apply (op, inputs), arg)
+    (Apply (Args.op ctx arg, state, inputs), arg)
   in
 
-  args ctx |> List.random_element |> value_exn |> sample
+  args ctx |> List.random_element |> value_exn
+  |> sample (Abs.top (params ctx) Type.Vector)
 
-let validate ?(k = 100) ctx =
+let rec checked_eval params (Apply (op, abs, args)) =
+  let open Option.Let_syntax in
+  let%bind args = List.map args ~f:(checked_eval params) |> Option.all in
+  let conc = Conc.eval params op args in
+  if Abs.contains abs conc then return conc else None
+
+let validate ?(k = 10000) ctx =
   for _ = 1 to k do
     let p, arg_v = sample_program ctx in
-    let conc = Program.ceval ctx.params p in
-    let abs =
-      G.pred ctx.graph arg_v
-      |> List.map ~f:(fun state_v ->
-             Node.to_state_exn state_v |> State.state ctx)
-    in
-    let contained = List.exists abs ~f:(fun abs -> Abs.contains abs conc) in
-    if not contained then (
-      dump_detailed ~suffix:"error" ctx;
-      raise_s
-        [%message
-          "not an overapproximation"
-            (p : Program.t)
-            (arg_v : Args.t)
-            (abs : Abs.t list)
-            (conc : Conc.t)] )
+    match checked_eval ctx.params p with
+    | Some conc ->
+        let abs =
+          G.pred ctx.graph arg_v
+          |> List.map ~f:(fun state_v ->
+                 Node.to_state_exn state_v |> State.state ctx)
+        in
+        let contained = List.exists abs ~f:(fun abs -> Abs.contains abs conc) in
+        if not contained then (
+          dump_detailed ~suffix:"error" ctx;
+          raise_s
+            [%message
+              "not an overapproximation"
+                (p : program)
+                (arg_v : Args.t)
+                (abs : Abs.t list)
+                (conc : Conc.t)] )
+    | None -> ()
   done
 
-let validate ?k:_ _ = ()
+let validate ?k _ = ()

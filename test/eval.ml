@@ -139,7 +139,9 @@ let%test_unit "cylinder symbolic" =
  *       [@@deriving quickcheck, sexp_of]
  *     end )
  *     ~f:(fun (cub, (xctx, xl, xh), (yctx, yl, yh), (zctx, zl, zh), input) ->
- *       let ctx = Offset.of_list Offset_type.dummy xctx
+ *       let xctx = Offset.of_list Offset_type.dummy xctx
+ *       and yctx = Offset.of_list Offset_type.dummy yctx
+ *       and zctx = Offset.of_list Offset_type.dummy zctx
  *       and axl = abstract_offset xl
  *       and axh = abstract_offset xh
  *       and ayl = abstract_offset yl

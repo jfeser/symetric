@@ -586,29 +586,6 @@ module Model = struct
     |> post_filter
 
   let of_ ?vars e =
-    let vars = Option.map vars ~f:(Set.inter (Expr.vars e)) in
-    print_s
-      [%message "enumerating models" (vars : Set.M(Var).t option) (e : Expr.t)];
-    let bit m i = Int.((m lsr i) land 0x1 > 0) in
-    let all_vars = expr_vars e |> Set.to_list in
-    let post_filter =
-      match vars with
-      | Some vars ->
-          fun models ->
-            List.map models ~f:(Map.filter_keys ~f:(Set.mem vars))
-            |> List.dedup_and_sort ~compare:[%compare: bool Map.M(Var).t]
-      | None -> Fun.id
-    in
-    List.range 0 (Int.pow 2 (List.length all_vars))
-    |> List.filter_map ~f:(fun m ->
-           let ctx =
-             List.mapi all_vars ~f:(fun i v -> (v, bit m i))
-             |> Map.of_alist_exn (module String_id)
-           in
-           if Expr.eval ctx e then Some ctx else None)
-    |> post_filter
-
-  let of_ ?vars e =
     let expr_vars = Expr.vars e in
     let vars =
       Option.map vars ~f:(Set.inter expr_vars)
