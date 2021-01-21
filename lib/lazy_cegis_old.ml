@@ -155,6 +155,8 @@ module Stats = struct
     arg_in_degree : int * int * int;
     refinement_level : int * int;
     refined : int Hashtbl.M(Args).t;
+    ops : Offset.t Op.t Hashtbl.M(Args).t;
+    overlap : (float * float * float) Hashtbl.M(Args).t;
     sat : bool;
   }
   [@@deriving sexp_of]
@@ -171,7 +173,9 @@ module Stats = struct
         width = (-1, -1, -1);
         arg_in_degree = (-1, -1, -1);
         refinement_level = (-1, -1);
+        ops = Hashtbl.create (module Args);
         refined = Hashtbl.create (module Args);
+        overlap = Hashtbl.create (module Args);
         sat = false;
       }
 end
@@ -197,11 +201,18 @@ let with_size graph f =
     Float.(100.0 - (of_int size' / of_int size * 100.0));
   ret
 
+let stats_of_list ~compare l =
+  let min = Option.value_exn (List.min_elt l ~compare)
+  and max = Option.value_exn (List.max_elt l ~compare)
+  and median = List.nth_exn (List.sort l ~compare) (List.length l / 2) in
+  (min, max, median)
+
 let refine ss (refinement : Refine.Refinement.t) =
   let new_states =
     Map.to_alist refinement
     |> List.concat_map ~f:(fun (arg_v, { old; new_ }) ->
            Hashtbl.incr !Stats.global.refined arg_v;
+           Hashtbl.set !Stats.global.ops ~key:arg_v ~data:(Args.op ss arg_v);
 
            let cost, type_ =
              let old_state =
@@ -234,6 +245,20 @@ let refine ss (refinement : Refine.Refinement.t) =
              |> List.map ~f:(fun v -> State.state ss @@ Node.to_state_exn v)
            in
            print_s [%message (arg_v : Args.t) (states : Abs.t list)];
+
+           let overlaps =
+             let states' =
+               List.filter_map states ~f:(function
+                 | Bool_vector v -> Some v
+                 | _ -> None)
+             in
+             List.concat_map states' ~f:(fun v ->
+                 List.map states' ~f:(fun v' ->
+                     Abs.Bool_vector.log_overlap (params ss) v v'))
+             |> stats_of_list ~compare:[%compare: float]
+           in
+           Hashtbl.set !Stats.global.overlap ~key:arg_v ~data:overlaps;
+
            new_states)
   in
 
@@ -279,14 +304,6 @@ let count_compressible graph =
   Fmt.pr "Compressed args: reduces %d to %d\n" (List.length args)
     (Set.length set_args)
 
-let stats_of_list l =
-  let min = Option.value_exn (List.min_elt l ~compare:[%compare: int])
-  and max = Option.value_exn (List.max_elt l ~compare:[%compare: int])
-  and median =
-    List.nth_exn (List.sort l ~compare:[%compare: int]) (List.length l / 2)
-  in
-  (min, max, median)
-
 let width_stats ss =
   G.Fold.V.filter_map (graph ss)
     ~f:
@@ -295,12 +312,12 @@ let width_stats ss =
            match State.state ss s with Bool_vector v -> Some v | _ -> None)
          ~args:(fun _ -> None))
   |> List.map ~f:Abs.Bool_vector.width
-  |> stats_of_list
+  |> stats_of_list ~compare:[%compare: int]
 
 let arg_in_degree_stats ss =
   G.Fold.V.filter (graph ss) ~f:Node.is_args
   |> List.map ~f:(G.in_degree (graph ss))
-  |> stats_of_list
+  |> stats_of_list ~compare:[%compare: int]
 
 let synth params =
   let ss = Search_state.create params in

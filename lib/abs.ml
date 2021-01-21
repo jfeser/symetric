@@ -18,6 +18,10 @@ module Bool_vector = struct
 
   let is_bottom = function Bottom -> true | _ -> false
 
+  let log_size params = function
+    | Bottom -> Float.(-infinity)
+    | Map m -> Float.of_int (Array.length params.bench.output - Map.length m)
+
   let pp : t Fmt.t =
     Fmt.using (function
       | Map m ->
@@ -59,6 +63,11 @@ module Bool_vector = struct
             (Map.of_alist_exn (module Int) [ (0, true); (1, false); (2, true) ]))
          (Map
             (Map.of_alist_exn (module Int) [ (0, true); (1, false); (3, true) ])))
+
+  let log_overlap params s s' =
+    Float.(
+      log_size params (meet s s')
+      - Float.min (log_size params s) (log_size params s'))
 
   let is_subset s ~of_:s' =
     match (s, s') with

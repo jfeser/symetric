@@ -36,6 +36,8 @@ module Bool_vector : sig
   val width : t -> int
 
   val of_list_exn : (int * bool) list -> t
+
+  val log_overlap : Params.t -> t -> t -> float
 end
 
 module Offset : sig
