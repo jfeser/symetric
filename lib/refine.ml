@@ -391,6 +391,7 @@ let[@landmark "find-interpolant"] run_solver ss graph rel target_node
 
   print_s
     [%message (Set.length separator : int) (lower_ok : bool) (upper_ok : bool)];
+
   if upper_ok && lower_ok then
     let interpolant_or_model =
       ( (print_s [%message "seeking interpolant"];

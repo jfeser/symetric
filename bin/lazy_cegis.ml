@@ -29,6 +29,8 @@ let random ~n ~seed ~k ~check () = failwith "Unimplemented"
 let cad create_params bench () =
   (create_params bench |> synth : Search_state.t) |> ignore
 
+let cad_cegis create_params bench () = create_params bench |> cegis
+
 let () =
   let open Command.Let_syntax in
   let create_params =
@@ -54,12 +56,19 @@ let () =
         Command.basic ~summary:"Print stats header."
           (Command.Param.return print_header) );
       ( "cad",
-        Command.basic ~summary:"Synthesize a CAD program."
+        Command.basic ~summary:"Synthesize a CAD program using lazy cegis."
           [%map_open
             let create_params = create_params
             and bench_fn = anon ("bench" %: string) in
             let bench = Sexp.load_sexp_conv_exn bench_fn [%of_sexp: Bench.t] in
             cad create_params bench] );
+      ( "cad-cegis",
+        Command.basic ~summary:"Synthesize a CAD program using standard cegis."
+          [%map_open
+            let create_params = create_params
+            and bench_fn = anon ("bench" %: string) in
+            let bench = Sexp.load_sexp_conv_exn bench_fn [%of_sexp: Bench.t] in
+            cad_cegis create_params bench] );
       (* ( "random",
        *   Command.basic ~summary:"Run lazy CEGIS on a random testcase."
        *     [%map_open
