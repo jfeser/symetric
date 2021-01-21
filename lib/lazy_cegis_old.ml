@@ -151,13 +151,13 @@ module Stats = struct
     n_arg_nodes : int;
     n_roots : int;
     n_refuted : int;
-    min_width : int;
-    max_width : int;
-    median_width : int;
+    width : int * int * int;
+    arg_in_degree : int * int * int;
     refinement_level : int * int;
+    refined : int Hashtbl.M(Args).t;
     sat : bool;
   }
-  [@@deriving sexp]
+  [@@deriving sexp_of]
 
   let pp fmt stats = Sexp.pp_hum fmt @@ [%sexp_of: t] stats
 
@@ -168,10 +168,10 @@ module Stats = struct
         n_arg_nodes = -1;
         n_roots = -1;
         n_refuted = -1;
-        min_width = -1;
-        max_width = -1;
-        median_width = -1;
+        width = (-1, -1, -1);
+        arg_in_degree = (-1, -1, -1);
         refinement_level = (-1, -1);
+        refined = Hashtbl.create (module Args);
         sat = false;
       }
 end
@@ -201,6 +201,8 @@ let refine ss (refinement : Refine.Refinement.t) =
   let new_states =
     Map.to_alist refinement
     |> List.concat_map ~f:(fun (arg_v, { old; new_ }) ->
+           Hashtbl.incr !Stats.global.refined arg_v;
+
            let cost, type_ =
              let old_state =
                G.pred (graph ss) @@ Node.of_args arg_v
@@ -227,6 +229,11 @@ let refine ss (refinement : Refine.Refinement.t) =
                     v')
            in
 
+           let states =
+             G.pred (graph ss) @@ Node.of_args arg_v
+             |> List.map ~f:(fun v -> State.state ss @@ Node.to_state_exn v)
+           in
+           print_s [%message (arg_v : Args.t) (states : Abs.t list)];
            new_states)
   in
 
@@ -272,30 +279,33 @@ let count_compressible graph =
   Fmt.pr "Compressed args: reduces %d to %d\n" (List.length args)
     (Set.length set_args)
 
-let width_stats ss =
-  let widths =
-    G.Fold.V.filter_map (graph ss)
-      ~f:
-        (Node.match_
-           ~state:(fun s ->
-             match State.state ss s with Bool_vector v -> Some v | _ -> None)
-           ~args:(fun _ -> None))
-    |> List.map ~f:Abs.Bool_vector.width
-  in
-  let min = Option.value_exn (List.min_elt widths ~compare:[%compare: int])
-  and max = Option.value_exn (List.max_elt widths ~compare:[%compare: int])
+let stats_of_list l =
+  let min = Option.value_exn (List.min_elt l ~compare:[%compare: int])
+  and max = Option.value_exn (List.max_elt l ~compare:[%compare: int])
   and median =
-    List.nth_exn
-      (List.sort widths ~compare:[%compare: int])
-      (List.length widths / 2)
+    List.nth_exn (List.sort l ~compare:[%compare: int]) (List.length l / 2)
   in
   (min, max, median)
+
+let width_stats ss =
+  G.Fold.V.filter_map (graph ss)
+    ~f:
+      (Node.match_
+         ~state:(fun s ->
+           match State.state ss s with Bool_vector v -> Some v | _ -> None)
+         ~args:(fun _ -> None))
+  |> List.map ~f:Abs.Bool_vector.width
+  |> stats_of_list
+
+let arg_in_degree_stats ss =
+  G.Fold.V.filter (graph ss) ~f:Node.is_args
+  |> List.map ~f:(G.in_degree (graph ss))
+  |> stats_of_list
 
 let synth params =
   let ss = Search_state.create params in
 
   ( at_exit @@ fun () ->
-    let min_width, max_width, median_width = width_stats ss in
     Fmt.pr "%a%!" Stats.pp
       {
         !Stats.global with
@@ -303,9 +313,8 @@ let synth params =
           G.Fold.V.filter (graph ss) ~f:Node.is_state |> List.length;
         n_arg_nodes = G.Fold.V.filter (graph ss) ~f:Node.is_args |> List.length;
         refinement_level = refine_level ss;
-        min_width;
-        max_width;
-        median_width;
+        width = width_stats ss;
+        arg_in_degree = arg_in_degree_stats ss;
       } );
 
   (* Add inputs to the state space graph. *)
