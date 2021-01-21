@@ -403,7 +403,6 @@ let refine params interpolant smt_state abs symb =
         in
         Smt.eval_with_state smt_state check_model)
   in
-  let filtered_models = models in
   let refined =
     map
       ~vector:(fun s ->

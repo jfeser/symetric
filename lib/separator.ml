@@ -18,6 +18,6 @@ module Make (G : GRAPH) = struct
       | [] -> failwith "no start"
     in
 
-    let seps = gen_seps [ G.succ graph target |> Set.of_list (module G.V) ] in
+    let seps = gen_seps [ Set.singleton (module G.V) target ] in
     Sequence.of_list seps
 end

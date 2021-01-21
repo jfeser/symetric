@@ -146,35 +146,33 @@ let[@landmark "process-interpolant"] refinement_of_interpolant ss graph rel
     lower_constr
     (* Only consider refining symbolic vars that are mentioned in the
        interpolant *)
-    |> List.filter ~f:(fun (v, _) ->
-           let var = Map.find_exn vars.arg_vars v in
-           Set.inter (Symb.vars var) interpolant_vars |> Set.is_empty |> not)
-    |> List.map ~f:(fun (v, state) ->
-           let var = Map.find_exn vars.arg_vars v in
-           let old_states =
-             UG.pred graph v
-             |> List.map ~f:(fun v ->
-                    State.state ss @@ Node.to_state_exn @@ rel.backward v)
-             |> Set.of_list (module Abs)
+    |> List.map ~f:(fun (state_v, smt_state) ->
+           (state_v, Map.find_exn vars.state_vars state_v, smt_state))
+    |> List.filter ~f:(fun (_, symb, _) ->
+           Set.inter (Symb.vars symb) interpolant_vars |> Set.is_empty |> not)
+    |> List.concat_map ~f:(fun (state_v, symb, smt_state) ->
+           let old_state =
+             State.state ss @@ Node.to_state_exn @@ rel.backward state_v
            in
+
+           print_s [%message "learning refinement" (old_state : Abs.t)];
 
            let new_states =
-             set_concat_map
-               (module Abs)
-               old_states
-               ~f:(fun old_state ->
-                 print_s [%message "learning refinement" (old_state : Abs.t)];
-
-                 let new_state =
-                   Symb.refine (params ss) interpolant state old_state var
-                 in
-                 [%test_pred: Set.M(Abs).t]
-                   (fun s -> not (Set.is_empty s))
-                   new_state;
-                 new_state)
+             Symb.refine (params ss) interpolant smt_state old_state symb
            in
-           let old = Node.to_args_exn @@ rel.backward v in
-           (old, { Refinement.old = old_states; new_ = new_states }))
+           [%test_pred: Set.M(Abs).t] (fun s -> not (Set.is_empty s)) new_states;
+
+           let args_vs =
+             UG.succ graph state_v
+             |> List.map ~f:(fun v -> Node.to_args_exn @@ rel.backward v)
+           in
+
+           List.map args_vs ~f:(fun args_v ->
+               ( args_v,
+                 {
+                   Refinement.old = Set.singleton (module Abs) old_state;
+                   new_ = new_states;
+                 } )))
     |> Map.of_alist_reduce
          (module Args)
          ~f:(fun { old = o; new_ = n } { old = o'; new_ = n' } ->
@@ -326,25 +324,26 @@ let[@landmark "find-interpolant"] run_solver ss graph rel target_node
     (Set.for_all ~f:(UG.mem_vertex top_graph))
     separator;
 
+  let assert_graph_constraints vars g rel =
+    let%bind () = assert_input_states_contained ss vars rel in
+    FV.iter g ~f:(fun v ->
+        Node.match_ (rel.backward v)
+          ~state:(fun _ ->
+            let%bind () = assert_selected_state_selects_input vars g rel v in
+            assert_state_semantics vars g rel v)
+          ~args:(fun _ ->
+            let%bind () = assert_selected_args_selects_inputs vars g rel v in
+            assert_args_semantics ss vars g rel v))
+  in
+
+  let hi_group = 0 and lo_group = 1 in
+
   let high_constr vars =
     let%bind () = assert_input_states_contained ss vars rel in
     let%bind () =
       assert_output_state_contained (params ss) vars target_node expected_output
     in
-    FV.iter top_graph ~f:(fun v ->
-        Node.match_ (rel.backward v)
-          ~state:(fun _ ->
-            let%bind () =
-              assert_selected_state_selects_input vars top_graph rel v
-            in
-            assert_state_semantics vars top_graph rel v)
-          ~args:(fun _ ->
-            if Set.mem separator v then return ()
-            else
-              let%bind () =
-                assert_selected_args_selects_inputs vars top_graph rel v
-              in
-              assert_args_semantics ss vars top_graph rel v))
+    assert_graph_constraints vars top_graph rel
   in
 
   let lower_constrs vars =
@@ -353,36 +352,22 @@ let[@landmark "find-interpolant"] run_solver ss graph rel target_node
            let local_graph = UCone.cone graph [ v ] in
 
            let local_smt =
+             let%bind () = Smt.Interpolant.set_group lo_group in
              let%bind local_vars =
                Smt.with_comment_block ~name:"vars"
                  (let%map vs = Vars.make ss local_graph rel in
                   {
                     vs with
-                    arg_vars =
-                      Map.set vs.arg_vars ~key:v
-                        ~data:(Map.find_exn vars.arg_vars v);
+                    state_vars =
+                      Map.set vs.state_vars ~key:v
+                        ~data:(Map.find_exn vars.state_vars v);
                   })
              in
-             let%bind () = assert_input_states_contained ss local_vars rel in
-             FV.iter local_graph ~f:(fun v ->
-                 Node.match_ (rel.backward v)
-                   ~state:(fun _ ->
-                     let%bind () =
-                       assert_selected_state_selects_input local_vars
-                         local_graph rel v
-                     in
-                     assert_state_semantics local_vars local_graph rel v)
-                   ~args:(fun _ ->
-                     let%bind () =
-                       assert_selected_args_selects_inputs local_vars
-                         local_graph rel v
-                     in
-                     assert_args_semantics ss local_vars local_graph rel v))
+             assert_graph_constraints local_vars local_graph rel
            in
+
            (v, local_smt))
   in
-
-  let hi_group = 0 and lo_group = 1 in
 
   let vars, vars_state =
     (let%bind () = Smt.Interpolant.set_group hi_group in
@@ -404,6 +389,8 @@ let[@landmark "find-interpolant"] run_solver ss graph rel target_node
     [@landmark "check-separator-lower"]
   in
 
+  print_s
+    [%message (Set.length separator : int) (lower_ok : bool) (upper_ok : bool)];
   if upper_ok && lower_ok then
     let interpolant_or_model =
       ( (print_s [%message "seeking interpolant"];
@@ -434,9 +421,8 @@ let[@landmark "find-interpolant"] run_solver ss graph rel target_node
 let process_interpolant params graph rel (interpolant, lower_constr, vars) =
   Fmt.epr "Interpolant: %a@." Smt.Expr.pp interpolant;
 
-  [%test_pred: Set.M(Smt.Var).t]
-    ~message:"interpolant vars are not all arg outputs"
-    (Set.for_all ~f:(fun v -> Char.((String_id.to_string v).[0] = 'a')))
+  [%test_pred: Set.M(Smt.Var).t] ~message:"interpolant vars are not all states"
+    (Set.for_all ~f:(fun v -> Char.((String_id.to_string v).[0] = 's')))
     (Smt.Expr.vars interpolant);
 
   refinement_of_interpolant params graph rel interpolant lower_constr vars
@@ -500,12 +486,12 @@ let[@landmark "refine"] get_refinement ss target_node =
     let separators = USeparator.simple graph top in
 
     [%test_pred: Set.M(UG.V).t Sequence.t]
-      ~message:"separator isn't all args nodes"
+      ~message:"separator isn't all state nodes"
       (Sequence.for_all
          ~f:
            (Set.for_all ~f:(fun v ->
                 rel.backward v
-                |> Node.match_ ~args:(Fun.const true) ~state:(Fun.const false))))
+                |> Node.match_ ~args:(Fun.const false) ~state:(Fun.const true))))
       separators;
 
     Sequence.find_map separators ~f:(fun separator ->
