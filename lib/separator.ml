@@ -5,9 +5,9 @@ module Make (G : GRAPH) = struct
     let next_sep s =
       Set.to_list s
       |> List.concat_map ~f:(fun v ->
-             match G.succ graph v with
+             match List.concat_map (G.succ graph v) ~f:(G.succ graph) with
              | [] -> [ v ]
-             | vs -> List.concat_map vs ~f:(G.succ graph))
+             | vs -> vs)
       |> Set.of_list (module G.V)
     in
     let rec gen_seps seps =
@@ -19,5 +19,6 @@ module Make (G : GRAPH) = struct
     in
 
     let seps = gen_seps [ Set.singleton (module G.V) target ] in
+
     Sequence.of_list seps
 end
