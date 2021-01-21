@@ -383,10 +383,11 @@ let[@landmark "find-interpolant"] run_solver ss graph rel target_node
   in
 
   let lower_ok =
-    ( (let%bind () = FL.iter (lower_constrs vars) ~f:(fun (_, c) -> c) in
-       Smt.check_sat)
-    |> Smt.eval_with_state vars_state )
-    [@landmark "check-separator-lower"]
+    true
+    (* ( (let%bind () = FL.iter (lower_constrs vars) ~f:(fun (_, c) -> c) in
+     *    Smt.check_sat)
+     * |> Smt.eval_with_state vars_state )
+     * [@landmark "check-separator-lower"] *)
   in
 
   print_s
@@ -484,7 +485,7 @@ let[@landmark "refine"] get_refinement ss target_node =
   let expected_output = Conc.bool_vector (params ss).bench.output in
 
   let m_refinement =
-    let separators = USeparator.simple graph top in
+    let separators = USeparator.random graph top in
 
     [%test_pred: Set.M(UG.V).t Sequence.t]
       ~message:"separator isn't all state nodes"
