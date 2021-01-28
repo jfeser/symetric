@@ -301,6 +301,34 @@ module FV = FoldM0 (Smt) (V_foldable)
 module F = FoldM2 (Smt) (Set)
 module FL = FoldM (Smt) (List)
 
+(** Return the subset of `graph` that is reachable from `target`. *)
+let rand_cone graph rel targets =
+  let graph' = UG.create () in
+  let work = Queue.create () in
+  Queue.enqueue_all work @@ List.filter ~f:(UG.mem_vertex graph) targets;
+  let rec loop () =
+    match Queue.dequeue work with
+    | Some v ->
+        UG.add_vertex graph' v;
+
+        let succ =
+          let succ = UG.succ_e graph v in
+
+          if Node.is_state @@ rel.backward v then
+            List.take (List.permute succ) 1
+          else succ
+        in
+
+        (* Add edges to the filtered graph. *)
+        List.iter succ ~f:(UG.add_edge_e graph');
+        (* Add new nodes to the queue. *)
+        List.iter succ ~f:(fun (_, _, v') -> Queue.enqueue work v');
+        loop ()
+    | None -> ()
+  in
+  loop ();
+  graph'
+
 let[@landmark "find-interpolant"] run_solver ss graph rel target_node
     expected_output separator =
   let open Smt.Let_syntax in
@@ -315,7 +343,7 @@ let[@landmark "find-interpolant"] run_solver ss graph rel target_node
     (* Remove separator dependency edges. *)
     Set.iter separator ~f:(UG.iter_succ_e (UG.remove_edge_e g) g);
 
-    UCone.cone g [ target_node ]
+    rand_cone g rel [ target_node ]
   in
 
   let separator = Set.filter separator ~f:(UG.mem_vertex top_graph) in

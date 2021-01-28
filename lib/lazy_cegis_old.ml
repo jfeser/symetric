@@ -139,7 +139,7 @@ let[@landmark "fill"] fill_up_to_cost ss ops cost =
   let rec fill c =
     if c > cost then false
     else
-      let state_set = state_set_full ss in
+      let state_set = state_set_roots ss in
       let changed, () = did_change @@ fun () -> fill_cost ss state_set ops c in
       changed || fill (c + 1)
   in
@@ -148,6 +148,7 @@ let[@landmark "fill"] fill_up_to_cost ss ops cost =
 module Stats = struct
   type t = {
     n_state_nodes : int;
+    n_distinct_state_nodes : int;
     n_arg_nodes : int;
     n_roots : int;
     n_refuted : int;
@@ -167,6 +168,7 @@ module Stats = struct
     ref
       {
         n_state_nodes = -1;
+        n_distinct_state_nodes = -1;
         n_arg_nodes = -1;
         n_roots = -1;
         n_refuted = -1;
@@ -193,12 +195,18 @@ let refine_level ss =
           | Bool_vector v -> (num + Abs.Bool_vector.width v, dem + n)
           | _ -> acc))
 
-let with_size graph f =
-  let size = nb_vertex graph in
-  let ret = f graph in
-  let size' = nb_vertex graph in
-  Fmt.pr "Pruning: size before=%d, after=%d, removed %f%%\n%!" size size'
-    Float.(100.0 - (of_int size' / of_int size * 100.0));
+let with_size ss f =
+  let size = G.nb_vertex (graph ss) in
+  let vsize = G.Fold.V.filter (graph ss) ~f:Node.is_state |> List.length in
+  let ret = f ss in
+  let size' = G.nb_vertex (graph ss) in
+  let vsize' = G.Fold.V.filter (graph ss) ~f:Node.is_state |> List.length in
+
+  (* Fmt.pr "Pruning: size before=%d, after=%d, removed %f%%\n%!" size size'
+   *   Float.(100.0 - (of_int size' / of_int size * 100.0)); *)
+  Fmt.pr "Pruning: size before=%d, after=%d, removed %f%%\n%!" vsize vsize'
+    Float.(100.0 - (of_int vsize' / of_int vsize * 100.0));
+
   ret
 
 let stats_of_list ~compare l =
@@ -328,6 +336,13 @@ let synth params =
         !Stats.global with
         n_state_nodes =
           G.Fold.V.filter (graph ss) ~f:Node.is_state |> List.length;
+        n_distinct_state_nodes =
+          G.Fold.V.filter_map (graph ss) ~f:(fun v ->
+              if Node.is_state v then
+                Some (Node.to_state_exn v |> State.state ss)
+              else None)
+          |> List.dedup_and_sort ~compare:[%compare: Abs.t]
+          |> List.length;
         n_arg_nodes = G.Fold.V.filter (graph ss) ~f:Node.is_args |> List.length;
         refinement_level = refine_level ss;
         width = width_stats ss;
