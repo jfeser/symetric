@@ -562,7 +562,7 @@ module Model = struct
 
   include T
 
-  let of_ ?vars e =
+  let models_enum ?vars e =
     let vars = Option.map vars ~f:(Set.inter (Expr.vars e)) in
     print_s
       [%message "enumerating models" (vars : Set.M(Var).t option) (e : Expr.t)];
@@ -585,7 +585,7 @@ module Model = struct
            if Expr.eval ctx e then Some ctx else None)
     |> post_filter
 
-  let of_ ?vars e =
+  let models_solver ?vars e =
     let expr_vars = Expr.vars e in
     let vars =
       Option.map vars ~f:(Set.inter expr_vars)
@@ -620,6 +620,12 @@ module Model = struct
              |> Map.of_alist_exn (module Var)
              |> Option.return
            else None)
+
+  let models_hybrid ?vars e =
+    if Set.length @@ Expr.vars e > 5 then models_solver ?vars e
+    else models_enum ?vars e
+
+  let of_ = models_solver
 
   let%expect_test "" =
     of_ (varop And [ var_s "x"; var_s "y" ])

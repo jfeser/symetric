@@ -135,12 +135,58 @@ let fill_cost ss (state_set : State_set.t) ops cost =
   Fmt.pr "Filling: size before=%d, after=%d, removed %f%%\n%!" size size'
     Float.(100.0 - (of_int size' / of_int size * 100.0))
 
+let fill_depth_cost ss (state_set : State_set.t) ops cost =
+  let size = nb_vertex ss in
+  ( if cost = 1 then
+    List.filter ops ~f:(fun op ->
+        match op with Op.Cuboid _ | Cylinder _ -> true | _ -> false)
+    |> List.iter ~f:(fun op ->
+           let arity = Op.arity op in
+           let arg_types = Op.args_type op |> Array.of_list in
+           let add_hyper_edges =
+             fold_range
+               ~init:(fun args -> create_hyper_edge ss cost op args)
+               ~f:(fun f i args ->
+                 state_set ~cost:1 ~type_:arg_types.(i)
+                 |> List.iter ~f:(fun v -> f (v :: args)))
+               0 arity
+           in
+           add_hyper_edges [])
+  else if cost > 1 then
+    let arg_cost = cost - 1 in
+
+    List.iter ops ~f:(fun op ->
+        let arity = Op.arity op in
+        let arg_types = Op.args_type op |> Array.of_list in
+
+        let module Comp = Combinat.Composition in
+        if arity > 0 then
+          let add_hyper_edges =
+            fold_range
+              ~init:(fun args -> create_hyper_edge ss cost op args)
+              ~f:(fun f i args ->
+                List.init (arg_cost + 1) ~f:(fun j ->
+                    if j >= 1 then state_set ~cost:j ~type_:arg_types.(i)
+                    else [])
+                |> List.concat
+                |> List.iter ~f:(fun v -> f (v :: args)))
+              0 arity
+          in
+          add_hyper_edges []) );
+
+  let size' = nb_vertex ss in
+
+  Fmt.pr "Filling: size before=%d, after=%d, removed %f%%\n%!" size size'
+    Float.(100.0 - (of_int size' / of_int size * 100.0))
+
 let[@landmark "fill"] fill_up_to_cost ss ops cost =
   let rec fill c =
     if c > cost then false
     else
       let state_set = state_set_roots ss in
-      let changed, () = did_change @@ fun () -> fill_cost ss state_set ops c in
+      let changed, () =
+        did_change @@ fun () -> fill_depth_cost ss state_set ops c
+      in
       changed || fill (c + 1)
   in
   fill 1
