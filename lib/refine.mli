@@ -5,4 +5,6 @@ module Refinement : sig
 end
 
 val get_refinement :
-  Search_state.t -> Search_state.State.t -> (Refinement.t, Program.t) Either.t
+  Search_state.t ->
+  Search_state.State.t list ->
+  (Refinement.t, Program.t) Either.t

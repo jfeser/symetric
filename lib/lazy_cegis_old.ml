@@ -28,14 +28,23 @@ let iter_arg ss cost type_ ~f =
   |> List.iter ~f:(fun v ->
          if [%compare.equal: Type.t] (State.type_ ss v) type_ then f v)
 
-exception Found_target of State.t
+exception Found_target of State.t list
+
+let targets = Hash_set.create (module State)
+
+let add_target v =
+  Hash_set.add targets v;
+  if Hash_set.length targets >= 3 then (
+    let ts = Hash_set.to_list targets in
+    Hash_set.clear targets;
+    raise (Found_target ts) )
 
 let create_hyper_edge ss cost op args =
   match insert_hyper_edge_if_not_exists ss args op cost with
   | Some state_v_out ->
       let output = Conc.bool_vector (params ss).bench.output in
       if Abs.contains (State.state ss state_v_out) output then
-        raise (Found_target state_v_out)
+        add_target state_v_out
   | None -> ()
 
 let fold_range ~init ~f lo hi =
@@ -184,9 +193,7 @@ let[@landmark "fill"] fill_up_to_cost ss ops cost =
     if c > cost then false
     else
       let state_set = state_set_roots ss in
-      let changed, () =
-        did_change @@ fun () -> fill_depth_cost ss state_set ops c
-      in
+      let changed, () = did_change @@ fun () -> fill_cost ss state_set ops c in
       changed || fill (c + 1)
   in
   fill 1
@@ -427,82 +434,84 @@ let synth params =
 
   ss
 
-let cegis params =
-  let rec extract_program ss state_v =
-    match
-      G.succ (graph ss) @@ Node.of_state state_v |> List.map ~f:Node.to_args_exn
-    with
-    | args_v :: _ ->
-        `Apply
-          ( Args.op ss args_v,
-            inputs ss args_v |> List.map ~f:(extract_program ss) )
-    | _ -> raise_s [%message "expected at least one argument"]
-  in
+let cegis _ = assert false
 
-  let find_program params =
-    let ss = Search_state.create params in
-
-    (* Add inputs to the state space graph. *)
-    List.iter params.bench.ops ~f:(fun op ->
-        match Op.type_ op with
-        | [], _ ->
-            let state = Abs.lift @@ Conc.eval params op [] in
-            (insert_hyper_edge_if_not_exists ss [] op 1 ~state : _ option)
-            |> ignore
-        | _ -> ());
-
-    try
-      for cost = 1 to params.max_cost do
-        print_s [%message "filling" (cost : int)];
-        (until_done @@ fun () -> fill_up_to_cost ss params.bench.ops cost : bool)
-        |> ignore;
-        Fmt.pr "Finished cost %d\n%!" cost
-      done;
-      None
-    with Found_target state_v -> Some (extract_program ss state_v)
-  in
-
-  let rec eval params (`Apply (op, args)) =
-    Conc.eval params op @@ List.map ~f:(eval params) args
-  in
-
-  let find_counter input output program =
-    let out =
-      match eval params program with
-      | Bool_vector v -> v
-      | _ -> failwith "expected a vector"
-    in
-    let counter_idx =
-      Array.find_mapi out ~f:(fun i v ->
-          if Bool.(v <> params.bench.output.(i)) then Some i else None)
-    in
-    match counter_idx with
-    | Some i ->
-        let input = params.bench.input.(i) :: input
-        and output = params.bench.output.(i) :: output in
-        Some (input, output)
-    | None -> None
-  in
-
-  let rec loop input output =
-    print_s [%message "searching" (List.length input : int)];
-    let params' =
-      {
-        params with
-        bench =
-          {
-            params.bench with
-            input = Array.of_list input;
-            output = Array.of_list output;
-          };
-      }
-    in
-    match find_program params' with
-    | Some p -> (
-        match find_counter input output p with
-        | Some (i', o') -> loop i' o'
-        | None -> print_s [%message "found solution" (p : Program.t)] )
-    | None -> print_s [%message "no solution"]
-  in
-
-  loop [] []
+(* let cegis params =
+ *   let rec extract_program ss state_v =
+ *     match
+ *       G.succ (graph ss) @@ Node.of_state state_v |> List.map ~f:Node.to_args_exn
+ *     with
+ *     | args_v :: _ ->
+ *         `Apply
+ *           ( Args.op ss args_v,
+ *             inputs ss args_v |> List.map ~f:(extract_program ss) )
+ *     | _ -> raise_s [%message "expected at least one argument"]
+ *   in
+ * 
+ *   let find_program params =
+ *     let ss = Search_state.create params in
+ * 
+ *     (\* Add inputs to the state space graph. *\)
+ *     List.iter params.bench.ops ~f:(fun op ->
+ *         match Op.type_ op with
+ *         | [], _ ->
+ *             let state = Abs.lift @@ Conc.eval params op [] in
+ *             (insert_hyper_edge_if_not_exists ss [] op 1 ~state : _ option)
+ *             |> ignore
+ *         | _ -> ());
+ * 
+ *     try
+ *       for cost = 1 to params.max_cost do
+ *         print_s [%message "filling" (cost : int)];
+ *         (until_done @@ fun () -> fill_up_to_cost ss params.bench.ops cost : bool)
+ *         |> ignore;
+ *         Fmt.pr "Finished cost %d\n%!" cost
+ *       done;
+ *       None
+ *     with Found_target state_v -> Some (extract_program ss state_v)
+ *   in
+ * 
+ *   let rec eval params (`Apply (op, args)) =
+ *     Conc.eval params op @@ List.map ~f:(eval params) args
+ *   in
+ * 
+ *   let find_counter input output program =
+ *     let out =
+ *       match eval params program with
+ *       | Bool_vector v -> v
+ *       | _ -> failwith "expected a vector"
+ *     in
+ *     let counter_idx =
+ *       Array.find_mapi out ~f:(fun i v ->
+ *           if Bool.(v <> params.bench.output.(i)) then Some i else None)
+ *     in
+ *     match counter_idx with
+ *     | Some i ->
+ *         let input = params.bench.input.(i) :: input
+ *         and output = params.bench.output.(i) :: output in
+ *         Some (input, output)
+ *     | None -> None
+ *   in
+ * 
+ *   let rec loop input output =
+ *     print_s [%message "searching" (List.length input : int)];
+ *     let params' =
+ *       {
+ *         params with
+ *         bench =
+ *           {
+ *             params.bench with
+ *             input = Array.of_list input;
+ *             output = Array.of_list output;
+ *           };
+ *       }
+ *     in
+ *     match find_program params' with
+ *     | Some p -> (
+ *         match find_counter input output p with
+ *         | Some (i', o') -> loop i' o'
+ *         | None -> print_s [%message "found solution" (p : Program.t)] )
+ *     | None -> print_s [%message "no solution"]
+ *   in
+ * 
+ *   loop [] [] *)

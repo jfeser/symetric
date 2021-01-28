@@ -208,12 +208,15 @@ let assert_input_states_contained ss vars rel =
          assert_ (Symb.contained (params ss) var ~by:state))
   |> all_unit
 
-let assert_output_state_contained params vars target_node expected =
+let assert_output_state_contained params vars target_nodes expected =
   let open Smt in
-  let var = Map.find_exn vars.state_vars target_node in
-  fresh_defn ~prefix:"correct-output"
-    (Symb.contained params var ~by:(Abs.lift expected))
-  >>= assert_group_var
+  let constr =
+    List.map target_nodes ~f:(fun target_node ->
+        let var = Map.find_exn vars.state_vars target_node in
+        Symb.contained params var ~by:(Abs.lift expected))
+    |> or_
+  in
+  fresh_defn ~prefix:"correct-output" constr >>= assert_group_var
 
 let assert_selected_state_selects_input vars graph rel v =
   let open Smt in
@@ -302,25 +305,23 @@ module F = FoldM2 (Smt) (Set)
 module FL = FoldM (Smt) (List)
 
 (** Return the subset of `graph` that is reachable from `target`. *)
-let rand_cone graph rel targets =
-  let graph' = UG.create () in
+let rand_cone graph targets =
+  let graph' = G.create () in
   let work = Queue.create () in
-  Queue.enqueue_all work @@ List.filter ~f:(UG.mem_vertex graph) targets;
+  Queue.enqueue_all work @@ List.filter ~f:(G.mem_vertex graph) targets;
   let rec loop () =
     match Queue.dequeue work with
     | Some v ->
-        UG.add_vertex graph' v;
+        G.add_vertex graph' v;
 
         let succ =
-          let succ = UG.succ_e graph v in
+          let succ = G.succ_e graph v in
 
-          if Node.is_state @@ rel.backward v then
-            List.take (List.permute succ) 1
-          else succ
+          if Node.is_state v then List.take (List.permute succ) 1 else succ
         in
 
         (* Add edges to the filtered graph. *)
-        List.iter succ ~f:(UG.add_edge_e graph');
+        List.iter succ ~f:(G.add_edge_e graph');
         (* Add new nodes to the queue. *)
         List.iter succ ~f:(fun (_, _, v') -> Queue.enqueue work v');
         loop ()
@@ -329,12 +330,15 @@ let rand_cone graph rel targets =
   loop ();
   graph'
 
-let[@landmark "find-interpolant"] run_solver ss graph rel target_node
+let[@landmark "find-interpolant"] run_solver ss graph rel target_nodes
     expected_output separator =
   let open Smt.Let_syntax in
   (* There should only be one target even after unsharing *)
-  let target_node =
-    Node.of_state target_node |> rel.forward |> Sequence.hd_exn
+  let target_nodes =
+    List.map target_nodes ~f:Node.of_state
+    |> Sequence.of_list
+    |> Sequence.concat_map ~f:rel.forward
+    |> Sequence.to_list
   in
 
   let top_graph =
@@ -343,7 +347,7 @@ let[@landmark "find-interpolant"] run_solver ss graph rel target_node
     (* Remove separator dependency edges. *)
     Set.iter separator ~f:(UG.iter_succ_e (UG.remove_edge_e g) g);
 
-    rand_cone g rel [ target_node ]
+    UCone.cone g target_nodes
   in
 
   let separator = Set.filter separator ~f:(UG.mem_vertex top_graph) in
@@ -369,7 +373,8 @@ let[@landmark "find-interpolant"] run_solver ss graph rel target_node
   let high_constr vars =
     let%bind () = assert_input_states_contained ss vars rel in
     let%bind () =
-      assert_output_state_contained (params ss) vars target_node expected_output
+      assert_output_state_contained (params ss) vars target_nodes
+        expected_output
     in
     assert_graph_constraints vars top_graph rel
   in
@@ -485,28 +490,21 @@ let process_model ss graph rel target (model, vars) =
   in
   extract_program ss graph rel selected_edges target
 
-let[@landmark "refine"] get_refinement ss target_node =
+let[@landmark "refine"] get_refinement ss target_nodes =
   (* Select the subset of the graph that can reach the target *)
   let shared_graph =
     let module C = Cone.Make (Search_state.G) in
-    C.cone (graph ss) [ Node.of_state target_node ]
+    C.cone (graph ss) @@ List.map ~f:Node.of_state target_nodes
   in
 
   Search_state.dump_detailed_graph ~suffix:"before-unsharing" ss shared_graph;
 
   (* Remove sharing in the graph subset *)
   let graph, rel = U.unshare shared_graph in
-  let top =
-    Option.value_exn ~message:"graph does not have a greatest element"
-      (UFold.V.find graph ~f:(fun v -> UG.in_degree graph v = 0))
-  in
+  let top = UFold.V.filter graph ~f:(fun v -> UG.in_degree graph v = 0) in
 
-  let size = G.nb_vertex shared_graph
-  and unshared_size = UG.nb_vertex graph
-  and top_out_degree = UG.out_degree graph top in
-  print_s
-    [%message
-      "conflict graph" (size : int) (unshared_size : int) (top_out_degree : int)];
+  let size = G.nb_vertex shared_graph and unshared_size = UG.nb_vertex graph in
+  print_s [%message "conflict graph" (size : int) (unshared_size : int)];
 
   dump_detailed ss ~suffix:"after-unsharing" graph rel;
 
@@ -525,7 +523,9 @@ let[@landmark "refine"] get_refinement ss target_node =
       separators;
 
     Sequence.find_map separators ~f:(fun separator ->
-        match run_solver ss graph rel target_node expected_output separator with
+        match
+          run_solver ss graph rel target_nodes expected_output separator
+        with
         | First x -> process_interpolant ss graph rel x |> Option.some
         | _ -> None)
   in
@@ -534,8 +534,10 @@ let[@landmark "refine"] get_refinement ss target_node =
   | Some r -> First r
   | None -> (
       match
-        run_solver ss graph rel target_node expected_output
+        run_solver ss graph rel target_nodes expected_output
           (Set.empty (module UG.V))
       with
       | First _ -> failwith "expected model"
-      | Second x -> Second (process_model ss graph rel top x) )
+      | Second x ->
+          failwith "found model" (* Second (process_model ss graph rel top x) *)
+      )

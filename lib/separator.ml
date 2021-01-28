@@ -1,7 +1,7 @@
 open Graph_ext
 
 module Make (G : GRAPH) = struct
-  let simple graph target =
+  let simple graph targets =
     let next_sep s =
       Set.to_list s
       |> List.concat_map ~f:(fun v ->
@@ -18,11 +18,11 @@ module Make (G : GRAPH) = struct
       | [] -> failwith "no start"
     in
 
-    let seps = gen_seps [ Set.singleton (module G.V) target ] in
+    let seps = gen_seps [ Set.of_list (module G.V) targets ] in
 
     Sequence.of_list seps
 
-  let random ?(k = 1) graph target =
+  let random ?(k = 1) graph targets =
     let next_sep s =
       let no_expand, yes_expand =
         Set.to_list s
@@ -50,7 +50,7 @@ module Make (G : GRAPH) = struct
       | [] -> failwith "no start"
     in
 
-    let seps = gen_seps [ Set.singleton (module G.V) target ] in
+    let seps = gen_seps [ Set.of_list (module G.V) targets ] in
 
     Sequence.of_list seps
 end
