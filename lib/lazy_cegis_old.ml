@@ -34,7 +34,7 @@ let targets = Hash_set.create (module State)
 
 let add_target v =
   Hash_set.add targets v;
-  if Hash_set.length targets >= 3 then (
+  if Hash_set.length targets >= 1 then (
     let ts = Hash_set.to_list targets in
     Hash_set.clear targets;
     raise (Found_target ts) )

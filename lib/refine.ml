@@ -538,6 +538,5 @@ let[@landmark "refine"] get_refinement ss target_nodes =
           (Set.empty (module UG.V))
       with
       | First _ -> failwith "expected model"
-      | Second x ->
-          failwith "found model" (* Second (process_model ss graph rel top x) *)
+      | Second x -> failwith "" (* Second (process_model ss graph rel top x) *)
       )
