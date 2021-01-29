@@ -50,9 +50,6 @@ struct
 
     include T
     include Comparator.Make (T)
-
-    let pp fmt { node; port } =
-      Sexp.pp fmt @@ [%sexp_of: G.V.t * int] (V_ref.vertex node, port)
   end
 
   let id v = v.V_ref.id

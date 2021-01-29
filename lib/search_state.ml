@@ -397,26 +397,27 @@ let rec checked_eval params (Apply (op, abs, args)) =
   if Abs.contains abs conc then return conc else None
 
 let validate ?(k = 10000) ctx =
-  for _ = 1 to k do
-    let p, arg_v = sample_program ctx in
-    match checked_eval ctx.params p with
-    | Some conc ->
-        let abs =
-          G.pred ctx.graph arg_v
-          |> List.map ~f:(fun state_v ->
-                 Node.to_state_exn state_v |> State.state ctx)
-        in
-        let contained = List.exists abs ~f:(fun abs -> Abs.contains abs conc) in
-        if not contained then (
-          dump_detailed ~suffix:"error" ctx;
-          raise_s
-            [%message
-              "not an overapproximation"
-                (p : program)
-                (arg_v : Args.t)
-                (abs : Abs.t list)
-                (conc : Conc.t)] )
-    | None -> ()
-  done
-
-let validate ?k _ = ()
+  if (params ctx).validate then
+    for _ = 1 to k do
+      let p, arg_v = sample_program ctx in
+      match checked_eval ctx.params p with
+      | Some conc ->
+          let abs =
+            G.pred ctx.graph arg_v
+            |> List.map ~f:(fun state_v ->
+                   Node.to_state_exn state_v |> State.state ctx)
+          in
+          let contained =
+            List.exists abs ~f:(fun abs -> Abs.contains abs conc)
+          in
+          if not contained then (
+            dump_detailed ~suffix:"error" ctx;
+            raise_s
+              [%message
+                "not an overapproximation"
+                  (p : program)
+                  (arg_v : Args.t)
+                  (abs : Abs.t list)
+                  (conc : Conc.t)] )
+      | None -> ()
+    done

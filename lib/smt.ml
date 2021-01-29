@@ -621,7 +621,7 @@ module Model = struct
              |> Option.return
            else None)
 
-  let models_hybrid ?vars e =
+  let _models_hybrid ?vars e =
     if Set.length @@ Expr.vars e > 5 then models_solver ?vars e
     else models_enum ?vars e
 

@@ -7,6 +7,9 @@ type t = {
   bench : Offset.t Bench.t;
   n_bits : int;
   offsets : Offset.ctx;
+  validate : bool;
+  state_set : [ `Full | `Roots ];
+  cone : [ `Full | `Rand ];
 }
 
 let create ?(enable_dump = false) ?(max_cost = 10)
@@ -21,4 +24,7 @@ let create ?(enable_dump = false) ?(max_cost = 10)
     bench;
     n_bits = Array.length bench.input;
     offsets;
+    validate = false;
+    state_set = `Full;
+    cone = `Full;
   }

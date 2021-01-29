@@ -297,7 +297,6 @@ let filter_offsets offsets (var : Offset.t) pred =
   |> Sequence.to_list
 
 let cylinder (c : Op.cylinder) input offsets l h =
-  let open Smt.Monad_infix in
   List.map (Array.to_list input) ~f:(fun v ->
       let open Vector3 in
       let rot = inverse_rotate v ~theta:c.theta in

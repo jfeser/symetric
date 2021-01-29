@@ -168,8 +168,6 @@ module Offset = struct
     in
     { lo = min; hi = max; type_ = t }
 
-  let bot t = { lo = Float.max_value; hi = Float.min_value; type_ = t }
-
   let is_bottom x = Float.(x.lo > x.hi)
 
   let lift x =

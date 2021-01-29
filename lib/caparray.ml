@@ -17,5 +17,3 @@ let create = Array.create
 let init = Array.init
 
 let of_list = Array.of_list
-
-let map2_exn = Array.map2_exn

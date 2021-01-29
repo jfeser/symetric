@@ -50,24 +50,7 @@ module Refinement = struct
   type s = { old : Set.M(Abs).t; new_ : Set.M(Abs).t } [@@deriving sexp]
 
   type t = s Map.M(Args).t [@@deriving sexp_of]
-
-  let pp fmt x = Sexp.pp_hum fmt @@ [%sexp_of: t] x
 end
-
-let normalize_bits bits =
-  Map.of_alist_multi (module Int) bits
-  |> Map.mapi ~f:(fun ~key ~data ->
-         List.reduce_exn data ~f:(fun b b' ->
-             match (b, b') with
-             | Some x, Some y ->
-                 if Bool.(x = y) then Some x
-                 else
-                   Error.create "Bit value conflict" (key, b, b')
-                     [%sexp_of: int * bool option * bool option]
-                   |> Error.raise
-             | None, (Some _ as b) | (Some _ as b), None -> b
-             | None, None -> None))
-  |> Map.to_alist
 
 module Vars = struct
   type t = {
@@ -76,10 +59,6 @@ module Vars = struct
     state_vars : Symb.t Map.M(UG.V).t;
     arg_vars : Symb.t Map.M(UG.V).t;
   }
-
-  let make_bit_vars params prefix =
-    List.init params.n_bits ~f:(fun b -> Smt.fresh_decl ~prefix:(prefix b) ())
-    |> Smt.all
 
   let make ss graph vertex_rel =
     let open Smt.Let_syntax in
@@ -124,20 +103,6 @@ module Vars = struct
 end
 
 open Vars
-
-let inter_partition p p' =
-  Set.to_sequence p
-  |> Sequence.concat_map ~f:(fun v ->
-         Set.to_sequence p'
-         |> Sequence.map ~f:(Abs.meet v)
-         |> Sequence.filter ~f:(Fun.negate Abs.is_bottom))
-  |> Sequence.to_list
-  |> Set.of_list (module Abs)
-
-let set_concat_map m s ~f =
-  Set.to_sequence s |> Sequence.map ~f
-  |> Sequence.reduce ~f:Set.union
-  |> Option.value ~default:(Set.empty m)
 
 let[@landmark "process-interpolant"] refinement_of_interpolant ss graph rel
     interpolant lower_constr vars =
@@ -194,10 +159,6 @@ let pred_selected vars g v =
 
 let succ_selected vars g v =
   UG.succ_e g v |> find_edge_vars vars |> vars_to_exprs
-
-let filter g ~f = G.fold_vertex (fun v vs -> if f v then v :: vs else vs) g []
-
-let to_list g = G.fold_vertex (fun v vs -> v :: vs) g []
 
 let assert_input_states_contained ss vars rel =
   let open Smt in
@@ -294,11 +255,6 @@ let assert_args_semantics ss vars graph rel v =
     ~descr:[%message (op : Offset.t Op.t)]
     (let%bind eval_result = Symb.eval (params ss) op incoming_states in
      Symb.(eval_result = out) |> Smt.assert_)
-
-let in_separator s v =
-  Node.match_ ~args:(Fun.const false)
-    ~state:(List.mem s ~equal:[%compare.equal: State.t])
-    v
 
 module FV = FoldM0 (Smt) (V_foldable)
 module F = FoldM2 (Smt) (Set)
@@ -490,12 +446,16 @@ let process_model ss graph rel target (model, vars) =
   in
   extract_program ss graph rel selected_edges target
 
+let cone ss target_nodes =
+  match (params ss).cone with
+  | `Full ->
+      let module C = Cone.Make (Search_state.G) in
+      C.cone (graph ss) @@ List.map ~f:Node.of_state target_nodes
+  | `Rand -> rand_cone (graph ss) @@ List.map ~f:Node.of_state target_nodes
+
 let[@landmark "refine"] get_refinement ss target_nodes =
   (* Select the subset of the graph that can reach the target *)
-  let shared_graph =
-    let module C = Cone.Make (Search_state.G) in
-    C.cone (graph ss) @@ List.map ~f:Node.of_state target_nodes
-  in
+  let shared_graph = cone ss target_nodes in
 
   Search_state.dump_detailed_graph ~suffix:"before-unsharing" ss shared_graph;
 

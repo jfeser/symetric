@@ -3,12 +3,7 @@ open Search_state
 open Params
 module C = Cone.Make (Search_state.G)
 open C
-
-module Seq = struct
-  include Sequence
-
-  let of_array a = init (Array.length a) ~f:(fun i -> a.(i))
-end
+module Seq = Sequence
 
 let did_change f =
   G.reset_changed ();
@@ -22,11 +17,6 @@ let until_done f =
     if did_work' then until_done did_work' else did_work
   in
   until_done false
-
-let iter_arg ss cost type_ ~f =
-  states_of_cost ss cost
-  |> List.iter ~f:(fun v ->
-         if [%compare.equal: Type.t] (State.type_ ss v) type_ then f v)
 
 exception Found_target of State.t list
 
@@ -68,8 +58,6 @@ let roots ss =
          | Some _ -> roots
          | None ->
              v :: List.filter roots ~f:(fun v' -> not (is_subset v' ~of_:v)))
-
-let root_states ss = roots ss |> List.map ~f:(State.state ss)
 
 module State_set = struct
   type t = type_:Type.t -> cost:int -> State.t list
@@ -144,56 +132,17 @@ let fill_cost ss (state_set : State_set.t) ops cost =
   Fmt.pr "Filling: size before=%d, after=%d, removed %f%%\n%!" size size'
     Float.(100.0 - (of_int size' / of_int size * 100.0))
 
-let fill_depth_cost ss (state_set : State_set.t) ops cost =
-  let size = nb_vertex ss in
-  ( if cost = 1 then
-    List.filter ops ~f:(fun op ->
-        match op with Op.Cuboid _ | Cylinder _ -> true | _ -> false)
-    |> List.iter ~f:(fun op ->
-           let arity = Op.arity op in
-           let arg_types = Op.args_type op |> Array.of_list in
-           let add_hyper_edges =
-             fold_range
-               ~init:(fun args -> create_hyper_edge ss cost op args)
-               ~f:(fun f i args ->
-                 state_set ~cost:1 ~type_:arg_types.(i)
-                 |> List.iter ~f:(fun v -> f (v :: args)))
-               0 arity
-           in
-           add_hyper_edges [])
-  else if cost > 1 then
-    let arg_cost = cost - 1 in
-
-    List.iter ops ~f:(fun op ->
-        let arity = Op.arity op in
-        let arg_types = Op.args_type op |> Array.of_list in
-
-        let module Comp = Combinat.Composition in
-        if arity > 0 then
-          let add_hyper_edges =
-            fold_range
-              ~init:(fun args -> create_hyper_edge ss cost op args)
-              ~f:(fun f i args ->
-                List.init (arg_cost + 1) ~f:(fun j ->
-                    if j >= 1 then state_set ~cost:j ~type_:arg_types.(i)
-                    else [])
-                |> List.concat
-                |> List.iter ~f:(fun v -> f (v :: args)))
-              0 arity
-          in
-          add_hyper_edges []) );
-
-  let size' = nb_vertex ss in
-
-  Fmt.pr "Filling: size before=%d, after=%d, removed %f%%\n%!" size size'
-    Float.(100.0 - (of_int size' / of_int size * 100.0))
+let state_set ss =
+  match (params ss).state_set with
+  | `Full -> state_set_full ss
+  | `Roots -> state_set_roots ss
 
 let[@landmark "fill"] fill_up_to_cost ss ops cost =
   let rec fill c =
     if c > cost then false
     else
-      let state_set = state_set_roots ss in
-      let changed, () = did_change @@ fun () -> fill_cost ss state_set ops c in
+      let states = state_set ss in
+      let changed, () = did_change @@ fun () -> fill_cost ss states ops c in
       changed || fill (c + 1)
   in
   fill 1
@@ -249,15 +198,11 @@ let refine_level ss =
           | _ -> acc))
 
 let with_size ss f =
-  let size = G.nb_vertex (graph ss) in
   let vsize = G.Fold.V.filter (graph ss) ~f:Node.is_state |> List.length in
   let ret = f ss in
-  let size' = G.nb_vertex (graph ss) in
   let vsize' = G.Fold.V.filter (graph ss) ~f:Node.is_state |> List.length in
 
-  (* Fmt.pr "Pruning: size before=%d, after=%d, removed %f%%\n%!" size size'
-   *   Float.(100.0 - (of_int size' / of_int size * 100.0)); *)
-  Fmt.pr "Pruning: size before=%d, after=%d, removed %f%%\n%!" vsize vsize'
+  Fmt.pr "Pruning: #states before=%d, after=%d, removed %f%%\n%!" vsize vsize'
     Float.(100.0 - (of_int vsize' / of_int vsize * 100.0));
 
   ret
@@ -345,25 +290,6 @@ let refute ss target =
   | Second p ->
       Fmt.pr "Could not refute: %a" Sexp.pp_hum ([%sexp_of: Program.t] p);
       raise @@ Done (`Sat p)
-
-let count_compressible graph =
-  let args =
-    G.Fold.V.filter_map graph ~f:Node.to_args
-    |> List.map ~f:(fun v ->
-           let v = Node.of_args v in
-           (G.pred graph v, G.succ graph v))
-  in
-  let module Key = struct
-    module T = struct
-      type t = Node.t list * Node.t list [@@deriving compare, sexp_of]
-    end
-
-    include T
-    include Comparator.Make (T)
-  end in
-  let set_args = Set.of_list (module Key) args in
-  Fmt.pr "Compressed args: reduces %d to %d\n" (List.length args)
-    (Set.length set_args)
 
 let width_stats ss =
   G.Fold.V.filter_map (graph ss)
