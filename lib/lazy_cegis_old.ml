@@ -280,7 +280,7 @@ let refine graph refinement = with_size graph @@ fun g -> refine g refinement
 
 let refute ss target =
   Stats.global := { !Stats.global with n_refuted = !Stats.global.n_refuted + 1 };
-  match Refine.get_refinement ss target with
+  match Refine.refine ss target with
   | First r ->
       refine ss r;
       let roots = roots ss in

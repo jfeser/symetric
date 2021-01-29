@@ -4,7 +4,7 @@ module Refinement : sig
   type t = s Map.M(Search_state.Args).t [@@deriving sexp_of]
 end
 
-val get_refinement :
+val refine :
   Search_state.t ->
   Search_state.State.t list ->
   (Refinement.t, Program.t) Either.t

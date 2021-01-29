@@ -81,6 +81,8 @@ module Expr = struct
     | Atom x -> return @@ var_s x
     | inter -> Or_error.error "Unexpected interpolant" inter [%sexp_of: Sexp.t]
 
+  let parse_exn x = Or_error.ok_exn @@ parse x
+
   let rec eval ctx = function
     | Bool v -> v
     | Var x -> Map.find_exn ctx x
@@ -486,6 +488,33 @@ let smtlib =
   Revlist.to_list stmts
   |> List.map ~f:(fun (_, str) -> str)
   |> String.concat ~sep:"\n"
+
+let get_interpolant_inner groups stmts read write =
+  let open Sexp in
+  write
+    ([ "(set-option :produce-interpolants true)" ] @ stmts @ [ "(check-sat)" ]);
+  let is_sat =
+    match read () with
+    | Atom "unsat" -> false
+    | Atom "sat" -> true
+    | x -> error x
+  in
+
+  if is_sat then return None
+  else (
+    write
+      [
+        Fmt.str "(get-interpolant (%a))"
+          Fmt.(list ~sep:sp Interpolant.Group.pp)
+          groups;
+      ];
+    return (Some (read () |> Expr.parse_exn)) )
+
+let get_interpolant groups =
+  let%bind stmts = get_stmts in
+  with_mathsat
+  @@ get_interpolant_inner groups
+  @@ List.map ~f:Tuple.T2.get2 @@ Revlist.to_list stmts
 
 let get_interpolant_or_model_inner groups stmts read write =
   let open Sexp in

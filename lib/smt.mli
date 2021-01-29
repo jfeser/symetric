@@ -129,6 +129,8 @@ val get_interpolant_or_model_inner :
   (string list -> unit) ->
   (Expr.t Or_error.t, (Var.t * bool) list) Either.t t
 
+val get_interpolant : Interpolant.Group.t list -> Expr.t option t
+
 val get_interpolant_or_model :
   Interpolant.Group.t list ->
   (Expr.t Or_error.t, (Var.t * bool) list) Either.t t
