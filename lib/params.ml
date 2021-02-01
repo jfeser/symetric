@@ -28,3 +28,5 @@ let create ?(enable_dump = false) ?(max_cost = 10)
     state_set = `Full;
     cone = `Full;
   }
+
+let bool_vector_abs = `Precise

@@ -1,7 +1,7 @@
 open Ast
 open Params
 
-module Bool_vector = struct
+module Bool_vector_precise = struct
   module T = struct
     type t = Map of bool Map.M(Int).t | Bottom
     [@@deriving compare, hash, sexp]
@@ -89,6 +89,18 @@ module Bool_vector = struct
       ( Array.mapi s ~f:(fun i x -> (i, x))
       |> Array.to_list
       |> Map.of_alist_exn (module Int) )
+
+  let to_symb ?(prefix = sprintf "b%d") n =
+    let open Symb0.Bool_vector in
+    function
+    | Map m ->
+        Smt.(
+          List.init n ~f:(fun b ->
+              match Map.find m b with
+              | Some v -> return @@ Fixed v
+              | None -> fresh_decl ~prefix:(prefix b) () >>| fun v -> Free v)
+          |> all)
+    | Bottom -> failwith "bottom"
 
   let union x x' =
     match (x, x') with
@@ -178,6 +190,19 @@ module Offset = struct
 
   let create_exn ~lo ~hi ~type_ = Option.value_exn (create ~lo ~hi ~type_)
 
+  let to_symb offsets abs =
+    let open Smt.Let_syntax in
+    let open Symb0.Bool_vector in
+    let%bind set =
+      Offset.of_type offsets abs.type_
+      |> Sequence.map ~f:(fun conc ->
+             if not (contains abs conc) then return @@ fixed false
+             else Smt.fresh_decl () >>| free)
+      |> Sequence.to_list |> Smt.all
+    in
+    let%map () = Smt.assert_ @@ Smt.exactly_one @@ List.map ~f:to_expr set in
+    Symb0.Offset.{ set; type_ = abs.type_ }
+
   let copy ?lo ?hi x =
     create
       ~lo:(Option.value lo ~default:x.lo)
@@ -232,6 +257,8 @@ module Offset = struct
          (create_exn ~lo:0.0 ~hi:2.0 ~type_:Offset_type.dummy)
          (create_exn ~lo:1.0 ~hi:3.0 ~type_:Offset_type.dummy))
 end
+
+module Bool_vector = Bool_vector_precise
 
 module T = struct
   type t = Bool_vector of Bool_vector.t | Offset of Offset.t
@@ -364,3 +391,13 @@ let eval params op args =
       apply6 (cuboid c params.bench.input) @@ eval_offsets args |> bool_vector
   | Sphere _ | Offset _ ->
       raise_s [%message "leaf node" (op : _ Op.t) (args : t list)]
+
+let to_symb params =
+  let open Smt.Let_syntax in
+  function
+  | Bool_vector x ->
+      let%map s = Bool_vector.to_symb params.n_bits x in
+      Symb0.Bool_vector s
+  | Offset x ->
+      let%map s = Offset.to_symb params.offsets x in
+      Symb0.Offset s

@@ -2,15 +2,7 @@ open Ast
 open Params
 
 module Bool_vector = struct
-  type elem = Free of Smt.Var.t | Fixed of bool [@@deriving compare, sexp]
-
-  type t = elem list [@@deriving sexp]
-
-  let free x = Free x
-
-  let fixed x = Fixed x
-
-  let to_expr = function Free v -> Smt.var v | Fixed x -> Smt.bool x
+  include Symb0.Bool_vector
 
   let elem_of_expr =
     Smt.fresh_defn_or_literal
@@ -23,15 +15,7 @@ module Bool_vector = struct
 
   let create ?prefix params = create_n ?prefix params.n_bits
 
-  let of_abs ?(prefix = sprintf "b%d") ~n_bits = function
-    | Abs.Bool_vector.Map m ->
-        Smt.(
-          List.init n_bits ~f:(fun b ->
-              match Map.find m b with
-              | Some v -> return @@ fixed v
-              | None -> fresh_decl ~prefix:(prefix b) () >>| free)
-          |> all)
-    | Bottom -> failwith "bottom"
+  let of_conc x = Array.to_list x |> List.map ~f:fixed
 
   let exactly_one x =
     List.map x ~f:(function Fixed x -> Smt.bool x | Free v -> Smt.var v)
@@ -57,17 +41,6 @@ module Bool_vector = struct
     Smt.(List.map2_exn x x' ~f:(fun v v' -> to_expr v = to_expr v') |> and_)
 
   let get = List.nth_exn
-
-  let contained x by =
-    let open Smt in
-    match by with
-    | Abs.Bool_vector.Map m ->
-        List.filter_mapi x ~f:(fun b v ->
-            match Map.find m b with
-            | Some x -> Some (bool x = to_expr v)
-            | None -> None)
-        |> and_
-    | Bottom -> bool false
 
   let refine models abs symb =
     let bit_idx =
@@ -97,7 +70,7 @@ end
 module Offset' = Offset
 
 module Offset = struct
-  type t = { set : Bool_vector.t; type_ : Offset_type.t } [@@deriving sexp]
+  include Symb0.Offset
 
   let vars x = Bool_vector.vars x.set
 
@@ -109,33 +82,17 @@ module Offset = struct
     let%map set = Bool_vector.create_n ~prefix @@ n_offsets params t in
     { set; type_ = t }
 
-  let of_abs ?(prefix = sprintf "o%d") offsets abs =
-    let open Smt.Let_syntax in
-    let type_ = Abs.Offset.type_ abs in
-    let n = Offset.of_type_count offsets type_ in
-    let%bind set =
-      let map =
-        Offset.of_type offsets type_
-        |> Sequence.filter_mapi ~f:(fun i conc ->
-               if not (Abs.Offset.contains abs conc) then Some (i, false)
-               else None)
-        |> Map.of_sequence_exn (module Int)
-      in
-      Bool_vector.of_abs ~prefix ~n_bits:n (Map map)
+  let of_conc ctx x =
+    let type_ = Offset.type_ x in
+    let set =
+      Offset.of_type ctx type_
+      |> Sequence.map ~f:(fun x' ->
+             Bool_vector.fixed ([%compare.equal: Offset.t] x x'))
+      |> Sequence.to_list
     in
-    let%map () = Smt.assert_ @@ Bool_vector.exactly_one set in
     { set; type_ }
 
   let ( = ) x x' = Bool_vector.(x.set = x'.set)
-
-  let contained params x by =
-    Sequence.zip (Sequence.of_list x.set)
-      (Offset.of_type params.offsets x.type_)
-    |> Sequence.filter_map ~f:(fun (in_set, offset) ->
-           if not (Abs.Offset.contains by offset) then
-             Some Smt.(not (Bool_vector.to_expr in_set))
-           else None)
-    |> Sequence.to_list |> Smt.and_
 
   let index_of_exn ~equal l x =
     List.find_mapi_exn l ~f:(fun i x' -> if equal x x' then Some i else None)
@@ -234,7 +191,8 @@ module Offset = struct
        (Offset ((lo 30) (hi 30) (type_ ((id 0) (kind Cuboid_x)))))) |}]
 end
 
-type t = Bool_vector of Bool_vector.t | Offset of Offset.t [@@deriving sexp]
+type t = Symb0.t = Bool_vector of Bool_vector.t | Offset of Offset.t
+[@@deriving sexp]
 
 let bool_vector x = Bool_vector x
 
@@ -254,13 +212,6 @@ let create ?prefix params =
   | Type.Vector -> Bool_vector.create ?prefix params >>| bool_vector
   | Type.Offset t -> Offset.create ?prefix params t >>| offset
 
-let of_abs ?prefix params =
-  let open Smt.Monad_infix in
-  function
-  | Abs.Bool_vector v ->
-      Bool_vector.of_abs ?prefix ~n_bits:params.Params.n_bits v >>| bool_vector
-  | Abs.Offset v -> Offset.of_abs ?prefix params.offsets v >>| offset
-
 let map ~vector ~offset x =
   match x with Bool_vector x -> vector x | Offset x -> offset x
 
@@ -277,9 +228,6 @@ let map_abs ~vector ~offset x x' =
   | _ -> raise_s [%message "Mismatched values" (x : t) (x' : Abs.t)]
 
 let ( = ) = map2 ~vector:Bool_vector.( = ) ~offset:Offset.( = )
-
-let contained params x ~by =
-  map_abs ~vector:Bool_vector.(contained) ~offset:Offset.(contained params) x by
 
 let bool_vector_3 f x x' =
   Smt.(f (to_bool_vector_exn x) (to_bool_vector_exn x') >>| bool_vector)
@@ -425,3 +373,7 @@ let refine params interpolant smt_state abs symb =
 let vars = function
   | Bool_vector v -> Bool_vector.vars v
   | Offset v -> Offset.vars v
+
+let of_conc ctx = function
+  | Conc.Bool_vector x -> Bool_vector (Bool_vector.of_conc x)
+  | Offset x -> Offset (Offset.of_conc ctx x)

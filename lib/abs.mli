@@ -1,5 +1,5 @@
 module Bool_vector : sig
-  type t = Map of bool Map.M(Int).t | Bottom [@@deriving compare, hash, sexp]
+  type t [@@deriving compare, hash, sexp]
 
   type concrete = bool array
 
@@ -114,3 +114,5 @@ val cuboid :
 val eval : Params.t -> Offset.concrete Ast.Op.t -> t list -> t
 
 val is_subset : t -> of_:t -> bool
+
+val to_symb : Params.t -> t -> Symb0.t Smt.t

@@ -55,12 +55,11 @@ end
 module Vars = struct
   type t = {
     edge_vars : String_id.t Map.M(UG.E).t;
-    var_edges : UG.E.t Map.M(String_id).t;
     state_vars : Symb.t Map.M(UG.V).t;
     arg_vars : Symb.t Map.M(UG.V).t;
   }
 
-  let make ss graph vertex_rel =
+  let make ss graph rel target expected =
     let open Smt.Let_syntax in
     let%bind edge_vars =
       let module F = FoldM0 (Smt) (E_foldable) in
@@ -71,17 +70,12 @@ module Vars = struct
           Map.set m ~key:e ~data:decl)
     in
 
-    let var_edges =
-      Map.to_alist edge_vars |> List.map ~f:Tuple.T2.swap
-      |> Map.of_alist_exn (module String_id)
-    in
-
     let%bind state_vars, arg_vars =
       let module F = FoldM0 (Smt) (V_foldable) in
       F.fold graph
         ~init:(Map.empty (module UG.V), Map.empty (module UG.V))
         ~f:(fun (ms, ma) v ->
-          let node = vertex_rel.Unshare.One_to_many.backward v in
+          let node = rel.backward v in
           Node.match_ node
             ~args:(fun args_v ->
               let%map vars =
@@ -92,14 +86,14 @@ module Vars = struct
               (ms, Map.set ma ~key:v ~data:vars))
             ~state:(fun state_v ->
               let%map vars =
-                Symb.of_abs (params ss)
-                  ~prefix:(sprintf "s%d_b%d_" (State.id state_v))
-                @@ State.state ss state_v
+                if List.mem ~equal:[%compare.equal: UG.V.t] target v then
+                  return @@ Symb.of_conc (params ss).offsets expected
+                else Abs.to_symb (params ss) @@ State.state ss state_v
               in
               (Map.set ms ~key:v ~data:vars, ma)))
     in
 
-    return { edge_vars; var_edges; state_vars; arg_vars }
+    return { edge_vars; state_vars; arg_vars }
 end
 
 open Vars
@@ -115,25 +109,6 @@ let pred_selected vars g v =
 
 let succ_selected vars g v =
   UG.succ_e g v |> find_edge_vars vars |> vars_to_exprs
-
-let assert_input_states_contained ss vars rel =
-  let open Smt in
-  Map.to_alist vars.state_vars
-  |> List.map ~f:(fun (v, var) ->
-         let state_v = Node.to_state_exn @@ rel.backward v in
-         let state = State.state ss state_v in
-         assert_ (Symb.contained (params ss) var ~by:state))
-  |> all_unit
-
-let assert_output_state_contained params vars target_nodes expected =
-  let open Smt in
-  let constr =
-    List.map target_nodes ~f:(fun target_node ->
-        let var = Map.find_exn vars.state_vars target_node in
-        Symb.contained params var ~by:(Abs.lift expected))
-    |> or_
-  in
-  fresh_defn ~prefix:"correct-output" constr >>= assert_group_var
 
 let assert_selected_state_selects_input vars graph rel v =
   let open Smt in
@@ -273,9 +248,14 @@ let rec extract_program ss graph rel selected_edges target =
   | _ -> None
 
 let process_model ss graph rel target vars model =
+  let var_edges =
+    Map.to_alist vars.edge_vars
+    |> List.map ~f:Tuple.T2.swap
+    |> Map.of_alist_exn (module String_id)
+  in
   let selected_edges =
     List.filter_map model ~f:(fun (e, is_selected) ->
-        if is_selected then Map.find vars.var_edges e else None)
+        if is_selected then Map.find var_edges e else None)
     |> Set.of_list (module UG.E)
   in
   List.find_map_exn target ~f:(extract_program ss graph rel selected_edges)
@@ -283,10 +263,7 @@ let process_model ss graph rel target vars model =
 let[@landmark "find-program"] find_program ss graph rel target expected_output =
   let open Smt.Let_syntax in
   let vars, m_model =
-    (let%bind vars = Vars.make ss graph rel in
-     let%bind () =
-       assert_output_state_contained (params ss) vars target expected_output
-     in
+    (let%bind vars = Vars.make ss graph rel target expected_output in
      let%bind () = assert_graph_constraints ss vars graph rel in
      let%bind model = Smt.get_model in
      return (vars, model))
@@ -308,15 +285,7 @@ let[@landmark "find-interpolant-with-separator"] find_interpolant_with_separator
   let separator = Set.filter separator ~f:(UG.mem_vertex top_graph) in
   let hi_group = 0 and lo_group = 1 in
 
-  let high_constr vars =
-    let open Smt.Let_syntax in
-    let%bind () = assert_input_states_contained ss vars rel in
-    let%bind () =
-      assert_output_state_contained (params ss) vars target_nodes
-        expected_output
-    in
-    assert_graph_constraints ss vars top_graph rel
-  in
+  let high_constr vars = assert_graph_constraints ss vars top_graph rel in
 
   let lower_constrs vars =
     List.map (Set.to_list separator) ~f:(fun v ->
@@ -327,7 +296,9 @@ let[@landmark "find-interpolant-with-separator"] find_interpolant_with_separator
           let%bind () = Smt.Interpolant.set_group lo_group in
           let%bind local_vars =
             Smt.with_comment_block ~name:"vars"
-            @@ let%map vs = Vars.make ss local_graph rel in
+            @@ let%map vs =
+                 Vars.make ss local_graph rel target_nodes expected_output
+               in
                {
                  vs with
                  state_vars =
@@ -344,7 +315,7 @@ let[@landmark "find-interpolant-with-separator"] find_interpolant_with_separator
   let vars, vars_state =
     let open Smt.Let_syntax in
     (let%bind () = Smt.Interpolant.set_group hi_group in
-     Vars.make ss top_graph rel)
+     Vars.make ss top_graph rel target_nodes expected_output)
     |> Smt.run
   in
 
@@ -435,10 +406,9 @@ let[@landmark "find-interpolant"] find_interpolant ss graph rel target expected
     |> Option.value_exn ~here:[%here] ~message:"could not find interpolant"
   in
 
-  [%test_pred: Set.M(Smt.Var).t] ~message:"interpolant vars are not all states"
-    (Set.for_all ~f:(fun v -> Char.((String_id.to_string v).[0] = 's')))
-    (Smt.Expr.vars interp);
-
+  (* [%test_pred: Set.M(Smt.Var).t] ~message:"interpolant vars are not all states"
+   *   (Set.for_all ~f:(fun v -> Char.((String_id.to_string v).[0] = 's')))
+   *   (Smt.Expr.vars interp); *)
   ret
 
 let cone ss target_nodes =
