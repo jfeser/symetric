@@ -363,6 +363,8 @@ let find_refinement ss graph rel (interpolant, lower_constr, vars) =
            in
            let new_states =
              Symb.refine (params ss) interpolant smt_state old_state symb
+             |> Set.to_list |> Abs.roots
+             |> Set.of_list (module Abs)
            in
            [%test_pred: Set.M(Abs).t] (fun s -> not (Set.is_empty s)) new_states;
 
@@ -400,16 +402,9 @@ let[@landmark "find-interpolant"] find_interpolant ss graph rel target expected
               |> Node.match_ ~args:(Fun.const false) ~state:(Fun.const true))))
     separators;
 
-  let ((interp, _, _) as ret) =
-    Sequence.find_map separators
-      ~f:(find_interpolant_with_separator ss graph rel target expected)
-    |> Option.value_exn ~here:[%here] ~message:"could not find interpolant"
-  in
-
-  (* [%test_pred: Set.M(Smt.Var).t] ~message:"interpolant vars are not all states"
-   *   (Set.for_all ~f:(fun v -> Char.((String_id.to_string v).[0] = 's')))
-   *   (Smt.Expr.vars interp); *)
-  ret
+  Sequence.find_map separators
+    ~f:(find_interpolant_with_separator ss graph rel target expected)
+  |> Option.value_exn ~here:[%here] ~message:"could not find interpolant"
 
 let cone ss target_nodes =
   match (params ss).cone with

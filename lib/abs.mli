@@ -9,8 +9,6 @@ module Bool_vector : sig
 
   val bot : t
 
-  val pp : t Fmt.t
-
   val graphviz_pp : Params.t -> t Fmt.t
 
   val meet : t -> t -> t
@@ -25,17 +23,11 @@ module Bool_vector : sig
 
   val sub : t -> t -> t
 
-  val mem : t -> int -> bool
-
-  val set : t -> int -> bool -> t
-
   val add : t -> int -> bool -> t
 
   val contains : t -> concrete -> bool
 
   val width : t -> int
-
-  val of_list_exn : (int * bool) list -> t
 
   val log_overlap : Params.t -> t -> t -> float
 end
@@ -116,3 +108,5 @@ val eval : Params.t -> Offset.concrete Ast.Op.t -> t list -> t
 val is_subset : t -> of_:t -> bool
 
 val to_symb : Params.t -> t -> Symb0.t Smt.t
+
+val roots : t list -> t list
