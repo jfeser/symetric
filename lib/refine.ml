@@ -1,4 +1,3 @@
-open Ast
 open Params
 open Search_state
 open Foldm
@@ -56,7 +55,6 @@ module Vars = struct
   type t = {
     edge_vars : String_id.t Map.M(UG.E).t;
     state_vars : Symb.t Map.M(UG.V).t;
-    arg_vars : Symb.t Map.M(UG.V).t;
   }
 
   let make ss graph rel target expected =
@@ -70,30 +68,24 @@ module Vars = struct
           Map.set m ~key:e ~data:decl)
     in
 
-    let%bind state_vars, arg_vars =
+    let%bind state_vars =
       let module F = FoldM0 (Smt) (V_foldable) in
       F.fold graph
-        ~init:(Map.empty (module UG.V), Map.empty (module UG.V))
-        ~f:(fun (ms, ma) v ->
+        ~init:(Map.empty (module UG.V))
+        ~f:(fun ms v ->
           let node = rel.backward v in
           Node.match_ node
-            ~args:(fun args_v ->
-              let%map vars =
-                Symb.create (params ss)
-                  ~prefix:(sprintf "a%d_b%d_" (Args.id args_v))
-                @@ Args.output_type ss args_v
-              in
-              (ms, Map.set ma ~key:v ~data:vars))
+            ~args:(fun _ -> return ms)
             ~state:(fun state_v ->
               let%map vars =
                 if List.mem ~equal:[%compare.equal: UG.V.t] target v then
                   return @@ Symb.of_conc (params ss).offsets expected
                 else Abs.to_symb (params ss) @@ State.state ss state_v
               in
-              (Map.set ms ~key:v ~data:vars, ma)))
+              Map.set ms ~key:v ~data:vars))
     in
 
-    return { edge_vars; state_vars; arg_vars }
+    return { edge_vars; state_vars }
 end
 
 open Vars
@@ -144,48 +136,35 @@ let assert_selected_args_selects_inputs vars graph rel v =
     and name = sprintf "args-%d-deps" id in
     fresh_defn ~prefix:name body >>= assert_group_var
 
-let assert_state_semantics vars graph rel v =
-  let open Smt in
+let assert_state_semantics ss vars graph rel v =
+  let open Smt.Let_syntax in
   let id =
     let state_v = Node.to_state_exn @@ rel.backward v in
     State.id state_v
   in
   let state_vars = Map.find_exn vars.state_vars v in
-  let body =
+  let%bind body =
     UG.succ_e graph v
     |> List.map ~f:(fun ((_, _, v) as e) ->
-           let args_vars = Map.find_exn vars.arg_vars v in
-           let is_selected = Map.find_exn vars.edge_vars e |> var in
-           is_selected => Symb.(args_vars = state_vars))
-    |> and_
-  and name = sprintf "state-%d-semantics" id in
-  fresh_defn ~prefix:name body >>= assert_group_var
+           let op = Args.op ss @@ Node.to_args_exn @@ rel.backward v in
 
-let assert_args_semantics ss vars graph rel v =
-  let open Smt.Let_syntax in
-  let op, id =
-    let args_v = Node.to_args_exn @@ rel.backward v in
-    (Args.op ss args_v, Args.id args_v)
+           let is_selected = Map.find_exn vars.edge_vars e |> Smt.var in
+
+           let incoming_states =
+             UG.succ_e graph v
+             |> List.map ~f:(fun (_, n, v) -> (v, n))
+             |> List.sort ~compare:(fun (_, n) (_, n') -> [%compare: int] n n')
+             |> List.map ~f:(fun (v, _) -> Map.find_exn vars.state_vars v)
+           in
+
+           let%bind arg_out = Symb.eval (params ss) op incoming_states in
+
+           return Smt.(is_selected => Symb.(arg_out = state_vars)))
+    |> Smt.all
   in
-
-  let incoming_states =
-    UG.succ_e graph v
-    |> List.map ~f:(fun (_, n, v) -> (v, n))
-    |> List.sort ~compare:(fun (_, n) (_, n') -> [%compare: int] n n')
-    |> List.map ~f:(fun (v, _) -> Map.find_exn vars.state_vars v)
-  in
-
-  let out = Map.find_exn vars.arg_vars v in
-
-  if Op.arity op <> List.length incoming_states then
-    raise_s
-      [%message "unexpected args" (op : _ Op.t) (incoming_states : Symb.t list)];
-
-  Smt.with_comment_block
-    ~name:(Fmt.str "semantics %a %d" Op.pp op id)
-    ~descr:[%message (op : Offset.t Op.t)]
-    (let%bind eval_result = Symb.eval (params ss) op incoming_states in
-     Symb.(eval_result = out) |> Smt.assert_)
+  let name = sprintf "state-%d-semantics" id in
+  let%bind defn = Smt.fresh_defn ~prefix:name (Smt.and_ body) in
+  assert_group_var defn
 
 module FV = FoldM0 (Smt) (V_foldable)
 module F = FoldM2 (Smt) (Set)
@@ -223,10 +202,8 @@ let assert_graph_constraints ss vars g rel =
       Node.match_ (rel.backward v)
         ~state:(fun _ ->
           let%bind () = assert_selected_state_selects_input vars g rel v in
-          assert_state_semantics vars g rel v)
-        ~args:(fun _ ->
-          let%bind () = assert_selected_args_selects_inputs vars g rel v in
-          assert_args_semantics ss vars g rel v))
+          assert_state_semantics ss vars g rel v)
+        ~args:(fun _ -> assert_selected_args_selects_inputs vars g rel v))
 
 let rec extract_program ss graph rel selected_edges target =
   let inputs =

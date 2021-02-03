@@ -129,8 +129,9 @@ let fill_cost ss (state_set : State_set.t) ops cost =
 
   let size' = nb_vertex ss in
 
-  Fmt.pr "Filling: size before=%d, after=%d, removed %f%%\n%!" size size'
-    Float.(100.0 - (of_int size' / of_int size * 100.0))
+  Fmt.pr "Filling (cost=%d): size before=%d, after=%d, added %f%%\n%!" cost size
+    size'
+    Float.(-(100.0 - (of_int size' / of_int size * 100.0)))
 
 let state_set ss =
   match (params ss).state_set with

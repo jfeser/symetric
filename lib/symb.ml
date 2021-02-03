@@ -337,25 +337,25 @@ let assert_refines =
       Set.for_all new_abs ~f:(fun a -> Abs.is_subset a ~of_:old_abs))
 
 let refine params interpolant smt_state abs symb =
-  let models =
-    let vars = map ~vector:Bool_vector.vars ~offset:Offset.vars symb in
-    Smt.Model.of_ ~vars interpolant
+  let vars =
+    Set.to_list
+    @@ Set.inter
+         (map ~vector:Bool_vector.vars ~offset:Offset.vars symb)
+         (Smt.Expr.vars interpolant)
   in
-  let filtered_models =
-    List.filter models ~f:(fun m ->
-        let check_model =
-          let open Smt.Let_syntax in
-          let%bind () = Smt.assert_ (Smt.Model.to_expr m) in
-          Smt.check_sat
-        in
-        Smt.eval_with_state smt_state check_model)
+  let models =
+    let smt =
+      let open Smt.Let_syntax in
+      let%bind () = Smt.assert_ interpolant in
+      Smt.check_all_sat vars
+    in
+    Smt.eval_with_state smt_state smt
   in
   let refined =
     map
       ~vector:(fun s ->
-        Bool_vector.refine filtered_models (Abs.to_bool_vector_exn abs) s)
-      ~offset:(fun s ->
-        Offset.refine params filtered_models (Abs.to_offset_exn abs) s)
+        Bool_vector.refine models (Abs.to_bool_vector_exn abs) s)
+      ~offset:(fun s -> Offset.refine params models (Abs.to_offset_exn abs) s)
       symb
   in
   assert_refines (abs, refined);
@@ -363,7 +363,6 @@ let refine params interpolant smt_state abs symb =
     [%message
       "refine"
         (models : Smt.Model.t list)
-        (filtered_models : Smt.Model.t list)
         (symb : t)
         (abs : Abs.t)
         (refined : Set.M(Abs).t)

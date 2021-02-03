@@ -483,6 +483,14 @@ let parse_model sexp =
           | s -> error s)
   | s -> error s
 
+let parse_models sexp =
+  let error s =
+    Error.create "Unexpected models" s [%sexp_of: Sexp.t] |> Error.raise
+  in
+  match sexp with
+  | Sexp.List models -> List.map models ~f:parse_model
+  | s -> error s
+
 let smtlib =
   let%map stmts = get_stmts in
   Revlist.to_list stmts
@@ -578,6 +586,24 @@ let check_sat =
     | Atom "unsat" -> false
     | Atom "sat" -> true
     | x -> error x )
+
+let check_all_sat vars =
+  let%bind stmts = get_stmts in
+  let stmts = List.map ~f:Tuple.T2.get2 @@ Revlist.to_list stmts in
+  with_mathsat @@ fun read write ->
+  write
+    ( stmts
+    @ [
+        sprintf "(check-allsat (%s))"
+        @@ String.concat ~sep:" "
+        @@ List.map ~f:String_id.to_string vars;
+      ] );
+  let rec read_models models =
+    match read () with
+    | Atom "unsat" | Atom "sat" -> models
+    | x -> read_models (parse_model x :: models)
+  in
+  return @@ (read_models [] |> List.map ~f:(Map.of_alist_exn (module Var)))
 
 module Model = struct
   module T = struct

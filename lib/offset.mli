@@ -17,3 +17,9 @@ val prev : t -> t option
 val next : t -> t option
 
 val type_ : t -> Offset_type.t
+
+val lt : ctx -> Offset_type.t -> float -> t Sequence.t
+
+val gt : ctx -> Offset_type.t -> float -> t Sequence.t
+
+val idx : t -> int

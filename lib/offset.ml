@@ -68,3 +68,29 @@ let next x =
   if idx' < Array.length x.arr then Some { x with idx = idx' } else None
 
 let type_ x = x.type_
+
+let lt ctx t x =
+  match Map.find ctx t with
+  | Some offsets ->
+      let end_ =
+        Array.binary_search offsets ~compare:[%compare: float]
+          `First_greater_than_or_equal_to x
+        |> Option.value ~default:0
+      in
+      Sequence.range 0 end_ ~stop:`exclusive
+      |> Sequence.map ~f:(fun idx -> { idx; arr = offsets; type_ = t })
+  | None -> Sequence.empty
+
+let gt ctx t x =
+  match Map.find ctx t with
+  | Some offsets ->
+      let start =
+        Array.binary_search offsets ~compare:[%compare: float]
+          `First_greater_than_or_equal_to x
+        |> Option.value ~default:(Array.length offsets)
+      in
+      Sequence.range start (Array.length offsets) ~stop:`exclusive
+      |> Sequence.map ~f:(fun idx -> { idx; arr = offsets; type_ = t })
+  | None -> Sequence.empty
+
+let idx x = x.idx
