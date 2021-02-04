@@ -29,6 +29,8 @@ let add_target v =
     Hash_set.clear targets;
     raise (Found_target ts) )
 
+let add_target _ = ()
+
 let create_hyper_edge ss cost op args =
   match insert_hyper_edge_if_not_exists ss args op cost with
   | Some state_v_out ->
@@ -283,11 +285,12 @@ let refute ss target =
   Stats.global := { !Stats.global with n_refuted = !Stats.global.n_refuted + 1 };
   match Refine.refine ss target with
   | First r ->
-      refine ss r;
-      let roots = roots ss in
-      let n_roots = List.length roots in
-      Stats.global := { !Stats.global with n_roots };
-      validate ss
+      ()
+      (* refine ss r;
+       * let roots = roots ss in
+       * let n_roots = List.length roots in
+       * Stats.global := { !Stats.global with n_roots };
+       * validate ss *)
   | Second p ->
       Fmt.pr "Could not refute: %a" Sexp.pp_hum ([%sexp_of: Program.t] p);
       raise @@ Done (`Sat p)
@@ -338,6 +341,7 @@ let synth params =
           |> ignore
       | _ -> ());
 
+  let output = Conc.bool_vector params.bench.output in
   let status =
     try
       for cost = 1 to params.max_cost do
@@ -345,6 +349,15 @@ let synth params =
           until_done @@ fun () ->
           try
             let did_change = fill_up_to_cost ss params.bench.ops cost in
+
+            G.Fold.V.filter_map (graph ss) ~f:(fun v ->
+                Node.match_ v
+                  ~args:(fun _ -> None)
+                  ~state:(fun v ->
+                    if Abs.contains (State.state ss v) output then Some v
+                    else None))
+            |> refute ss;
+
             validate ss;
             did_change
           with Found_target state_v ->

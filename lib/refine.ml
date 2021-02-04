@@ -399,7 +399,30 @@ let[@landmark "refine"] refine ss target =
   (* Remove sharing in the graph subset *)
   let graph, rel = U.unshare shared_graph in
   let size = G.nb_vertex shared_graph and unshared_size = UG.nb_vertex graph in
-  print_s [%message "conflict graph" (size : int) (unshared_size : int)];
+  let offset_nodes =
+    UFold.V.filter graph ~f:(fun v ->
+        rel.backward v
+        |> Node.match_
+             ~args:(fun v ->
+               match Args.op ss v with Offset _ -> true | _ -> false)
+             ~state:(fun _ -> false))
+    |> List.length
+  in
+  let max_state_out_deg =
+    G.Fold.V.filter_map shared_graph ~f:(fun v ->
+        Node.match_ v
+          ~args:(fun _ -> None)
+          ~state:(fun _ -> Some (G.out_degree shared_graph v)))
+    |> List.max_elt ~compare:[%compare: int]
+    |> Option.value_exn ~here:[%here]
+  in
+  print_s
+    [%message
+      "conflict graph"
+        (size : int)
+        (unshared_size : int)
+        (offset_nodes : int)
+        (max_state_out_deg : int)];
   dump_detailed ss ~suffix:"after-unsharing" graph rel;
 
   let target =
@@ -413,7 +436,8 @@ let[@landmark "refine"] refine ss target =
 
   match find_program ss graph rel target expected with
   | Some p -> Second p
-  | None ->
-      find_interpolant ss graph rel target expected
-      |> find_refinement ss graph rel
-      |> Either.first
+  | None -> First (Map.empty (module Args))
+
+(* find_interpolant ss graph rel target expected
+ * |> find_refinement ss graph rel
+ * |> Either.first *)
