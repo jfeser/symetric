@@ -1,5 +1,10 @@
 module Type = struct
-  type t = Vector | Offset of Offset_type.t [@@deriving compare, hash, sexp]
+  module T = struct
+    type t = Vector | Offset of Offset_type.t [@@deriving compare, hash, sexp]
+  end
+
+  include T
+  include Comparator.Make (T)
 end
 
 module Op = struct
@@ -12,9 +17,11 @@ module Op = struct
     | Sphere s ->
         Fmt.pf fmt "sphere_x%f_y%f_z%f_r%f" s.center.x s.center.y s.center.z
           s.radius
-    | Cylinder _ -> Fmt.pf fmt "cylinder"
-    | Cuboid _ -> Fmt.pf fmt "cuboid"
+    | Cylinder c -> Fmt.pf fmt "cylinder_%d" c.id
+    | Cuboid c -> Fmt.pf fmt "cuboid_%d" c.id
     | Offset x -> Fmt.pf fmt "offset_%f" @@ Offset.offset x
+
+  let to_string = Fmt.to_to_string pp
 
   let arity = function
     | Sphere _ | Offset _ -> 0

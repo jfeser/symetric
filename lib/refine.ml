@@ -390,11 +390,17 @@ let cone ss target_nodes =
       C.cone (graph ss) @@ List.map ~f:Node.of_state target_nodes
   | `Rand -> rand_cone (graph ss) @@ List.map ~f:Node.of_state target_nodes
 
+let ctr = ref 0
+
 let[@landmark "refine"] refine ss target =
   (* Select the subset of the graph that can reach the target *)
   let shared_graph = cone ss target in
 
   Search_state.dump_detailed_graph ~suffix:"before-unsharing" ss shared_graph;
+
+  Out_channel.with_file (sprintf "tmp%d.smt" !ctr) ~f:(fun ch ->
+      Encoding.encode ss @@ List.hd_exn target |> Out_channel.output_string ch);
+  incr ctr;
 
   (* Remove sharing in the graph subset *)
   let graph, rel = U.unshare shared_graph in
