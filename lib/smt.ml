@@ -403,7 +403,10 @@ let annotate key value term = Annot (term, key, value)
 
 let comment = annotate "comment"
 
-let assert_ body s = add_stmt (Assert { body; group = s.group }) s
+let assert_ body s =
+  match body with
+  | Bool true -> ((), s)
+  | body -> add_stmt (Assert { body; group = s.group }) s
 
 module Interpolant = struct
   module Group = struct

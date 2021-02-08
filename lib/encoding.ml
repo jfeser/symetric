@@ -10,6 +10,8 @@ module Path = struct
   include Comparator.Make (T)
 
   let to_string p = List.map p ~f:Int.to_string |> String.concat ~sep:"."
+
+  let pp fmt p = Fmt.pf fmt "%s" @@ to_string p
 end
 
 module Eq = struct
@@ -30,12 +32,12 @@ end
 module Domain_var = struct
   type t = Smt.Var.t Map.M(Args).t
 
-  let create dom =
+  let create ?prefix dom =
     let open Smt.Let_syntax in
     let%bind kv =
       Set.to_list dom
       |> List.map ~f:(fun k ->
-             let%bind v = Smt.fresh_decl () in
+             let%bind v = Smt.fresh_decl ?prefix () in
              return (k, v))
       |> Smt.all
     in
@@ -45,16 +47,7 @@ module Domain_var = struct
 
   let eq v x = Map.find_exn v x |> Smt.var
 
-  let case_split x f =
-    let open Smt.Let_syntax in
-    let%bind cases =
-      Map.to_alist x
-      |> List.map ~f:(fun (k, v) ->
-             let%map y = f k in
-             Smt.(var v => y))
-      |> Smt.all
-    in
-    return @@ Smt.and_ cases
+  let cases = Map.to_alist
 end
 
 module Var = struct
@@ -105,7 +98,7 @@ let all_paths g target =
         loop ()
     | None -> ()
   in
-  Queue.enqueue q (target, []);
+  List.iter target ~f:(fun t -> Queue.enqueue q (t, []));
   loop ();
   Hash_set.to_list paths
 
@@ -139,7 +132,7 @@ let extend_context g ctx state_v path =
       let path_constrs =
         Map.update ctx.path_constrs (path, args_v) ~f:(function
           | Some old_path_constrs ->
-              Map.merge old_path_constrs new_path_constrs ~f:(fun ~key ->
+              Map.merge old_path_constrs new_path_constrs ~f:(fun ~key:_ ->
                 function
                 | `Both (x, x') -> Some (Set.union x x')
                 | `Left x | `Right x -> Some x)
@@ -159,15 +152,20 @@ let build_context ss target =
   let%bind vars_alist =
     Map.to_alist ctx.domains
     |> List.map ~f:(fun (path, args) ->
-           let open Symb in
-           let%bind op = Domain_var.create args in
+           let%bind op =
+             Domain_var.create ~prefix:(Fmt.str "op_%a_" Path.pp path) args
+           in
            let%bind value =
              let%map alist =
                Set.to_list args
                |> List.map ~f:(fun v -> Args.op ss v |> Op.ret_type)
                |> List.dedup_and_sort ~compare:[%compare: Type.t]
                |> List.map ~f:(fun t ->
-                      let%map v = Symb.create (params ss) t in
+                      let%map v =
+                        Symb.create
+                          ~prefix:(Fmt.str "var_%a_b%d_" Path.pp path)
+                          (params ss) t
+                      in
                       (t, v))
                |> Smt.all
              in
@@ -199,37 +197,70 @@ let assert_path_constr ctx =
            @@ (Domain_var.eq (op_var ctx path) args_v => domain_constr ctx dom)))
   |> Smt.all_unit
 
+let paths ctx = Map.keys ctx.Ctx.domains
+
 let assert_value_constr ss ctx =
   let open Smt.Let_syntax in
-  Map.to_alist ctx.Ctx.domains
-  |> List.map ~f:(fun (path, _) ->
-         let%bind cases =
-           Domain_var.case_split (op_var ctx path) (fun args_v ->
-               let op = Args.op ss args_v in
-               let args_types, ret_type = Op.type_ op in
-               let ret_var = symb_var ctx path ret_type
-               and args_vars =
-                 List.mapi args_types ~f:(fun i t ->
-                     symb_var ctx (path @ [ i ]) t)
-               in
-               let%bind ret_value = Symb.eval (params ss) op args_vars in
-               return Symb.(ret_var = ret_value))
-         in
-         Smt.assert_ cases)
-  |> Smt.all_unit
+  List.fold (paths ctx)
+    ~init:(return @@ Map.empty (module App))
+    ~f:(fun app_cache path ->
+      Domain_var.cases (op_var ctx path)
+      |> List.fold ~init:app_cache ~f:(fun app_cache (args_v, control_var) ->
+             let%bind app_cache = app_cache in
+             let op = Args.op ss args_v in
+             let app =
+               let args = List.init (Op.arity op) ~f:(fun i -> path @ [ i ]) in
+               (op, args)
+             in
+             let%bind ret_value, app_cache =
+               match Map.find app_cache app with
+               | Some v -> return (v, app_cache)
+               | None ->
+                   let%bind ret_value =
+                     let args_types, _ = Op.type_ op in
+                     let args_vars =
+                       List.mapi args_types ~f:(fun i t ->
+                           symb_var ctx (path @ [ i ]) t)
+                     in
 
-let encode ss target =
+                     Symb.eval (params ss) op args_vars
+                   in
+                   return (ret_value, Map.set app_cache ~key:app ~data:ret_value)
+             in
+
+             let ret_var =
+               let ret_type = Op.ret_type op in
+               symb_var ctx path ret_type
+             in
+
+             let%bind () =
+               Smt.assert_ Smt.(var control_var => Symb.(ret_var = ret_value))
+             in
+             return app_cache))
+  |> Smt.ignore_m
+
+let check ss target =
   let open Smt.Let_syntax in
   let smt =
     let%bind ctx = build_context ss target in
+    let%bind () =
+      let expected =
+        Conc.bool_vector (params ss).bench.output
+        |> Symb.of_conc (params ss).offsets
+      in
+
+      Smt.assert_
+        ( List.map target ~f:(fun v ->
+              Symb.(expected = symb_var ctx [] (State.type_ ss v)))
+        |> Smt.or_ )
+    in
     let%bind () = assert_path_constr ctx in
     let%bind () = assert_value_constr ss ctx in
-    Smt.smtlib
+    Smt.check_sat
   in
   Smt.eval smt
 
 let[@landmark "find-program"] find_program ss target =
-  let open Smt.Let_syntax in
   let string_of_args v =
     let op = Args.op ss v and id = Args.id v in
     [%string "%{op#Op}/%{id#Int}"]
