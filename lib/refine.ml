@@ -104,6 +104,7 @@ let succ_selected vars g v =
 
 let assert_selected_state_selects_input vars graph rel v =
   let open Smt in
+  let open Smt.Let_syntax in
   let id =
     let state_v = Node.to_state_exn @@ rel.backward v in
     State.id state_v
@@ -111,9 +112,10 @@ let assert_selected_state_selects_input vars graph rel v =
   let parent_select =
     if UG.in_degree graph v > 0 then or_ @@ pred_selected vars graph v
     else true_
-  and child_select =
+  in
+  let%bind child_select =
     if UG.out_degree graph v > 0 then exactly_one @@ succ_selected vars graph v
-    else true_
+    else return true_
   in
   let body = parent_select => child_select
   and name = sprintf "state-%d-deps" id in
@@ -449,5 +451,6 @@ let ctr = ref 0
  *  * |> Either.first *\) *)
 
 let refine ss target =
-  if Encoding.check ss target then failwith "found a program!"
+  if List.exists target ~f:(fun t -> Encoding.check ss [ t ]) then
+    failwith "found a program!"
   else First (Map.empty (module Args))

@@ -22,7 +22,7 @@ module Var = String_id
 module Model0 = struct end
 
 module Expr = struct
-  type binop = Implies | Equals [@@deriving compare, sexp]
+  type binop = Implies | Equals | Xor [@@deriving compare, sexp]
 
   type unop = Not [@@deriving compare, sexp]
 
@@ -41,6 +41,7 @@ module Expr = struct
   let pp_binop fmt = function
     | Implies -> Fmt.pf fmt "=>"
     | Equals -> Fmt.pf fmt "="
+    | Xor -> Fmt.pf fmt "xor"
 
   let pp_unop fmt = function Not -> Fmt.pf fmt "not"
 
@@ -90,7 +91,10 @@ module Expr = struct
     | Let (e, x, e') -> eval (Map.set ctx ~key:x ~data:(eval ctx e)) e'
     | Binop (op, e, e') -> (
         let v = eval ctx e and v' = eval ctx e' in
-        match op with Implies -> (not v) || v' | Equals -> Bool.(v = v') )
+        match op with
+        | Implies -> (not v) || v'
+        | Equals -> Bool.(v = v')
+        | Xor -> (v || v') && not (v && v') )
     | Unop (op, e) -> (
         let v = eval ctx e in
         match (op, v) with Not, v -> not v )
@@ -213,6 +217,12 @@ let not = not_
 
 let ( => ) = implies
 
+let ( lxor ) x x' =
+  match (x, x') with
+  | Bool true, y | y, Bool true -> not y
+  | Bool false, y | y, Bool false -> y
+  | _ -> Binop (Xor, x, x')
+
 let at_least_one = or_
 
 let at_most_one xs =
@@ -221,8 +231,6 @@ let at_most_one xs =
   Seq.init n ~f:(fun i ->
       Seq.range (i + 1) n |> Seq.map ~f:(fun j -> (not xs.(i)) || not xs.(j)))
   |> Seq.concat |> Seq.to_list |> and_
-
-let exactly_one xs = at_least_one xs && at_most_one xs
 
 let bool x = if x then true_ else false_
 
@@ -407,6 +415,46 @@ let assert_ body s =
   match body with
   | Bool true -> ((), s)
   | body -> add_stmt (Assert { body; group = s.group }) s
+
+let exactly_one xs = at_least_one xs && at_most_one xs
+
+let exactly_one_bitwise xs =
+  or_
+  @@ List.map xs ~f:(fun x ->
+         and_
+         @@ List.map xs ~f:(fun x' ->
+                if [%compare.equal: Expr.t] x x' then x' else not x'))
+
+let at_most_one_bitwise xs =
+  or_
+  @@ List.map xs ~f:(fun x ->
+         and_
+         @@ List.filter_map xs ~f:(fun x' ->
+                if [%compare.equal: Expr.t] x x' then None else Some (not x')))
+
+let exactly_one xs =
+  let rec exactly_one xs =
+    match xs with
+    | [ x ] -> return x
+    | [ x; x' ] -> return @@ (x lxor x')
+    | [ _; _; _ ] | [ _; _; _; _ ] -> return @@ exactly_one_bitwise xs
+    | xs ->
+        let%bind cmdrs =
+          List.chunks_of xs ~length:4
+          |> List.map ~f:(fun group ->
+                 let%bind cmdr = fresh_decl () in
+                 let%bind () = assert_ @@ at_most_one_bitwise group in
+                 let%bind () = assert_ @@ (var cmdr = at_least_one group) in
+                 return @@ var cmdr)
+          |> all
+        in
+        exactly_one cmdrs
+  in
+  exactly_one xs
+
+let assert_exactly_one xs =
+  let%bind v = exactly_one xs in
+  assert_ v
 
 module Interpolant = struct
   module Group = struct

@@ -42,7 +42,7 @@ module Domain_var = struct
       |> Smt.all
     in
     let _, vs = List.unzip kv in
-    let%bind () = Smt.assert_ (Smt.exactly_one @@ List.map ~f:Smt.var vs) in
+    let%bind () = Smt.assert_exactly_one @@ List.map ~f:Smt.var vs in
     return @@ Map.of_alist_exn (module Args) kv
 
   let eq v x = Map.find_exn v x |> Smt.var

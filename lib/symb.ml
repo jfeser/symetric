@@ -17,10 +17,6 @@ module Bool_vector = struct
 
   let of_conc x = Array.to_list x |> List.map ~f:fixed
 
-  let exactly_one x =
-    List.map x ~f:(function Fixed x -> Smt.bool x | Free v -> Smt.var v)
-    |> Smt.exactly_one
-
   let union x x' =
     Smt.(
       List.map2_exn x x' ~f:(fun v v' -> elem_of_expr (to_expr v || to_expr v'))

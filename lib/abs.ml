@@ -46,7 +46,7 @@ module Offset = struct
              else Smt.fresh_decl () >>| free)
       |> Sequence.to_list |> Smt.all
     in
-    let%map () = Smt.assert_ @@ Smt.exactly_one @@ List.map ~f:to_expr set in
+    let%map () = Smt.assert_exactly_one @@ List.map ~f:to_expr set in
     Symb0.Offset.{ set; type_ = abs.type_ }
 
   let copy ?lo ?hi x =

@@ -9,7 +9,7 @@ end
 module Var = String_id
 
 module Expr : sig
-  type binop = Implies | Equals [@@deriving compare, sexp]
+  type binop = Implies | Equals | Xor [@@deriving compare, sexp]
 
   type unop = Not [@@deriving compare, sexp]
 
@@ -86,7 +86,9 @@ val true_ : Expr.t
 
 val false_ : Expr.t
 
-val exactly_one : Expr.t list -> Expr.t
+val assert_exactly_one : Expr.t list -> unit t
+
+val exactly_one : Expr.t list -> Expr.t t
 
 val ( = ) : Expr.t -> Expr.t -> Expr.t
 
