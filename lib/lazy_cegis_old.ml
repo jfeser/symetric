@@ -285,7 +285,7 @@ let refute ss target =
   Stats.global := { !Stats.global with n_refuted = !Stats.global.n_refuted + 1 };
   match Refine.refine ss target with
   | First r ->
-      ()
+      false
       (* refine ss r;
        * let roots = roots ss in
        * let n_roots = List.length roots in
@@ -350,19 +350,21 @@ let synth params =
           try
             let did_change = fill_up_to_cost ss params.bench.ops cost in
 
-            G.Fold.V.filter_map (graph ss) ~f:(fun v ->
-                Node.match_ v
-                  ~args:(fun _ -> None)
-                  ~state:(fun v ->
-                    if Abs.contains (State.state ss v) output then Some v
-                    else None))
-            |> refute ss;
+            let did_change =
+              if did_change then
+                G.Fold.V.filter_map (graph ss) ~f:(fun v ->
+                    Node.match_ v
+                      ~args:(fun _ -> None)
+                      ~state:(fun v ->
+                        if Abs.contains (State.state ss v) output then Some v
+                        else None))
+                |> refute ss
+              else false
+            in
 
             validate ss;
             did_change
-          with Found_target state_v ->
-            refute ss state_v;
-            true
+          with Found_target state_v -> refute ss state_v
         in
         Fmt.pr "Finished cost %d\n%!" cost
       done;
