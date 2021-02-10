@@ -49,6 +49,9 @@ module Refinement = struct
   type s = { old : Set.M(Abs).t; new_ : Set.M(Abs).t } [@@deriving sexp]
 
   type t = s Map.M(Args).t [@@deriving sexp_of]
+
+  let union { old = o; new_ = n } { old = o'; new_ = n' } =
+    { old = Set.union o o'; new_ = Set.union n n' }
 end
 
 module Vars = struct
@@ -450,6 +453,61 @@ let ctr = ref 0
  *  * |> find_refinement ss graph rel
  *  * |> Either.first *\) *)
 
+module Sep = Separator.Make (G)
+
+let random_separator graph target =
+  List.map target ~f:Node.of_state
+  |> Sep.simple graph |> Sequence.to_list |> List.random_element
+  |> Option.value_exn |> Set.to_list
+  |> List.map ~f:Node.to_state_exn
+
+let random_top ss graph =
+  G.Fold.V.filter_map graph ~f:Node.to_state
+  |> List.filter ~f:(fun state_v ->
+         match State.state ss state_v with
+         | Bool_vector v ->
+             [%compare.equal: Abs.Bool_vector.t] Abs.Bool_vector.top v
+         | _ -> false)
+
+let random_refinement_of_nodes ss graph state_nodes =
+  let bit = Random.int (params ss).n_bits in
+  let split = function
+    | Abs.Offset _ as abs -> Set.singleton (module Abs) abs
+    | Bool_vector x as abs ->
+        if
+          Abs.Bool_vector.is_subset x ~of_:Abs.Bool_vector.(add top bit true)
+          || Abs.Bool_vector.is_subset x
+               ~of_:Abs.Bool_vector.(add top bit false)
+        then Set.singleton (module Abs) abs
+        else
+          Set.of_list
+            (module Abs)
+            [
+              Bool_vector (Abs.Bool_vector.add x bit true);
+              Bool_vector (Abs.Bool_vector.add x bit false);
+            ]
+  in
+  let refinement =
+    List.concat_map state_nodes ~f:(fun state_v ->
+        let state = State.state ss state_v in
+        let old = Set.singleton (module Abs) state and new_ = split state in
+        let r = Refinement.{ old; new_ } in
+        G.succ graph (Node.of_state state_v)
+        |> List.map ~f:(fun v -> (Node.to_args_exn v, r)))
+    |> Map.of_alist_reduce (module Args) ~f:Refinement.union
+  in
+  refinement
+
 let refine ss target =
-  if Encoding.check ss target |> Option.is_some then failwith "found a program!"
-  else First (Map.empty (module Args))
+  let graph = cone ss target in
+  Search_state.dump_detailed_graph ~suffix:"before-unsharing" ss graph;
+  print_s [%message "graph" (G.nb_vertex graph : int)];
+
+  let start = Time.now () in
+  let ret = Encoding.check ss graph target |> Option.is_some in
+  let stop = Time.now () in
+  print_s [%message "solve time" (Time.diff stop start : Time.Span.t)];
+  if ret then failwith "found a program!"
+  else
+    (* First (Map.empty (module Args)) *)
+    First (random_refinement_of_nodes ss graph @@ target)

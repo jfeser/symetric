@@ -144,9 +144,8 @@ let extend_context g ctx state_v path =
       { ctx with domains; path_constrs })
     g (Node.of_state state_v) ctx
 
-let build_context ss target =
+let build_context ss g target =
   let open Smt.Let_syntax in
-  let g = graph ss in
   let ctx =
     List.fold (all_paths g target) ~init:Ctx.empty ~f:(fun ctx (p, v) ->
         extend_context g ctx p v)
@@ -255,11 +254,10 @@ let process_model ss ctx model =
   in
   ops
 
-let check ss target =
+let check ss graph target =
   let open Smt.Let_syntax in
   let smt =
-    let%bind ctx = build_context ss target in
-    print_s [%message (ctx : Ctx.t)];
+    let%bind ctx = build_context ss graph target in
     let%bind () =
       let expected =
         Conc.bool_vector (params ss).bench.output

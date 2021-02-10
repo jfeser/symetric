@@ -253,20 +253,6 @@ let refine ss (refinement : Refine.Refinement.t) =
              G.pred (graph ss) @@ Node.of_args arg_v
              |> List.map ~f:(fun v -> State.state ss @@ Node.to_state_exn v)
            in
-           print_s [%message (arg_v : Args.t) (states : Abs.t list)];
-
-           let overlaps =
-             let states' =
-               List.filter_map states ~f:(function
-                 | Bool_vector v -> Some v
-                 | _ -> None)
-             in
-             List.concat_map states' ~f:(fun v ->
-                 List.map states' ~f:(fun v' ->
-                     Abs.Bool_vector.log_overlap (params ss) v v'))
-             |> stats_of_list ~compare:[%compare: float]
-           in
-           Hashtbl.set !Stats.global.overlap ~key:arg_v ~data:overlaps;
 
            new_states)
   in
@@ -285,12 +271,12 @@ let refute ss target =
   Stats.global := { !Stats.global with n_refuted = !Stats.global.n_refuted + 1 };
   match Refine.refine ss target with
   | First r ->
-      false
-      (* refine ss r;
-       * let roots = roots ss in
-       * let n_roots = List.length roots in
-       * Stats.global := { !Stats.global with n_roots };
-       * validate ss *)
+      refine ss r;
+      let roots = roots ss in
+      let n_roots = List.length roots in
+      Stats.global := { !Stats.global with n_roots };
+      validate ss;
+      true
   | Second p ->
       Fmt.pr "Could not refute: %a" Sexp.pp_hum ([%sexp_of: Program.t] p);
       raise @@ Done (`Sat p)
@@ -356,9 +342,13 @@ let synth params =
                     Node.match_ v
                       ~args:(fun _ -> None)
                       ~state:(fun v ->
-                        if Abs.contains (State.state ss v) output then Some v
+                        if
+                          Abs.contains (State.state ss v) output
+                          && State.cost ss v = cost
+                        then Some v
                         else None))
                 |> refute ss
+                |> fun _ -> false
               else false
             in
 
