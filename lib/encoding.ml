@@ -24,13 +24,13 @@ module Eq = struct
 end
 
 module Domains = struct
-  type t = Set.M(Args).t Map.M(Path).t
+  type t = Set.M(Args).t Map.M(Path).t [@@deriving sexp_of]
 
   let empty = Map.empty (module Path)
 end
 
 module Domain_var = struct
-  type t = Smt.Var.t Map.M(Args).t
+  type t = Smt.Var.t Map.M(Args).t [@@deriving sexp_of]
 
   let create ?prefix dom =
     let open Smt.Let_syntax in
@@ -52,6 +52,7 @@ end
 
 module Var = struct
   type t = { value : Symb.t Map.M(Type).t; op : Domain_var.t }
+  [@@deriving sexp_of]
 end
 
 module App = struct
@@ -70,6 +71,7 @@ module Ctx = struct
     path_constrs : Domains.t Map.M(Eq).t;
         (** Domain restrictions implied by choosing an Args for a path *)
   }
+  [@@deriving sexp_of]
 
   let empty =
     {
@@ -239,10 +241,25 @@ let assert_value_constr ss ctx =
              return app_cache))
   |> Smt.ignore_m
 
+let process_model ss ctx model =
+  let ops =
+    Map.to_alist ctx.Ctx.vars
+    |> List.map ~f:(fun (path, var) ->
+           let op =
+             var.Var.op |> Map.to_alist
+             |> List.find_map_exn ~f:(fun (args_v, var) ->
+                    if Map.find_exn model var then Some (Args.op ss args_v)
+                    else None)
+           in
+           (path, op))
+  in
+  ops
+
 let check ss target =
   let open Smt.Let_syntax in
   let smt =
     let%bind ctx = build_context ss target in
+    print_s [%message (ctx : Ctx.t)];
     let%bind () =
       let expected =
         Conc.bool_vector (params ss).bench.output
@@ -256,7 +273,16 @@ let check ss target =
     in
     let%bind () = assert_path_constr ctx in
     let%bind () = assert_value_constr ss ctx in
-    Smt.check_sat
+    if%bind Smt.check_sat then (
+      let%bind model = Smt.get_model in
+      let program =
+        process_model ss ctx
+        @@ Map.of_alist_exn (module Smt.Var)
+        @@ Option.value_exn model
+      in
+      print_s [%message (program : (Path.t * _ Op.t) list)];
+      return (Some program) )
+    else return None
   in
   Smt.eval smt
 

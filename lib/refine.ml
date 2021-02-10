@@ -451,6 +451,5 @@ let ctr = ref 0
  *  * |> Either.first *\) *)
 
 let refine ss target =
-  if List.exists target ~f:(fun t -> Encoding.check ss [ t ]) then
-    failwith "found a program!"
+  if Encoding.check ss target |> Option.is_some then failwith "found a program!"
   else First (Map.empty (module Args))
