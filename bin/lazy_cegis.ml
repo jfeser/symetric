@@ -1,6 +1,6 @@
 open! Core
 open Staged_synth
-open Lazy_cegis_old
+open Lazy_cegis
 
 let () = Signal.Expert.handle Signal.int (fun _ -> exit 1)
 

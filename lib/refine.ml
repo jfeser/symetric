@@ -15,7 +15,7 @@ module UFold = Graph_ext.Folds (U.G_replicated)
 module UCone = Cone.Make (U.G_replicated)
 module USeparator = Separator.Make (U.G_replicated)
 
-let dump_detailed ~suffix ?separator ss graph rel =
+let _dump_detailed ~suffix ?separator ss graph rel =
   let (module Attr) = attr ss in
   let module D =
     Dump.Make
@@ -329,7 +329,7 @@ let[@landmark "find-interpolant-with-separator"] find_interpolant_with_separator
     Some (interpolant, lower_constr_states, vars)
   else None
 
-let find_refinement ss graph rel (interpolant, lower_constr, vars) =
+let _find_refinement ss graph rel (interpolant, lower_constr, vars) =
   let ivars = Smt.Expr.vars interpolant in
   let refinement =
     lower_constr
@@ -395,8 +395,6 @@ let cone ss target_nodes =
       C.cone (graph ss) @@ List.map ~f:Node.of_state target_nodes
   | `Rand -> rand_cone (graph ss) @@ List.map ~f:Node.of_state target_nodes
 
-let ctr = ref 0
-
 (* let[@landmark "refine"] refine ss target =
  *   (\* Select the subset of the graph that can reach the target *\)
  *   let shared_graph = cone ss target in
@@ -455,13 +453,13 @@ let ctr = ref 0
 
 module Sep = Separator.Make (G)
 
-let random_separator graph target =
+let _random_separator graph target =
   List.map target ~f:Node.of_state
   |> Sep.simple graph |> Sequence.to_list |> List.random_element
   |> Option.value_exn |> Set.to_list
   |> List.map ~f:Node.to_state_exn
 
-let random_top ss graph =
+let _random_top ss graph =
   G.Fold.V.filter_map graph ~f:Node.to_state
   |> List.filter ~f:(fun state_v ->
          match State.state ss state_v with

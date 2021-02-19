@@ -416,7 +416,7 @@ let assert_ body s =
   | Bool true -> ((), s)
   | body -> add_stmt (Assert { body; group = s.group }) s
 
-let exactly_one xs = at_least_one xs && at_most_one xs
+let _exactly_one_naive xs = at_least_one xs && at_most_one xs
 
 let exactly_one_bitwise xs =
   or_
@@ -532,14 +532,6 @@ let parse_model sexp =
           | List [ Atom name; value ] ->
               (String_id.of_string name, parse_value value)
           | s -> error s)
-  | s -> error s
-
-let parse_models sexp =
-  let error s =
-    Error.create "Unexpected models" s [%sexp_of: Sexp.t] |> Error.raise
-  in
-  match sexp with
-  | Sexp.List models -> List.map models ~f:parse_model
   | s -> error s
 
 let smtlib =
