@@ -69,7 +69,8 @@ let width a = Option.map a ~f:Set.length |> Option.value ~default:0
 
 let log_size params = function
   | None -> Float.(-infinity)
-  | Some m -> Float.of_int (Array.length params.bench.output - Set.length m)
+  | Some m ->
+      Float.of_int (Array.length params.bench.Csg_bench.output - Set.length m)
 
 let log_overlap params s s' =
   Float.(

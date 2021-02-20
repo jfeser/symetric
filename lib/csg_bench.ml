@@ -1,31 +1,72 @@
+(** Defines the sexp serialization format for 3d cad benchmarks. *)
 module Serial = struct
+  type offset = { offset : float; type_ : Csg_type.Offset.t } [@@deriving sexp]
+
+  type op =
+    | Union
+    | Inter
+    | Sub
+    | Sphere of Csg_op.sphere
+    | Cylinder of Csg_op.cylinder
+    | Cuboid of Csg_op.cuboid
+    | Offset of offset
+  [@@deriving sexp]
+
   type t = {
-    ops : Bench0.offset Ast0.Op.t list;
+    ops : op list;
     input : (float * float * float) array;
     output : int array;
   }
-  [@@deriving compare, sexp]
+  [@@deriving sexp]
 end
 
-type 'o t = {
-  ops : 'o Ast0.Op.t list;
-  input : Vector3.t array;
-  output : bool array;
-}
-[@@deriving compare]
+include Csg_bench0
 
-let of_serial (x : Serial.t) =
+let get_offsets ops =
+  List.filter_map ops ~f:(function Serial.Offset x -> Some x | _ -> None)
+  |> List.map ~f:(fun x -> (x.type_, x.offset))
+  |> Map.of_alist_multi (module Csg_type.Offset)
+  |> Map.map ~f:(fun l ->
+         l |> List.dedup_and_sort ~compare:[%compare: float] |> List.to_array)
+
+let convert_op offsets = function
+  | Serial.Union -> Csg_op.Union
+  | Inter -> Inter
+  | Sub -> Sub
+  | Sphere x -> Sphere x
+  | Cylinder x -> Cylinder x
+  | Cuboid x -> Cuboid x
+  | Offset x ->
+      let type_ = x.type_ and value = x.offset in
+      let arr = Map.find_exn offsets type_ in
+      let idx, _ =
+        Array.findi arr ~f:(fun _ v -> Float.(value = v)) |> Option.value_exn
+      in
+      Offset { idx; arr; type_ }
+
+let of_serial (serial : Serial.t) =
+  let offsets = get_offsets serial.ops in
+  let ops = List.map serial.ops ~f:(convert_op offsets) in
   {
-    ops = x.ops;
-    input = Array.map x.input ~f:(fun (x, y, z) -> Vector3.{ x; y; z });
+    offsets;
+    ops;
+    input = Array.map serial.input ~f:(fun (x, y, z) -> Vector3.{ x; y; z });
     output =
-      Array.map x.output ~f:(function
+      Array.map serial.output ~f:(function
         | 0 -> false
         | 1 -> true
         | v -> raise_s [%message "Expected 0/1" (v : int)]);
   }
 
 let t_of_sexp s = [%of_sexp: Serial.t] s |> of_serial
+
+let n_bits x = Array.length x.output
+
+let offsets x = x.offsets
+
+let output x = Csg_conc.bool_vector x.output
+
+let ops x = x.ops
 
 let%expect_test "" =
   ignore @@ [%of_sexp: t]

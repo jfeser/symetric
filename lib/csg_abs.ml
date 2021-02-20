@@ -1,8 +1,7 @@
-open Ast
 open Params
 
 module Offset = struct
-  type t = { lo : float; hi : float; type_ : Offset_type.t }
+  type t = { lo : float; hi : float; type_ : Csg_type.Offset.t }
   [@@deriving compare, hash, sexp]
 
   type concrete = Offset.t
@@ -69,39 +68,18 @@ module Offset = struct
     ]
     |> List.filter_map ~f:Fun.id
 
-  let%expect_test "" =
-    let type_ = Offset_type.{ id = 0; kind = Cylinder } in
-    let ctx = Offset.of_list type_ [ 0.0; 4.0; 6.0; 10.0 ] in
-    let offset = Offset.of_type ctx type_ |> fun s -> Sequence.nth_exn s 2 in
-    split_exn
-      { type_ = Offset_type.dummy; lo = 0.0; hi = Float.infinity }
-      offset
-    |> [%sexp_of: t list] |> print_s;
-    [%expect
-      {|
-      (((lo 0) (hi 4) (type_ ((id -1) (kind Cylinder))))
-       ((lo 6) (hi 6) (type_ ((id -1) (kind Cylinder))))
-       ((lo 10) (hi INF) (type_ ((id -1) (kind Cylinder))))) |}]
-
   let exclude_exn x o =
     split_exn x o |> List.filter ~f:(fun x' -> not (contains x' o))
 
   let is_subset x ~of_:x' =
-    [%compare.equal: Offset_type.t] x.type_ x'.type_
+    [%compare.equal: Csg_type.Offset.t] x.type_ x'.type_
     && Float.(x.lo >= x'.lo && x.hi <= x'.hi)
 
   let type_ x = x.type_
 
   let meet x x' =
-    [%test_result: Offset_type.t] ~expect:x.type_ x'.type_;
+    [%test_result: Csg_type.Offset.t] ~expect:x.type_ x'.type_;
     { x with lo = Float.max x.lo x'.lo; hi = Float.min x.hi x'.hi }
-
-  let%test_unit "" =
-    [%test_result: t]
-      ~expect:(create_exn ~lo:1.0 ~hi:2.0 ~type_:Offset_type.dummy)
-      (meet
-         (create_exn ~lo:0.0 ~hi:2.0 ~type_:Offset_type.dummy)
-         (create_exn ~lo:1.0 ~hi:3.0 ~type_:Offset_type.dummy))
 end
 
 module Bool_vector = Bool_vector_precise
@@ -123,8 +101,8 @@ let bind ~bool_vector ~offset = function
   | Offset x -> offset x
 
 let top params = function
-  | Type.Vector -> bool_vector @@ Bool_vector.top
-  | Offset t -> offset @@ Offset.top params.offsets t
+  | Csg_type.Vector -> bool_vector @@ Bool_vector.top
+  | Offset t -> offset @@ Offset.top (Csg_bench.offsets params.bench) t
 
 let graphviz_pp params fmt =
   bind
@@ -152,8 +130,8 @@ let sub x x' =
 
 let contains a c =
   match (a, c) with
-  | Bool_vector v, Conc.Bool_vector v' -> Bool_vector.contains v v'
-  | Offset v, Conc.Offset v' -> Offset.contains v v'
+  | Bool_vector v, Csg_conc.Bool_vector v' -> Bool_vector.contains v v'
+  | Offset v, Offset v' -> Offset.contains v v'
   | _ -> false
 
 let is_subset a ~of_:a' =
@@ -172,13 +150,13 @@ let is_bottom a =
   bind a ~bool_vector:Bool_vector.is_bottom ~offset:Offset.is_bottom
 
 let lift = function
-  | Conc.Bool_vector x -> bool_vector @@ Bool_vector.lift x
+  | Csg_conc.Bool_vector x -> bool_vector @@ Bool_vector.lift x
   | Offset x -> offset @@ Offset.lift x
 
 let bool_vector_of_list =
   List.fold ~init:Bool_vector.top ~f:(fun x (k, v) -> Bool_vector.add x k v)
 
-let cylinder (c : Op.cylinder) input (l : Offset.t) (h : Offset.t) =
+let cylinder (c : Csg_op.cylinder) input (l : Offset.t) (h : Offset.t) =
   Array.to_list input
   |> List.filter_mapi ~f:(fun i v ->
          let open Vector3 in
@@ -197,8 +175,8 @@ let cylinder (c : Op.cylinder) input (l : Offset.t) (h : Offset.t) =
          else None)
   |> bool_vector_of_list
 
-let cuboid (c : Op.cuboid) input (lx : Offset.t) (hx : Offset.t) (ly : Offset.t)
-    (hy : Offset.t) (lz : Offset.t) (hz : Offset.t) =
+let cuboid (c : Csg_op.cuboid) input (lx : Offset.t) (hx : Offset.t)
+    (ly : Offset.t) (hy : Offset.t) (lz : Offset.t) (hz : Offset.t) =
   Array.to_list input
   |> List.filter_mapi ~f:(fun i v ->
          let open Vector3 in
@@ -231,24 +209,25 @@ let eval params op args =
   let open Util in
   let eval_offsets = List.map ~f:to_offset_exn in
   match op with
-  | Op.Union -> apply2 union args
+  | Csg_op.Union -> apply2 union args
   | Inter -> apply2 inter args
   | Sub -> apply2 sub args
   | Cylinder c ->
-      apply2 (cylinder c params.bench.input) @@ eval_offsets args |> bool_vector
+      apply2 (cylinder c params.bench.Csg_bench.input) @@ eval_offsets args
+      |> bool_vector
   | Cuboid c ->
       apply6 (cuboid c params.bench.input) @@ eval_offsets args |> bool_vector
   | Sphere _ | Offset _ ->
-      raise_s [%message "leaf node" (op : _ Op.t) (args : t list)]
+      raise_s [%message "leaf node" (op : Csg_op.t) (args : t list)]
 
 let to_symb params =
   let open Smt.Let_syntax in
   function
   | Bool_vector x ->
-      let%map s = Bool_vector.to_symb params.n_bits x in
+      let%map s = Bool_vector.to_symb (Csg_bench.n_bits params.bench) x in
       Symb0.Bool_vector s
   | Offset x ->
-      let%map s = Offset.to_symb params.offsets x in
+      let%map s = Offset.to_symb (Csg_bench.offsets params.bench) x in
       Symb0.Offset s
 
 let roots =

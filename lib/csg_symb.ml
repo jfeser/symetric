@@ -1,4 +1,3 @@
-open Ast
 open Params
 
 module Bool_vector = struct
@@ -13,7 +12,7 @@ module Bool_vector = struct
     Smt.(
       List.init n ~f:(fun b -> fresh_decl ~prefix:(prefix b) () >>| free) |> all)
 
-  let create ?prefix params = create_n ?prefix params.n_bits
+  let create ?prefix params = create_n ?prefix (Csg_bench.n_bits params.bench)
 
   let of_conc x = Array.to_list x |> List.map ~f:fixed
 
@@ -50,11 +49,11 @@ module Bool_vector = struct
           Map.fold model ~init:(Some abs) ~f:(fun ~key:var ~data:value abs ->
               let idx = Map.find_exn bit_idx var in
               Option.bind abs ~f:(fun abs ->
-                  let open Abs.Bool_vector in
+                  let open Csg_abs.Bool_vector in
                   let abs' = add abs idx value in
                   if [%compare.equal: t] abs' bot then None else Some abs')))
-      |> List.map ~f:Abs.bool_vector
-      |> Set.of_list (module Abs)
+      |> List.map ~f:Csg_abs.bool_vector
+      |> Set.of_list (module Csg_abs)
     in
     refined_states
 
@@ -70,7 +69,7 @@ module Offset = struct
 
   let vars x = Bool_vector.vars x.set
 
-  let n_offsets params = Offset.of_type_count params.offsets
+  let n_offsets params = Offset.of_type_count (Csg_bench.offsets params.bench)
 
   let create ?(prefix = sprintf "o%d") params t =
     let open Smt in
@@ -107,7 +106,9 @@ module Offset = struct
     in
 
     let offset_of_var =
-      let offsets = Offset.of_type params.offsets symb.type_ in
+      let offsets =
+        Offset.of_type (Csg_bench.offsets params.bench) symb.type_
+      in
       let offset_of_var =
         Sequence.zip (Sequence.of_list symb.set) offsets
         |> Sequence.filter_map ~f:(fun (var, offset) ->
@@ -125,66 +126,23 @@ module Offset = struct
              let offset = offset_of_var var in
              if keep then
                List.concat_map refined ~f:(fun abs ->
-                   if Abs.Offset.contains abs offset then
-                     Abs.Offset.split_exn abs offset
+                   if Csg_abs.Offset.contains abs offset then
+                     Csg_abs.Offset.split_exn abs offset
                    else [ abs ])
              else
                List.concat_map refined ~f:(fun abs ->
-                   if Abs.Offset.contains abs offset then
-                     Abs.Offset.exclude_exn abs offset
+                   if Csg_abs.Offset.contains abs offset then
+                     Csg_abs.Offset.exclude_exn abs offset
                    else [ abs ]))
     in
 
-    refined |> List.map ~f:Abs.offset |> Set.of_list (module Abs)
+    refined |> List.map ~f:Csg_abs.offset |> Set.of_list (module Csg_abs)
 
   let refine = refine_with_models
 
   let v x = String_id.of_string x
 
   let f x = Bool_vector.Free (v x)
-
-  let simple_test models =
-    let models = List.map models ~f:(Map.of_alist_exn (module String_id)) in
-    let type_ = Offset_type.{ id = 0; kind = Cuboid_x } in
-    let params =
-      Params.create
-      @@ Bench.
-           {
-             ops =
-               [
-                 Offset { offset = 2.0; type_ };
-                 Offset { offset = 5.0; type_ };
-                 Offset { offset = 10.0; type_ };
-                 Offset { offset = 20.0; type_ };
-                 Offset { offset = 30.0; type_ };
-               ];
-             input = [||];
-             output = [||];
-           }
-    in
-    refine params models
-      (Abs.Offset.top params.offsets type_)
-      { set = [ f "y0"; f "y1"; f "x0"; f "x1"; f "x2" ]; type_ }
-    |> [%sexp_of: Set.M(Abs).t] |> print_s
-
-  let%expect_test "" =
-    simple_test [ [ (v "x0", false) ] ];
-    [%expect
-      {|
-      ((Offset ((lo -INF) (hi 5) (type_ ((id 0) (kind Cuboid_x)))))
-       (Offset ((lo 20) (hi INF) (type_ ((id 0) (kind Cuboid_x)))))) |}]
-
-  let%expect_test "" =
-    simple_test
-      [
-        [ (v "x0", false); (v "x1", true); (v "x2", true) ];
-        [ (v "x0", false); (v "x1", false); (v "x2", true) ];
-      ];
-    [%expect
-      {|
-      ((Offset ((lo -INF) (hi 5) (type_ ((id 0) (kind Cuboid_x)))))
-       (Offset ((lo 20) (hi 20) (type_ ((id 0) (kind Cuboid_x)))))
-       (Offset ((lo 30) (hi 30) (type_ ((id 0) (kind Cuboid_x)))))) |}]
 end
 
 type t = Symb0.t = Bool_vector of Bool_vector.t | Offset of Offset.t
@@ -205,8 +163,8 @@ let to_offset_exn = function
 let create ?prefix params =
   let open Smt.Monad_infix in
   function
-  | Type.Vector -> Bool_vector.create ?prefix params >>| bool_vector
-  | Type.Offset t -> Offset.create ?prefix params t >>| offset
+  | Csg_type.Vector -> Bool_vector.create ?prefix params >>| bool_vector
+  | Offset t -> Offset.create ?prefix params t >>| offset
 
 let map ~vector ~offset x =
   match x with Bool_vector x -> vector x | Offset x -> offset x
@@ -219,11 +177,11 @@ let map2 ~vector ~offset x x' =
 
 let map_abs ~vector ~offset x x' =
   match (x, x') with
-  | Bool_vector x, Abs.Bool_vector x' -> vector x x'
-  | Offset x, Abs.Offset x' -> offset x x'
-  | _ -> raise_s [%message "Mismatched values" (x : t) (x' : Abs.t)]
+  | Bool_vector x, Csg_abs.Bool_vector x' -> vector x x'
+  | Offset x, Csg_abs.Offset x' -> offset x x'
+  | _ -> raise_s [%message "Mismatched values" (x : t) (x' : Csg_abs.t)]
 
-let ( = ) = map2 ~vector:Bool_vector.( = ) ~offset:Offset.( = )
+let equals = map2 ~vector:Bool_vector.( = ) ~offset:Offset.( = )
 
 let bool_vector_3 f x x' =
   Smt.(f (to_bool_vector_exn x) (to_bool_vector_exn x') >>| bool_vector)
@@ -240,7 +198,7 @@ let filter_offsets offsets (var : Offset.t) pred =
          if pred offset then Some (Bool_vector.to_expr in_set) else None)
   |> Sequence.to_list
 
-let cylinder (c : Op.cylinder) input offsets l h =
+let cylinder (c : Csg_op.cylinder) input offsets l h =
   List.map (Array.to_list input) ~f:(fun v ->
       let open Vector3 in
       let rot = inverse_rotate v ~theta:c.theta in
@@ -263,7 +221,7 @@ let cylinder (c : Op.cylinder) input offsets l h =
         Smt.(bool in_radius && (not (or_ above)) && not (or_ below)))
   |> Smt.all
 
-let cuboid (c : Op.cuboid) input offsets lx hx ly hy lz hz =
+let cuboid (c : Csg_op.cuboid) input offsets lx hx ly hy lz hz =
   let open Smt.Monad_infix in
   Array.to_list input
   |> List.map ~f:(fun v ->
@@ -292,9 +250,9 @@ let cuboid (c : Op.cuboid) input offsets lx hx ly hy lz hz =
              && not (or_ below_z)))
   |> Smt.all >>| bool_vector
 
-let sphere params (s : Op.sphere) =
+let sphere params (s : Csg_op.sphere) =
   let ret =
-    params.bench.input |> Array.to_list
+    params.bench.Csg_bench.input |> Array.to_list
     |> List.map ~f:(fun v ->
            Bool_vector.elem_of_expr
            @@ Smt.bool Float.(Vector3.l2_dist s.center v <= s.radius))
@@ -305,7 +263,7 @@ let offset params o =
   let open Smt.Let_syntax in
   let type_ = Offset'.type_ o in
   let%map set =
-    Offset'.of_type params.offsets type_
+    Offset'.of_type params.bench.Csg_bench.offsets type_
     |> Sequence.map ~f:(fun offset ->
            return @@ Bool_vector.fixed @@ [%compare.equal: Offset'.t] o offset)
     |> Sequence.to_list |> Smt.all
@@ -317,20 +275,22 @@ let eval params op args =
   let open Util in
   let eval_offsets = List.map ~f:to_offset_exn in
   match op with
-  | Op.Union -> apply2 union args
+  | Csg_op.Union -> apply2 union args
   | Inter -> apply2 inter args
   | Sub -> apply2 sub args
   | Cylinder c ->
-      apply2 (cylinder c params.bench.input params.offsets) @@ eval_offsets args
+      apply2 (cylinder c params.bench.Csg_bench.input params.bench.offsets)
+      @@ eval_offsets args
       >>| bool_vector
   | Cuboid c ->
-      apply6 (cuboid c params.bench.input params.offsets) @@ eval_offsets args
+      apply6 (cuboid c params.bench.input params.bench.offsets)
+      @@ eval_offsets args
   | Sphere s -> sphere params s
   | Offset o -> offset params o
 
 let assert_refines =
-  [%test_pred: Abs.t * Set.M(Abs).t] (fun (old_abs, new_abs) ->
-      Set.for_all new_abs ~f:(fun a -> Abs.is_subset a ~of_:old_abs))
+  [%test_pred: Csg_abs.t * Set.M(Csg_abs).t] (fun (old_abs, new_abs) ->
+      Set.for_all new_abs ~f:(fun a -> Csg_abs.is_subset a ~of_:old_abs))
 
 let refine params interpolant smt_state abs symb =
   let vars =
@@ -350,8 +310,9 @@ let refine params interpolant smt_state abs symb =
   let refined =
     map
       ~vector:(fun s ->
-        Bool_vector.refine models (Abs.to_bool_vector_exn abs) s)
-      ~offset:(fun s -> Offset.refine params models (Abs.to_offset_exn abs) s)
+        Bool_vector.refine models (Csg_abs.to_bool_vector_exn abs) s)
+      ~offset:(fun s ->
+        Offset.refine params models (Csg_abs.to_offset_exn abs) s)
       symb
   in
   assert_refines (abs, refined);
@@ -360,8 +321,8 @@ let refine params interpolant smt_state abs symb =
       "refine"
         (models : Smt.Model.t list)
         (symb : t)
-        (abs : Abs.t)
-        (refined : Set.M(Abs).t)
+        (abs : Csg_abs.t)
+        (refined : Set.M(Csg_abs).t)
         [%here]];
   refined
 
@@ -369,6 +330,6 @@ let vars = function
   | Bool_vector v -> Bool_vector.vars v
   | Offset v -> Offset.vars v
 
-let of_conc ctx = function
-  | Conc.Bool_vector x -> Bool_vector (Bool_vector.of_conc x)
-  | Offset x -> Offset (Offset.of_conc ctx x)
+let of_conc params = function
+  | Csg_conc.Bool_vector x -> Bool_vector (Bool_vector.of_conc x)
+  | Offset x -> Offset (Offset.of_conc params.bench.Csg_bench.offsets x)

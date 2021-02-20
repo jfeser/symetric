@@ -1,4 +1,3 @@
-open Ast
 open Params
 
 module Bool_vector = struct
@@ -19,8 +18,6 @@ module Bool_vector = struct
 
   let pp = Fmt.(array ~sep:(any " ") bool)
 end
-
-module Offset = Offset
 
 type t = Bool_vector of Bool_vector.t | Offset of Offset.t
 [@@deriving compare, hash, sexp]
@@ -50,10 +47,10 @@ let sub x x' =
   @@ Array.map2_exn (to_bool_vector_exn x) (to_bool_vector_exn x')
        ~f:(fun a b -> a && not b)
 
-let sphere input (s : Op.sphere) =
+let sphere input (s : Csg_op.sphere) =
   Array.map input ~f:(fun v -> Float.(Vector3.l2_dist s.center v <= s.radius))
 
-let cylinder (c : Op.cylinder) input l h =
+let cylinder (c : Csg_op.cylinder) input l h =
   Array.map input ~f:(fun v ->
       let open Vector3 in
       let rot = inverse_rotate v ~theta:c.theta in
@@ -63,7 +60,7 @@ let cylinder (c : Op.cylinder) input l h =
       let above_lo = Float.(rot.x >= l) and below_hi = Float.(rot.x <= h) in
       in_radius && above_lo && below_hi)
 
-let cuboid (c : Op.cuboid) input lx hx ly hy lz hz =
+let cuboid (c : Csg_op.cuboid) input lx hx ly hy lz hz =
   Array.map input ~f:(fun v ->
       let open Vector3 in
       let rot = inverse_rotate v ~theta:c.theta in
@@ -77,10 +74,10 @@ let cuboid (c : Op.cuboid) input lx hx ly hy lz hz =
 
 let eval params op args =
   let open Util in
-  let input = params.bench.input in
+  let input = params.bench.Csg_bench0.input in
   let eval_offsets = List.map ~f:(fun x -> to_offset_exn x |> Offset.offset) in
   match op with
-  | Op.Union -> apply2 union args
+  | Csg_op.Union -> apply2 union args
   | Inter -> apply2 inter args
   | Sub -> apply2 sub args
   | Cylinder c -> apply2 (cylinder c input) @@ eval_offsets args |> bool_vector

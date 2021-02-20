@@ -11,7 +11,7 @@ module Bool_vector = struct
 end
 
 module Offset = struct
-  type t = { set : Bool_vector.t; type_ : Offset_type.t } [@@deriving sexp]
+  type t = { set : Bool_vector.t; type_ : Csg_type.Offset.t } [@@deriving sexp]
 end
 
 type t = Bool_vector of Bool_vector.t | Offset of Offset.t [@@deriving sexp]

@@ -1,3 +1,5 @@
-val synth : Params.t -> Search_state.t
+module Make (Lang : Lang_intf.S) : sig
+  module Search_state : Search_state_intf.S
 
-val cegis : Params.t -> unit
+  val synth : Lang.Bench.t Params.t -> Search_state.t
+end

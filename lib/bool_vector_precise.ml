@@ -17,7 +17,8 @@ let is_bottom = function Bottom -> true | _ -> false
 
 let log_size params = function
   | Bottom -> Float.(-infinity)
-  | Map m -> Float.of_int (Array.length params.bench.output - Map.length m)
+  | Map m ->
+      Float.of_int (Array.length params.bench.Csg_bench.output - Map.length m)
 
 let pp : t Fmt.t =
   Fmt.using (function
