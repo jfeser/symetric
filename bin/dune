@@ -30,3 +30,9 @@
  (libraries core staged_synth)
  (modes (byte exe))
  (preprocess (pps ppx_let)))
+
+(executable
+ (name dump_bench)
+ (modules dump_bench)
+ (libraries core staged_synth)
+ (preprocess (pps ppx_jane)))

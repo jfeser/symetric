@@ -11,6 +11,23 @@ type 'b t = {
 }
 [@@deriving sexp]
 
+let default_max_cost = 20
+
+let create ?(enable_dump = false) ?(max_cost = default_max_cost)
+    ?(enable_forced_bit_check = false) ?(hide_values = false)
+    ?(validate = false) ?(state_set = `Full) ?(cone = `Full) bench =
+  {
+    bench;
+    fresh = Fresh.create ();
+    enable_dump;
+    max_cost;
+    enable_forced_bit_check;
+    hide_values;
+    validate;
+    state_set;
+    cone;
+  }
+
 let cli bench =
   let open Command.Let_syntax in
   [%map_open
@@ -23,18 +40,8 @@ let cli bench =
         ~doc:" enable checking for forced bits when refining"
     and max_cost =
       flag "max-cost"
-        (optional_with_default 20 int)
+        (optional_with_default default_max_cost int)
         ~doc:" maximum program cost"
     and bench = bench in
 
-    {
-      bench;
-      fresh = Fresh.create ();
-      enable_dump;
-      max_cost;
-      enable_forced_bit_check;
-      hide_values;
-      validate = false;
-      state_set = `Full;
-      cone = `Full;
-    }]
+    create ~enable_dump ~hide_values ~enable_forced_bit_check ~max_cost bench]

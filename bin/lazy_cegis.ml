@@ -36,6 +36,35 @@ let csg_cli =
       in
       csg_run params]
 
+let cad_cli =
+  let module Cad = struct
+    module Op = Cad_op
+    module Type = Cad_type
+    module Abs = Cad_abs
+    module Symb = Cad_symb
+    module Conc = Cad_conc
+    module Bench = Cad_bench
+
+    type symb = Cad_symb.t
+
+    type bench = Cad_bench.t
+  end in
+  let module Lazy_cegis = Lazy_cegis.Make (Cad) in
+  let run params () =
+    (Lazy_cegis.synth params : Lazy_cegis.Search_state.t) |> ignore
+  in
+
+  let open Command.Let_syntax in
+  Command.basic ~summary:"Synthesize a 2D CAD program using lazy cegis."
+    [%map_open
+      let params =
+        Params.cli
+          [%map_open
+            let bench_fn = anon ("bench" %: string) in
+            Sexp.load_sexp_conv_exn bench_fn [%of_sexp: Cad.Bench.t]]
+      in
+      run params]
+
 let () =
   Command.group ~summary:"Run lazy CEGIS."
     [
@@ -43,6 +72,7 @@ let () =
         Command.basic ~summary:"Print stats header."
           (Command.Param.return print_header) );
       ("cad", csg_cli);
+      ("cad2", cad_cli);
       (* ( "random",
        *   Command.basic ~summary:"Run lazy CEGIS on a random testcase."
        *     [%map_open
