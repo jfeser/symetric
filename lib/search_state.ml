@@ -124,6 +124,12 @@ module Make (Lang : Lang_intf.S) = struct
 
     let id = ident
 
+    let to_message ctx id =
+      let state = state ctx id
+      and cost = cost ctx id
+      and type_ = type_ ctx id in
+      [%message (id : int) (state : Abs.t) (cost : int) (type_ : Type.t)]
+
     let graphviz_pp ctx fmt id =
       Fmt.pf fmt "%a<br/>id=%d cost=%d"
         (Abs.graphviz_pp ctx.params)
@@ -165,6 +171,10 @@ module Make (Lang : Lang_intf.S) = struct
       id
 
     let output_type ctx id = op ctx id |> Op.ret_type
+
+    let to_message ctx id =
+      let op = op ctx id in
+      [%message (id : int) (op : Op.t)]
   end
 
   module Node = struct
@@ -175,7 +185,7 @@ module Make (Lang : Lang_intf.S) = struct
     let match_ ~args ~state v = if is_args v then args v else state v
 
     module T = struct
-      type t = int [@@deriving compare, equal, hash, show]
+      type t = int [@@deriving compare, equal, hash]
 
       let sexp_of_t v =
         match_ ~args:[%sexp_of: Args.t] ~state:[%sexp_of: State.t] v

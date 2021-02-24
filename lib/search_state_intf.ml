@@ -25,6 +25,8 @@ module type S = sig
     val graphviz_pp : ctx -> t Fmt.t
 
     val output_type : ctx -> t -> type_
+
+    val to_message : ctx -> t -> Sexp.t
   end
   with type ctx := t
 
@@ -46,6 +48,8 @@ module type S = sig
     val type_ : ctx -> t -> type_
 
     val graphviz_pp : ctx -> t Fmt.t
+
+    val to_message : ctx -> t -> Sexp.t
   end
   with type ctx := t
 
@@ -57,8 +61,6 @@ module type S = sig
     type ctx
 
     val match_ : args:(Args.t -> 'a) -> state:(State.t -> 'a) -> t -> 'a
-
-    val pp : t Fmt.t
 
     val id : t -> int
 

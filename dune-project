@@ -5,11 +5,9 @@
 (package
   (name staged-synth)
   (depends
-    (core (>= v0.13))
-    (ppx_compare (>= v0.13))
-    (ppx_hash (>= v0.13))
-    (ppx_sexp_conv (>= v0.13))
-    (ppx_let (>= v0.13))
+    (core (>= v0.14))
+    (ppx_jane (>= v0.14))
+    (base_quickcheck (>= v0.14))
     ocamlgraph
     fmt
     ))

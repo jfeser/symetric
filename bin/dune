@@ -1,21 +1,21 @@
-(executable
- (name mk_cad_bench)
- (modules mk_cad_bench)
- (libraries core staged_synth)
- (modes (byte exe))
- (preprocess (pps ppx_let)))
+; (executable
+;  (name mk_cad_bench)
+;  (modules mk_cad_bench)
+;  (libraries core staged_synth)
+;  (modes (byte exe))
+;  (preprocess (pps ppx_let)))
 
-(executable
- (name bench)
- (modules bench)
- (libraries core staged_synth)
- (preprocess (pps ppx_compare ppx_let)))
+; (executable
+;  (name bench)
+;  (modules bench)
+;  (libraries core staged_synth)
+;  (preprocess (pps ppx_compare ppx_let)))
 
-(executable
- (name cegis)
- (modules cegis)
- (libraries core staged_synth)
- (preprocess (pps ppx_let ppx_sexp_conv)))
+; (executable
+;  (name cegis)
+;  (modules cegis)
+;  (libraries core staged_synth)
+;  (preprocess (pps ppx_let ppx_sexp_conv)))
 
 (executable
  (name lazy_cegis)
@@ -24,15 +24,15 @@
  (libraries core staged_synth)
  (preprocess (pps ppx_jane landmarks.ppx --auto)))
 
-(executable
- (name mk_simple_cad_bench)
- (modules mk_simple_cad_bench)
- (libraries core staged_synth)
- (modes (byte exe))
- (preprocess (pps ppx_let)))
+; (executable
+;  (name mk_simple_cad_bench)
+;  (modules mk_simple_cad_bench)
+;  (libraries core staged_synth)
+;  (modes (byte exe))
+;  (preprocess (pps ppx_let)))
 
-(executable
- (name dump_bench)
- (modules dump_bench)
- (libraries core staged_synth)
- (preprocess (pps ppx_jane)))
+; (executable
+;  (name dump_bench)
+;  (modules dump_bench)
+;  (libraries core staged_synth)
+;  (preprocess (pps ppx_jane)))
