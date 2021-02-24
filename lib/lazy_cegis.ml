@@ -1,7 +1,16 @@
-module Make (Lang : Lang_intf.S) = struct
+module Make
+    (Lang : Lang_intf.S)
+    (Search_state : Search_state_intf.S
+                      with type op = Lang.Op.t
+                       and type abs = Lang.Abs.t
+                       and type bench = Lang.Bench.t
+                       and type type_ = Lang.Type.t)
+    (Refine : Refine_intf.S
+                with type op := Lang.Op.t
+                 and module Search_state := Search_state
+                 and module Abs := Lang.Abs) =
+struct
   open Lang
-  module Search_state = Search_state.Make (Lang)
-  module Refine = Refine.Make (Lang) (Search_state)
 
   open Cone.Make (Search_state.G)
 
@@ -293,12 +302,10 @@ module Make (Lang : Lang_intf.S) = struct
 
     (* Add inputs to the state space graph. *)
     List.iter ops ~f:(fun op ->
-        match Op.type_ op with
-        | [], ret_t ->
-            let state = Abs.top params ret_t in
-            (insert_hyper_edge_if_not_exists ss [] op 1 ~state : _ option)
-            |> ignore
-        | _ -> ());
+        if Op.arity op = 0 then
+          let state = Abs.eval params op [] in
+          (insert_hyper_edge_if_not_exists ss [] op 1 ~state : _ option)
+          |> ignore);
 
     let output = Bench.output params.bench in
     let _status =
@@ -311,17 +318,19 @@ module Make (Lang : Lang_intf.S) = struct
 
               let did_change =
                 if did_change then
-                  G.Fold.V.filter_map (graph ss) ~f:(fun v ->
-                      Node.match_ v
-                        ~args:(fun _ -> None)
-                        ~state:(fun v ->
-                          if
-                            Abs.contains (State.state ss v) output
-                            && State.cost ss v = cost
-                          then Some v
-                          else None))
-                  |> refute ss
-                  |> fun _ -> false
+                  let targets =
+                    G.Fold.V.filter_map (graph ss) ~f:(fun v ->
+                        Node.match_ v
+                          ~args:(fun _ -> None)
+                          ~state:(fun v ->
+                            if
+                              Abs.contains (State.state ss v) output
+                              && State.cost ss v = cost
+                            then Some v
+                            else None))
+                  in
+                  if not (List.is_empty targets) then refute ss targets
+                  else false
                 else false
               in
 

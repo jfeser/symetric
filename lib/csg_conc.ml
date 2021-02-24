@@ -73,7 +73,7 @@ let cuboid (c : Csg_op.cuboid) input lx hx ly hy lz hz =
       above_lox && below_hix && above_loy && below_hiy && above_loz && below_hiz)
 
 let eval params op args =
-  let open Util in
+  let open Apply in
   let input = params.bench.Csg_bench0.input in
   let eval_offsets = List.map ~f:(fun x -> to_offset_exn x |> Offset.offset) in
   match op with

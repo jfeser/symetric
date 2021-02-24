@@ -272,7 +272,7 @@ let offset params o =
 
 let eval params op args =
   let open Smt.Monad_infix in
-  let open Util in
+  let open Apply in
   let eval_offsets = List.map ~f:to_offset_exn in
   match op with
   | Csg_op.Union -> apply2 union args

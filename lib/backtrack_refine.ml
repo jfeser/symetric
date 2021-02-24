@@ -3,17 +3,17 @@ module Make
     (Search_state : Search_state_intf.S
                       with type op = Lang.Op.t
                        and type abs = Lang.Abs.t
-                       and type bench = Lang.Bench.t) : sig
+                       and type bench = Lang.Bench.t) =
+struct
   open Lang
+  open Search_state
 
-  module Refinement : sig
+  module Refinement = struct
     type s = { old : Set.M(Abs).t; new_ : Set.M(Abs).t } [@@deriving sexp]
 
     type t = s Map.M(Search_state.Args).t [@@deriving sexp_of]
   end
 
-  val refine :
-    Search_state.t ->
-    Search_state.State.t list ->
-    (Refinement.t, Op.t Program.t) Either.t
+  let refine ss target =
+    raise_s [%message (List.map target ~f:(State.to_message ss) : Sexp.t list)]
 end

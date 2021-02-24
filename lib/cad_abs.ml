@@ -10,16 +10,16 @@ let eval_circle (c : Cad_op.circle) =
     ~lo:
       (let half_side = Float.(sqrt 2.0 / 4.0 * c.radius) in
        Box.create
-         ~xmin:Float.(c.center.x - half_side)
-         ~xmax:Float.(c.center.x + half_side)
-         ~ymin:Float.(c.center.y - half_side)
-         ~ymax:Float.(c.center.y + half_side))
+         ~xmin:Float.(c.center.x - half_side |> round_up)
+         ~xmax:Float.(c.center.x + half_side |> round_up)
+         ~ymin:Float.(c.center.y - half_side |> round_up)
+         ~ymax:Float.(c.center.y + half_side |> round_up))
     ~hi:
       (Box.create
-         ~xmin:Float.(c.center.x - c.radius)
-         ~xmax:Float.(c.center.x + c.radius)
-         ~ymin:Float.(c.center.y - c.radius)
-         ~ymax:Float.(c.center.y + c.radius))
+         ~xmin:Float.(c.center.x - c.radius |> round_down)
+         ~xmax:Float.(c.center.x + c.radius |> round_down)
+         ~ymin:Float.(c.center.y - c.radius |> round_down)
+         ~ymax:Float.(c.center.y + c.radius |> round_down))
 
 let eval_union = Pbox.lub
 
@@ -40,11 +40,7 @@ let to_symb _ = failwith "to_symb"
 
 let is_subset _ = failwith "is_subset"
 
-let contains a (c, g) =
-  Range.for_all { lo = 0; hi = g.Cad_bench.xmax } ~f:(fun x ->
-      Range.for_all { lo = 0; hi = g.Cad_bench.ymax } ~f:(fun y ->
-          let x = Float.of_int x and y = Float.of_int y in
-          (not (c x y)) || Pbox.contains a (x, y)))
+let contains a c = Set.for_all c ~f:(Pbox.contains a)
 
 let top _ Cad_type.Scene = Pbox.top
 

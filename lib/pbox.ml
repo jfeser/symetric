@@ -13,4 +13,4 @@ let lub a b = create ~lo:(Box.glb a.lo b.lo) ~hi:(Box.lub a.hi b.hi)
 
 let glb a b = create ~lo:(Box.glb a.lo b.lo) ~hi:(Box.glb a.hi b.hi)
 
-let contains a p = Box.contains a.hi p && not (Box.contains a.lo p)
+let contains a p = Box.contains a.hi p

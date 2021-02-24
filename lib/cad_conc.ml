@@ -1,12 +1,12 @@
-type t = (float -> float -> bool) * Cad_bench.grid
+type t = Set.M(Vector2).t
 
 let eval params op args =
-  let f =
-    match (op, args) with
-    | Cad_op.Inter, [ (s, _); (s', _) ] -> fun x y -> s x y && s' x y
-    | Union, [ (s, _); (s', _) ] -> fun x y -> s x y || s' x y
-    | Circle c, [] ->
-        fun x y -> Float.(Vector2.(l2_dist c.center { x; y }) < c.radius)
-    | _ -> raise_s [%message "Unexpected eval" (op : Cad_op.t)]
-  in
-  (f, params.Params.bench.Cad_bench.input)
+  match (op, args) with
+  | Cad_op.Inter, [ s; s' ] -> Set.inter s s'
+  | Union, [ s; s' ] -> Set.union s s'
+  | Circle c, [] ->
+      Cad_bench.points params.Params.bench.Cad_bench.input
+      |> List.filter ~f:(fun v ->
+             Float.(Vector2.(l2_dist c.center v) < c.radius))
+      |> Set.of_list (module Vector2)
+  | _ -> raise_s [%message "Unexpected eval" (op : Cad_op.t)]

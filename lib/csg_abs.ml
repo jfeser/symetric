@@ -206,7 +206,7 @@ let cuboid (c : Csg_op.cuboid) input (lx : Offset.t) (hx : Offset.t)
   |> bool_vector_of_list
 
 let eval params op args =
-  let open Util in
+  let open Apply in
   let eval_offsets = List.map ~f:to_offset_exn in
   match op with
   | Csg_op.Union -> apply2 union args
