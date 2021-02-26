@@ -1,5 +1,6 @@
 type 'b t = {
-  fresh : Fresh.t; [@ignore]
+  random_state : (Random.State.t[@sexp.opaque]);
+  fresh : (Fresh.t[@sexp.opaque]);
   enable_dump : bool;
   max_cost : int;
   enable_forced_bit_check : bool;
@@ -9,16 +10,17 @@ type 'b t = {
   state_set : [ `Full | `Roots ];
   cone : [ `Full | `Rand ];
 }
-[@@deriving sexp]
+[@@deriving sexp_of]
 
 let default_max_cost = 20
 
 let create ?(enable_dump = false) ?(max_cost = default_max_cost)
     ?(enable_forced_bit_check = false) ?(hide_values = false)
-    ?(validate = false) ?(state_set = `Full) ?(cone = `Full) bench =
+    ?(validate = false) ?(state_set = `Full) ?(cone = `Full) ?(seed = 0) bench =
   {
     bench;
     fresh = Fresh.create ();
+    random_state = Random.State.make [| seed |];
     enable_dump;
     max_cost;
     enable_forced_bit_check;

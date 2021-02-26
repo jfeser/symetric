@@ -1,9 +1,4 @@
-module T = struct
-  type t = Pbox.t [@@deriving compare, hash, sexp]
-end
-
-include T
-include Comparator.Make (T)
+include Disj.Make (Pbox)
 
 let eval_circle (c : Cad_op.circle) =
   Pbox.create
@@ -20,10 +15,11 @@ let eval_circle (c : Cad_op.circle) =
          ~xmax:Float.(c.center.x + c.radius |> round_down)
          ~ymin:Float.(c.center.y - c.radius |> round_down)
          ~ymax:Float.(c.center.y + c.radius |> round_down))
+  |> lift
 
-let eval_union = Pbox.lub
+let eval_union = lub
 
-let eval_inter = Pbox.glb
+let eval_inter = glb
 
 let eval _ op args =
   match (op, args) with
@@ -40,8 +36,11 @@ let to_symb _ = failwith "to_symb"
 
 let is_subset _ = failwith "is_subset"
 
-let contains a c = Set.for_all c ~f:(Pbox.contains a)
+let contains a c =
+  Set.for_all c ~f:(fun p ->
+      List.exists a ~f:(fun b ->
+          Pbox.contains b (Set.singleton (module Vector2) p)))
 
-let top _ Cad_type.Scene = Pbox.top
+let top _ Cad_type.Scene = [ Pbox.top ]
 
 let graphviz_pp _ = failwith "graphviz_pp"

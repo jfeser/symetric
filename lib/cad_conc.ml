@@ -1,4 +1,4 @@
-type t = Set.M(Vector2).t
+type t = Set.M(Vector2).t [@@deriving compare, hash, sexp]
 
 let eval params op args =
   match (op, args) with
@@ -10,3 +10,6 @@ let eval params op args =
              Float.(Vector2.(l2_dist c.center v) < c.radius))
       |> Set.of_list (module Vector2)
   | _ -> raise_s [%message "Unexpected eval" (op : Cad_op.t)]
+
+let rec eval_program params (Program.Apply (op, args)) =
+  eval params op (List.map args ~f:(eval_program params))

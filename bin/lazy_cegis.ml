@@ -25,20 +25,8 @@ let csg_cli =
       run params]
 
 let cad_cli =
-  let module Cad = struct
-    module Op = Cad_op
-    module Type = Cad_type
-    module Abs = Cad_abs
-    module Symb = Cad_symb
-    module Conc = Cad_conc
-    module Bench = Cad_bench
-
-    type symb = Cad_symb.t
-
-    type bench = Cad_bench.t
-  end in
   let module Search_state = Search_state.Make (Cad) in
-  let module Refine = Backtrack_refine.Make (Cad) (Search_state) in
+  let module Refine = Backtrack_refine.Make (Search_state) in
   let module Lazy_cegis = Lazy_cegis.Make (Cad) (Search_state) (Refine) in
   let run params () = (Lazy_cegis.synth params : Search_state.t) |> ignore in
 

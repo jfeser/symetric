@@ -219,10 +219,6 @@ module Make (Lang : Lang_intf.S) = struct
     let type_ ctx = match_ ~args:(Args.output_type ctx) ~state:(State.type_ ctx)
   end
 
-  let args ctx =
-    G.Fold.V.filter_map ctx.graph
-      ~f:(Node.match_ ~args:Option.some ~state:(fun _ -> None))
-
   let filter ctx ~f =
     G.Fold.V.filter ctx.graph ~f:(Fun.negate f)
     |> List.iter ~f:(fun v ->
@@ -383,25 +379,23 @@ module Make (Lang : Lang_intf.S) = struct
 
   type program = Apply of Op.t * Abs.t * program list [@@deriving sexp]
 
-  let _sample_program ctx type_ =
+  let sample ctx state_v =
     let value_exn x =
       Option.value_exn ~here:[%here] ~message:"malformed state space" x
     in
-    let rec sample state arg =
+    let rec sample arg =
       let inputs =
         inputs ctx arg
         |> List.map ~f:(fun state_v ->
-               let p, _ =
-                 G.succ ctx.graph state_v |> List.random_element |> value_exn
-                 |> sample (State.state ctx state_v)
-               in
-               p)
+               G.succ (graph ctx) state_v
+               |> List.random_element |> value_exn |> sample)
       in
-      (Apply (Args.op ctx arg, state, inputs), arg)
+      Program.Apply (Args.op ctx arg, inputs)
     in
 
-    args ctx |> List.random_element |> value_exn
-    |> sample (Abs.top (params ctx) type_)
+    G.succ (graph ctx) (Node.of_state state_v)
+    |> List.random_element ~random_state:(params ctx).Params.random_state
+    |> value_exn |> sample
 
   (* let rec checked_eval params (Apply (op, abs, args)) =
    *   let open Option.Let_syntax in
