@@ -10,17 +10,7 @@ let points g =
   |> List.concat
 
 let output b =
-  let module Key = struct
-    module T = struct
-      type t = float * float [@@deriving compare, sexp]
-    end
-
-    include T
-    include Comparator.Make (T)
-  end in
-  List.zip_exn (points b.input) b.output
-  |> List.filter ~f:(fun (_, v) -> v > 0)
-  |> List.map ~f:Tuple.T2.get1
-  |> Set.of_list (module Vector2)
+  List.map2_exn (points b.input) b.output ~f:(fun k v -> (k, v > 0))
+  |> Map.of_alist_exn (module Vector2)
 
 let ops x = x.ops

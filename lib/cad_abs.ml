@@ -37,9 +37,17 @@ let to_symb _ = failwith "to_symb"
 let is_subset _ = failwith "is_subset"
 
 let contains a c =
-  Set.for_all c ~f:(fun p ->
-      List.exists a ~f:(fun b ->
-          Pbox.contains b (Set.singleton (module Vector2) p)))
+  Map.for_alli c ~f:(fun ~key ~data ->
+      let pt = Map.singleton (module Vector2) key data in
+      if data then List.exists a ~f:(fun b -> Pbox.contains b pt)
+      else List.for_all a ~f:(fun b -> not (Pbox.contains b pt)))
+
+let implies a p =
+  let open Ternary in
+  if List.exists a ~f:(fun b -> Ternary.is_true @@ Pbox.implies b p) then True
+  else if List.for_all a ~f:(fun b -> Ternary.is_false @@ Pbox.implies b p) then
+    False
+  else Maybe
 
 let top _ Cad_type.Scene = [ Pbox.top ]
 
