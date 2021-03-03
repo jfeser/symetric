@@ -30,3 +30,5 @@ let glb a b =
 
 let contains a (v : conc) =
   Float.(a.xmin <= v.x && v.x <= a.xmax && a.ymin <= v.y && v.y <= a.ymax)
+
+let is_unit a = Float.(a.xmax - a.xmin <= 1.0 && a.ymax - a.ymin <= 1.0)

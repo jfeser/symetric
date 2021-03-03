@@ -254,8 +254,7 @@ struct
     match Refine.refine ss target with
     | First r ->
         refine ss r;
-        let roots = roots ss in
-        let n_roots = List.length roots in
+        let n_roots = -1 in
         Stats.global := { !Stats.global with n_roots };
         true
     | Second p ->

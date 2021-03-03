@@ -63,9 +63,8 @@ let contains a c =
 
 let implies a p =
   let open Ternary in
-  if List.exists a ~f:(fun b -> Ternary.is_true @@ Pbox.implies b p) then True
-  else if List.for_all a ~f:(fun b -> Ternary.is_false @@ Pbox.implies b p) then
-    False
+  if List.exists a ~f:(fun b -> Box.is_unit b && Box.contains b p) then True
+  else if List.for_all a ~f:(fun b -> not (Box.contains b p)) then False
   else Maybe
 
 let top _ Cad_type.Scene = Boxes.top
