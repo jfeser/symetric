@@ -1,3 +1,5 @@
+open Geoml
+
 type t = { xmin : float; xmax : float; ymin : float; ymax : float }
 [@@deriving compare, hash, sexp]
 
@@ -32,3 +34,7 @@ let contains a (v : conc) =
   Float.(a.xmin <= v.x && v.x <= a.xmax && a.ymin <= v.y && v.y <= a.ymax)
 
 let is_unit a = Float.(a.xmax - a.xmin <= 1.0 && a.ymax - a.ymin <= 1.0)
+
+let to_rectangle b =
+  let l = b.xmax -. b.xmin and h = b.ymax -. b.ymin in
+  Rectangle.make (Point.make b.xmin b.ymin) l h

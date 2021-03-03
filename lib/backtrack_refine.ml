@@ -1,4 +1,5 @@
 open Ternary
+open Geoml
 
 module Make
     (Search_state : Search_state_intf.S
@@ -30,7 +31,7 @@ struct
       let out = Cad_conc.eval_program (params ss) prog in
       if [%compare.equal: Conc.t] out expected then raise (Found_solution prog)
       else
-        Map.merge out expected ~f:(fun ~key -> function
+        Map.merge out expected ~f:(fun ~key:_ -> function
           | `Left _ | `Right _ -> None
           | `Both (x, x') -> if Bool.(x <> x') then Some x' else None)
         |> Map.to_alist |> List.map ~f:Tuple.T2.get1
@@ -88,18 +89,23 @@ struct
               Abs.contains (State.state ss v)
                 (Map.singleton (module Vector2) counter true)
             then refine_state ss counter v
-            else refine_state ss counter v' )
+            else refine_state ss counter v'
+        | _ -> failwith "unexpected inputs" )
     | Circle c ->
+        let c = Circle.make (Point.make c.center.x c.center.y) c.radius in
+        let new_ =
+          State.state ss output |> split counter
+          |> List.filter ~f:(fun b ->
+                 Rectangle.intersects_circle (Box.to_rectangle b) c)
+          |> Set.singleton (module Abs)
+        in
+
         [
           ( args_v,
-            {
-              old = Set.singleton (module Abs) @@ State.state ss output;
-              new_ =
-                Set.singleton (module Abs)
-                @@ split counter @@ State.state ss output;
-            } );
+            { old = Set.singleton (module Abs) @@ State.state ss output; new_ }
+          );
         ]
-    | Rect r -> raise_s [%message "rect"]
+    | Rect _ -> raise_s [%message "rect"]
 
   and refine_state ss counter state_v =
     let abs = State.state ss state_v in
