@@ -1,6 +1,8 @@
 type t = { xmin : float; xmax : float; ymin : float; ymax : float }
 [@@deriving compare, hash, sexp]
 
+type conc = Vector2.t [@@deriving compare, hash, sexp]
+
 let top =
   {
     xmin = Float.(-infinity);
@@ -26,5 +28,5 @@ let glb a b =
   create ~xmin:(Float.max a.xmin b.xmin) ~xmax:(Float.min a.xmax b.xmax)
     ~ymin:(Float.max a.ymin b.ymin) ~ymax:(Float.min a.ymax b.ymax)
 
-let contains a (v : Vector2.t) =
+let contains a (v : conc) =
   Float.(a.xmin <= v.x && v.x <= a.xmax && a.ymin <= v.y && v.y <= a.ymax)

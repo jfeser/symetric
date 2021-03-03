@@ -1,7 +1,7 @@
 module type S = sig
   type t [@@deriving compare, hash, sexp]
 
-  type conc
+  type conc [@@deriving sexp]
 
   val top : t
 
@@ -10,6 +10,8 @@ module type S = sig
   val lub : t -> t -> t
 
   val glb : t -> t -> t
+
+  val is_subset : t -> of_:t -> bool
 
   val contains : t -> conc -> bool
 end
