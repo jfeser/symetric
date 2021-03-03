@@ -105,7 +105,15 @@ struct
             { old = Set.singleton (module Abs) @@ State.state ss output; new_ }
           );
         ]
-    | Rect _ -> raise_s [%message "rect"]
+    | Rect _ ->
+        let new_ =
+          State.state ss output |> split counter |> Set.singleton (module Abs)
+        in
+        [
+          ( args_v,
+            { old = Set.singleton (module Abs) @@ State.state ss output; new_ }
+          );
+        ]
 
   and refine_state ss counter state_v =
     let abs = State.state ss state_v in

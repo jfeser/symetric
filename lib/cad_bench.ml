@@ -1,7 +1,11 @@
 type grid = { xmax : int; ymax : int } [@@deriving sexp]
 
-type t = { ops : Cad_op.t list; input : grid; output : int list }
-[@@deriving sexp]
+module Serial = struct
+  type t = { ops : Cad_op.t list; input : grid; output : int list }
+  [@@deriving sexp]
+end
+
+type t = { ops : Cad_op.t list; input : grid; output : bool Map.M(Vector2).t }
 
 let points g =
   List.init g.xmax ~f:(fun x ->
@@ -9,8 +13,15 @@ let points g =
           Vector2.{ x = Float.of_int x; y = Float.of_int y }))
   |> List.concat
 
-let output b =
-  List.map2_exn (points b.input) b.output ~f:(fun k v -> (k, v > 0))
-  |> Map.of_alist_exn (module Vector2)
+let of_serial (x : Serial.t) =
+  let output =
+    List.map2_exn (points x.input) x.output ~f:(fun k v -> (k, v > 0))
+    |> Map.of_alist_exn (module Vector2)
+  in
+  { ops = x.ops; input = x.input; output }
+
+let t_of_sexp s = [%of_sexp: Serial.t] s |> of_serial
+
+let output x = x.output
 
 let ops x = x.ops

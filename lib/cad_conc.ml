@@ -26,5 +26,19 @@ let eval params op args =
       |> Map.of_alist_exn (module Vector2)
   | _ -> raise_s [%message "Unexpected eval" (op : Cad_op.t)]
 
-let rec eval_program params (Program.Apply (op, args)) =
-  eval params op (List.map args ~f:(eval_program params))
+let eval_program =
+  let module P = struct
+    type t = Cad_op.t Program.t [@@deriving compare, hash, sexp]
+  end in
+  let hashable = Hashtbl.Hashable.of_key (module P) in
+  let table = Hash_queue.create hashable in
+  let rec eval_program params p =
+    match Hash_queue.lookup_and_move_to_front table p with
+    | Some v -> v
+    | None ->
+        let (Program.Apply (op, args)) = p in
+        let v = eval params op (List.map args ~f:(eval_program params)) in
+        Hash_queue.enqueue_back_exn table p v;
+        v
+  in
+  eval_program
