@@ -1,4 +1,5 @@
 open! Core
+open Core_profiler.Std_offline
 open Staged_synth
 
 let () = Signal.Expert.handle Signal.int (fun _ -> exit 1)
@@ -8,11 +9,6 @@ let print_header () =
     "k,n,seed,max_cost,abstraction,n_state_nodes,n_arg_nodes,n_covered,n_refuted,min_width,max_width,median_width,check,sat\n"
 
 let csg_cli =
-  let module Search_state = Search_state.Make (Csg) in
-  let module Refine = Interp_refine.Make (Csg) (Search_state) in
-  let module Lazy_cegis = Lazy_cegis.Make (Csg) (Search_state) (Refine) in
-  let run params () = (Lazy_cegis.synth params : Search_state.t) |> ignore in
-
   let open Command.Let_syntax in
   Command.basic ~summary:"Synthesize a CAD program using lazy cegis."
     [%map_open
@@ -22,12 +18,45 @@ let csg_cli =
             let bench_fn = anon ("bench" %: string) in
             Sexp.load_sexp_conv_exn bench_fn [%of_sexp: Csg.Bench.t]]
       in
-      run params]
+      let module Search_state = Search_state.Make (Csg) in
+      let module Refine = Interp_refine.Make (Csg) (Search_state) in
+      let module Probes = struct
+        let fill = None
+      end in
+      let module Lazy_cegis =
+        Lazy_cegis.Make (Csg) (Search_state) (Refine) (Probes)
+      in
+      fun () -> (Lazy_cegis.synth params : Search_state.t) |> ignore]
 
 let cad_cli =
   let module Search_state = Search_state.Make (Cad) in
   let module Refine = Backtrack_refine.Make (Search_state) in
-  let module Lazy_cegis = Lazy_cegis.Make (Cad) (Search_state) (Refine) in
+  let module Probes = struct
+    open Search_state
+
+    let boxes = Probe.create ~name:"boxes" ~units:Profiler_units.Int
+
+    let min_boxes = Probe.create ~name:"min_boxes" ~units:Profiler_units.Int
+
+    let max_boxes = Probe.create ~name:"max_boxes" ~units:Profiler_units.Int
+
+    let median_boxes =
+      Probe.create ~name:"median_boxes" ~units:Profiler_units.Int
+
+    let fill =
+      Option.some @@ fun ss _ ->
+      let n_boxes =
+        G.Fold.V.filter_map (graph ss) ~f:Node.to_state
+        |> List.map ~f:(fun s -> State.state ss s |> List.length)
+        |> List.sort ~compare:[%compare: int]
+      in
+      List.iter n_boxes ~f:(Probe.record boxes);
+      Probe.record min_boxes (List.hd_exn n_boxes);
+      Probe.record max_boxes (List.last_exn n_boxes);
+      Probe.record median_boxes (List.nth_exn n_boxes (List.length n_boxes / 2))
+  end in
+  let module Lazy_cegis = Lazy_cegis.Make (Cad) (Search_state) (Refine) (Probes)
+  in
   let run params () = (Lazy_cegis.synth params : Search_state.t) |> ignore in
 
   let open Command.Let_syntax in

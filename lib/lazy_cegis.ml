@@ -1,3 +1,13 @@
+open Core_profiler.Std_offline
+
+module Probes_intf = struct
+  module type S = sig
+    type search_state
+
+    val fill : (search_state -> int -> unit) option
+  end
+end
+
 module Make
     (Lang : Lang_intf.S)
     (Search_state : Search_state_intf.S
@@ -8,13 +18,25 @@ module Make
     (Refine : Refine_intf.S
                 with type op := Lang.Op.t
                  and module Search_state := Search_state
-                 and module Abs := Lang.Abs) =
+                 and module Abs := Lang.Abs)
+    (Probes : Probes_intf.S with type search_state := Search_state.t) =
 struct
   open Lang
 
   open Cone.Make (Search_state.G)
 
   open Search_state
+
+  (* Profiling probes *)
+  let state_nodes = Probe.create ~name:"state_nodes" ~units:Profiler_units.Int
+
+  let arg_nodes = Probe.create ~name:"arg_nodes" ~units:Profiler_units.Int
+
+  let states = Probe.create ~name:"states" ~units:Profiler_units.Int
+
+  let refinements = Probe.create ~name:"refinements" ~units:Profiler_units.Int
+
+  let fill_probe = Option.value Probes.fill ~default:(fun _ _ -> ())
 
   let did_change f =
     G.reset_changed ();
@@ -130,6 +152,18 @@ struct
 
       let size' = G.nb_vertex @@ graph ss in
 
+      let state_vs = G.Fold.V.filter (graph ss) ~f:Node.is_state in
+      Probe.record state_nodes @@ List.length state_vs;
+      Probe.record arg_nodes
+      @@ (G.Fold.V.filter (graph ss) ~f:Node.is_args |> List.length);
+      Probe.record arg_nodes
+      @@ (G.Fold.V.filter (graph ss) ~f:Node.is_args |> List.length);
+      Probe.record states
+      @@ ( List.map state_vs ~f:(fun v -> Node.to_state_exn v |> State.state ss)
+         |> List.dedup_and_sort ~compare:[%compare: Abs.t]
+         |> List.length );
+      fill_probe ss cost;
+
       Fmt.pr "Filling (cost=%d): size before=%d, after=%d, added %f%%\n%!" cost
         size size'
         Float.(-(100.0 - (of_int size' / of_int size * 100.0))) )
@@ -149,39 +183,6 @@ struct
     in
     fill 1
 
-  module Stats = struct
-    type t = {
-      n_state_nodes : int;
-      n_distinct_state_nodes : int;
-      n_arg_nodes : int;
-      n_roots : int;
-      n_refuted : int;
-      arg_in_degree : int * int * int;
-      refined : int Hashtbl.M(Args).t;
-      ops : Op.t Hashtbl.M(Args).t;
-      overlap : (float * float * float) Hashtbl.M(Args).t;
-      sat : bool;
-    }
-    [@@deriving sexp_of]
-
-    let pp fmt stats = Sexp.pp_hum fmt @@ [%sexp_of: t] stats
-
-    let global =
-      ref
-        {
-          n_state_nodes = -1;
-          n_distinct_state_nodes = -1;
-          n_arg_nodes = -1;
-          n_roots = -1;
-          n_refuted = -1;
-          arg_in_degree = (-1, -1, -1);
-          ops = Hashtbl.create (module Args);
-          refined = Hashtbl.create (module Args);
-          overlap = Hashtbl.create (module Args);
-          sat = false;
-        }
-  end
-
   exception Done of [ `Sat of Op.t Program.t | `Unsat ]
 
   let with_size ss f =
@@ -194,18 +195,11 @@ struct
 
     ret
 
-  let stats_of_list ~compare l =
-    let min = Option.value_exn (List.min_elt l ~compare)
-    and max = Option.value_exn (List.max_elt l ~compare)
-    and median = List.nth_exn (List.sort l ~compare) (List.length l / 2) in
-    (min, max, median)
-
   let refine ss (refinement : Refine.Refinement.t) =
     let new_states =
       Map.to_alist refinement
       |> List.concat_map ~f:(fun (arg_v, { old; new_ }) ->
-             Hashtbl.incr !Stats.global.refined arg_v;
-             Hashtbl.set !Stats.global.ops ~key:arg_v ~data:(Args.op ss arg_v);
+             Probe.record refinements 0;
 
              let cost, type_ =
                let old_state =
@@ -249,53 +243,16 @@ struct
   let refine graph refinement = with_size graph @@ fun g -> refine g refinement
 
   let refute ss target =
-    Stats.global :=
-      { !Stats.global with n_refuted = !Stats.global.n_refuted + 1 };
     match Refine.refine ss target with
     | First r ->
         refine ss r;
-        let n_roots = -1 in
-        Stats.global := { !Stats.global with n_roots };
         true
     | Second p ->
         Fmt.pr "Could not refute: %a" Sexp.pp_hum ([%sexp_of: Op.t Program.t] p);
         raise @@ Done (`Sat p)
 
-  (* let width_stats ss =
-   *   G.Fold.V.filter_map (graph ss)
-   *     ~f:
-   *       (Node.match_
-   *          ~state:(fun s ->
-   *            match State.state ss s with Bool_vector v -> Some v | _ -> None)
-   *          ~args:(fun _ -> None))
-   *   |> List.map ~f:Abs.Bool_vector.width
-   *   |> stats_of_list ~compare:[%compare: int] *)
-
-  let arg_in_degree_stats ss =
-    G.Fold.V.filter (graph ss) ~f:Node.is_args
-    |> List.map ~f:(G.in_degree (graph ss))
-    |> stats_of_list ~compare:[%compare: int]
-
   let synth params =
     let ss = Search_state.create params in
-
-    ( at_exit @@ fun () ->
-      Fmt.pr "%a%!" Stats.pp
-        {
-          !Stats.global with
-          n_state_nodes =
-            G.Fold.V.filter (graph ss) ~f:Node.is_state |> List.length;
-          n_distinct_state_nodes =
-            G.Fold.V.filter_map (graph ss) ~f:(fun v ->
-                if Node.is_state v then
-                  Some (Node.to_state_exn v |> State.state ss)
-                else None)
-            |> List.dedup_and_sort ~compare:[%compare: Abs.t]
-            |> List.length;
-          n_arg_nodes =
-            G.Fold.V.filter (graph ss) ~f:Node.is_args |> List.length;
-          arg_in_degree = arg_in_degree_stats ss;
-        } );
 
     let ops = Bench.ops params.bench in
 

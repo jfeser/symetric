@@ -1,4 +1,9 @@
-type t = bool Map.M(Vector2).t [@@deriving compare, hash, sexp]
+module T = struct
+  type t = bool Map.M(Vector2).t [@@deriving compare, hash, sexp]
+end
+
+include T
+include Comparator.Make (T)
 
 let eval params op args =
   match (op, args) with
