@@ -1,5 +1,4 @@
 open Ternary
-open Geoml
 
 module Make
     (Search_state : Search_state_intf.S
@@ -53,31 +52,17 @@ struct
         if Box.contains b p then
           let open Float in
           let l = b.xmax - b.xmin and h = b.ymax - b.ymin in
+          let xsplit = b.xmin + (l / 2.0) and ysplit = b.ymin + (h / 2.0) in
           [
-            {
-              b with
-              xmax = b.xmin + (l / 2.0) |> round_up;
-              ymax = b.ymin + (h / 2.0) |> round_up;
-            };
-            {
-              b with
-              xmin = b.xmin + (l / 2.0) |> round_down;
-              ymax = b.ymin + (h / 2.0) |> round_up;
-            };
-            {
-              b with
-              xmax = b.xmin + (l / 2.0) |> round_up;
-              ymin = b.ymin + (h / 2.0) |> round_down;
-            };
-            {
-              b with
-              xmin = b.xmin + (l / 2.0) |> round_down;
-              ymin = b.ymin + (h / 2.0) |> round_down;
-            };
+            { b with xmax = xsplit; ymax = ysplit };
+            { b with xmin = xsplit; ymax = ysplit };
+            { b with xmax = xsplit; ymin = ysplit };
+            { b with xmin = xsplit; ymin = ysplit };
           ]
         else [ b ])
 
   let rec refine_args ss counter output args_v =
+    print_s [%message (counter : Vector2.t)];
     let inputs =
       G.succ (graph ss) (Node.of_args args_v) |> List.map ~f:Node.to_state_exn
     in
@@ -91,24 +76,17 @@ struct
             then refine_state ss counter v
             else refine_state ss counter v'
         | _ -> failwith "unexpected inputs" )
-    | Circle c ->
-        let c = Circle.make (Point.make c.center.x c.center.y) c.radius in
+    | (Circle _ | Rect _) as op ->
+        let conc = Cad_conc.eval (params ss) op [] in
         let new_ =
-          State.state ss output |> split counter
+          State.state ss output |> Cad_abs.Boxes.to_list |> split counter
           |> List.filter ~f:(fun b ->
-                 Rectangle.intersects_circle (Box.to_rectangle b) c)
+                 Map.existsi conc ~f:(fun ~key ~data ->
+                     data && Box.contains b key))
+          |> Cad_abs.Boxes.of_list
           |> Set.singleton (module Abs)
         in
 
-        [
-          ( args_v,
-            { old = Set.singleton (module Abs) @@ State.state ss output; new_ }
-          );
-        ]
-    | Rect _ ->
-        let new_ =
-          State.state ss output |> split counter |> Set.singleton (module Abs)
-        in
         [
           ( args_v,
             { old = Set.singleton (module Abs) @@ State.state ss output; new_ }
