@@ -4,7 +4,7 @@ module Make
     (Search_state : Search_state_intf.S
                       with type op = Cad.Op.t
                        and type abs = Cad.Abs.t
-                       and type bench = Cad.Bench.t) =
+                       and type params = Cad.params) =
 struct
   open Cad
   open Search_state
@@ -62,7 +62,6 @@ struct
         else [ b ])
 
   let rec refine_args ss counter output args_v =
-    print_s [%message (counter : Vector2.t)];
     let inputs =
       G.succ (graph ss) (Node.of_args args_v) |> List.map ~f:Node.to_state_exn
     in

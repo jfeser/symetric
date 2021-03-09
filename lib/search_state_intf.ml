@@ -7,7 +7,7 @@ module type S = sig
 
   type abs
 
-  type bench
+  type params
 
   module Args : sig
     type t [@@deriving compare, hash, sexp_of]
@@ -101,9 +101,9 @@ module type S = sig
          and type edge = E.t
   end
 
-  val create : bench Params.t -> t
+  val create : params -> t
 
-  val params : t -> bench Params.t
+  val params : t -> params
 
   val graph : t -> G.t
 

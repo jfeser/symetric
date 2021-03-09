@@ -17,6 +17,7 @@ let csg_cli =
           [%map_open
             let bench_fn = anon ("bench" %: string) in
             Sexp.load_sexp_conv_exn bench_fn [%of_sexp: Csg.Bench.t]]
+          (Command.Param.return ())
       in
       let module Search_state = Search_state.Make (Csg) in
       let module Refine = Interp_refine.Make (Csg) (Search_state) in
@@ -72,6 +73,7 @@ let cad_cli =
           [%map_open
             let bench_fn = anon ("bench" %: string) in
             Sexp.load_sexp_conv_exn bench_fn [%of_sexp: Cad.Bench.t]]
+          Cad_params.cli
       in
       run params]
 

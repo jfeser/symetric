@@ -13,7 +13,7 @@ module Make
     (Search_state : Search_state_intf.S
                       with type op = Lang.Op.t
                        and type abs = Lang.Abs.t
-                       and type bench = Lang.Bench.t
+                       and type params = Lang.params
                        and type type_ = Lang.Type.t)
     (Refine : Refine_intf.S
                 with type op := Lang.Op.t

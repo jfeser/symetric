@@ -9,7 +9,7 @@ module Make (Lang : Lang_intf.S) = struct
 
   type abs = Lang.Abs.t
 
-  type bench = Lang.Bench.t
+  type params = Lang.params
 
   module Edge = struct
     type t = int [@@deriving compare, hash, sexp]
@@ -47,7 +47,7 @@ module Make (Lang : Lang_intf.S) = struct
   end
 
   type t = {
-    params : Lang.Bench.t Params.t;
+    params : Lang.params;
     graph : G.t;
     (* State data *)
     costs : int Option_vector.t;

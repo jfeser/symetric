@@ -8,3 +8,7 @@ module Bench = Csg_bench
 type symb = Csg_symb.t
 
 type bench = Csg_bench.t
+
+type lparams = unit
+
+type params = (bench, lparams) Params.t

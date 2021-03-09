@@ -88,7 +88,7 @@ let to_sexp ~xmax ~ymax (prog, ops) =
     Cad_bench.
       { ops = []; input; output = Map.empty (module Vector2); solution = None }
   in
-  let params = Params.create bench in
+  let params = Params.create bench Cad_params.{ concrete = false } in
   let conc = Program.eval (Cad_conc.eval params) prog in
 
   let output =
@@ -171,7 +171,9 @@ let random ~xmax ~ymax ~size ~nprim ~n =
           output = Map.empty (module Vector2);
           solution = None;
         }
+      Cad_params.{ concrete = false }
   in
+
   let random_program size =
     let nilops =
       List.init nprim ~f:(fun i ->

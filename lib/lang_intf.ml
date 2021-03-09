@@ -1,6 +1,10 @@
 module type S = sig
   type bench
 
+  type lparams
+
+  type params = (bench, lparams) Params.t
+
   type symb
 
   module Type : sig
@@ -30,7 +34,7 @@ module type S = sig
   module Conc : sig
     type t
 
-    val eval : bench Params.t -> Op.t -> t list -> t
+    val eval : params -> Op.t -> t list -> t
   end
 
   module Abs : sig
@@ -38,17 +42,17 @@ module type S = sig
 
     include Comparator.S with type t := t
 
-    val graphviz_pp : bench Params.t -> t Fmt.t
+    val graphviz_pp : params -> t Fmt.t
 
-    val top : bench Params.t -> Type.t -> t
+    val top : params -> Type.t -> t
 
     val contains : t -> Conc.t -> bool
 
     val is_subset : t -> of_:t -> bool
 
-    val eval : bench Params.t -> Op.t -> t list -> t
+    val eval : params -> Op.t -> t list -> t
 
-    val to_symb : bench Params.t -> t -> symb Smt.t
+    val to_symb : params -> t -> symb Smt.t
 
     val roots : t list -> t list
   end
@@ -56,18 +60,17 @@ module type S = sig
   module Symb : sig
     type t = symb [@@deriving sexp_of]
 
-    val create : ?prefix:(int -> string) -> bench Params.t -> Type.t -> t Smt.t
+    val create : ?prefix:(int -> string) -> params -> Type.t -> t Smt.t
 
-    val eval : bench Params.t -> Op.t -> t list -> t Smt.t
+    val eval : params -> Op.t -> t list -> t Smt.t
 
     val equals : t -> t -> Smt.Expr.t
 
-    val of_conc : bench Params.t -> Conc.t -> t
+    val of_conc : params -> Conc.t -> t
 
     val vars : t -> Set.M(Smt.Var).t
 
-    val refine :
-      bench Params.t -> Smt.Expr.t -> Smt.state -> Abs.t -> t -> Set.M(Abs).t
+    val refine : params -> Smt.Expr.t -> Smt.state -> Abs.t -> t -> Set.M(Abs).t
   end
 
   module Bench : sig

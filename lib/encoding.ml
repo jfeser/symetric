@@ -3,7 +3,7 @@ module Make
     (Search_state : Search_state_intf.S
                       with type op = Lang.Op.t
                        and type type_ = Lang.Type.t
-                       and type bench = Lang.Bench.t) =
+                       and type params = Lang.params) =
 struct
   open Lang
   open Search_state

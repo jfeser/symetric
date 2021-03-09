@@ -1,11 +1,12 @@
-type 'b t = {
+type ('a, 'b) t = {
   random_state : (Random.State.t[@sexp.opaque]);
   fresh : (Fresh.t[@sexp.opaque]);
   enable_dump : bool;
   max_cost : int;
   enable_forced_bit_check : bool;
   hide_values : bool;
-  bench : 'b;
+  bench : 'a;
+  lparams : 'b;
   validate : bool;
   state_set : [ `Full | `Roots ];
   cone : [ `Full | `Rand ];
@@ -16,9 +17,11 @@ let default_max_cost = 20
 
 let create ?(enable_dump = false) ?(max_cost = default_max_cost)
     ?(enable_forced_bit_check = false) ?(hide_values = false)
-    ?(validate = false) ?(state_set = `Full) ?(cone = `Full) ?(seed = 0) bench =
+    ?(validate = false) ?(state_set = `Full) ?(cone = `Full) ?(seed = 0) bench
+    lparams =
   {
     bench;
+    lparams;
     fresh = Fresh.create ();
     random_state = Random.State.make [| seed |];
     enable_dump;
@@ -30,7 +33,7 @@ let create ?(enable_dump = false) ?(max_cost = default_max_cost)
     cone;
   }
 
-let cli bench =
+let cli bench lparams =
   let open Command.Let_syntax in
   [%map_open
     let enable_dump =
@@ -44,6 +47,8 @@ let cli bench =
       flag "max-cost"
         (optional_with_default default_max_cost int)
         ~doc:" maximum program cost"
-    and bench = bench in
+    and bench = bench
+    and lparams = lparams in
 
-    create ~enable_dump ~hide_values ~enable_forced_bit_check ~max_cost bench]
+    create ~enable_dump ~hide_values ~enable_forced_bit_check ~max_cost bench
+      lparams]

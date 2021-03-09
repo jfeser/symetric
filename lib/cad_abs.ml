@@ -1,3 +1,5 @@
+open Cad_params
+open Params
 module Boxes = Disj.Make (Box)
 
 module T = struct
@@ -7,8 +9,6 @@ end
 include T
 include Comparator.Make (T)
 
-let concrete = false
-
 let eval_circle params (c : Cad_op.circle) =
   (* (let half_side = Float.(sqrt 2.0 / 4.0 * c.radius) in
    *  Box.create
@@ -17,7 +17,7 @@ let eval_circle params (c : Cad_op.circle) =
    *    ~ymin:Float.(c.center.y - half_side |> round_up)
    *    ~ymax:Float.(c.center.y + half_side |> round_up)
    *  |> Boxes.lift) *)
-  if concrete then
+  if params.lparams.concrete then
     Cad_conc.eval params (Circle c) []
     |> Map.to_alist
     |> List.filter ~f:(fun (_, is_in) -> is_in)
@@ -40,7 +40,7 @@ let eval_rect params (r : Cad_op.rect) =
    *    ~ymin:Float.(c.center.y - half_side |> round_up)
    *    ~ymax:Float.(c.center.y + half_side |> round_up)
    *  |> Boxes.lift) *)
-  if concrete then
+  if params.lparams.concrete then
     Cad_conc.eval params (Rect r) []
     |> Map.to_alist
     |> List.filter ~f:(fun (_, is_in) -> is_in)
