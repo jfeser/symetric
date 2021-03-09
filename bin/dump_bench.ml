@@ -92,11 +92,8 @@ let to_sexp ~xmax ~ymax (prog, ops) =
   let conc = Program.eval (Cad_conc.eval params) prog in
 
   let output =
-    List.init xmax ~f:(fun x ->
-        List.init ymax ~f:(fun y ->
-            let x = Float.of_int x and y = Float.of_int y in
-            if Map.find_exn conc { x; y } then 1 else 0))
-    |> List.concat
+    Cad_bench.points input
+    |> List.map ~f:(fun p -> if Map.find_exn conc p then 1 else 0)
   in
 
   [%sexp_of: Cad_bench.Serial.t]

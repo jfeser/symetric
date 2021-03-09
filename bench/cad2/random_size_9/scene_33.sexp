@@ -1,14 +1,17 @@
 ((ops
-  ((Circle ((id 0) (center ((x 25) (y 7))) (radius 9)))
-   (Rect ((id 1) (lo_left ((x 24) (y 20))) (hi_right ((x 28) (y 28)))))
-   (Rect ((id 2) (lo_left ((x 12) (y 12))) (hi_right ((x 12) (y 12)))))
-   (Rect ((id 3) (lo_left ((x 16) (y 18))) (hi_right ((x 28) (y 21)))))
-   (Circle ((id 4) (center ((x 28) (y 0))) (radius 3))) Union Inter))
+  ((Circle ((id 0) (center ((x 28) (y 5))) (radius 9)))
+   (Rect ((id 1) (lo_left ((x 1) (y 18))) (hi_right ((x 6) (y 22)))))
+   (Circle ((id 2) (center ((x 4) (y 24))) (radius 8)))
+   (Rect ((id 3) (lo_left ((x 15) (y 14))) (hi_right ((x 17) (y 20)))))
+   (Rect ((id 4) (lo_left ((x 3) (y 20))) (hi_right ((x 26) (y 27))))) Union
+   Inter))
  (input ((xmax 30) (ymax 30)))
  (output
   (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+   1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0
+   0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0
    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
@@ -26,25 +29,21 @@
    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-   1 1 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 1 0 0 0 0 0
-   0 0 0 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 1 0 0 0 0 0 0 0 0 1 1 0 0
-   0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 1 0 0 0 0 0 0 0 0 1 1 0 0 0 0 0 0 0 0 0
-   0 0 0 0 0 0 0 0 0 1 1 0 0 0 0 0 0 0 0 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+   0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+   0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
    0 0 0 0 0 0 0 0 0 0 0 0))
  (solution
-  (Apply Union
-   ((Apply Inter
-     ((Apply
-       (Rect ((id 1) (lo_left ((x 24) (y 20))) (hi_right ((x 28) (y 28)))))
-       ())
+  (Apply Inter
+   ((Apply Union
+     ((Apply (Circle ((id 0) (center ((x 28) (y 5))) (radius 9))) ())
       (Apply Union
        ((Apply
-         (Rect ((id 3) (lo_left ((x 16) (y 18))) (hi_right ((x 28) (y 21)))))
+         (Rect ((id 3) (lo_left ((x 15) (y 14))) (hi_right ((x 17) (y 20)))))
          ())
-        (Apply Union
-         ((Apply (Circle ((id 0) (center ((x 25) (y 7))) (radius 9))) ())
-          (Apply
-           (Rect
-            ((id 2) (lo_left ((x 12) (y 12))) (hi_right ((x 12) (y 12)))))
-           ())))))))
-    (Apply (Circle ((id 4) (center ((x 28) (y 0))) (radius 3))) ())))))
+        (Apply
+         (Rect ((id 4) (lo_left ((x 3) (y 20))) (hi_right ((x 26) (y 27)))))
+         ())))))
+    (Apply Inter
+     ((Apply
+       (Rect ((id 1) (lo_left ((x 1) (y 18))) (hi_right ((x 6) (y 22))))) ())
+      (Apply (Circle ((id 2) (center ((x 4) (y 24))) (radius 8))) ())))))))

@@ -20,7 +20,7 @@ type t = {
 let points g =
   List.init g.xmax ~f:(fun x ->
       List.init g.ymax ~f:(fun y ->
-          Vector2.{ x = Float.of_int x; y = Float.of_int y }))
+          Vector2.{ x = Float.of_int x +. 0.5; y = Float.of_int y +. 0.5 }))
   |> List.concat
 
 let of_serial (x : Serial.t) =
