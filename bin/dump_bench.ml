@@ -85,7 +85,8 @@ let sequence_progress bar =
 let to_sexp ~xmax ~ymax (prog, ops) =
   let input = { xmax; ymax } in
   let bench =
-    Cad_bench.{ ops = []; input; output = Map.empty (module Vector2) }
+    Cad_bench.
+      { ops = []; input; output = Map.empty (module Vector2); solution = None }
   in
   let params = Params.create bench in
   let conc = Program.eval (Cad_conc.eval params) prog in
@@ -98,7 +99,8 @@ let to_sexp ~xmax ~ymax (prog, ops) =
     |> List.concat
   in
 
-  [%sexp_of: Cad_bench.Serial.t] Cad_bench.Serial.{ ops; input; output }
+  [%sexp_of: Cad_bench.Serial.t]
+    Cad_bench.Serial.{ ops; input; output; solution = Some prog }
 
 let dump ~xmax ~ymax x = print_s @@ to_sexp ~xmax ~ymax x
 
@@ -147,6 +149,17 @@ let non_trivial params p =
   in
   not ([%compare.equal: Cad_conc.t] v v')
 
+let irreducible params p =
+  let values = Hashtbl.create (module Cad_conc) in
+  let rec eval (Program.Apply (op, args) as p) =
+    let args = List.map ~f:eval args in
+    let out = Cad_conc.eval params op args in
+    Hashtbl.update values out ~f:(fun ps -> p :: Option.value ps ~default:[]);
+    out
+  in
+  (eval p : Cad_conc.t) |> ignore;
+  not @@ Hashtbl.existsi values ~f:(fun ~key:_ ~data:ps -> List.length ps > 1)
+
 let take_while_with_state ~init ~f s =
   Sequence.unfold_with s ~init ~f:(fun st x ->
       match f st x with Some st' -> Yield (x, st') | None -> Done)
@@ -159,6 +172,7 @@ let random ~xmax ~ymax ~size ~nprim ~n =
           ops = [];
           input = { xmax; ymax };
           output = Map.empty (module Vector2);
+          solution = None;
         }
   in
   let random_program size =
@@ -220,7 +234,7 @@ let random ~xmax ~ymax ~size ~nprim ~n =
   |> Sequence.filter ~f:(fun (p, _) ->
          (not (has_empty_inter params p))
          && (not (has_noop params p))
-         && non_trivial params p)
+         && non_trivial params p && irreducible params p)
   |> take_while_with_state
        ~init:(Set.empty (module Cad_conc))
        ~f:(fun seen (prog, _) ->

@@ -57,7 +57,11 @@ let cad_cli =
   end in
   let module Lazy_cegis = Lazy_cegis.Make (Cad) (Search_state) (Refine) (Probes)
   in
-  let run params () = (Lazy_cegis.synth params : Search_state.t) |> ignore in
+  let run params () =
+    (Lazy_cegis.synth params : Search_state.t) |> ignore;
+    Option.iter params.bench.solution ~f:(fun ground_truth ->
+        print_s [%message (ground_truth : Cad_op.t Program.t)])
+  in
 
   let open Command.Let_syntax in
   Command.basic ~summary:"Synthesize a 2D CAD program using lazy cegis."

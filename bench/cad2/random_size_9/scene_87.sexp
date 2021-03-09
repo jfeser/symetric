@@ -1,9 +1,9 @@
 ((ops
-  ((Circle ((id 0) (center ((x 28) (y 28))) (radius 7)))
-   (Rect ((id 1) (lo_left ((x 24) (y 20))) (hi_right ((x 25) (y 29)))))
-   (Circle ((id 2) (center ((x 10) (y 26))) (radius 13)))
-   (Rect ((id 3) (lo_left ((x 20) (y 17))) (hi_right ((x 20) (y 27)))))
-   (Rect ((id 4) (lo_left ((x 4) (y 4))) (hi_right ((x 29) (y 19))))) Union
+  ((Rect ((id 0) (lo_left ((x 20) (y 11))) (hi_right ((x 26) (y 15)))))
+   (Circle ((id 1) (center ((x 24) (y 26))) (radius 13)))
+   (Rect ((id 2) (lo_left ((x 26) (y 22))) (hi_right ((x 26) (y 26)))))
+   (Circle ((id 3) (center ((x 14) (y 27))) (radius 5)))
+   (Rect ((id 4) (lo_left ((x 25) (y 23))) (hi_right ((x 27) (y 29))))) Union
    Inter))
  (input ((xmax 30) (ymax 30)))
  (output
@@ -27,8 +27,24 @@
    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-   0 0 0 0 0 0 0 1 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1
-   1 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+   0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+   0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 1 1 1 0 0 0 0 0 0 0
    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-   0 0 0 0 0 0 0 0 0 0 0 0)))
+   0 0 0 0 0 0 0 0 0 0 0 0))
+ (solution
+  (Apply Inter
+   ((Apply
+     (Rect ((id 2) (lo_left ((x 26) (y 22))) (hi_right ((x 26) (y 26))))) ())
+    (Apply Union
+     ((Apply
+       (Rect ((id 0) (lo_left ((x 20) (y 11))) (hi_right ((x 26) (y 15)))))
+       ())
+      (Apply Union
+       ((Apply Union
+         ((Apply
+           (Rect
+            ((id 4) (lo_left ((x 25) (y 23))) (hi_right ((x 27) (y 29)))))
+           ())
+          (Apply (Circle ((id 3) (center ((x 14) (y 27))) (radius 5))) ())))
+        (Apply (Circle ((id 1) (center ((x 24) (y 26))) (radius 13))) ())))))))))
