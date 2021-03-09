@@ -2,11 +2,13 @@
 opam-version: "2.0"
 depends: [
   "dune" {>= "2.7"}
+  "core_profiler" {>= "v0.14"}
   "core" {>= "v0.14"}
   "ppx_jane" {>= "v0.14"}
-  "base_quickcheck" {>= "v0.14"}
+  "base_quickcheck" {with-test & >= "v0.14"}
   "ocamlgraph"
   "fmt"
+  "progress"
   "odoc" {with-doc}
 ]
 build: [
