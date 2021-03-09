@@ -6,7 +6,9 @@ module Make (A : Abs_intf.S) = struct
   include T
   include Comparator.Make (T)
 
-  let reduce a =
+  let to_list = Fun.id
+
+  let of_list a =
     List.filter a ~f:(fun v ->
         not
           (List.exists a ~f:(fun v' ->
@@ -21,10 +23,11 @@ module Make (A : Abs_intf.S) = struct
     List.for_all a ~f:(fun x ->
         List.exists a' ~f:(fun x' -> A.is_subset x ~of_:x'))
 
-  let lub a b = reduce (a @ b)
+  let lub a b = of_list (a @ b)
 
   let glb a b =
-    List.concat_map a ~f:(fun x -> List.map b ~f:(fun y -> A.glb x y)) |> reduce
+    List.concat_map a ~f:(fun x -> List.map b ~f:(fun y -> A.glb x y))
+    |> of_list
 
   let contains a c = List.exists a ~f:(fun a' -> A.contains a' c)
 

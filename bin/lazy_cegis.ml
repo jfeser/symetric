@@ -47,7 +47,8 @@ let cad_cli =
       Option.some @@ fun ss _ ->
       let n_boxes =
         G.Fold.V.filter_map (graph ss) ~f:Node.to_state
-        |> List.map ~f:(fun s -> State.state ss s |> List.length)
+        |> List.map ~f:(fun s ->
+               State.state ss s |> Cad.Abs.Boxes.to_list |> List.length)
         |> List.sort ~compare:[%compare: int]
       in
       List.iter n_boxes ~f:(Probe.record boxes);

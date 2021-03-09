@@ -48,3 +48,6 @@ let is_unit a = Float.(a.xmax - a.xmin <= 1.0 && a.ymax - a.ymin <= 1.0)
 let to_rectangle b =
   let l = b.xmax -. b.xmin and h = b.ymax -. b.ymin in
   Rectangle.make (Point.make b.xmin b.ymin) l h
+
+let graphviz_pp fmt x =
+  Fmt.pf fmt "[%.0f,%.0f,%.0f,%.0f]" x.xmin x.xmax x.ymin x.ymax

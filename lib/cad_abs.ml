@@ -23,6 +23,7 @@ let eval_circle params (c : Cad_op.circle) =
     |> List.filter ~f:(fun (_, is_in) -> is_in)
     |> List.map ~f:(fun ((p : Vector2.t), _) ->
            Box.create ~approx:false ~xmin:p.x ~xmax:p.x ~ymin:p.y ~ymax:p.y)
+    |> Boxes.of_list
   else
     Box.create ~approx:true
       ~xmin:Float.(c.center.x - c.radius |> round_down)
@@ -45,6 +46,7 @@ let eval_rect params (r : Cad_op.rect) =
     |> List.filter ~f:(fun (_, is_in) -> is_in)
     |> List.map ~f:(fun ((p : Vector2.t), _) ->
            Box.create ~approx:false ~xmin:p.x ~xmax:p.x ~ymin:p.y ~ymax:p.y)
+    |> Boxes.of_list
   else
     Box.create ~approx:false
       ~xmin:Float.(round_down r.lo_left.x)
@@ -98,6 +100,7 @@ let contains a c =
 
 let implies a p =
   let open Ternary in
+  let a = Boxes.to_list a in
   if List.exists a ~f:(fun b -> (not b.Box.approx) && Box.contains b p) then
     True
   else if List.for_all a ~f:(fun b -> not (Box.contains b p)) then False
@@ -105,4 +108,5 @@ let implies a p =
 
 let top _ Cad_type.Scene = Boxes.top
 
-let graphviz_pp _ = failwith "graphviz_pp"
+let graphviz_pp _ =
+  Fmt.hbox @@ Fmt.using Boxes.to_list @@ Fmt.list ~sep:Fmt.sp Box.graphviz_pp

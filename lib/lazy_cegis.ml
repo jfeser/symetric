@@ -196,6 +196,8 @@ struct
     ret
 
   let refine ss (refinement : Refine.Refinement.t) =
+    print_s [%message (refinement : Refine.Refinement.t)];
+
     let new_states =
       Map.to_alist refinement
       |> List.concat_map ~f:(fun (arg_v, { old; new_ }) ->
@@ -231,21 +233,22 @@ struct
     in
 
     fix_up ss;
-
-    let refined_graph =
-      cone (graph ss) @@ List.map ~f:Node.of_state new_states
-    in
-
-    dump_detailed_graph ~suffix:"refined-graph"
-      (* ~separator:(List.mem separator ~equal:[%equal: Node.t]) *)
-      ss refined_graph
+    new_states
 
   let refine graph refinement = with_size graph @@ fun g -> refine g refinement
 
   let refute ss target =
     match Refine.refine ss target with
     | First r ->
-        refine ss r;
+        let pre_refine = cone (graph ss) @@ List.map ~f:Node.of_state target in
+        dump_detailed_graph ~suffix:"prerefine" ss pre_refine;
+
+        let post_refine =
+          let new_states = refine ss r in
+          cone (graph ss) @@ List.map ~f:Node.of_state new_states
+        in
+        dump_detailed_graph ~suffix:"postrefine" ss post_refine;
+
         true
     | Second p ->
         Fmt.pr "Could not refute: %a" Sexp.pp_hum ([%sexp_of: Op.t Program.t] p);
