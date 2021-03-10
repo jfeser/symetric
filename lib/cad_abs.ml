@@ -10,13 +10,6 @@ include T
 include Comparator.Make (T)
 
 let eval_circle params (c : Cad_op.circle) =
-  (* (let half_side = Float.(sqrt 2.0 / 4.0 * c.radius) in
-   *  Box.create
-   *    ~xmin:Float.(c.center.x - half_side |> round_up)
-   *    ~xmax:Float.(c.center.x + half_side |> round_up)
-   *    ~ymin:Float.(c.center.y - half_side |> round_up)
-   *    ~ymax:Float.(c.center.y + half_side |> round_up)
-   *  |> Boxes.lift) *)
   if params.lparams.concrete then
     Cad_conc.eval params (Circle c) []
     |> Map.to_alist
@@ -34,13 +27,6 @@ let eval_circle params (c : Cad_op.circle) =
     |> Boxes.lift
 
 let eval_rect params (r : Cad_op.rect) =
-  (* (let half_side = Float.(sqrt 2.0 / 4.0 * c.radius) in
-   *  Box.create
-   *    ~xmin:Float.(c.center.x - half_side |> round_up)
-   *    ~xmax:Float.(c.center.x + half_side |> round_up)
-   *    ~ymin:Float.(c.center.y - half_side |> round_up)
-   *    ~ymax:Float.(c.center.y + half_side |> round_up)
-   *  |> Boxes.lift) *)
   if params.lparams.concrete then
     Cad_conc.eval params (Rect r) []
     |> Map.to_alist
