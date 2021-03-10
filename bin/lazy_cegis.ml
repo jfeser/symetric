@@ -52,10 +52,13 @@ let cad_cli =
                State.state ss s |> Cad.Abs.Boxes.to_list |> List.length)
         |> List.sort ~compare:[%compare: int]
       in
-      List.iter n_boxes ~f:(Probe.record boxes);
-      Probe.record min_boxes (List.hd_exn n_boxes);
-      Probe.record max_boxes (List.last_exn n_boxes);
-      Probe.record median_boxes (List.nth_exn n_boxes (List.length n_boxes / 2))
+      if List.is_empty n_boxes then ()
+      else (
+        List.iter n_boxes ~f:(Probe.record boxes);
+        Probe.record min_boxes (List.hd_exn n_boxes);
+        Probe.record max_boxes (List.last_exn n_boxes);
+        Probe.record median_boxes
+          (List.nth_exn n_boxes (List.length n_boxes / 2)) )
   end in
   let module Lazy_cegis = Lazy_cegis.Make (Cad) (Search_state) (Refine) (Probes)
   in

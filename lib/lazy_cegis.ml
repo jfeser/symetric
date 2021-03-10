@@ -38,41 +38,8 @@ struct
 
   let fill_probe = Option.value Probes.fill ~default:(fun _ _ -> ())
 
-  let did_change f =
-    G.reset_changed ();
-    let ret = f () in
-    let changed = G.has_changed () in
-    (changed, ret)
-
-  let until_done f =
-    let rec until_done did_work =
-      let did_work' = f () in
-      if did_work' then until_done did_work' else did_work
-    in
-    until_done false
-
-  exception Found_target of State.t list
-
-  let targets = Hash_set.create (module State)
-
-  let _add_target v =
-    Hash_set.add targets v;
-    if Hash_set.length targets >= 1 then (
-      let ts = Hash_set.to_list targets in
-      Hash_set.clear targets;
-      raise (Found_target ts) )
-
-  let add_target _ = ()
-
   let create_hyper_edge ss cost op args =
-    match insert_hyper_edge_if_not_exists ss args op cost with
-    | Some state_v_out ->
-        if
-          Abs.contains
-            (State.state ss state_v_out)
-            (Bench.output (params ss).bench)
-        then add_target state_v_out
-    | None -> ()
+    (insert_hyper_edge_if_not_exists ss args op cost : _) |> ignore
 
   let fold_range ~init ~f lo hi =
     let rec fold_range acc i =
@@ -128,7 +95,14 @@ struct
 
   let fill_cost ss (state_set : State_set.t) ops cost =
     let size = G.nb_vertex @@ graph ss in
-    if cost > 1 then (
+    if cost = 1 then
+      (* Add inputs to the state space graph. *)
+      List.iter ops ~f:(fun op ->
+          if Op.arity op = 0 then
+            let state = Abs.eval (params ss) op [] in
+            (insert_hyper_edge_if_not_exists ss [] op 1 ~state : _ option)
+            |> ignore)
+    else if cost > 1 then (
       let arg_cost = cost - 1 in
 
       List.iter ops ~f:(fun op ->
@@ -175,11 +149,11 @@ struct
 
   let[@landmark "fill"] fill_up_to_cost ss ops cost =
     let rec fill c =
-      if c > cost then false
+      if c > cost then ()
       else
         let states = state_set ss in
-        let changed, () = did_change @@ fun () -> fill_cost ss states ops c in
-        changed || fill (c + 1)
+        fill_cost ss states ops c;
+        fill (c + 1)
     in
     fill 1
 
@@ -196,6 +170,14 @@ struct
     ret
 
   let refine ss (refinement : Refine.Refinement.t) =
+    [%test_pred: Refine.Refinement.t] ~message:"empty refinement"
+      (fun r -> not @@ Map.is_empty r)
+      refinement;
+    [%test_pred: Refine.Refinement.t] ~message:"no-op refinement"
+      (Map.for_all ~f:(fun Refine.Refinement.{ old; new_ } ->
+           not @@ Set.equal old new_))
+      refinement;
+
     print_s [%message (refinement : Refine.Refinement.t)];
 
     let new_states =
@@ -238,150 +220,46 @@ struct
   let refine graph refinement = with_size graph @@ fun g -> refine g refinement
 
   let refute ss target =
-    match Refine.refine ss target with
-    | First r ->
-        let pre_refine = cone (graph ss) @@ List.map ~f:Node.of_state target in
-        dump_detailed_graph ~suffix:"prerefine" ss pre_refine;
+    if List.is_empty target then ()
+    else
+      match Refine.refine ss target with
+      | First r ->
+          let pre_refine =
+            cone (graph ss) @@ List.map ~f:Node.of_state target
+          in
+          dump_detailed_graph ~suffix:"prerefine" ss pre_refine;
 
-        let post_refine =
-          let new_states = refine ss r in
-          cone (graph ss) @@ List.map ~f:Node.of_state new_states
-        in
-        dump_detailed_graph ~suffix:"postrefine" ss post_refine;
-
-        true
-    | Second p ->
-        Fmt.pr "Could not refute: %a" Sexp.pp_hum ([%sexp_of: Op.t Program.t] p);
-        raise @@ Done (`Sat p)
+          let post_refine =
+            let new_states = refine ss r in
+            cone (graph ss) @@ List.map ~f:Node.of_state new_states
+          in
+          dump_detailed_graph ~suffix:"postrefine" ss post_refine
+      | Second p ->
+          Fmt.pr "Could not refute: %a" Sexp.pp_hum
+            ([%sexp_of: Op.t Program.t] p);
+          raise @@ Done (`Sat p)
 
   let synth params =
-    let ss = Search_state.create params in
+    let ss = Search_state.create params
+    and ops = Bench.ops params.bench
+    and output = Bench.output params.bench in
 
-    let ops = Bench.ops params.bench in
-
-    (* Add inputs to the state space graph. *)
-    List.iter ops ~f:(fun op ->
-        if Op.arity op = 0 then
-          let state = Abs.eval params op [] in
-          (insert_hyper_edge_if_not_exists ss [] op 1 ~state : _ option)
-          |> ignore);
-
-    let output = Bench.output params.bench in
-    let _status =
-      try
-        for cost = 1 to params.max_cost do
-          let _changed =
-            until_done @@ fun () ->
-            try
-              let did_change = fill_up_to_cost ss ops cost in
-
-              let did_change =
-                if did_change then
-                  let targets =
-                    G.Fold.V.filter_map (graph ss) ~f:(fun v ->
-                        Node.match_ v
-                          ~args:(fun _ -> None)
-                          ~state:(fun v ->
-                            if
-                              Abs.contains (State.state ss v) output
-                              && State.cost ss v = cost
-                            then Some v
-                            else None))
-                  in
-                  if not (List.is_empty targets) then refute ss targets
-                  else false
-                else false
-              in
-
-              did_change
-            with Found_target state_v -> refute ss state_v
-          in
-          Fmt.pr "Finished cost %d\n%!" cost
-        done;
-        `Unsat
-      with Done status -> status
+    let rec fill cost =
+      if cost > params.max_cost then ()
+      else (
+        fill_up_to_cost ss ops cost;
+        let targets =
+          G.Fold.V.filter_map (graph ss) ~f:(fun v ->
+              Node.match_ v
+                ~args:(fun _ -> None)
+                ~state:(fun v ->
+                  if Abs.contains (State.state ss v) output then Some v
+                  else None))
+        in
+        if List.is_empty targets then fill (cost + 1) else refute ss targets;
+        fill cost )
     in
 
-    (* (match status with `Sat p -> Program.check params p | _ -> ()); *)
+    fill 0;
     ss
-
-  (* let cegis params =
-   *   let rec extract_program ss state_v =
-   *     match
-   *       G.succ (graph ss) @@ Node.of_state state_v |> List.map ~f:Node.to_args_exn
-   *     with
-   *     | args_v :: _ ->
-   *         `Apply
-   *           ( Args.op ss args_v,
-   *             inputs ss args_v |> List.map ~f:(extract_program ss) )
-   *     | _ -> raise_s [%message "expected at least one argument"]
-   *   in
-   * 
-   *   let find_program params =
-   *     let ss = Search_state.create params in
-   * 
-   *     (\* Add inputs to the state space graph. *\)
-   *     List.iter params.bench.ops ~f:(fun op ->
-   *         match Op.type_ op with
-   *         | [], _ ->
-   *             let state = Abs.lift @@ Conc.eval params op [] in
-   *             (insert_hyper_edge_if_not_exists ss [] op 1 ~state : _ option)
-   *             |> ignore
-   *         | _ -> ());
-   * 
-   *     try
-   *       for cost = 1 to params.max_cost do
-   *         print_s [%message "filling" (cost : int)];
-   *         (until_done @@ fun () -> fill_up_to_cost ss params.bench.ops cost : bool)
-   *         |> ignore;
-   *         Fmt.pr "Finished cost %d\n%!" cost
-   *       done;
-   *       None
-   *     with Found_target state_v -> Some (extract_program ss state_v)
-   *   in
-   * 
-   *   let rec eval params (`Apply (op, args)) =
-   *     Conc.eval params op @@ List.map ~f:(eval params) args
-   *   in
-   * 
-   *   let find_counter input output program =
-   *     let out =
-   *       match eval params program with
-   *       | Bool_vector v -> v
-   *       | _ -> failwith "expected a vector"
-   *     in
-   *     let counter_idx =
-   *       Array.find_mapi out ~f:(fun i v ->
-   *           if Bool.(v <> params.bench.output.(i)) then Some i else None)
-   *     in
-   *     match counter_idx with
-   *     | Some i ->
-   *         let input = params.bench.input.(i) :: input
-   *         and output = params.bench.output.(i) :: output in
-   *         Some (input, output)
-   *     | None -> None
-   *   in
-   * 
-   *   let rec loop input output =
-   *     print_s [%message "searching" (List.length input : int)];
-   *     let params' =
-   *       {
-   *         params with
-   *         bench =
-   *           {
-   *             params.bench with
-   *             input = Array.of_list input;
-   *             output = Array.of_list output;
-   *           };
-   *       }
-   *     in
-   *     match find_program params' with
-   *     | Some p -> (
-   *         match find_counter input output p with
-   *         | Some (i', o') -> loop i' o'
-   *         | None -> print_s [%message "found solution" (p : Program.t)] )
-   *     | None -> print_s [%message "no solution"]
-   *   in
-   * 
-   *   loop [] [] *)
 end

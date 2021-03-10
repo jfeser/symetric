@@ -22,10 +22,11 @@ let eval_circle params (c : Cad_op.circle) =
     |> Map.to_alist
     |> List.filter ~f:(fun (_, is_in) -> is_in)
     |> List.map ~f:(fun ((p : Vector2.t), _) ->
-           Box.create ~approx:false ~xmin:p.x ~xmax:p.x ~ymin:p.y ~ymax:p.y)
+           Box.create_closed ~approx:false ~xmin:p.x ~xmax:p.x ~ymin:p.y
+             ~ymax:p.y)
     |> Boxes.of_list
   else
-    Box.create ~approx:true
+    Box.create_closed ~approx:true
       ~xmin:Float.(c.center.x - c.radius |> round_down)
       ~xmax:Float.(c.center.x + c.radius |> round_up)
       ~ymin:Float.(c.center.y - c.radius |> round_down)
@@ -45,10 +46,11 @@ let eval_rect params (r : Cad_op.rect) =
     |> Map.to_alist
     |> List.filter ~f:(fun (_, is_in) -> is_in)
     |> List.map ~f:(fun ((p : Vector2.t), _) ->
-           Box.create ~approx:false ~xmin:p.x ~xmax:p.x ~ymin:p.y ~ymax:p.y)
+           Box.create_closed ~approx:false ~xmin:p.x ~xmax:p.x ~ymin:p.y
+             ~ymax:p.y)
     |> Boxes.of_list
   else
-    Box.create ~approx:false
+    Box.create_closed ~approx:false
       ~xmin:Float.(round_down r.lo_left.x)
       ~xmax:Float.(round_up r.hi_right.x)
       ~ymin:Float.(round_down r.lo_left.y)

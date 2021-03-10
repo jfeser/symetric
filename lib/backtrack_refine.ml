@@ -49,17 +49,7 @@ struct
 
   let split p a =
     List.concat_map a ~f:(fun b ->
-        if Box.contains b p then
-          let open Float in
-          let l = b.xmax - b.xmin and h = b.ymax - b.ymin in
-          let xsplit = b.xmin + (l / 2.0) and ysplit = b.ymin + (h / 2.0) in
-          [
-            { b with xmax = xsplit; ymax = ysplit };
-            { b with xmin = xsplit; ymax = ysplit };
-            { b with xmax = xsplit; ymin = ysplit };
-            { b with xmin = xsplit; ymin = ysplit };
-          ]
-        else [ b ])
+        if Box.contains b p then Box.split b else [ b ])
 
   let rec refine_args ss counter output args_v =
     let inputs =
@@ -68,12 +58,7 @@ struct
     match Args.op ss args_v with
     | Union | Inter -> (
         match inputs with
-        | [ v; v' ] ->
-            if
-              Abs.contains (State.state ss v)
-                (Map.singleton (module Vector2) counter true)
-            then refine_state ss counter v
-            else refine_state ss counter v'
+        | [ v; v' ] -> refine_state ss counter v @ refine_state ss counter v'
         | _ -> failwith "unexpected inputs" )
     | (Circle _ | Rect _) as op ->
         let conc = Cad_conc.eval (params ss) op [] in
