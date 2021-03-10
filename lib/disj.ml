@@ -10,10 +10,9 @@ module Make (A : Abs_intf.S) = struct
 
   let of_list a =
     List.filter a ~f:(fun v ->
-        not
-          (List.exists a ~f:(fun v' ->
-               (not ([%compare.equal: A.t] v v')) && A.is_subset v ~of_:v')))
-    |> List.sort ~compare:[%compare: A.t]
+        List.for_all a ~f:(fun v' ->
+            [%compare.equal: A.t] v v' || not (A.is_subset v ~of_:v')))
+    |> List.dedup_and_sort ~compare:[%compare: A.t]
 
   let top = [ A.top ]
 

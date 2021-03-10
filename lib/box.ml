@@ -113,18 +113,20 @@ let contains a (v : conc) =
   a.xmin <. v.x && a.xmax >. v.x && a.ymin <. v.y && a.ymax >. v.y
 
 let graphviz_pp fmt
-    {
-      xmin = xminv, xminc;
-      xmax = xmaxv, xmaxc;
-      ymin = yminv, yminc;
-      ymax = ymaxv, ymaxc;
-    } =
+    ( {
+        xmin = xminv, xminc;
+        xmax = xmaxv, xmaxc;
+        ymin = yminv, yminc;
+        ymax = ymaxv, ymaxc;
+      } as b ) =
   let pp_c fmt = function
-    | Open -> Fmt.pf fmt "<"
-    | Closed -> Fmt.pf fmt "<="
+    | Open -> Fmt.pf fmt "&lt;"
+    | Closed -> Fmt.pf fmt "&lt;="
   in
-  Fmt.pf fmt "(%.0f%ax%a%.0f & %.0f%ay%a%.0f)" xminv pp_c xminc pp_c xmaxc xmaxv
-    yminv pp_c yminc pp_c ymaxc ymaxv
+  if [%compare.equal: t] b bot then Fmt.pf fmt "⊥"
+  else
+    Fmt.pf fmt "(%.0f%ax%a%.0f &amp; %.0f%ay%a%.0f)" xminv pp_c xminc pp_c xmaxc
+      xmaxv yminv pp_c yminc pp_c ymaxc ymaxv
 
 let split
     ({ xmin = xminv, _; xmax = xmaxv, _; ymin = yminv, _; ymax = ymaxv, _ } as b)

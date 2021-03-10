@@ -59,7 +59,7 @@ let eval_rect params (r : Cad_op.rect) =
 
 let eval_union = Boxes.lub
 
-let eval_inter = Boxes.lub
+let eval_inter = Boxes.glb
 
 let eval params op args =
   match (op, args) with
@@ -98,7 +98,10 @@ let is_subset _ = failwith "is_subset"
 
 let contains a c =
   Map.for_alli c ~f:(fun ~key:v ~data:is_in ->
-      if is_in then Boxes.contains a v else true)
+      if is_in then Boxes.contains a v
+      else
+        Boxes.to_list a
+        |> List.for_all ~f:(fun b -> b.Box.approx || not (Box.contains b v)))
 
 let implies a p =
   let open Ternary in
@@ -111,4 +114,5 @@ let implies a p =
 let top _ Cad_type.Scene = Boxes.top
 
 let graphviz_pp _ =
-  Fmt.hbox @@ Fmt.using Boxes.to_list @@ Fmt.list ~sep:Fmt.sp Box.graphviz_pp
+  Fmt.hbox @@ Fmt.using Boxes.to_list
+  @@ Fmt.list ~sep:(Fmt.any "<br/>") Box.graphviz_pp

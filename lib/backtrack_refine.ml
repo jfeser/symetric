@@ -32,15 +32,13 @@ struct
       else
         Map.merge out expected ~f:(fun ~key:_ -> function
           | `Left _ | `Right _ -> None
-          | `Both (x, x') -> if Bool.(x <> x') then Some x' else None)
-        |> Map.to_alist |> List.map ~f:Tuple.T2.get1
+          | `Both (x, x') -> if Bool.(x <> x') then Some x else None)
+        |> Map.to_alist
     in
     List.init n ~f:(fun _ -> sample_counter ())
 
-  let most_common exs =
-    List.fold_left exs
-      ~init:(Map.empty (module Vector2))
-      ~f:(fun m ->
+  let most_common m exs =
+    List.fold_left exs ~init:(Map.empty m) ~f:(fun m ->
         List.fold ~init:m
           ~f:(Map.update ~f:(function Some ctr -> ctr + 1 | None -> 1)))
     |> Map.to_alist
@@ -88,7 +86,20 @@ struct
 
   let refine ss target =
     try
-      let counter = sample_counters ss target 1000 |> most_common in
+      let module K = struct
+        module T = struct
+          type t = Vector2.t * bool [@@deriving compare, hash, sexp]
+        end
+
+        include T
+        include Comparator.Make (T)
+      end in
+      let counter = sample_counters ss target 1000 |> most_common (module K) in
+      print_s
+        [%message
+          (List.map target ~f:(State.to_message ss) : Sexp.t list)
+            (counter : K.t)];
+      let counter, _ = counter in
       List.concat_map target ~f:(refine_state ss counter)
       |> Map.of_alist_reduce
            (module Args)
