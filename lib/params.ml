@@ -10,6 +10,7 @@ type ('a, 'b) t = {
   validate : bool;
   state_set : [ `Full | `Roots ];
   cone : [ `Full | `Rand ];
+  print_csv : bool;
 }
 [@@deriving sexp_of]
 
@@ -17,8 +18,8 @@ let default_max_cost = 20
 
 let create ?(enable_dump = false) ?(max_cost = default_max_cost)
     ?(enable_forced_bit_check = false) ?(hide_values = false)
-    ?(validate = false) ?(state_set = `Full) ?(cone = `Full) ?(seed = 0) bench
-    lparams =
+    ?(validate = false) ?(state_set = `Full) ?(cone = `Full) ?(seed = 0)
+    ?(print_csv = false) bench lparams =
   {
     bench;
     lparams;
@@ -31,6 +32,7 @@ let create ?(enable_dump = false) ?(max_cost = default_max_cost)
     validate;
     state_set;
     cone;
+    print_csv;
   }
 
 let cli bench lparams =
@@ -47,8 +49,9 @@ let cli bench lparams =
       flag "max-cost"
         (optional_with_default default_max_cost int)
         ~doc:" maximum program cost"
+    and print_csv = flag "csv" no_arg ~doc:" print stats as csv row"
     and bench = bench
     and lparams = lparams in
 
-    create ~enable_dump ~hide_values ~enable_forced_bit_check ~max_cost bench
-      lparams]
+    create ~enable_dump ~hide_values ~enable_forced_bit_check ~max_cost
+      ~print_csv bench lparams]

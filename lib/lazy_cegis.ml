@@ -138,7 +138,7 @@ struct
          |> List.length );
       fill_probe ss cost;
 
-      Fmt.pr "Filling (cost=%d): size before=%d, after=%d, added %f%%\n%!" cost
+      Fmt.epr "Filling (cost=%d): size before=%d, after=%d, added %f%%\n%!" cost
         size size'
         Float.(-(100.0 - (of_int size' / of_int size * 100.0))) )
 
@@ -157,14 +157,15 @@ struct
     in
     fill 1
 
-  exception Done of [ `Sat of Op.t Program.t | `Unsat ]
+  exception Found_solution of Op.t Program.t
 
   let with_size ss f =
     let vsize = G.Fold.V.filter (graph ss) ~f:Node.is_state |> List.length in
     let ret = f ss in
     let vsize' = G.Fold.V.filter (graph ss) ~f:Node.is_state |> List.length in
 
-    Fmt.pr "Pruning: #states before=%d, after=%d, removed %f%%\n%!" vsize vsize'
+    Fmt.epr "Pruning: #states before=%d, after=%d, removed %f%%\n%!" vsize
+      vsize'
       Float.(100.0 - (of_int vsize' / of_int vsize * 100.0));
 
     ret
@@ -177,8 +178,6 @@ struct
       (Map.for_all ~f:(fun Refine.Refinement.{ old; new_ } ->
            not @@ Set.equal old new_))
       refinement;
-
-    print_s [%message (refinement : Refine.Refinement.t)];
 
     let new_states =
       Map.to_alist refinement
@@ -235,9 +234,9 @@ struct
           in
           dump_detailed_graph ~suffix:"postrefine" ss post_refine
       | Second p ->
-          Fmt.pr "Could not refute: %a" Sexp.pp_hum
+          Fmt.epr "Could not refute: %a" Sexp.pp_hum
             ([%sexp_of: Op.t Program.t] p);
-          raise @@ Done (`Sat p)
+          raise @@ Found_solution p
 
   let synth params =
     let ss = Search_state.create params
@@ -260,6 +259,11 @@ struct
         fill cost )
     in
 
-    fill 0;
-    ss
+    let prog =
+      try
+        fill 0;
+        None
+      with Found_solution p -> Some p
+    in
+    (prog, ss)
 end

@@ -47,3 +47,15 @@ let rec eval_program params p =
       let v = eval params op (List.map args ~f:(eval_program params)) in
       Hash_queue.enqueue_back_exn table p v;
       v
+
+let roots _ = failwith "unimplemented roots"
+
+let to_symb _ = failwith "unimplemented to_symb"
+
+let is_subset _ = failwith "unimplemented is_subset"
+
+let contains = [%compare.equal: t]
+
+let graphviz_pp _ = failwith "unimplemented pp"
+
+let top _ = failwith "unimplemented top"

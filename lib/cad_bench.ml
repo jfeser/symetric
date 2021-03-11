@@ -11,6 +11,7 @@ module Serial = struct
 end
 
 type t = {
+  filename : string option;
   ops : Cad_op.t list;
   input : grid;
   output : bool Map.M(Vector2).t;
@@ -23,12 +24,15 @@ let points g =
           Vector2.{ x = Float.of_int x +. 0.5; y = Float.of_int y +. 0.5 }))
   |> List.concat
 
-let of_serial (x : Serial.t) =
+let of_serial ?filename (x : Serial.t) =
   let output =
     List.map2_exn (points x.input) x.output ~f:(fun k v -> (k, v > 0))
     |> Map.of_alist_exn (module Vector2)
   in
-  { ops = x.ops; input = x.input; output; solution = x.solution }
+  { ops = x.ops; input = x.input; output; solution = x.solution; filename }
+
+let load fn =
+  Sexp.load_sexp_conv_exn fn [%of_sexp: Serial.t] |> of_serial ~filename:fn
 
 let t_of_sexp s = [%of_sexp: Serial.t] s |> of_serial
 

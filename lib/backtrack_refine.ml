@@ -105,7 +105,7 @@ struct
         include Comparator.Make (T)
       end in
       let counter = sample_counters ss target 1000 |> most_common (module K) in
-      print_s
+      eprint_s
         [%message
           (List.map target ~f:(State.to_message ss) : Sexp.t list)
             (counter : K.t)];

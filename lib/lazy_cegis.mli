@@ -18,5 +18,5 @@ module Make
                  and module Search_state := Search_state
                  and module Abs := Lang.Abs)
     (Probes : Probes_intf.S with type search_state := Search_state.t) : sig
-  val synth : Lang.params -> Search_state.t
+  val synth : Lang.params -> Lang.Op.t Program.t option * Search_state.t
 end

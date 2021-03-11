@@ -27,7 +27,15 @@ let csg_cli =
       let module Lazy_cegis =
         Lazy_cegis.Make (Csg) (Search_state) (Refine) (Probes)
       in
-      fun () -> (Lazy_cegis.synth params : Search_state.t) |> ignore]
+      fun () -> (Lazy_cegis.synth params : _ * Search_state.t) |> ignore]
+
+let print_csv ~synth ?(bench = "") ~n_states ~time ~max_size ~sol_size
+    ~gold_size =
+  let optional_int x =
+    Option.map x ~f:Int.to_string |> Option.value ~default:""
+  in
+  printf "%s,%d,%s,%d,%f,%s,%s\n" synth max_size bench n_states
+    (Time.Span.to_ms time) (optional_int sol_size) (optional_int gold_size)
 
 let cad_cli =
   let module Search_state = Search_state.Make (Cad) in
@@ -65,10 +73,23 @@ let cad_cli =
   end in
   let module Lazy_cegis = Lazy_cegis.Make (Cad) (Search_state) (Refine) (Probes)
   in
+  let open Search_state in
   let run params () =
-    (Lazy_cegis.synth params : Search_state.t) |> ignore;
-    Option.iter params.bench.solution ~f:(fun ground_truth ->
-        print_s [%message (ground_truth : Cad_op.t Program.t)])
+    let start = Time.now () in
+    let prog, ss = Lazy_cegis.synth params in
+    let end_ = Time.now () in
+    let time = Time.diff end_ start in
+    if params.print_csv then
+      print_csv ?bench:params.bench.filename ~synth:"cad_abs"
+        ~n_states:
+          (G.Fold.V.filter_map (graph ss) ~f:Node.to_state |> List.length)
+        ~time
+        ~sol_size:(Option.map prog ~f:Program.size)
+        ~gold_size:(Option.map params.bench.solution ~f:Program.size)
+        ~max_size:params.max_cost
+    else
+      Option.iter params.bench.solution ~f:(fun ground_truth ->
+          print_s [%message (ground_truth : Cad_op.t Program.t)])
   in
 
   let open Command.Let_syntax in
@@ -78,7 +99,47 @@ let cad_cli =
         Params.cli
           [%map_open
             let bench_fn = anon ("bench" %: string) in
-            Sexp.load_sexp_conv_exn bench_fn [%of_sexp: Cad.Bench.t]]
+            Cad.Bench.load bench_fn]
+          Cad_params.cli
+      in
+      run params]
+
+let cad_concrete_cli =
+  let module Search_state = Search_state.Make (Cad_concrete) in
+  let module Refine = Dummy_refine.Make (Search_state) in
+  let module Probes = struct
+    let fill = None
+  end in
+  let module Lazy_cegis =
+    Lazy_cegis.Make (Cad_concrete) (Search_state) (Refine) (Probes)
+  in
+  let open Search_state in
+  let run params () =
+    let start = Time.now () in
+    let prog, ss = Lazy_cegis.synth params in
+    let end_ = Time.now () in
+    let time = Time.diff end_ start in
+    if params.print_csv then
+      print_csv ?bench:params.bench.filename ~synth:"cad_concrete"
+        ~n_states:
+          (G.Fold.V.filter_map (graph ss) ~f:Node.to_state |> List.length)
+        ~time
+        ~sol_size:(Option.map prog ~f:Program.size)
+        ~gold_size:(Option.map params.bench.solution ~f:Program.size)
+        ~max_size:params.max_cost
+    else
+      Option.iter params.bench.solution ~f:(fun ground_truth ->
+          print_s [%message (ground_truth : Cad_op.t Program.t)])
+  in
+
+  let open Command.Let_syntax in
+  Command.basic ~summary:"Synthesize a 2D CAD program using lazy cegis."
+    [%map_open
+      let params =
+        Params.cli
+          [%map_open
+            let bench_fn = anon ("bench" %: string) in
+            Cad.Bench.load bench_fn]
           Cad_params.cli
       in
       run params]
@@ -90,7 +151,8 @@ let () =
         Command.basic ~summary:"Print stats header."
           (Command.Param.return print_header) );
       ("cad", csg_cli);
-      ("cad2", cad_cli);
+      ("cad-abs", cad_cli);
+      ("cad-concrete", cad_concrete_cli);
       (* ( "random",
        *   Command.basic ~summary:"Run lazy CEGIS on a random testcase."
        *     [%map_open
