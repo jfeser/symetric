@@ -49,31 +49,41 @@ struct
     List.concat_map a ~f:(fun b ->
         if Box.contains b p then Box.split b else [ b ])
 
-  let rec refine_args ss counter output args_v =
+  let rec refine_args ss p output args_v =
     let inputs =
       G.succ (graph ss) (Node.of_args args_v) |> List.map ~f:Node.to_state_exn
     in
     match Args.op ss args_v with
     | Union | Inter -> (
         match inputs with
-        | [ v; v' ] -> refine_state ss counter v @ refine_state ss counter v'
+        | [ v; v' ] -> refine_state ss p v @ refine_state ss p v'
         | _ -> failwith "unexpected inputs" )
     | (Circle _ | Rect _) as op ->
         let conc = Cad_conc.eval (params ss) op [] in
+        let old = State.state ss output in
         let new_ =
-          State.state ss output |> Cad_abs.Boxes.to_list |> split counter
-          |> List.filter ~f:(fun b ->
-                 Map.existsi conc ~f:(fun ~key ~data ->
-                     data && Box.contains b key))
-          |> Cad_abs.Boxes.of_list
-          |> Set.singleton (module Abs)
+          let module Boxes = Cad_abs.Boxes in
+          if Map.find_exn conc p then
+            let lower =
+              Boxes.of_list
+              @@ Box.create_closed ~xmin:p.x ~xmax:p.x ~ymin:p.y ~ymax:p.y
+                 :: Boxes.to_list old.lower
+            in
+            { old with lower }
+          else
+            let upper =
+              Cad_abs.Boxes.to_list old.upper
+              |> split p
+              |> List.filter ~f:(fun b ->
+                     Map.existsi conc ~f:(fun ~key ~data ->
+                         data && Box.contains b key))
+              |> Cad_abs.Boxes.of_list
+            in
+            { old with upper }
         in
-
-        [
-          ( args_v,
-            { old = Set.singleton (module Abs) @@ State.state ss output; new_ }
-          );
-        ]
+        let new_ = Set.singleton (module Abs) new_
+        and old = Set.singleton (module Abs) old in
+        [ (args_v, { old; new_ }) ]
 
   and refine_state ss counter state_v =
     let abs = State.state ss state_v in

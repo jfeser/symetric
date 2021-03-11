@@ -3,7 +3,7 @@ open Params
 module Boxes = Disj.Make (Box)
 
 module T = struct
-  type t = Boxes.t [@@deriving compare, hash, sexp]
+  type t = { upper : Boxes.t; lower : Boxes.t } [@@deriving compare, hash, sexp]
 end
 
 include T
@@ -11,41 +11,56 @@ include Comparator.Make (T)
 
 let eval_circle params (c : Cad_op.circle) =
   if params.lparams.concrete then
-    Cad_conc.eval params (Circle c) []
-    |> Map.to_alist
-    |> List.filter ~f:(fun (_, is_in) -> is_in)
-    |> List.map ~f:(fun ((p : Vector2.t), _) ->
-           Box.create_closed ~approx:false ~xmin:p.x ~xmax:p.x ~ymin:p.y
-             ~ymax:p.y)
-    |> Boxes.of_list
+    let lower =
+      Cad_conc.eval params (Circle c) []
+      |> Map.to_alist
+      |> List.filter ~f:(fun (_, is_in) -> is_in)
+      |> List.map ~f:(fun ((p : Vector2.t), _) ->
+             Box.create_closed ~xmin:p.x ~xmax:p.x ~ymin:p.y ~ymax:p.y)
+      |> Boxes.of_list
+    in
+    { lower; upper = Boxes.top }
   else
-    Box.create_closed ~approx:true
-      ~xmin:Float.(c.center.x - c.radius |> round_down)
-      ~xmax:Float.(c.center.x + c.radius |> round_up)
-      ~ymin:Float.(c.center.y - c.radius |> round_down)
-      ~ymax:Float.(c.center.y + c.radius |> round_up)
-    |> Boxes.lift
+    let upper =
+      Box.create_closed
+        ~xmin:Float.(c.center.x - c.radius |> round_down)
+        ~xmax:Float.(c.center.x + c.radius |> round_up)
+        ~ymin:Float.(c.center.y - c.radius |> round_down)
+        ~ymax:Float.(c.center.y + c.radius |> round_up)
+      |> Boxes.lift
+    in
+    { upper; lower = Boxes.bot }
 
 let eval_rect params (r : Cad_op.rect) =
   if params.lparams.concrete then
-    Cad_conc.eval params (Rect r) []
-    |> Map.to_alist
-    |> List.filter ~f:(fun (_, is_in) -> is_in)
-    |> List.map ~f:(fun ((p : Vector2.t), _) ->
-           Box.create_closed ~approx:false ~xmin:p.x ~xmax:p.x ~ymin:p.y
-             ~ymax:p.y)
-    |> Boxes.of_list
+    let lower =
+      Cad_conc.eval params (Rect r) []
+      |> Map.to_alist
+      |> List.filter ~f:(fun (_, is_in) -> is_in)
+      |> List.map ~f:(fun ((p : Vector2.t), _) ->
+             Box.create_closed ~xmin:p.x ~xmax:p.x ~ymin:p.y ~ymax:p.y)
+      |> Boxes.of_list
+    in
+    { lower; upper = Boxes.top }
   else
-    Box.create_closed ~approx:false
-      ~xmin:Float.(round_down r.lo_left.x)
-      ~xmax:Float.(round_up r.hi_right.x)
-      ~ymin:Float.(round_down r.lo_left.y)
-      ~ymax:Float.(round_up r.hi_right.y)
-    |> Boxes.lift
+    let boxes =
+      Box.create_closed
+        ~xmin:Float.(round_down r.lo_left.x)
+        ~xmax:Float.(round_up r.hi_right.x)
+        ~ymin:Float.(round_down r.lo_left.y)
+        ~ymax:Float.(round_up r.hi_right.y)
+      |> Boxes.lift
+    in
+    { upper = boxes; lower = boxes }
 
-let eval_union = Boxes.lub
+let eval_union { upper = u; lower = l } { upper = u'; lower = l' } =
+  {
+    upper = Boxes.lub u u';
+    lower = Boxes.to_list l @ Boxes.to_list l' |> Boxes.of_list;
+  }
 
-let eval_inter = Boxes.glb
+let eval_inter { upper = u; lower = l } { upper = u'; lower = l' } =
+  { upper = Boxes.glb u u'; lower = Boxes.glb l l' }
 
 let eval params op args =
   match (op, args) with
@@ -84,21 +99,21 @@ let is_subset _ = failwith "is_subset"
 
 let contains a c =
   Map.for_alli c ~f:(fun ~key:v ~data:is_in ->
-      if is_in then Boxes.contains a v
-      else
-        Boxes.to_list a
-        |> List.for_all ~f:(fun b -> b.Box.approx || not (Box.contains b v)))
+      if is_in then Boxes.contains a.upper v else not (Boxes.contains a.lower v))
 
 let implies a p =
   let open Ternary in
-  let a = Boxes.to_list a in
-  if List.exists a ~f:(fun b -> (not b.Box.approx) && Box.contains b p) then
+  if Boxes.to_list a.lower |> List.exists ~f:(fun b -> Box.contains b p) then
     True
-  else if List.for_all a ~f:(fun b -> not (Box.contains b p)) then False
+  else if
+    Boxes.to_list a.upper |> List.for_all ~f:(fun b -> not (Box.contains b p))
+  then False
   else Maybe
 
-let top _ Cad_type.Scene = Boxes.top
+let top _ Cad_type.Scene = { upper = Boxes.top; lower = Boxes.bot }
 
-let graphviz_pp _ =
-  Fmt.hbox @@ Fmt.using Boxes.to_list
-  @@ Fmt.list ~sep:(Fmt.any "<br/>") Box.graphviz_pp
+let graphviz_pp _ fmt { lower; upper } =
+  let pp_boxes =
+    Fmt.using Boxes.to_list @@ Fmt.list ~sep:(Fmt.any "<br/>") Box.graphviz_pp
+  in
+  Fmt.pf fmt "@[<h>%a<br/><br/>%a@]" pp_boxes upper pp_boxes lower

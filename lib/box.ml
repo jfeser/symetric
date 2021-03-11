@@ -9,7 +9,6 @@ type t = {
   xmax : float * is_open;
   ymin : float * is_open;
   ymax : float * is_open;
-  approx : bool;
 }
 [@@deriving compare, hash, sexp]
 
@@ -21,7 +20,6 @@ let top =
     xmax = Float.(infinity, Closed);
     ymin = Float.(-infinity, Closed);
     ymax = Float.(infinity, Closed);
-    approx = true;
   }
 
 let bot =
@@ -30,7 +28,6 @@ let bot =
     xmax = (0.0, Closed);
     ymin = (1.0, Closed);
     ymax = (0.0, Closed);
-    approx = true;
   }
 
 let ( <= ) (v, c) (v', c') =
@@ -75,11 +72,11 @@ let%test_unit "" =
           test_le (0.0, c) (1.0, c') true;
           test_le (1.0, c) (0.0, c') false))
 
-let create ?(approx = true) ~xmin ~xmax ~ymin ~ymax =
-  let ret = { xmin; xmax; ymin; ymax; approx } in
+let create ~xmin ~xmax ~ymin ~ymax =
+  let ret = { xmin; xmax; ymin; ymax } in
   if is_empty ret then bot else ret
 
-let create_closed ?(approx = true) ~xmin ~xmax ~ymin ~ymax =
+let create_closed ~xmin ~xmax ~ymin ~ymax =
   if Float.(xmin > xmax || ymin > ymax) then bot
   else
     {
@@ -87,7 +84,6 @@ let create_closed ?(approx = true) ~xmin ~xmax ~ymin ~ymax =
       xmax = (xmax, Closed);
       ymin = (ymin, Closed);
       ymax = (ymax, Closed);
-      approx;
     }
 
 let is_subset a ~of_:b =
@@ -97,11 +93,11 @@ let is_subset a ~of_:b =
   b.xmin <= a.xmin && a.xmax <= b.xmax && b.ymin <= a.ymin && a.ymax <= b.ymax
 
 let lub a b =
-  create ~approx:true ~xmin:(min a.xmin b.xmin) ~xmax:(max a.xmax b.xmax)
+  create ~xmin:(min a.xmin b.xmin) ~xmax:(max a.xmax b.xmax)
     ~ymin:(min a.ymin b.ymin) ~ymax:(max a.ymax b.ymax)
 
 let glb a b =
-  create ~approx:true ~xmin:(max a.xmin b.xmin) ~xmax:(min a.xmax b.xmax)
+  create ~xmin:(max a.xmin b.xmin) ~xmax:(min a.xmax b.xmax)
     ~ymin:(max a.ymin b.ymin) ~ymax:(min a.ymax b.ymax)
 
 let contains a (v : conc) =
@@ -140,6 +136,3 @@ let split
     { b with xmax = (xsplit, Open); ymin = (ysplit, Closed) };
     { b with xmin = (xsplit, Closed); ymin = (ysplit, Closed) };
   ]
-  |> List.map ~f:(fun b ->
-         let approx = l > 1.0 || h > 1.0 in
-         { b with approx })

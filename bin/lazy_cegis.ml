@@ -48,8 +48,11 @@ let cad_cli =
       Option.some @@ fun ss _ ->
       let n_boxes =
         G.Fold.V.filter_map (graph ss) ~f:Node.to_state
-        |> List.map ~f:(fun s ->
-               State.state ss s |> Cad.Abs.Boxes.to_list |> List.length)
+        |> List.concat_map ~f:(fun s ->
+               let st = State.state ss s in
+               let lu = st.upper |> Cad.Abs.Boxes.to_list |> List.length in
+               let ll = st.lower |> Cad.Abs.Boxes.to_list |> List.length in
+               [ lu; ll ])
         |> List.sort ~compare:[%compare: int]
       in
       if List.is_empty n_boxes then ()
