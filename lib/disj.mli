@@ -13,6 +13,8 @@ module Make (A : Abs_intf.S) : sig
 
   val is_subset : t -> of_:t -> bool
 
+  val is_superset : t -> of_:t -> bool
+
   val lub : t -> t -> t
 
   val glb : t -> t -> t
