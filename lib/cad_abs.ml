@@ -119,5 +119,3 @@ let graphviz_pp _ fmt { lower; upper } =
     Fmt.using Boxes.to_list @@ Fmt.list ~sep:(Fmt.any "<br/>") Box.graphviz_pp
   in
   Fmt.pf fmt "@[<h>%a<br/><br/>%a@]" pp_boxes upper pp_boxes lower
-
-let equiv 

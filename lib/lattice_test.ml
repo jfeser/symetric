@@ -87,6 +87,26 @@ module Make (L : Lattice_intf.S) = struct
       ~f:(fun a -> [%test_result: L.t] ~expect:a @@ L.glb a a)
       (module L)
 
+  let%test_unit {|forall a. a \/ top = top|} =
+    Test.run_exn
+      ~f:(fun a -> [%test_result: L.t] ~expect:L.top @@ L.lub a L.top)
+      (module L)
+
+  let%test_unit {|forall a. a /\ top = a|} =
+    Test.run_exn
+      ~f:(fun a -> [%test_result: L.t] ~expect:a @@ L.glb a L.top)
+      (module L)
+
+  let%test_unit {|forall a. a \/ bot = a|} =
+    Test.run_exn
+      ~f:(fun a -> [%test_result: L.t] ~expect:a @@ L.lub a L.bot)
+      (module L)
+
+  let%test_unit {|forall a. a /\ bot = bot|} =
+    Test.run_exn
+      ~f:(fun a -> [%test_result: L.t] ~expect:L.bot @@ L.glb a L.bot)
+      (module L)
+
   let%test_unit {|join absorbs meet: forall a,b. a \/ (a /\ b) = a|} =
     Test.run_exn
       ~f:(fun (a, b) -> [%test_result: L.t] ~expect:a @@ L.lub a (L.glb a b))
