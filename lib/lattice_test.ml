@@ -166,5 +166,3 @@ module Make (L : Lattice_intf.S) = struct
    *       Prop.assume (L.leq a b);
    *       L.(eq (meet a b) a)) *)
 end
-
-module B = Make (Box)

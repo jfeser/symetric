@@ -1,6 +1,8 @@
+open Base_quickcheck
+
 module Make (A : Abs_intf.S) = struct
   module T = struct
-    type t = A.t list [@@deriving compare, hash, sexp]
+    type t = A.t list [@@deriving compare, hash, sexp, quickcheck]
   end
 
   include T
@@ -11,21 +13,19 @@ module Make (A : Abs_intf.S) = struct
   let of_list a =
     List.filter a ~f:(fun v ->
         List.for_all a ~f:(fun v' ->
-            [%compare.equal: A.t] v v' || not (A.is_subset v ~of_:v')))
+            [%compare.equal: A.t] v v' || not (A.leq v v')))
     |> List.filter ~f:(fun x -> not @@ [%compare.equal: A.t] x A.bot)
     |> List.dedup_and_sort ~compare:[%compare: A.t]
+
+  let quickcheck_generator =
+    [%quickcheck.generator: A.t list] |> Generator.map ~f:of_list
 
   let top = [ A.top ]
 
   let bot = []
 
-  let is_subset a ~of_:a' =
-    List.for_all a ~f:(fun x ->
-        List.exists a' ~f:(fun x' -> A.is_subset x ~of_:x'))
-
-  let is_superset a ~of_:a' =
-    List.for_all a' ~f:(fun x' ->
-        List.exists a ~f:(fun x -> A.is_subset x' ~of_:x))
+  let leq a a' =
+    List.for_all a ~f:(fun x -> List.exists a' ~f:(fun x' -> A.leq x x'))
 
   let lub a b = of_list (a @ b)
 
@@ -36,4 +36,7 @@ module Make (A : Abs_intf.S) = struct
   let contains a c = List.exists a ~f:(fun a' -> A.contains a' c)
 
   let lift x = [ x ]
+
+  let quickcheck_generator_leq a =
+    Generator.list_filtered a |> Generator.map ~f:of_list
 end

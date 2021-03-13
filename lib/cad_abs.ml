@@ -96,8 +96,7 @@ let roots _ = failwith "roots"
 let to_symb _ = failwith "to_symb"
 
 let is_subset a ~of_:a' =
-  Boxes.is_subset a.upper ~of_:a'.upper
-  && Boxes.is_superset a.lower ~of_:a'.lower
+  Boxes.leq a.upper a'.upper && Boxes.leq a'.lower a.lower
 
 let contains a c =
   Map.for_alli c ~f:(fun ~key:v ~data:is_in ->
