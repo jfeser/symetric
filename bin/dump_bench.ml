@@ -167,7 +167,7 @@ let take_while_with_state ~init ~f s =
   Sequence.unfold_with s ~init ~f:(fun st x ->
       match f st x with Some st' -> Yield (x, st') | None -> Done)
 
-let random ~xmax ~ymax ~size ~nprim ~n =
+let random ~xmax ~ymax ~size ~nprim ~n k =
   let params =
     Params.create
       Cad_bench.
@@ -248,9 +248,9 @@ let random ~xmax ~ymax ~size ~nprim ~n =
            let out = Cad_conc.eval_program params prog in
            if Set.mem seen out then Some seen else Some (Set.add seen out)
          else None)
-  |> sequence_progress unique_programs
+  |> sequence_progress unique_progs
   |> Sequence.map ~f:(to_sexp ~xmax ~ymax)
-  |> Sequence.force_eagerly
+  |> k
 
 let circles_and_rects_unsat =
   let ([ c1; c2; c3 ] as circs) =
@@ -283,4 +283,4 @@ let dumps ~dir ~prefix seq =
 let () =
   Random.init 0;
   random ~xmax:30 ~ymax:30 ~size:11 ~nprim:6 ~n:100
-  |> dumps ~dir:"bench/cad2/random_size_11" ~prefix:"scene"
+  @@ dumps ~dir:"bench/cad2/random_size_11" ~prefix:"scene"
