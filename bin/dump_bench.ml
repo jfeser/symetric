@@ -210,37 +210,40 @@ let random ~xmax ~ymax ~size ~nprim ~n k =
     in
     let binops = [ Union; Inter ] in
 
-    let exception Bad_size in
     let rec random_tree size =
-      if size <= 0 then raise Bad_size
-      else if size = 1 then
+      [%test_pred: int] (fun size -> size > 0) size;
+      if size = 1 then
         let op = List.random_element_exn nilops in
-        Program.Apply (op, [])
-      else if size = 2 then raise Bad_size
+        Some (Program.Apply (op, []))
+      else if size = 2 then None
       else
         let op = List.random_element_exn binops in
-        let s = random_int 1 (size - 1) in
-        let s' = size - 1 - s in
-        let p = random_tree s and p' = random_tree s' in
-        Apply (op, [ p; p' ])
+        Combinat.(Composition.(create ~n:(size - 1) ~k:2 |> to_list))
+        |> List.permute
+        |> List.find_map ~f:(fun ss ->
+               let s = Combinat.Int_array.get ss 0
+               and s' = Combinat.Int_array.get ss 1 in
+               let open Option.Let_syntax in
+               let%bind p = random_tree s and p' = random_tree s' in
+               return @@ Program.Apply (op, [ p; p' ]))
     in
-    try
-      let prog = random_tree size and ops = nilops @ binops in
-      Some (prog, ops)
-    with Bad_size -> None
+    let prog = Option.value_exn (random_tree size) and ops = nilops @ binops in
+    (prog, ops)
   in
   Progress.(
     with_reporters
-      (bar "samples" / bar "programs" / tbar "unique_programs" (Int64.of_int n)))
-  @@ fun ((samples, programs), unique_programs) ->
+      ( bar "samples" / bar "non-trivial programs" / bar "irreducible programs"
+      / tbar "unique programs" (Int64.of_int n) ))
+  @@ fun (((samples, non_trivial_progs), irreducible_progs), unique_progs) ->
   Sequence.unfold ~init:() ~f:(fun () -> Some (random_program size, ()))
   |> sequence_progress samples
-  |> Sequence.filter_map ~f:Fun.id
-  |> sequence_progress programs
   |> Sequence.filter ~f:(fun (p, _) ->
          (not (has_empty_inter params p))
          && (not (has_noop params p))
-         && non_trivial params p && irreducible params p)
+         && non_trivial params p)
+  |> sequence_progress non_trivial_progs
+  |> Sequence.filter ~f:(fun (p, _) -> irreducible params p)
+  |> sequence_progress irreducible_progs
   |> take_while_with_state
        ~init:(Set.empty (module Cad_conc))
        ~f:(fun seen (prog, _) ->
