@@ -86,7 +86,13 @@ let to_sexp ~xmax ~ymax (prog, ops) =
   let input = { xmax; ymax } in
   let bench =
     Cad_bench.
-      { ops = []; input; output = Map.empty (module Vector2); solution = None }
+      {
+        ops = [];
+        input;
+        output = Map.empty (module Vector2);
+        solution = None;
+        filename = None;
+      }
   in
   let params = Params.create bench Cad_params.{ concrete = false } in
   let conc = Program.eval (Cad_conc.eval params) prog in
@@ -170,6 +176,7 @@ let random ~xmax ~ymax ~size ~nprim ~n =
           input = { xmax; ymax };
           output = Map.empty (module Vector2);
           solution = None;
+          filename = None;
         }
       Cad_params.{ concrete = false }
   in
@@ -275,5 +282,5 @@ let dumps ~dir ~prefix seq =
 
 let () =
   Random.init 0;
-  random ~xmax:30 ~ymax:30 ~size:9 ~nprim:5 ~n:100
-  |> dumps ~dir:"bench/cad2/random_size_9" ~prefix:"scene"
+  random ~xmax:30 ~ymax:30 ~size:11 ~nprim:6 ~n:100
+  |> dumps ~dir:"bench/cad2/random_size_11" ~prefix:"scene"
