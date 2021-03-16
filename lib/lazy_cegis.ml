@@ -53,7 +53,7 @@ struct
   let roots ss =
     let is_subset v ~of_:v' =
       State.cost ss v = State.cost ss v'
-      && Abs.is_subset (State.state ss v) ~of_:(State.state ss v')
+      && Abs.leq (State.state ss v) (State.state ss v')
     in
     G.Fold.V.filter_map (graph ss)
       ~f:(Node.match_ ~state:Option.return ~args:(fun _ -> None))

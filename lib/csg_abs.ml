@@ -140,6 +140,8 @@ let is_subset a ~of_:a' =
   | Offset x, Offset x' -> Offset.is_subset x ~of_:x'
   | _ -> false
 
+let leq a a' = is_subset a ~of_:a'
+
 let meet a a' =
   match (a, a') with
   | Bool_vector a, Bool_vector a' -> bool_vector @@ Bool_vector.meet a a'

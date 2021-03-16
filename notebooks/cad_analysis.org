@@ -3,26 +3,29 @@
 #+begin_src python 
   import pandas as pd
 
-  df = pd.read_csv('../results.csv', header=None, names = ['synth', 'max_size', 'bench', 'n_states', 'time', 'sol_size', 'gold_size', 'n_args', 'total_arg_in_degree'])
+  header = ['synth', 'max_size', 'bench', 'n_states', 'n_distinct_states',
+            'n_roots',
+            'time', 'sol_size', 'gold_size', 'n_args', 'total_arg_in_degree']
+  df = pd.read_csv('../results.csv', header=None, names = header)
   print(df)
 #+end_src
 
 #+RESULTS:
 #+begin_example
             synth  max_size  ... n_args  total_arg_in_degree
-0         cad_abs         9  ...    435                  435
-1         cad_abs         9  ...   1997                 1997
-2         cad_abs         9  ...     55                   55
-3         cad_abs         9  ...    495                  495
-4         cad_abs         9  ...    455                  455
+0         cad_abs         9  ...     55                   55
+1         cad_abs         9  ...    435                  435
+2         cad_abs         9  ...    455                  455
+3         cad_abs         9  ...    435                  435
+4         cad_abs         9  ...   1977                 1977
 ..            ...       ...  ...    ...                  ...
-195  cad_concrete         9  ...  11393                11393
+195  cad_concrete         9  ...   6995                 6995
 196  cad_concrete         9  ...  14695                14695
-197  cad_concrete         9  ...  11069                11069
-198  cad_concrete         9  ...   9263                 9263
+197  cad_concrete         9  ...   9263                 9263
+198  cad_concrete         9  ...  11069                11069
 199  cad_concrete         9  ...  13571                13571
 
-[200 rows x 9 columns]
+[200 rows x 11 columns]
 #+end_example
 
   
@@ -33,12 +36,30 @@
     print('Conc median nodes: ', df[df['synth'] == 'cad_concrete']['n_states'].median())
     print('Abs  max nodes:    ', df[df['synth'] == 'cad_abs']['n_states'].max())
     print('Conc max nodes:    ', df[df['synth'] == 'cad_concrete']['n_states'].max())
+
     print('Abs  min time:     ', df[df['synth'] == 'cad_abs']['time'].min())
     print('Conc min time:     ', df[df['synth'] == 'cad_concrete']['time'].min())
     print('Abs  median time:  ', df[df['synth'] == 'cad_abs']['time'].median())
     print('Conc median time:  ', df[df['synth'] == 'cad_concrete']['time'].median())
     print('Abs  max time:     ', df[df['synth'] == 'cad_abs']['time'].max())
     print('Conc max time:     ', df[df['synth'] == 'cad_concrete']['time'].max())
+
+    field = 'n_distinct_states'
+    print('Abs  min nodes:    ', df[df['synth'] == 'cad_abs'][field].min())
+    print('Conc min nodes:    ', df[df['synth'] == 'cad_concrete'][field].min())
+    print('Abs  median nodes: ', df[df['synth'] == 'cad_abs'][field].median())
+    print('Conc median nodes: ', df[df['synth'] == 'cad_concrete'][field].median())
+    print('Abs  max nodes:    ', df[df['synth'] == 'cad_abs'][field].max())
+    print('Conc max nodes:    ', df[df['synth'] == 'cad_concrete'][field].max())
+
+    field = 'n_roots'
+    print('Abs  min nodes:    ', df[df['synth'] == 'cad_abs'][field].min())
+    print('Conc min nodes:    ', df[df['synth'] == 'cad_concrete'][field].min())
+    print('Abs  median nodes: ', df[df['synth'] == 'cad_abs'][field].median())
+    print('Conc median nodes: ', df[df['synth'] == 'cad_concrete'][field].median())
+    print('Abs  max nodes:    ', df[df['synth'] == 'cad_abs'][field].max())
+    print('Conc max nodes:    ', df[df['synth'] == 'cad_concrete'][field].max())
+
 #+end_src
 
 #+RESULTS:
@@ -49,10 +70,22 @@ Abs  median nodes:  121.0
 Conc median nodes:  93.5
 Abs  max nodes:     840
 Conc max nodes:     643
-Abs  min time:      7.207632
-Conc min time:      40.820599
-Abs  median time:   305.8800695
-Conc median time:   863.9519215
-Abs  max time:      2161.5428920000004
-Conc max time:      6953.135014
+Abs  min time:      11.487484
+Conc min time:      44.450759999999995
+Abs  median time:   341.15254849999997
+Conc median time:   887.822032
+Abs  max time:      2134.096384
+Conc max time:      7362.584829
+Abs  min nodes:     17
+Conc min nodes:     17
+Abs  median nodes:  89.0
+Conc median nodes:  48.0
+Abs  max nodes:     462
+Conc max nodes:     338
+Abs  min nodes:     2
+Conc min nodes:     17
+Abs  median nodes:  12.0
+Conc median nodes:  48.0
+Abs  max nodes:     65
+Conc max nodes:     338
 #+end_example

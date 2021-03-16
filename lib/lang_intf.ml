@@ -48,7 +48,7 @@ module type S = sig
 
     val contains : t -> Conc.t -> bool
 
-    val is_subset : t -> of_:t -> bool
+    val leq : t -> t -> bool
 
     val eval : params -> Op.t -> t list -> t
 

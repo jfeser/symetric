@@ -95,8 +95,7 @@ let roots _ = failwith "roots"
 
 let to_symb _ = failwith "to_symb"
 
-let is_subset a ~of_:a' =
-  Boxes.leq a.upper a'.upper && Boxes.leq a'.lower a.lower
+let leq a a' = Boxes.leq a.upper a'.upper && Boxes.leq a'.lower a.lower
 
 let contains a c =
   Map.for_alli c ~f:(fun ~key:v ~data:is_in ->
@@ -118,3 +117,16 @@ let graphviz_pp _ fmt { lower; upper } =
     Fmt.using Boxes.to_list @@ Fmt.list ~sep:(Fmt.any "<br/>") Box.graphviz_pp
   in
   Fmt.pf fmt "@[<h>%a<br/><br/>%a@]" pp_boxes upper pp_boxes lower
+
+let equiv params a a' =
+  Cad_bench.output params.bench
+  |> Map.for_alli ~f:(fun ~key ~data:_ ->
+         Bool.(
+           Boxes.contains a.upper key = Boxes.contains a'.upper key
+           && Boxes.contains a.lower key = Boxes.contains a'.lower key))
+
+let is_subset params v ~of_:v' =
+  Cad_bench.output params.bench
+  |> Map.for_alli ~f:(fun ~key ~data:_ ->
+         Boxes.contains v.upper key ==> Boxes.contains v'.upper key
+         && Boxes.contains v'.lower key ==> Boxes.contains v.lower key)

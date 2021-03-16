@@ -4,10 +4,6 @@ open Staged_synth
 
 let () = Signal.Expert.handle Signal.int (fun _ -> exit 1)
 
-let print_header () =
-  Fmt.pr
-    "k,n,seed,max_cost,abstraction,n_state_nodes,n_arg_nodes,n_covered,n_refuted,min_width,max_width,median_width,check,sat\n"
-
 let csg_cli =
   let open Command.Let_syntax in
   Command.basic ~summary:"Synthesize a CAD program using lazy cegis."
@@ -30,13 +26,13 @@ let csg_cli =
       fun () -> (Lazy_cegis.synth params : _ * Search_state.t) |> ignore]
 
 let print_csv ~synth ?(bench = "") ~n_states ~time ~max_size ~sol_size
-    ~gold_size ~n_args ~total_arg_in_degree ~n_distinct_states =
+    ~gold_size ~n_args ~total_arg_in_degree ~n_distinct_states ~n_roots =
   let optional_int x =
     Option.map x ~f:Int.to_string |> Option.value ~default:""
   in
-  printf "%s,%d,%s,%d,%f,%s,%s,%d,%d,%d\n" synth max_size bench n_states
-    (Time.Span.to_ms time) (optional_int sol_size) (optional_int gold_size)
-    n_args total_arg_in_degree n_distinct_states
+  printf "%s,%d,%s,%d,%d,%d,%f,%s,%s,%d,%d\n" synth max_size bench n_states
+    n_distinct_states n_roots (Time.Span.to_ms time) (optional_int sol_size)
+    (optional_int gold_size) n_args total_arg_in_degree
 
 let cad_cli =
   let module Search_state = Search_state.Make (Cad) in
@@ -85,17 +81,19 @@ let cad_cli =
         G.Fold.V.filter_map (graph ss) ~f:Node.to_state
         |> List.map ~f:(State.state ss)
       in
+      let states_distinct =
+        List.filter states ~f:(fun s ->
+            List.for_all states ~f:(fun s' ->
+                [%compare.equal: Cad.Abs.t] s s'
+                || not (Cad_abs.equiv params s s')))
+      in
+      let roots =
+        Abs_ext.roots ~is_subset:(Cad_abs.is_subset params) states_distinct
+      in
       print_csv ?bench:params.bench.filename ~synth:"cad_abs"
         ~n_states:(List.length states)
-        ~n_distinct_states:
-          ( List.filter states ~f:(fun s ->
-                List.for_all states ~f:(fun s' ->
-                    [%compare.equal: Cad.Abs.t] s s'
-                    || not
-                         ( Cad.Abs.is_subset s ~of_:s'
-                         && Cad.Abs.is_subset s' ~of_:s )))
-          |> List.length )
-        ~time
+        ~n_distinct_states:(List.length states_distinct)
+        ~n_roots:(List.length roots) ~time
         ~sol_size:(Option.map prog ~f:Program.size)
         ~gold_size:(Option.map params.bench.solution ~f:Program.size)
         ~max_size:params.max_cost
@@ -138,8 +136,13 @@ let cad_concrete_cli =
     let time = Time.diff end_ start in
     if params.print_csv then
       let states = G.Fold.V.filter_map (graph ss) ~f:Node.to_state in
+      let states_distinct =
+        List.map states ~f:(State.state ss)
+        |> List.dedup_and_sort ~compare:[%compare: Cad_concrete.Abs.t]
+      in
       print_csv ?bench:params.bench.filename ~synth:"cad_concrete"
         ~n_states:(List.length states)
+        ~n_roots:(List.length states_distinct)
         ~n_args:(G.Fold.V.filter_map (graph ss) ~f:Node.to_args |> List.length)
         ~total_arg_in_degree:
           ( G.Fold.V.filter (graph ss) ~f:Node.is_args
@@ -149,10 +152,7 @@ let cad_concrete_cli =
         ~sol_size:(Option.map prog ~f:Program.size)
         ~gold_size:(Option.map params.bench.solution ~f:Program.size)
         ~max_size:params.max_cost
-        ~n_distinct_states:
-          ( List.map states ~f:(State.state ss)
-          |> List.dedup_and_sort ~compare:[%compare: Cad_concrete.Abs.t]
-          |> List.length )
+        ~n_distinct_states:(List.length states_distinct)
     else
       Option.iter params.bench.solution ~f:(fun ground_truth ->
           print_s [%message (ground_truth : Cad_op.t Program.t)])
@@ -173,9 +173,6 @@ let cad_concrete_cli =
 let () =
   Command.group ~summary:"Run lazy CEGIS."
     [
-      ( "header",
-        Command.basic ~summary:"Print stats header."
-          (Command.Param.return print_header) );
       ("cad", csg_cli);
       ("cad-abs", cad_cli);
       ("cad-concrete", cad_concrete_cli);

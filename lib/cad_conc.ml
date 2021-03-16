@@ -52,7 +52,7 @@ let roots _ = failwith "unimplemented roots"
 
 let to_symb _ = failwith "unimplemented to_symb"
 
-let is_subset _ = failwith "unimplemented is_subset"
+let leq _ = failwith "unimplemented is_subset"
 
 let contains = [%compare.equal: t]
 
