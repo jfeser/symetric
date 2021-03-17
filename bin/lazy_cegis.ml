@@ -26,13 +26,46 @@ let csg_cli =
       fun () -> (Lazy_cegis.synth params : _ * Search_state.t) |> ignore]
 
 let print_csv ~synth ?(bench = "") ~n_states ~time ~max_size ~sol_size
-    ~gold_size ~n_args ~total_arg_in_degree ~n_distinct_states ~n_roots =
+    ~gold_size ~n_args ~total_arg_in_degree ~n_distinct_states ~n_roots
+    ~n_mergeable_hyper_edges =
   let optional_int x =
     Option.map x ~f:Int.to_string |> Option.value ~default:""
   in
-  printf "%s,%d,%s,%d,%d,%d,%f,%s,%s,%d,%d\n" synth max_size bench n_states
+  printf "%s,%d,%s,%d,%d,%d,%f,%s,%s,%d,%d,%d\n" synth max_size bench n_states
     n_distinct_states n_roots (Time.Span.to_ms time) (optional_int sol_size)
-    (optional_int gold_size) n_args total_arg_in_degree
+    (optional_int gold_size) n_args total_arg_in_degree n_mergeable_hyper_edges
+
+let mergeable_hyper_edges (type t)
+    (module Search_state : Search_state_intf.S with type t = t) (ss : t) =
+  let open Search_state in
+  let module HEdge = struct
+    module T = struct
+      type t = State.t * Set.M(State).t [@@deriving compare, sexp_of]
+    end
+
+    include T
+    include Comparator.Make (T)
+  end in
+  G.Fold.V.filter_map (graph ss) ~f:Node.to_args
+  |> List.fold
+       ~init:(Map.empty (module HEdge))
+       ~f:(fun hedges args_v ->
+         let out_v =
+           G.pred (graph ss) (Node.of_args args_v)
+           |> List.hd_exn |> Node.to_state_exn
+         in
+         let in_v =
+           G.succ (graph ss) (Node.of_args args_v)
+           |> List.map ~f:Node.to_state_exn
+           |> Set.of_list (module State)
+         in
+         let h = (out_v, in_v) in
+         Map.update hedges h ~f:(function None -> 1 | Some c -> c + 1))
+  |> Map.length
+
+(* |> Map.to_alist
+ * |> List.filter ~f:(fun (_, ct) -> ct > 1)
+ * |> List.sum (module Int) ~f:(fun (_, ct) -> ct) *)
 
 let cad_cli =
   let module Search_state = Search_state.Make (Cad) in
@@ -102,6 +135,8 @@ let cad_cli =
           ( G.Fold.V.filter (graph ss) ~f:Node.is_args
           |> List.map ~f:(G.in_degree (graph ss))
           |> List.sum (module Int) ~f:Fun.id )
+        ~n_mergeable_hyper_edges:
+          (mergeable_hyper_edges (module Search_state) ss)
     else
       Option.iter params.bench.solution ~f:(fun ground_truth ->
           print_s [%message (ground_truth : Cad_op.t Program.t)])
@@ -153,6 +188,8 @@ let cad_concrete_cli =
         ~gold_size:(Option.map params.bench.solution ~f:Program.size)
         ~max_size:params.max_cost
         ~n_distinct_states:(List.length states_distinct)
+        ~n_mergeable_hyper_edges:
+          (mergeable_hyper_edges (module Search_state) ss)
     else
       Option.iter params.bench.solution ~f:(fun ground_truth ->
           print_s [%message (ground_truth : Cad_op.t Program.t)])
