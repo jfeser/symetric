@@ -1,0 +1,66 @@
+((ops
+  (Union (Rect ((id 0) (lo_left ((x 1) (y 0))) (hi_right ((x 3) (y 4)))))
+   (Rect ((id 20) (lo_left ((x 0) (y 1))) (hi_right ((x 4) (y 3)))))
+   (Rect ((id 1) (lo_left ((x 2) (y 0))) (hi_right ((x 4) (y 4)))))
+   (Rect ((id 21) (lo_left ((x 1) (y 1))) (hi_right ((x 5) (y 3)))))
+   (Rect ((id 2) (lo_left ((x 3) (y 0))) (hi_right ((x 5) (y 4)))))
+   (Rect ((id 22) (lo_left ((x 2) (y 1))) (hi_right ((x 6) (y 3)))))
+   (Rect ((id 3) (lo_left ((x 4) (y 0))) (hi_right ((x 6) (y 4)))))
+   (Rect ((id 23) (lo_left ((x 3) (y 1))) (hi_right ((x 7) (y 3)))))
+   (Rect ((id 4) (lo_left ((x 5) (y 0))) (hi_right ((x 7) (y 4)))))
+   (Rect ((id 24) (lo_left ((x 4) (y 1))) (hi_right ((x 8) (y 3)))))
+   (Rect ((id 5) (lo_left ((x 6) (y 0))) (hi_right ((x 8) (y 4)))))
+   (Rect ((id 25) (lo_left ((x 5) (y 1))) (hi_right ((x 9) (y 3)))))
+   (Rect ((id 6) (lo_left ((x 7) (y 0))) (hi_right ((x 9) (y 4)))))
+   (Rect ((id 26) (lo_left ((x 6) (y 1))) (hi_right ((x 10) (y 3)))))
+   (Rect ((id 7) (lo_left ((x 8) (y 0))) (hi_right ((x 10) (y 4)))))
+   (Rect ((id 27) (lo_left ((x 7) (y 1))) (hi_right ((x 11) (y 3)))))
+   (Rect ((id 8) (lo_left ((x 9) (y 0))) (hi_right ((x 11) (y 4)))))
+   (Rect ((id 28) (lo_left ((x 8) (y 1))) (hi_right ((x 12) (y 3)))))
+   (Rect ((id 9) (lo_left ((x 10) (y 0))) (hi_right ((x 12) (y 4)))))
+   (Rect ((id 29) (lo_left ((x 9) (y 1))) (hi_right ((x 13) (y 3)))))
+   (Rect ((id 10) (lo_left ((x 11) (y 0))) (hi_right ((x 13) (y 4)))))
+   (Rect ((id 30) (lo_left ((x 10) (y 1))) (hi_right ((x 14) (y 3)))))
+   (Rect ((id 11) (lo_left ((x 12) (y 0))) (hi_right ((x 14) (y 4)))))
+   (Rect ((id 31) (lo_left ((x 11) (y 1))) (hi_right ((x 15) (y 3)))))
+   (Rect ((id 12) (lo_left ((x 13) (y 0))) (hi_right ((x 15) (y 4)))))
+   (Rect ((id 32) (lo_left ((x 12) (y 1))) (hi_right ((x 16) (y 3)))))
+   (Rect ((id 13) (lo_left ((x 14) (y 0))) (hi_right ((x 16) (y 4)))))
+   (Rect ((id 33) (lo_left ((x 13) (y 1))) (hi_right ((x 17) (y 3)))))
+   (Rect ((id 14) (lo_left ((x 15) (y 0))) (hi_right ((x 17) (y 4)))))
+   (Rect ((id 34) (lo_left ((x 14) (y 1))) (hi_right ((x 18) (y 3)))))
+   (Rect ((id 15) (lo_left ((x 16) (y 0))) (hi_right ((x 18) (y 4)))))
+   (Rect ((id 35) (lo_left ((x 15) (y 1))) (hi_right ((x 19) (y 3)))))
+   (Rect ((id 16) (lo_left ((x 17) (y 0))) (hi_right ((x 19) (y 4)))))
+   (Rect ((id 36) (lo_left ((x 16) (y 1))) (hi_right ((x 20) (y 3)))))
+   (Rect ((id 17) (lo_left ((x 18) (y 0))) (hi_right ((x 20) (y 4)))))
+   (Rect ((id 37) (lo_left ((x 17) (y 1))) (hi_right ((x 21) (y 3)))))
+   (Rect ((id 18) (lo_left ((x 19) (y 0))) (hi_right ((x 21) (y 4)))))
+   (Rect ((id 38) (lo_left ((x 18) (y 1))) (hi_right ((x 22) (y 3)))))
+   (Rect ((id 19) (lo_left ((x 20) (y 0))) (hi_right ((x 22) (y 4)))))
+   (Rect ((id 39) (lo_left ((x 19) (y 1))) (hi_right ((x 23) (y 3)))))))
+ (input ((xmax 80) (ymax 4)))
+ (output
+  (0 1 1 0 1 1 1 1 1 1 1 1 0 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+   0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+   0 0 0 1 1 0 1 1 1 1 1 1 1 1 0 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+   0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+   0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+   0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+   0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+   0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+   0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0))
+ (solution
+  (Apply Union
+   ((Apply (Rect ((id 0) (lo_left ((x 1) (y 0))) (hi_right ((x 3) (y 4)))))
+     ())
+    (Apply Union
+     ((Apply
+       (Rect ((id 20) (lo_left ((x 0) (y 1))) (hi_right ((x 4) (y 3))))) ())
+      (Apply Union
+       ((Apply
+         (Rect ((id 39) (lo_left ((x 19) (y 1))) (hi_right ((x 23) (y 3)))))
+         ())
+        (Apply
+         (Rect ((id 19) (lo_left ((x 20) (y 0))) (hi_right ((x 22) (y 4)))))
+         ())))))))))

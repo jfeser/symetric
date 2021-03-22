@@ -1,0 +1,28 @@
+((ops
+  (Union (Rect ((id 0) (lo_left ((x 1) (y 0))) (hi_right ((x 3) (y 4)))))
+   (Rect ((id 5) (lo_left ((x 0) (y 1))) (hi_right ((x 4) (y 3)))))
+   (Rect ((id 1) (lo_left ((x 2) (y 0))) (hi_right ((x 4) (y 4)))))
+   (Rect ((id 6) (lo_left ((x 1) (y 1))) (hi_right ((x 5) (y 3)))))
+   (Rect ((id 2) (lo_left ((x 3) (y 0))) (hi_right ((x 5) (y 4)))))
+   (Rect ((id 7) (lo_left ((x 2) (y 1))) (hi_right ((x 6) (y 3)))))
+   (Rect ((id 3) (lo_left ((x 4) (y 0))) (hi_right ((x 6) (y 4)))))
+   (Rect ((id 8) (lo_left ((x 3) (y 1))) (hi_right ((x 7) (y 3)))))
+   (Rect ((id 4) (lo_left ((x 5) (y 0))) (hi_right ((x 7) (y 4)))))
+   (Rect ((id 9) (lo_left ((x 4) (y 1))) (hi_right ((x 8) (y 3)))))))
+ (input ((xmax 20) (ymax 4)))
+ (output
+  (0 1 1 0 1 1 1 1 1 1 1 1 0 1 1 0 0 1 1 0 1 1 1 1 1 1 1 1 0 1 1 0 0 0 0 0 0
+   0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+   0 0 0 0 0 0))
+ (solution
+  (Apply Union
+   ((Apply (Rect ((id 0) (lo_left ((x 1) (y 0))) (hi_right ((x 3) (y 4)))))
+     ())
+    (Apply Union
+     ((Apply (Rect ((id 5) (lo_left ((x 0) (y 1))) (hi_right ((x 4) (y 3)))))
+       ())
+      (Apply Union
+       ((Apply
+         (Rect ((id 9) (lo_left ((x 4) (y 1))) (hi_right ((x 8) (y 3))))) ())
+        (Apply
+         (Rect ((id 4) (lo_left ((x 5) (y 0))) (hi_right ((x 7) (y 4))))) ())))))))))

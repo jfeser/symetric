@@ -1,0 +1,42 @@
+((ops
+  (Union (Rect ((id 0) (lo_left ((x 1) (y 0))) (hi_right ((x 3) (y 4)))))
+   (Rect ((id 10) (lo_left ((x 0) (y 1))) (hi_right ((x 4) (y 3)))))
+   (Rect ((id 1) (lo_left ((x 2) (y 0))) (hi_right ((x 4) (y 4)))))
+   (Rect ((id 11) (lo_left ((x 1) (y 1))) (hi_right ((x 5) (y 3)))))
+   (Rect ((id 2) (lo_left ((x 3) (y 0))) (hi_right ((x 5) (y 4)))))
+   (Rect ((id 12) (lo_left ((x 2) (y 1))) (hi_right ((x 6) (y 3)))))
+   (Rect ((id 3) (lo_left ((x 4) (y 0))) (hi_right ((x 6) (y 4)))))
+   (Rect ((id 13) (lo_left ((x 3) (y 1))) (hi_right ((x 7) (y 3)))))
+   (Rect ((id 4) (lo_left ((x 5) (y 0))) (hi_right ((x 7) (y 4)))))
+   (Rect ((id 14) (lo_left ((x 4) (y 1))) (hi_right ((x 8) (y 3)))))
+   (Rect ((id 5) (lo_left ((x 6) (y 0))) (hi_right ((x 8) (y 4)))))
+   (Rect ((id 15) (lo_left ((x 5) (y 1))) (hi_right ((x 9) (y 3)))))
+   (Rect ((id 6) (lo_left ((x 7) (y 0))) (hi_right ((x 9) (y 4)))))
+   (Rect ((id 16) (lo_left ((x 6) (y 1))) (hi_right ((x 10) (y 3)))))
+   (Rect ((id 7) (lo_left ((x 8) (y 0))) (hi_right ((x 10) (y 4)))))
+   (Rect ((id 17) (lo_left ((x 7) (y 1))) (hi_right ((x 11) (y 3)))))
+   (Rect ((id 8) (lo_left ((x 9) (y 0))) (hi_right ((x 11) (y 4)))))
+   (Rect ((id 18) (lo_left ((x 8) (y 1))) (hi_right ((x 12) (y 3)))))
+   (Rect ((id 9) (lo_left ((x 10) (y 0))) (hi_right ((x 12) (y 4)))))
+   (Rect ((id 19) (lo_left ((x 9) (y 1))) (hi_right ((x 13) (y 3)))))))
+ (input ((xmax 40) (ymax 4)))
+ (output
+  (0 1 1 0 1 1 1 1 1 1 1 1 0 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+   1 1 0 1 1 1 1 1 1 1 1 0 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+   0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+   0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+   0 0 0 0 0 0 0 0 0 0 0 0))
+ (solution
+  (Apply Union
+   ((Apply (Rect ((id 0) (lo_left ((x 1) (y 0))) (hi_right ((x 3) (y 4)))))
+     ())
+    (Apply Union
+     ((Apply
+       (Rect ((id 10) (lo_left ((x 0) (y 1))) (hi_right ((x 4) (y 3))))) ())
+      (Apply Union
+       ((Apply
+         (Rect ((id 19) (lo_left ((x 9) (y 1))) (hi_right ((x 13) (y 3)))))
+         ())
+        (Apply
+         (Rect ((id 9) (lo_left ((x 10) (y 0))) (hi_right ((x 12) (y 4)))))
+         ())))))))))

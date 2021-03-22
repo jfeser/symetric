@@ -3,6 +3,11 @@ open Staged_synth
 open Cad_op
 open Cad_bench
 
+let rec union_many = function
+  | [] -> failwith "unexpected empty list"
+  | [ x ] -> x
+  | x :: xs -> Program.Apply (Union, [ x; union_many xs ])
+
 let circle_inter =
   let c1 = Circle { id = 0; center = { x = 2.0; y = 2.0 }; radius = 2.0 } in
   let c2 = Circle { id = 1; center = { x = 3.0; y = 2.0 }; radius = 2.0 } in
@@ -58,8 +63,7 @@ let iters f =
   let pp, width = pp_iters_fixed in
   f ~width pp
 
-let no_total_counter ?(mode = `ASCII) ?message ?pp ?width
-    ?(sampling_interval = 1) () =
+let no_total_counter ?message ?pp ?width ?(sampling_interval = 1) () =
   let open Progress in
   let open Segment in
   let box =
@@ -104,8 +108,6 @@ let to_sexp ~xmax ~ymax (prog, ops) =
 
   [%sexp_of: Cad_bench.Serial.t]
     Cad_bench.Serial.{ ops; input; output; solution = Some prog }
-
-let dump ~xmax ~ymax x = print_s @@ to_sexp ~xmax ~ymax x
 
 let random_int lo hi =
   [%test_pred: int * int] (fun (lo, hi) -> lo < hi) (lo, hi);
@@ -253,10 +255,11 @@ let random ~xmax ~ymax ~size ~nprim ~n k =
          else None)
   |> sequence_progress unique_progs
   |> Sequence.map ~f:(to_sexp ~xmax ~ymax)
+  |> Sequence.mapi ~f:(fun i sexp -> ([%string "scene_%{i#Int}.sexp"], sexp))
   |> k
 
 let circles_and_rects_unsat =
-  let ([ c1; c2; c3 ] as circs) =
+  let circs =
     List.init 3 ~f:(fun i ->
         Circle
           {
@@ -278,12 +281,44 @@ let circles_and_rects_unsat =
   let ops = [ Inter; Union ] @ circs in
   (prog, ops)
 
-let dumps ~dir ~prefix seq =
-  Sequence.iteri seq ~f:(fun i sexp ->
-      Out_channel.with_file [%string "%{dir}/%{prefix}_%{i#Int}.sexp"]
-        ~f:(fun ch -> Sexp.output_hum ch sexp))
+let crosses n =
+  let shapes =
+    List.init n ~f:(fun i ->
+        let j = Float.of_int i in
+        let vert =
+          Rect
+            {
+              id = i;
+              lo_left = { x = j +. 1.0; y = 0.0 };
+              hi_right = { x = j +. 3.0; y = 4.0 };
+            }
+        in
+        let horiz =
+          Rect
+            {
+              id = n + i;
+              lo_left = { x = j; y = 1.0 };
+              hi_right = { x = j +. 4.0; y = 3.0 };
+            }
+        in
+        [ vert; horiz ])
+    |> List.concat
+  in
+  let prog =
+    let lhs = List.take shapes 2 in
+    let rhs = List.take (List.rev shapes) 2 in
+    union_many @@ List.map (lhs @ rhs) ~f:Program.apply
+  in
+  let ops = Union :: shapes in
+  (sprintf "crosses_%d" n, to_sexp ~xmax:(4 * n) ~ymax:4 (prog, ops))
+
+let dumps ~dir seq =
+  Sequence.iter seq ~f:(fun (fn, sexp) ->
+      Out_channel.with_file (sprintf "%s/%s" dir fn) ~f:(fun ch ->
+          Sexp.output_hum ch sexp))
 
 let () =
   Random.init 0;
-  random ~xmax:30 ~ymax:30 ~size:11 ~nprim:6 ~n:100
-  @@ dumps ~dir:"bench/cad2/random_size_11" ~prefix:"scene"
+  crosses 20 |> Sequence.singleton
+  |> (* random ~xmax:30 ~ymax:30 ~size:11 ~nprim:6 ~n:100 *)
+  dumps ~dir:"bench/cad2"
