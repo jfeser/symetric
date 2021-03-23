@@ -1,0 +1,36 @@
+All searches run with max cost 5.
+
+* camera8_4
+** lazy
+   ((n_state_nodes 8096)
+   (n_arg_nodes 44777) (n_roots 235)
+   (n_refuted 33) (min_width 3)
+   (max_width 60) (median_width 8)
+   (refinement_level (97228 485160))
+   (sat false))
+** eager
+   >= 7 bits for cost 1
+* camera5_10
+** lazy
+((n_state_nodes 3012) (n_arg_nodes 55099) (n_roots 121) (n_refuted 22)
+ (min_width 2) (max_width 117) (median_width 8)
+ (refinement_level (94177 351234)) (sat false))
+** eager
+   >= 6 bits for cost 1
+* microscope2_1
+** lazy  
+   ((n_state_nodes 18) (n_arg_nodes 46)
+   (n_roots 13) (n_refuted 3) (min_width 1)
+   (max_width 57) (median_width 26)
+   (refinement_level (254 768))
+   (sat false))
+** eager
+   8 bits
+* microscope7_9
+** lazy
+   cost 5
+   ((n_state_nodes 49330) (n_arg_nodes 724268) (n_roots 613) (n_refuted 70)
+ (min_width 1) (max_width 319) (median_width 11)
+ (refinement_level (3111478 15782400)) (sat false))
+** eager
+   >= 6 bits for cost 1
