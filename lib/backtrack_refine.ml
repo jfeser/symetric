@@ -117,4 +117,19 @@ struct
              if [%compare.equal: Refinement.s] x x' then x else failwith "")
       |> Either.first
     with Found_solution p -> Second p
+
+  let summarize = None
+
+  let summarize ss states =
+    let union x x' = () in
+    List.fold ~init:[] ~f:(fun groups s ->
+        match
+          List.find groups ~f:(fun (abs, _) ->
+              not
+              @@ Abs.contains
+                   (union group_abs (State.state ss s))
+                   (Cad_bench.output (params ss).bench))
+        with
+        | Some g -> groups
+        | None -> groups)
 end

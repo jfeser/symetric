@@ -170,7 +170,7 @@ struct
 
     ret
 
-  let refine ss (refinement : Refine.Refinement.t) =
+  let apply_refinement ss (refinement : Refine.Refinement.t) =
     [%test_pred: Refine.Refinement.t] ~message:"empty refinement"
       (fun r -> not @@ Map.is_empty r)
       refinement;
@@ -216,8 +216,6 @@ struct
     fix_up ss;
     new_states
 
-  let refine graph refinement = with_size graph @@ fun g -> refine g refinement
-
   let refute ss target =
     if List.is_empty target then ()
     else
@@ -229,7 +227,7 @@ struct
           dump_detailed_graph ~suffix:"prerefine" ss pre_refine;
 
           let post_refine =
-            let new_states = refine ss r in
+            let new_states = with_size ss @@ fun ss -> apply_refinement ss r in
             cone (graph ss) @@ List.map ~f:Node.of_state new_states
           in
           dump_detailed_graph ~suffix:"postrefine" ss post_refine
@@ -247,6 +245,10 @@ struct
       if cost > params.max_cost then ()
       else (
         fill_up_to_cost ss ops cost;
+        Option.iter Refine.summarize ~f:(fun summarize ->
+            ( apply_refinement ss @@ summarize ss (states_of_cost ss cost)
+              : State.t list )
+            |> ignore);
         let targets =
           G.Fold.V.filter_map (graph ss) ~f:(fun v ->
               Node.match_ v

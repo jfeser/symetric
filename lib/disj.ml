@@ -37,6 +37,6 @@ module Make (A : Abs_intf.S) = struct
 
   let lift x = [ x ]
 
-  let quickcheck_generator_leq a =
-    Generator.list_filtered a |> Generator.map ~f:of_list
+  let quickcheck_generator_leq =
+    Some (fun a -> Generator.list_filtered a |> Generator.map ~f:of_list)
 end

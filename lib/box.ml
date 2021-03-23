@@ -168,7 +168,8 @@ let generate_between ((v, _) as p) ((v', _) as p') =
   Generator.filter gen ~f:(fun p'' -> lo_le p p'' && hi_le p'' p')
 
 (** Given a, return generator of b s.t. b <= a. *)
-let quickcheck_generator_leq = function
+let quickcheck_generator_leq =
+  Option.return @@ function
   | Bot -> Generator.return bot
   | Box a ->
       let open Generator.Let_syntax in

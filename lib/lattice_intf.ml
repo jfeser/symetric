@@ -3,7 +3,7 @@ open Base_quickcheck
 module type S = sig
   type t [@@deriving compare, hash, sexp, quickcheck]
 
-  val quickcheck_generator_leq : t -> t Generator.t
+  val quickcheck_generator_leq : (t -> t Generator.t) option
 
   val top : t
 

@@ -3,7 +3,8 @@ open Params
 module Boxes = Disj.Make (Box)
 
 module T = struct
-  type t = { upper : Boxes.t; lower : Boxes.t } [@@deriving compare, hash, sexp]
+  type t = { upper : Boxes.t; lower : Boxes.t }
+  [@@deriving compare, hash, sexp, quickcheck]
 end
 
 include T
@@ -110,7 +111,15 @@ let implies a p =
   then False
   else Maybe
 
-let top _ Cad_type.Scene = { upper = Boxes.top; lower = Boxes.bot }
+let top = { upper = Boxes.top; lower = Boxes.bot }
+
+let bot = { upper = Boxes.bot; lower = Boxes.top }
+
+let lub a a' =
+  { upper = Boxes.lub a.upper a'.upper; lower = Boxes.glb a.lower a'.lower }
+
+let glb a a' =
+  { upper = Boxes.glb a.upper a'.upper; lower = Boxes.lub a.lower a'.lower }
 
 let graphviz_pp _ fmt { lower; upper } =
   let pp_boxes =
@@ -130,3 +139,5 @@ let is_subset params v ~of_:v' =
   |> Map.for_alli ~f:(fun ~key ~data:_ ->
          Boxes.contains v.upper key ==> Boxes.contains v'.upper key
          && Boxes.contains v'.lower key ==> Boxes.contains v.lower key)
+
+let quickcheck_generator_leq = None

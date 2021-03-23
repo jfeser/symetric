@@ -19,11 +19,5 @@ module type S = sig
     type t = s Map.M(Search_state.Args).t [@@deriving sexp_of]
   end
 
-  val refine :
-    Search_state.t ->
-    Search_state.State.t list ->
-    (Refinement.t, op Program.t) Either.t
-
-  val summarize :
-    (Search_state.t -> Search_state.State.t list -> Refinement.t) option
+  val summarize : Search_state.t -> Search_state.State.t list -> Refinement.t
 end

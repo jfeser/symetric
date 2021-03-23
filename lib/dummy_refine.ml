@@ -36,4 +36,6 @@ struct
       sample ss target;
       failwith ""
     with Found_solution p -> Second p
+
+  let summarize = None
 end
