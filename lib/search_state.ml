@@ -104,7 +104,10 @@ module Make (Lang : Lang_intf.S) = struct
     let set ctx s c t id =
       Hashtbl.set ~key:(s, t) ~data:id ctx.state_idx.(c - 1)
 
-    let of_cost ctx c = Hashtbl.data ctx.state_idx.(c - 1)
+    let of_cost ctx c =
+      let idx = c - 1 in
+      if idx < 0 || idx > Array.length ctx.state_idx then []
+      else Hashtbl.data ctx.state_idx.(c - 1)
 
     let create ctx s c t =
       match get ctx s c t with

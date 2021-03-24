@@ -54,10 +54,7 @@ struct
       G.succ (graph ss) (Node.of_args args_v) |> List.map ~f:Node.to_state_exn
     in
     match Args.op ss args_v with
-    | Union | Inter -> (
-        match inputs with
-        | [ v; v' ] -> refine_state ss p v @ refine_state ss p v'
-        | _ -> failwith "unexpected inputs" )
+    | Union | Inter | Merge -> List.concat_map inputs ~f:(refine_state ss p)
     | (Circle _ | Rect _) as op ->
         let conc = Cad_conc.eval (params ss) op [] in
         let old = State.state ss output in
@@ -118,18 +115,66 @@ struct
       |> Either.first
     with Found_solution p -> Second p
 
-  let summarize = None
+  let rec update l ~f =
+    match l with
+    | [] -> None
+    | x :: xs -> (
+        match f x with
+        | Some x' -> Some (x' :: xs)
+        | None -> (
+            match update ~f xs with Some xs' -> Some (x :: xs') | None -> None )
+        )
 
   let summarize ss states =
-    let union x x' = () in
-    List.fold ~init:[] ~f:(fun groups s ->
-        match
-          List.find groups ~f:(fun (abs, _) ->
-              not
-              @@ Abs.contains
-                   (union group_abs (State.state ss s))
-                   (Cad_bench.output (params ss).bench))
-        with
-        | Some g -> groups
-        | None -> groups)
+    let lift a =
+      Cad_abs.
+        {
+          upper =
+            Boxes.of_list
+              [
+                Option.value ~default:Box.bot
+                @@ List.reduce ~f:Box.lub @@ Boxes.to_list a.upper;
+              ];
+          lower =
+            Boxes.of_list
+              [
+                Option.value ~default:Box.top
+                @@ List.reduce ~f:Box.glb @@ Boxes.to_list a.lower;
+              ];
+        }
+    in
+    let union a a' =
+      Cad_abs.
+        {
+          upper =
+            Boxes.of_list
+              [
+                Option.value ~default:Box.bot
+                @@ List.reduce ~f:Box.lub @@ Boxes.to_list a.upper
+                @ Boxes.to_list a'.upper;
+              ];
+          lower =
+            Boxes.of_list
+              [
+                Option.value ~default:Box.top
+                @@ List.reduce ~f:Box.glb @@ Boxes.to_list a.lower
+                @ Boxes.to_list a'.lower;
+              ];
+        }
+    in
+
+    List.fold states ~init:[] ~f:(fun groups s ->
+        let sabs = lift @@ State.state ss s in
+        let groups' =
+          update groups ~f:(fun (abs, sts) ->
+              let abs' = union abs sabs in
+              if not @@ Abs.contains abs' (Cad_bench.output (params ss).bench)
+              then Some (abs', s :: sts)
+              else None)
+        in
+        match groups' with
+        | Some groups -> groups
+        | None -> (sabs, [ s ]) :: groups)
+
+  let summarize = Some summarize
 end

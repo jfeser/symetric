@@ -4,26 +4,26 @@ open Staged_synth
 
 let () = Signal.Expert.handle Signal.int (fun _ -> exit 1)
 
-let csg_cli =
-  let open Command.Let_syntax in
-  Command.basic ~summary:"Synthesize a CAD program using lazy cegis."
-    [%map_open
-      let params =
-        Params.cli
-          [%map_open
-            let bench_fn = anon ("bench" %: string) in
-            Sexp.load_sexp_conv_exn bench_fn [%of_sexp: Csg.Bench.t]]
-          (Command.Param.return ())
-      in
-      let module Search_state = Search_state.Make (Csg) in
-      let module Refine = Interp_refine.Make (Csg) (Search_state) in
-      let module Probes = struct
-        let fill = None
-      end in
-      let module Lazy_cegis =
-        Lazy_cegis.Make (Csg) (Search_state) (Refine) (Probes)
-      in
-      fun () -> (Lazy_cegis.synth params : _ * Search_state.t) |> ignore]
+(* let csg_cli =
+ *   let open Command.Let_syntax in
+ *   Command.basic ~summary:"Synthesize a CAD program using lazy cegis."
+ *     [%map_open
+ *       let params =
+ *         Params.cli
+ *           [%map_open
+ *             let bench_fn = anon ("bench" %: string) in
+ *             Sexp.load_sexp_conv_exn bench_fn [%of_sexp: Csg.Bench.t]]
+ *           (Command.Param.return ())
+ *       in
+ *       let module Search_state = Search_state.Make (Csg) in
+ *       let module Refine = Interp_refine.Make (Csg) (Search_state) in
+ *       let module Probes = struct
+ *         let fill = None
+ *       end in
+ *       let module Lazy_cegis =
+ *         Lazy_cegis.Make (Csg) (Search_state) (Refine) (Probes)
+ *       in
+ *       fun () -> (Lazy_cegis.synth params : _ * Search_state.t) |> ignore] *)
 
 let print_csv ~synth ?(bench = "") ~n_states ~time ~max_size ~sol_size
     ~gold_size ~n_args ~total_arg_in_degree ~n_distinct_states ~n_roots
@@ -210,24 +210,8 @@ let cad_concrete_cli =
 let () =
   Command.group ~summary:"Run lazy CEGIS."
     [
-      ("cad", csg_cli);
+      (* ("cad", csg_cli); *)
       ("cad-abs", cad_cli);
       ("cad-concrete", cad_concrete_cli);
-      (* ( "random",
-       *   Command.basic ~summary:"Run lazy CEGIS on a random testcase."
-       *     [%map_open
-       *       let n =
-       *         flag "num-inputs"
-       *           (optional_with_default 2 int)
-       *           ~doc:" number of function inputs"
-       *       and seed =
-       *         flag "seed" (optional_with_default 0 int) ~doc:" random seed"
-       *       and n_bits = anon ("num-bits" %: int)
-       *       and check =
-       *         flag "check" no_arg
-       *           ~doc:" check the search space by sampling random programs"
-       *       and max_cost, print_header = shared in
-       * 
-       *       random ~n ~seed ~k:n_bits ~print_header ~check] ); *)
     ]
   |> Command.run

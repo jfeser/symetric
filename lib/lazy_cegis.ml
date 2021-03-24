@@ -74,7 +74,16 @@ struct
         match Hashtbl.find cost_tbl cost with
         | Some type_tbl -> type_tbl
         | None ->
-            let states = states_of_cost ss cost in
+            let states =
+              states_of_cost ss cost
+              |> List.filter ~f:(fun s ->
+                     let args = G.succ (graph ss) (Node.of_state s) in
+                     List.is_empty args
+                     || List.exists args ~f:(fun v ->
+                            match Node.to_args_exn v |> Args.op ss with
+                            | Merge -> true
+                            | _ -> false))
+            in
             let type_tbl = Hashtbl.create (module Type) in
             List.iter states ~f:(fun s ->
                 Hashtbl.add_multi type_tbl ~key:(State.type_ ss s) ~data:s);
@@ -216,6 +225,13 @@ struct
     fix_up ss;
     new_states
 
+  let apply_summary ss summary =
+    List.iter summary ~f:(fun (abs, states) ->
+        let cost = List.hd_exn states |> State.cost ss in
+        ( insert_hyper_edge_if_not_exists ss states Merge cost ~state:abs
+          : State.t option )
+        |> ignore)
+
   let refute ss target =
     if List.is_empty target then ()
     else
@@ -244,11 +260,20 @@ struct
     let rec fill cost =
       if cost > params.max_cost then ()
       else (
+        dump_detailed ~suffix:"before-fill" ss;
         fill_up_to_cost ss ops cost;
+        dump_detailed ~suffix:"after-fill" ss;
         Option.iter Refine.summarize ~f:(fun summarize ->
-            ( apply_refinement ss @@ summarize ss (states_of_cost ss cost)
-              : State.t list )
-            |> ignore);
+            let input_states = states_of_cost ss cost in
+            let summary = summarize ss input_states in
+            apply_summary ss summary;
+            print_s
+              [%message
+                "after summarization"
+                  (cost : int)
+                  (List.length input_states : int)
+                  (List.length summary : int)]);
+        dump_detailed ~suffix:"after-summarize" ss;
         let targets =
           G.Fold.V.filter_map (graph ss) ~f:(fun v ->
               Node.match_ v

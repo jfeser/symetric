@@ -13,17 +13,15 @@ module type S = sig
 
   type op
 
+  open Search_state
+
   module Refinement : sig
     type s = { old : Set.M(Abs).t; new_ : Set.M(Abs).t } [@@deriving sexp]
 
-    type t = s Map.M(Search_state.Args).t [@@deriving sexp_of]
+    type t = s Map.M(Args).t [@@deriving sexp_of]
   end
 
-  val refine :
-    Search_state.t ->
-    Search_state.State.t list ->
-    (Refinement.t, op Program.t) Either.t
+  val refine : t -> State.t list -> (Refinement.t, op Program.t) Either.t
 
-  val summarize :
-    (Search_state.t -> Search_state.State.t list -> Refinement.t) option
+  val summarize : (t -> State.t list -> (Abs.t * State.t list) list) option
 end
