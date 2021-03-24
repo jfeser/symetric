@@ -11,7 +11,7 @@ module Make
 struct
   module F = Graph_ext.Folds (G)
 
-  let make_output_graph ?(refinement = fun _ -> false) cone separator =
+  let to_string ?(refinement = fun _ -> false) cone separator g =
     let module Viz =
       Graph.Graphviz.Dot
         (G)
@@ -42,7 +42,7 @@ struct
             attrs
         end)
     in
-    Viz.output_graph
+    Viz.fprint_graph Format.str_formatter g; Format.flush_str_formatter ()
 
   let filter_depth g d =
     let roots = F.V.filter g ~f:(fun v -> List.is_empty @@ G.succ g v) in
@@ -81,7 +81,6 @@ struct
       ?(separator = fun _ -> false) ?(refinement = fun _ -> false) ?depth params
       graph =
     if params.enable_dump then (
-      let output_graph = make_output_graph ~refinement cone separator in
       let graph =
         Option.map depth ~f:(filter_depth graph) |> Option.value ~default:graph
       in
@@ -91,6 +90,9 @@ struct
         in
         sprintf "%04d-graph%s.dot" !step suffix
       in
-      Out_channel.with_file fn ~f:(fun ch -> output_graph ch graph);
+      let graph_str = to_string ~refinement cone separator graph in
+      let open Shexp_process in
+      pipe (echo graph_str) (stdout_to fn @@ run "unflatten" ["-f"; "-l"; "10"])
+      |> eval;
       incr step )
 end

@@ -1,6 +1,6 @@
 (library
  (name staged_synth)
- (libraries core combinat utils ocamlgraph fmt landmarks geoml core_profiler progress)
+ (libraries core combinat utils ocamlgraph fmt landmarks geoml core_profiler progress shexp.process)
  (preprocess (pps ppx_jane))
  (inline_tests)
  (flags :standard -g -open Core -w -9))

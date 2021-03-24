@@ -166,7 +166,7 @@ struct
              let%bind value =
                let%map alist =
                  Set.to_list args
-                 |> List.map ~f:(fun v -> Args.op ss v |> Op.ret_type)
+                 |> List.map ~f:(fun v -> Args.op_exn ss v |> Op.ret_type)
                  |> List.dedup_and_sort ~compare:[%compare: Type.t]
                  |> List.map ~f:(fun t ->
                         let%map v =
@@ -215,7 +215,7 @@ struct
         Domain_var.cases (op_var ctx path)
         |> List.fold ~init:app_cache ~f:(fun app_cache (args_v, control_var) ->
                let%bind app_cache = app_cache in
-               let op = Args.op ss args_v in
+               let op = Args.op_exn ss args_v in
                let app =
                  let args =
                    List.init (Op.arity op) ~f:(fun i -> path @ [ i ])
@@ -258,7 +258,8 @@ struct
              let op =
                var.Var.op |> Map.to_alist
                |> List.find_map_exn ~f:(fun (args_v, var) ->
-                      if Map.find_exn model var then Some (Args.op ss args_v)
+                      if Map.find_exn model var then
+                        Some (Args.op_exn ss args_v)
                       else None)
              in
              (path, op))
@@ -296,7 +297,7 @@ struct
 
   let[@landmark "find-program"] find_program ss target =
     let string_of_args v =
-      let op = Args.op ss v and id = Args.id v in
+      let op = Args.op_exn ss v and id = Args.id v in
       [%string "%{op#Op}/%{id#Int}"]
     in
 
@@ -353,7 +354,7 @@ struct
           |> String.concat ~sep:" || " );
 
         Set.to_list data
-        |> List.map ~f:(fun v -> (Args.op ss v, v))
+        |> List.map ~f:(fun v -> (Args.op_exn ss v, v))
         |> Map.of_alist_multi (module Op)
         |> Map.iteri ~f:(fun ~key:op ~data ->
                let lhs =

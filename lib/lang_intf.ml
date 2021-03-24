@@ -14,14 +14,7 @@ module type S = sig
   end
 
   module Op : sig
-    type circle = { id : int; center : Vector2.t; radius : float }
-    [@@deriving compare, hash, sexp]
-
-    type rect = { id : int; lo_left : Vector2.t; hi_right : Vector2.t }
-    [@@deriving compare, hash, sexp]
-
-    type t = Merge | Union | Inter | Circle of circle | Rect of rect
-    [@@deriving compare, hash, sexp]
+    type t [@@deriving compare, hash, sexp]
 
     include Comparator.S with type t := t
 

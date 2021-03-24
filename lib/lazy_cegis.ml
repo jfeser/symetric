@@ -38,9 +38,6 @@ struct
 
   let fill_probe = Option.value Probes.fill ~default:(fun _ _ -> ())
 
-  let create_hyper_edge ss cost op args =
-    (insert_hyper_edge_if_not_exists ss args op cost : _) |> ignore
-
   let fold_range ~init ~f lo hi =
     let rec fold_range acc i =
       if i >= hi then acc
@@ -80,7 +77,7 @@ struct
                      let args = G.succ (graph ss) (Node.of_state s) in
                      List.is_empty args
                      || List.exists args ~f:(fun v ->
-                            match Node.to_args_exn v |> Args.op ss with
+                            match Node.to_args_exn v |> Args.label ss with
                             | Merge -> true
                             | _ -> false))
             in
@@ -108,9 +105,7 @@ struct
       (* Add inputs to the state space graph. *)
       List.iter ops ~f:(fun op ->
           if Op.arity op = 0 then
-            let state = Abs.eval (params ss) op [] in
-            (insert_hyper_edge_if_not_exists ss [] op 1 ~state : _ option)
-            |> ignore)
+            insert_hyper_edge ss [] op 1 ~state:(Abs.eval (params ss) op []))
     else if cost > 1 then (
       let arg_cost = cost - 1 in
 
@@ -123,7 +118,7 @@ struct
             |> Comp.iter ~f:(fun arg_costs ->
                    let add_hyper_edges =
                      fold_range
-                       ~init:(fun args -> create_hyper_edge ss cost op args)
+                       ~init:(fun args -> insert_hyper_edge ss args op cost)
                        ~f:(fun f i args ->
                          state_set
                            ~cost:(Combinat.Int_array.get arg_costs i)
@@ -226,11 +221,7 @@ struct
     new_states
 
   let apply_summary ss summary =
-    List.iter summary ~f:(fun (abs, states) ->
-        let cost = List.hd_exn states |> State.cost ss in
-        ( insert_hyper_edge_if_not_exists ss states Merge cost ~state:abs
-          : State.t option )
-        |> ignore)
+    List.iter summary ~f:(fun (abs, states) -> insert_merge ss states abs)
 
   let refute ss target =
     if List.is_empty target then ()

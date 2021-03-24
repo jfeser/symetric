@@ -112,6 +112,25 @@ let glb a b =
       create ~xmin:(lo_max a.xmin b.xmin) ~xmax:(hi_min a.xmax b.xmax)
         ~ymin:(lo_max a.ymin b.ymin) ~ymax:(hi_min a.ymax b.ymax)
 
+let%expect_test "" =
+  glb
+    (Box
+       {
+         xmin = (16.0, Closed);
+         xmax = (18.0, Closed);
+         ymin = (0.0, Closed);
+         ymax = (4.0, Closed);
+       })
+    (Box
+       {
+         xmin = (8.0, Closed);
+         xmax = (10.0, Closed);
+         ymin = (0.0, Closed);
+         ymax = (4.0, Closed);
+       })
+  |> [%sexp_of: t] |> print_s;
+  [%expect {| Bot |}]
+
 let contains a (v : conc) =
   match a with
   | Bot -> false
@@ -126,7 +145,7 @@ let contains a (v : conc) =
 let graphviz_pp fmt =
   let pp_c fmt = function
     | Open -> Fmt.pf fmt "&lt;"
-    | Closed -> Fmt.pf fmt "&lt;="
+    | Closed -> Fmt.pf fmt "≤"
   in
   function
   | Bot -> Fmt.pf fmt "⊥"

@@ -9,6 +9,10 @@ module type S = sig
 
   type params
 
+  module Args_label : sig
+    type t = Op of op | Merge [@@deriving compare, hash, sexp]
+  end
+
   module Args : sig
     type t [@@deriving compare, hash, sexp_of]
 
@@ -16,15 +20,15 @@ module type S = sig
 
     type ctx
 
-    val create : ctx -> op -> t
+    val create : ctx -> Args_label.t -> t
 
     val id : t -> int
 
-    val op : ctx -> t -> op
+    val label : ctx -> t -> Args_label.t
+
+    val op_exn : ctx -> t -> op
 
     val graphviz_pp : ctx -> t Fmt.t
-
-    val output_type : ctx -> t -> type_
 
     val to_message : ctx -> t -> Sexp.t
   end
@@ -79,8 +83,6 @@ module type S = sig
     val to_args_exn : t -> Args.t
 
     val to_state_exn : t -> State.t
-
-    val type_ : ctx -> t -> type_
   end
   with type ctx := t
 
@@ -117,10 +119,9 @@ module type S = sig
 
   val fix_up : t -> unit
 
-  val insert_hyper_edge_if_not_exists :
-    ?state:abs -> t -> State.t list -> op -> int -> State.t option
+  val insert_hyper_edge : ?state:abs -> t -> State.t list -> op -> int -> unit
 
-  val pp : t Fmt.t
+  val insert_merge : t -> State.t list -> abs -> unit
 
   module type ATTR = sig
     val vertex_name : G.V.t -> string

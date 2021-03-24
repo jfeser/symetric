@@ -161,7 +161,7 @@ struct
     let%bind body =
       UG.succ_e graph v
       |> List.map ~f:(fun ((_, _, v) as e) ->
-             let op = Args.op ss @@ Node.to_args_exn @@ rel.backward v in
+             let op = Args.op_exn ss @@ Node.to_args_exn @@ rel.backward v in
 
              let is_selected = Map.find_exn vars.edge_vars e |> Smt.var in
 
@@ -229,7 +229,7 @@ struct
     in
     match inputs with
     | [ a ] ->
-        let op = Args.op ss @@ Node.to_args_exn @@ rel.backward a in
+        let op = Args.op_exn ss @@ Node.to_args_exn @@ rel.backward a in
         let args =
           UG.succ_e graph a
           |> List.sort ~compare:(fun (_, i, _) (_, j, _) -> [%compare: int] i j)
