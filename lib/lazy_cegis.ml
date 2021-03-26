@@ -74,12 +74,17 @@ struct
             let states =
               states_of_cost ss cost
               |> List.filter ~f:(fun s ->
-                     let args = G.succ (graph ss) (Node.of_state s) in
-                     List.is_empty args
-                     || List.exists args ~f:(fun v ->
+                     let prod_args = G.succ (graph ss) (Node.of_state s) in
+                     let cons_args = G.pred (graph ss) (Node.of_state s) in
+                     List.is_empty prod_args
+                     || List.exists prod_args ~f:(fun v ->
                             match Node.to_args_exn v |> Args.label ss with
                             | Merge -> true
-                            | _ -> false))
+                            | _ -> false)
+                     || List.for_all cons_args ~f:(fun v ->
+                            match Node.to_args_exn v |> Args.label ss with
+                            | Merge -> false
+                            | _ -> true))
             in
             let type_tbl = Hashtbl.create (module Type) in
             List.iter states ~f:(fun s ->
@@ -206,8 +211,9 @@ struct
              let new_states =
                Set.to_list new_
                |> List.map ~f:(fun state ->
-                      let (Fresh v' | Stale v') =
-                        State.create ss state cost type_
+                      let v' =
+                        State.create_or_get ss state cost type_
+                        |> Is_fresh.unwrap
                       in
                       G.add_edge_e (graph ss)
                         (Node.of_state v', -1, Node.of_args arg_v);

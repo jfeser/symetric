@@ -117,18 +117,23 @@ module Make (Lang : Lang_intf.S) = struct
       else Hashtbl.data ctx.state_idx.(c - 1)
 
     let create ctx s c t =
+      let id = ctx.state_id in
+      ctx.state_id <- ctx.state_id + 2;
+      let idx = id / 2 in
+      Option_vector.reserve ctx.states idx;
+      Option_vector.reserve ctx.costs idx;
+      Option_vector.reserve ctx.types idx;
+      Option_vector.set_some ctx.states idx s;
+      Option_vector.set_some ctx.costs idx c;
+      Option_vector.set_some ctx.types idx t;
+      set ctx s c t id;
+      id
+
+    let create_or_get ctx s c t =
       match get ctx s c t with
       | Some id -> Stale id
       | None ->
-          let id = ctx.state_id in
-          ctx.state_id <- ctx.state_id + 2;
-          let idx = id / 2 in
-          Option_vector.reserve ctx.states idx;
-          Option_vector.reserve ctx.costs idx;
-          Option_vector.reserve ctx.types idx;
-          Option_vector.set_some ctx.states idx s;
-          Option_vector.set_some ctx.costs idx c;
-          Option_vector.set_some ctx.types idx t;
+          let id = create ctx s c t in
           set ctx s c t id;
           Fresh id
 
@@ -311,7 +316,7 @@ module Make (Lang : Lang_intf.S) = struct
               Abs.eval (params ctx) op
               @@ List.map ~f:(State.state ctx) state_v_ins
         and out_type = Op.ret_type op in
-        State.create ctx out_state cost out_type |> Is_fresh.unwrap
+        State.create_or_get ctx out_state cost out_type |> Is_fresh.unwrap
       in
       let args_v = Args.create ctx arg_label in
       Args.set_hyper_edge ctx args_v hyper_edge;
@@ -328,7 +333,7 @@ module Make (Lang : Lang_intf.S) = struct
           let s = List.hd_exn ins in
           (State.type_ ctx s, State.cost ctx s)
         in
-        State.create ctx abs cost type_ |> Is_fresh.unwrap
+        State.create ctx abs cost type_
       in
       let args_v = Args.create ctx Merge in
       Args.set_hyper_edge ctx args_v hyper_edge;

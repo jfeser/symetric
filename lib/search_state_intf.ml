@@ -41,7 +41,7 @@ module type S = sig
 
     type ctx
 
-    val create : ctx -> abs -> int -> type_ -> t Is_fresh.t
+    val create_or_get : ctx -> abs -> int -> type_ -> t Is_fresh.t
 
     val id : t -> int
 
