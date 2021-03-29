@@ -181,46 +181,19 @@ struct
 
   let apply_refinement ss (refinement : Refine.Refinement.t) =
     [%test_pred: Refine.Refinement.t] ~message:"empty refinement"
-      (fun r -> not @@ Map.is_empty r)
+      (fun r -> not @@ List.is_empty r)
       refinement;
-    [%test_pred: Refine.Refinement.t] ~message:"no-op refinement"
-      (Map.for_all ~f:(fun Refine.Refinement.{ old; new_ } ->
-           not @@ Set.equal old new_))
-      refinement;
+
+    Probe.record refinements @@ List.length refinement;
 
     let new_states =
-      Map.to_alist refinement
-      |> List.concat_map ~f:(fun (arg_v, { old; new_ }) ->
-             Probe.record refinements 0;
-
-             let cost, type_ =
-               let old_state =
-                 G.pred (graph ss) @@ Node.of_args arg_v
-                 |> List.hd_exn |> Node.to_state_exn
-               in
-               (State.cost ss old_state, State.type_ ss old_state)
-             in
-
-             (* Remove edges to old states *)
-             G.pred_e (graph ss) @@ Node.of_args arg_v
-             |> List.filter ~f:(fun (state_v, _, _) ->
-                    Set.mem old (Node.to_state_exn state_v |> State.state ss))
-             |> List.iter ~f:(G.remove_edge_e @@ graph ss);
-
-             (* Insert new states and add edges to args nodes. *)
-             let new_states =
-               Set.to_list new_
-               |> List.map ~f:(fun state ->
-                      let v' =
-                        State.create_or_get ss state cost type_
-                        |> Is_fresh.unwrap
-                      in
-                      G.add_edge_e (graph ss)
-                        (Node.of_state v', -1, Node.of_args arg_v);
-                      v')
-             in
-
-             new_states)
+      List.concat_map refinement ~f:(function
+        | Remove_edge (v, v') ->
+            G.remove_edge (graph ss) v v';
+            []
+        | Add_edge ((v, _, v') as e) ->
+            G.add_edge_e (graph ss) e;
+            [ v; v' ])
     in
 
     fix_up ss;
@@ -241,7 +214,7 @@ struct
 
           let post_refine =
             let new_states = with_size ss @@ fun ss -> apply_refinement ss r in
-            cone (graph ss) @@ List.map ~f:Node.of_state new_states
+            cone (graph ss) new_states
           in
           dump_detailed_graph ~suffix:"postrefine" ss post_refine
       | Second p ->

@@ -10,10 +10,10 @@ struct
   open Search_state
 
   module Refinement = struct
-    type s = { old : Set.M(Abs).t; new_ : Set.M(Abs).t }
-    [@@deriving compare, sexp]
+    type elem = Remove_edge of G.V.t * G.V.t | Add_edge of G.E.t
+    [@@deriving compare, sexp_of]
 
-    type t = s Map.M(Search_state.Args).t [@@deriving sexp_of]
+    type t = elem list [@@deriving compare, sexp_of]
   end
 
   open Refinement
@@ -54,34 +54,41 @@ struct
       G.succ (graph ss) (Node.of_args args_v) |> List.map ~f:Node.to_state_exn
     in
     match Args.label ss args_v with
-    | Op (Union | Inter) | Merge ->
-        List.concat_map inputs ~f:(refine_state ss p)
+    | Merge -> []
+    | Op (Union | Inter) -> List.concat_map inputs ~f:(refine_state ss p)
     | Op ((Circle _ | Rect _) as op) ->
         let conc = Cad_conc.eval (params ss) op [] in
         let old = State.state ss output in
         let new_ =
           let module Boxes = Cad_abs.Boxes in
-          if Map.find_exn conc p then
-            let lower =
-              Boxes.of_list
-              @@ Box.create_closed ~xmin:p.x ~xmax:p.x ~ymin:p.y ~ymax:p.y
-                 :: Boxes.to_list old.lower
-            in
-            { old with lower }
-          else
-            let upper =
-              Cad_abs.Boxes.to_list old.upper
-              |> split p
-              |> List.filter ~f:(fun b ->
-                     Map.existsi conc ~f:(fun ~key ~data ->
-                         data && Box.contains b key))
-              |> Cad_abs.Boxes.of_list
-            in
-            { old with upper }
+          let abs =
+            if Map.find_exn conc p then
+              let lower =
+                Boxes.of_list
+                @@ Box.create_closed ~xmin:p.x ~xmax:p.x ~ymin:p.y ~ymax:p.y
+                   :: Boxes.to_list old.lower
+              in
+              { old with lower }
+            else
+              let upper =
+                Cad_abs.Boxes.to_list old.upper
+                |> split p
+                |> List.filter ~f:(fun b ->
+                       Map.existsi conc ~f:(fun ~key ~data ->
+                           data && Box.contains b key))
+                |> Cad_abs.Boxes.of_list
+              in
+              { old with upper }
+          in
+          State.create_or_get ss abs (State.cost ss output)
+            (State.type_ ss output)
+          |> Is_fresh.unwrap
         in
-        let new_ = Set.singleton (module Abs) new_
-        and old = Set.singleton (module Abs) old in
-        [ (args_v, { old; new_ }) ]
+
+        [
+          Remove_edge (Node.of_state output, Node.of_args args_v);
+          Add_edge (Node.of_state new_, -1, Node.of_args args_v);
+        ]
 
   and refine_state ss counter state_v =
     let abs = State.state ss state_v in
@@ -109,10 +116,7 @@ struct
             (counter : K.t)];
       let counter, _ = counter in
       List.concat_map target ~f:(refine_state ss counter)
-      |> Map.of_alist_reduce
-           (module Args)
-           ~f:(fun x x' ->
-             if [%compare.equal: Refinement.s] x x' then x else failwith "")
+      |> List.dedup_and_sort ~compare:[%compare: elem]
       |> Either.first
     with Found_solution p -> Second p
 

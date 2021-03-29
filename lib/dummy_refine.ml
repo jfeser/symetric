@@ -11,10 +11,10 @@ struct
   exception Found_solution of Op.t Program.t [@@deriving sexp]
 
   module Refinement = struct
-    type s = { old : Set.M(Abs).t; new_ : Set.M(Abs).t }
-    [@@deriving compare, sexp]
+    type elem = Remove_edge of G.V.t * G.V.t | Add_edge of G.E.t
+    [@@deriving compare, sexp_of]
 
-    type t = s Map.M(Search_state.Args).t [@@deriving sexp_of]
+    type t = elem list [@@deriving compare, sexp_of]
   end
 
   let sample ss target =

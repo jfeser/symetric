@@ -356,7 +356,7 @@ module Make (Lang : Lang_intf.S) = struct
           ~args:(fun n ->
             [ `HtmlLabel (Fmt.str "%a" (Args.graphviz_pp ctx) n); `Shape `Box ])
           ~state:(fun n ->
-            [ `HtmlLabel (Fmt.str "%a" (State.graphviz_pp ctx) n) ]
+            [ `HtmlLabel (Fmt.str "%a" (State.graphviz_pp ctx) n); `Shape `Box ]
             @
             if Abs.contains (State.state ctx n) (Bench.output ctx.params.bench)
             then [ `Style `Bold ]

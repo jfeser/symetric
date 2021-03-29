@@ -7,6 +7,16 @@ module type S = sig
     module State : sig
       type t
     end
+
+    module G : sig
+      module V : sig
+        type t
+      end
+
+      module E : sig
+        type t
+      end
+    end
   end
 
   module Abs : Comparator.S
@@ -16,9 +26,10 @@ module type S = sig
   open Search_state
 
   module Refinement : sig
-    type s = { old : Set.M(Abs).t; new_ : Set.M(Abs).t } [@@deriving sexp]
+    type elem = Remove_edge of G.V.t * G.V.t | Add_edge of G.E.t
+    [@@deriving compare, sexp_of]
 
-    type t = s Map.M(Args).t [@@deriving sexp_of]
+    type t = elem list [@@deriving compare, sexp_of]
   end
 
   val refine : t -> State.t list -> (Refinement.t, op Program.t) Either.t
