@@ -10,7 +10,10 @@ struct
   open Search_state
 
   module Refinement = struct
-    type elem = Remove_edge of G.V.t * G.V.t | Add_edge of G.E.t
+    type elem =
+      | Remove_edge of G.V.t * G.V.t
+      | Add_edge of G.E.t
+      | Add_merge of State.t list * Abs.t
     [@@deriving compare, sexp_of]
 
     type t = elem list [@@deriving compare, sexp_of]
@@ -49,12 +52,91 @@ struct
     List.concat_map a ~f:(fun b ->
         if Box.contains b p then Box.split b else [ b ])
 
-  let rec refine_args ss p output args_v =
+  let reduce_while l ~f =
+    let rec loop g gs = function
+      | [] -> g :: gs
+      | x :: xs -> (
+          match f g x with
+          | Some g' -> loop g' gs xs
+          | None -> loop x (g :: gs) xs )
+    in
+    match l with [] -> [] | x :: xs -> loop x [] xs
+
+  let rec update l ~f =
+    match l with
+    | [] -> None
+    | x :: xs -> (
+        match f x with
+        | Some x' -> Some (x' :: xs)
+        | None -> (
+            match update ~f xs with Some xs' -> Some (x :: xs') | None -> None )
+        )
+
+  let summarize ss states =
+    List.permute states
+    |> List.fold ~init:[] ~f:(fun groups s ->
+           let sabs = State.state ss s in
+           let groups' =
+             update groups ~f:(fun (abs, sts) ->
+                 let abs' = Abs.lub abs sabs in
+                 if
+                   not @@ Abs.contains abs' (Cad_bench.output (params ss).bench)
+                 then Some (abs', s :: sts)
+                 else None)
+           in
+           match groups' with
+           | Some groups -> groups
+           | None -> (sabs, [ s ]) :: groups)
+
+  let rec refine_merge ss counter output args_v =
+    let inputs =
+      G.succ (graph ss) (Node.of_args args_v)
+      |> List.map ~f:Node.to_state_exn
+      |> List.permute
+    in
+    let t, f, m =
+      List.partition3_map inputs ~f:(fun state_v ->
+          let abs = State.state ss state_v in
+          match Cad_abs.implies abs counter with
+          | True -> `Fst state_v
+          | False -> `Snd state_v
+          | Maybe -> `Trd state_v)
+    in
+    let refn =
+      G.succ_e (graph ss) (Node.of_args args_v)
+      |> List.map ~f:(fun (v, _, v') -> Remove_edge (v, v'))
+    in
+    let refn =
+      Remove_edge (Node.of_state output, Node.of_args args_v) :: refn
+    in
+    let t_groups =
+      List.map t ~f:(fun v -> (State.state ss v, [ v ]))
+      |> reduce_while ~f:(fun (a, s) (a', s') ->
+             let a'' = Abs.lub a a' in
+             match Cad_abs.implies a'' counter with
+             | True -> Some (a'', s @ s')
+             | _ -> None)
+    in
+    let f_groups =
+      List.map f ~f:(fun v -> (State.state ss v, [ v ]))
+      |> reduce_while ~f:(fun (a, s) (a', s') ->
+             let a'' = Abs.lub a a' in
+             match Cad_abs.implies a'' counter with
+             | False -> Some (a'', s @ s')
+             | _ -> None)
+    in
+    let merge_refn groups =
+      List.map groups ~f:(fun (state, inputs) -> Add_merge (inputs, state))
+    in
+    merge_refn t_groups @ merge_refn f_groups @ refn
+    @ List.concat_map m ~f:(refine_state ss counter)
+
+  and refine_args ss p output args_v =
     let inputs =
       G.succ (graph ss) (Node.of_args args_v) |> List.map ~f:Node.to_state_exn
     in
     match Args.label ss args_v with
-    | Merge -> []
+    | Merge -> refine_merge ss p output args_v
     | Op (Union | Inter) -> List.concat_map inputs ~f:(refine_state ss p)
     | Op ((Circle _ | Rect _) as op) ->
         let conc = Cad_conc.eval (params ss) op [] in
@@ -119,64 +201,6 @@ struct
       |> List.dedup_and_sort ~compare:[%compare: elem]
       |> Either.first
     with Found_solution p -> Second p
-
-  let rec update l ~f =
-    match l with
-    | [] -> None
-    | x :: xs -> (
-        match f x with
-        | Some x' -> Some (x' :: xs)
-        | None -> (
-            match update ~f xs with Some xs' -> Some (x :: xs') | None -> None )
-        )
-
-  let summarize ss states =
-    (* let lift a =
-     *   Cad_abs.
-     *     {
-     *       upper =
-     *         Boxes.of_list
-     *           [
-     *             Option.value ~default:Box.bot
-     *             @@ List.reduce ~f:Box.lub @@ Boxes.to_list a.upper;
-     *           ];
-     *       lower =
-     *         Boxes.of_list
-     *           [
-     *             Option.value ~default:Box.bot
-     *             @@ List.reduce ~f:Box.glb @@ Boxes.to_list a.lower;
-     *           ];
-     *     }
-     * in
-     * let union a a' =
-     *   Cad_abs.
-     *     {
-     *       upper =
-     *         Boxes.lub a.lower a'.lower |> Boxes.to_list
-     *         |> List.reduce ~f:Box.lub
-     *         |> Option.value ~default:Box.bot
-     *         |> (fun x -> [ x ])
-     *         |> Boxes.of_list;
-     *       lower =
-     *         Boxes.glb a.lower a'.lower |> Boxes.to_list
-     *         |> List.reduce ~f:Box.glb
-     *         |> Option.value ~default:Box.bot
-     *         |> (fun x -> [ x ])
-     *         |> Boxes.of_list;
-     *     }
-     * in *)
-    List.fold states ~init:[] ~f:(fun groups s ->
-        let sabs = State.state ss s in
-        let groups' =
-          update groups ~f:(fun (abs, sts) ->
-              let abs' = Abs.lub abs sabs in
-              if not @@ Abs.contains abs' (Cad_bench.output (params ss).bench)
-              then Some (abs', s :: sts)
-              else None)
-        in
-        match groups' with
-        | Some groups -> groups
-        | None -> (sabs, [ s ]) :: groups)
 
   let summarize = Some summarize
 end

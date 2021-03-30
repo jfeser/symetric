@@ -255,19 +255,19 @@ module Make (Lang : Lang_intf.S) = struct
     G.remove_vertex ctx.graph (Node.of_args v)
 
   let fix_up_args ctx work add_work v =
-    match Args.label ctx v with
-    | Op op ->
-        if G.out_degree ctx.graph v <> Op.arity op then (
-          let work' =
-            G.fold_pred (fun v' w -> add_work w v') ctx.graph v work
-          in
-          remove_args ctx v;
-          work' )
-        else if G.in_degree ctx.graph v = 0 then (
-          remove_args ctx v;
-          work )
-        else work
-    | Merge -> work
+    let wrong_arity =
+      match Args.label ctx v with
+      | Merge -> G.out_degree ctx.graph v = 0
+      | Op op -> G.out_degree ctx.graph v <> Op.arity op
+    in
+    if wrong_arity then (
+      let work' = G.fold_pred (fun v' w -> add_work w v') ctx.graph v work in
+      remove_args ctx v;
+      work' )
+    else if G.in_degree ctx.graph v = 0 then (
+      remove_args ctx v;
+      work )
+    else work
 
   let fix_up_states ctx work add_work v =
     if G.out_degree ctx.graph v = 0 then (
@@ -327,7 +327,8 @@ module Make (Lang : Lang_intf.S) = struct
 
   let insert_merge ctx ins abs =
     let hyper_edge = (ins, Merge) in
-    if not (Hyper_edge.mem ctx hyper_edge) then (
+    if Hyper_edge.mem ctx hyper_edge then []
+    else
       let out =
         let type_, cost =
           let s = List.hd_exn ins in
@@ -339,7 +340,8 @@ module Make (Lang : Lang_intf.S) = struct
       Args.set_hyper_edge ctx args_v hyper_edge;
       Hyper_edge.add ctx hyper_edge;
       List.iteri ins ~f:(fun i v -> G.add_edge_e ctx.graph (args_v, i, v));
-      G.add_edge_e ctx.graph (out, -1, args_v) )
+      G.add_edge_e ctx.graph (out, -1, args_v);
+      [ out ]
 
   module type ATTR = sig
     val vertex_name : G.V.t -> string

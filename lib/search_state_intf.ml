@@ -121,7 +121,7 @@ module type S = sig
 
   val insert_hyper_edge : ?state:abs -> t -> State.t list -> op -> int -> unit
 
-  val insert_merge : t -> State.t list -> abs -> unit
+  val insert_merge : t -> State.t list -> abs -> Node.t list
 
   module type ATTR = sig
     val vertex_name : G.V.t -> string

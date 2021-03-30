@@ -11,7 +11,10 @@ struct
   exception Found_solution of Op.t Program.t [@@deriving sexp]
 
   module Refinement = struct
-    type elem = Remove_edge of G.V.t * G.V.t | Add_edge of G.E.t
+    type elem =
+      | Remove_edge of G.V.t * G.V.t
+      | Add_edge of G.E.t
+      | Add_merge of State.t list * Abs.t
     [@@deriving compare, sexp_of]
 
     type t = elem list [@@deriving compare, sexp_of]

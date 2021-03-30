@@ -193,14 +193,16 @@ struct
             []
         | Add_edge ((v, _, v') as e) ->
             G.add_edge_e (graph ss) e;
-            [ v; v' ])
+            [ v; v' ]
+        | Add_merge (inputs, output) -> insert_merge ss inputs output)
     in
 
     fix_up ss;
     new_states
 
   let apply_summary ss summary =
-    List.iter summary ~f:(fun (abs, states) -> insert_merge ss states abs)
+    List.iter summary ~f:(fun (abs, states) ->
+        (insert_merge ss states abs : Node.t list) |> ignore)
 
   let refute ss target =
     if List.is_empty target then ()
@@ -237,7 +239,7 @@ struct
             let input_states = states_of_cost ss cost in
             let summary = summarize ss input_states in
             apply_summary ss summary;
-            print_s
+            eprint_s
               [%message
                 "after summarization"
                   (cost : int)

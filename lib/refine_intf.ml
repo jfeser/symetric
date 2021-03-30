@@ -26,7 +26,10 @@ module type S = sig
   open Search_state
 
   module Refinement : sig
-    type elem = Remove_edge of G.V.t * G.V.t | Add_edge of G.E.t
+    type elem =
+      | Remove_edge of G.V.t * G.V.t
+      | Add_edge of G.E.t
+      | Add_merge of State.t list * Abs.t
     [@@deriving compare, sexp_of]
 
     type t = elem list [@@deriving compare, sexp_of]
