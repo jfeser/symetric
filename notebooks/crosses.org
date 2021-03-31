@@ -14,8 +14,8 @@ echo "method,max,bench,states,distinct,roots,time,sol,gold,args,in_deg,mergeable
 
 #+RESULTS:
 | method       | max | bench                    | states | distinct | roots |        time | sol | gold |  args | in_deg | mergeable |
-| cad_abs      |   9 | ../bench/cad2/crosses_5  |    111 |      111 |     5 |   24.378061 |   7 |    7 |   302 |    302 |       189 |
-| cad_abs      |   9 | ../bench/cad2/crosses_10 |    121 |      121 |     1 |   75.369358 |   7 |    7 |   305 |    305 |       194 |
-| cad_abs      |   9 | ../bench/cad2/crosses_20 |    142 |      142 |     1 |  163.531542 |   7 |    7 |   331 |    331 |       218 |
-| cad_concrete |   9 | ../bench/cad2/crosses_5  |    388 |      188 |   188 |  111.381054 |   7 |    7 |  6935 |   6935 |      3505 |
-| cad_concrete |   9 | ../bench/cad2/crosses_10 |   5048 |     3677 |  3677 | 6383.080721 |   7 |    7 | 98560 |  98560 |     49405 |
+| cad_abs      |   9 | ../bench/cad2/crosses_5  |     89 |       85 |     1 |   26.814222 |   7 |    7 |   244 |    244 |       144 |
+| cad_abs      |   9 | ../bench/cad2/crosses_10 |     92 |       92 |     1 |   74.909687 |   7 |    7 |   281 |    281 |       168 |
+| cad_abs      |   9 | ../bench/cad2/crosses_20 |    115 |      115 |     1 |  206.509352 |   7 |    7 |   297 |    297 |       186 |
+| cad_concrete |   9 | ../bench/cad2/crosses_5  |    388 |      188 |   188 |  111.266851 |   7 |    7 |  6935 |   6935 |      3505 |
+| cad_concrete |   9 | ../bench/cad2/crosses_10 |   5048 |     3677 |  3677 | 6361.628771 |   7 |    7 | 98560 |  98560 |     49405 |
