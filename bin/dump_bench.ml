@@ -169,6 +169,13 @@ let take_while_with_state ~init ~f s =
   Sequence.unfold_with s ~init ~f:(fun st x ->
       match f st x with Some st' -> Yield (x, st') | None -> Done)
 
+(** 
+@param xmax canvas x length
+@param ymax canvas y length
+@param size program size
+@param nprim number of primitives available
+@param n number of programs to generate 
+@param k callback with program sequence *)
 let random ~xmax ~ymax ~size ~nprim ~n k =
   let params =
     Params.create
@@ -313,12 +320,36 @@ let crosses n =
   (sprintf "crosses_%d" n, to_sexp ~xmax:(4 * n) ~ymax:4 (prog, ops))
 
 let dumps ~dir seq =
+  Unix.mkdir_p dir;
   Sequence.iter seq ~f:(fun (fn, sexp) ->
       Out_channel.with_file (sprintf "%s/%s" dir fn) ~f:(fun ch ->
           Sexp.output_hum ch sexp))
 
+let random_cli =
+  let open Command.Let_syntax in
+  Command.basic ~summary:"Random benchmarks"
+    [%map_open
+      let xmax =
+        flag "xmax" (optional_with_default 30 int) ~doc:" x dimension size"
+      and ymax =
+        flag "ymax" (optional_with_default 30 int) ~doc:" y dimension size"
+      and seed = flag "seed" (optional_with_default 0 int) ~doc:" random seed"
+      and size = flag "size" (required int) ~doc:" program size"
+      and nprim = flag "prim" (required int) ~doc:" number of primitives"
+      and dir = flag "dir" (required string) ~doc:" output directory"
+      and n = anon ("n" %: int) in
+      fun () ->
+        Random.init seed;
+        random ~xmax ~ymax ~size ~nprim ~n @@ dumps ~dir]
+
+let crosses_cli =
+  let open Command.Let_syntax in
+  Command.basic ~summary:"Crosses benchmark"
+    [%map_open
+      let n = anon ("n" %: int) in
+      fun () -> crosses n |> Sequence.singleton |> dumps ~dir:"bench/cad2"]
+
 let () =
-  Random.init 0;
-  crosses 20 |> Sequence.singleton
-  |> (* random ~xmax:30 ~ymax:30 ~size:11 ~nprim:6 ~n:100 *)
-  dumps ~dir:"bench/cad2"
+  Command.group ~summary:"Dump benchmarks"
+    [ ("crosses", crosses_cli); ("random", random_cli) ]
+  |> Command.run
