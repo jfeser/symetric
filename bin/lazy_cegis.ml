@@ -208,6 +208,7 @@ let cad_concrete_cli =
       run params]
 
 let () =
+  Memtrace.trace_if_requested ();
   Command.group ~summary:"Run lazy CEGIS."
     [
       (* ("cad", csg_cli); *)

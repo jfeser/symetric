@@ -197,6 +197,8 @@ struct
         | Add_merge (inputs, output) -> insert_merge ss inputs output)
     in
 
+    dump_detailed_graph ~suffix:"prefixup" ss @@ cone (graph ss) new_states;
+
     fix_up ss;
     new_states
 
