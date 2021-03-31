@@ -126,7 +126,11 @@ struct
              | _ -> None)
     in
     let merge_refn groups =
-      List.map groups ~f:(fun (state, inputs) -> Add_merge (inputs, state))
+      List.map groups ~f:(fun (state, inputs) ->
+          let inputs =
+            List.dedup_and_sort ~compare:[%compare: State.t] inputs
+          in
+          Add_merge (inputs, state))
     in
     merge_refn t_groups @ merge_refn f_groups @ refn
     @ List.concat_map m ~f:(refine_state ss counter)
