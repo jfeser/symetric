@@ -30,23 +30,43 @@ let get t i =
 
 let to_list x = List.init (length x) ~f:(get x)
 
+let char_of_int_mask i = char_of_int (i land 0xff)
+
 let not a =
   {
     a with
     buf =
-      String.map a.buf ~f:(fun c ->
-          char_of_int @@ ((lnot @@ int_of_char c) land 0xff));
+      String.map a.buf ~f:(fun c -> char_of_int_mask @@ lnot @@ int_of_char c);
   }
 
-let equal a b =
+let and_ a b =
   [%test_result: int] ~expect:a.len b.len;
   {
     len = a.len;
     buf =
-      String.init a.len ~f:(fun i ->
-          char_of_int @@ lnot
-          @@ (int_of_char a.buf.[i] lxor int_of_char b.buf.[i]));
+      String.mapi a.buf ~f:(fun i ac ->
+          char_of_int_mask @@ (int_of_char ac land int_of_char b.buf.[i]));
   }
+
+let or_ a b =
+  [%test_result: int] ~expect:a.len b.len;
+  {
+    len = a.len;
+    buf =
+      String.mapi a.buf ~f:(fun i ac ->
+          char_of_int_mask @@ (int_of_char ac lor int_of_char b.buf.[i]));
+  }
+
+let xor a b =
+  [%test_result: int] ~expect:a.len b.len;
+  {
+    len = a.len;
+    buf =
+      String.mapi a.buf ~f:(fun i ac ->
+          char_of_int_mask @@ (int_of_char ac lxor int_of_char b.buf.[i]));
+  }
+
+let equal a b = not (xor a b)
 
 let all a =
   let ret = ref true in

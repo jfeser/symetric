@@ -44,13 +44,8 @@ let eval params op args =
   try
     match (op, args) with
     | Cad_op.Inter, [ s; s' ] ->
-        [%test_result: int] ~expect:(Bitarray.length s.pixels)
-          (Bitarray.length s'.pixels);
-        init params ~f:(fun _ idx -> geti s idx && geti s' idx)
-    | Union, [ s; s' ] ->
-        [%test_result: int] ~expect:(Bitarray.length s.pixels)
-          (Bitarray.length s'.pixels);
-        init params ~f:(fun _ idx -> geti s idx || geti s' idx)
+        { s with pixels = Bitarray.and_ s.pixels s'.pixels }
+    | Union, [ s; s' ] -> { s with pixels = Bitarray.or_ s.pixels s'.pixels }
     | Circle c, [] ->
         init params ~f:(fun pt _ ->
             Float.(Vector2.(l2_dist c.center pt) <= c.radius))

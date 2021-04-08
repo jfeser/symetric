@@ -3,12 +3,15 @@ open Base_quickcheck
 module Make (L : Lattice_intf.S) = struct
   let ( => ) a b = (not a) || b
 
-  open Lattice_utils.Make (L)
+  module U = Lattice_utils.Make (L)
+  open U
 
   let examples = [ L.top; L.bot ]
 
   let%test_unit "leq refl: forall a. a <= a" =
-    Test.run_exn ~examples ~f:([%test_pred: L.t] (fun a -> L.leq a a)) (module L)
+    Test.run_exn ~examples
+      ~f:([%test_pred: L.t] (fun a -> L.leq a a))
+      (module L)
 
   let%test_unit {|leq transitive: forall a,b,c. (a <= b) /\ (b <= c) ==> (a <= c)|}
       =
