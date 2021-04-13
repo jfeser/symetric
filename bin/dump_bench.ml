@@ -274,7 +274,7 @@ let random ~xmax ~ymax ~size ~n ~ops k =
         else if arity = 2 then random_binop op size
         else failwith ""
     in
-    let prog = Option.value_exn (random_tree size) and ops = nilops @ binops in
+    let prog = Option.value_exn (random_tree size) in
     (prog, ops)
   in
   Progress.(
