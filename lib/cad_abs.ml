@@ -129,6 +129,20 @@ let implies a p =
   then False
   else Maybe
 
+let pprint ?point (params : (Cad_bench.t, _) Params.t) fmt a =
+  for y = params.bench.input.ymax - 1 downto 0 do
+    for x = 0 to params.bench.input.xmax - 1 do
+      let p = Vector2.{ x = Float.of_int x; y = Float.of_int y } in
+      if [%compare.equal: Vector2.t option] point (Some p) then Fmt.pf fmt "╬"
+      else
+        match implies a Vector2.{ x = Float.of_int x; y = Float.of_int y } with
+        | True -> Fmt.pf fmt "█"
+        | False -> Fmt.pf fmt "."
+        | Maybe -> Fmt.pf fmt "░"
+    done;
+    Fmt.pf fmt "\n"
+  done
+
 let top = { upper = Boxes.top; lower = Boxes.bot }
 
 let bot = { upper = Boxes.bot; lower = Boxes.top }

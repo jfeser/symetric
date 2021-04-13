@@ -1,3 +1,4 @@
+open Std
 open Ternary
 
 module Make
@@ -52,25 +53,6 @@ struct
   let split p a =
     List.concat_map a ~f:(fun b ->
         if Box.contains b p then Box.split b else [ b ])
-
-  let reduce_while l ~f =
-    let rec loop g gs = function
-      | [] -> g :: gs
-      | x :: xs -> (
-          match f g x with
-          | Some g' -> loop g' gs xs
-          | None -> loop x (g :: gs) xs)
-    in
-    match l with [] -> [] | x :: xs -> loop x [] xs
-
-  let rec update l ~f =
-    match l with
-    | [] -> None
-    | x :: xs -> (
-        match f x with
-        | Some x' -> Some (x' :: xs)
-        | None -> (
-            match update ~f xs with Some xs' -> Some (x :: xs') | None -> None))
 
   let summarize ss states =
     List.permute states
@@ -135,7 +117,18 @@ struct
     merge_refn t_groups @ merge_refn f_groups @ refn
     @ List.concat_map m ~f:(refine_state ss counter)
 
-  and refine_replicate _ _ _ _ _ = []
+  and refine_replicate ss point _ args_v (r : Cad_op.replicate) =
+    let input =
+      G.succ (graph ss) (Node.of_args args_v)
+      |> List.hd_exn |> Node.to_state_exn
+    in
+    let input_abs = State.state ss input in
+    let new_point =
+      repeat r.count ~f:(fun p -> Vector2.O.(p - r.v)) point
+      |> List.find_exn ~f:(fun p ->
+             Ternary.O.(Cad_abs.implies input_abs p = Maybe))
+    in
+    refine_state ss new_point input
 
   and refine_args ss p output args_v =
     let inputs =
@@ -199,12 +192,12 @@ struct
         include T
         include Comparator.Make (T)
       end in
-      let counter = sample_counters ss target 1000 |> most_common (module K) in
-      eprint_s
-        [%message
-          (List.map target ~f:(State.to_message ss) : Sexp.t list)
-            (counter : K.t)];
-      let counter, _ = counter in
+      let counter, _ =
+        sample_counters ss target 1000 |> most_common (module K)
+      in
+      List.iter target ~f:(fun v ->
+          Cad_abs.pprint ~point:counter (params ss) Fmt.stderr
+            (State.state ss v));
       List.concat_map target ~f:(refine_state ss counter)
       |> List.dedup_and_sort ~compare:[%compare: elem]
       |> Either.first
