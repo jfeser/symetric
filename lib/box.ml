@@ -58,6 +58,13 @@ let quickcheck_generator =
   |> Generator.map ~f:(fun a ->
          create ~xmin:a.xmin ~xmax:a.xmax ~ymin:a.ymin ~ymax:a.ymax)
 
+let translate v = function
+  | Bot -> Bot
+  | Box b ->
+      let add (x, c) x' = (x +. x', c) in
+      create ~xmin:(add b.xmin v.Vector2.x) ~xmax:(add b.xmax v.Vector2.x)
+        ~ymin:(add b.ymin v.Vector2.y) ~ymax:(add b.ymax v.Vector2.y)
+
 let leq b b' =
   match (b, b') with
   | Bot, _ -> true
@@ -162,8 +169,8 @@ let graphviz_pp fmt =
 let split = function
   | Bot -> failwith "cannot split"
   | Box
-      ( { xmin = xminv, _; xmax = xmaxv, _; ymin = yminv, _; ymax = ymaxv, _ }
-      as b ) ->
+      ({ xmin = xminv, _; xmax = xmaxv, _; ymin = yminv, _; ymax = ymaxv, _ } as
+      b) ->
       let open Float in
       let l = xmaxv - xminv and h = ymaxv - yminv in
       let xsplit = xminv + (l / 2.0) |> round_up
