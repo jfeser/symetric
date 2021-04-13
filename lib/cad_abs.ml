@@ -63,12 +63,28 @@ let eval_union { upper = u; lower = l } { upper = u'; lower = l' } =
 let eval_inter { upper = u; lower = l } { upper = u'; lower = l' } =
   { upper = Boxes.glb u u'; lower = Boxes.glb l l' }
 
+let rec repeat ~f i x = if i <= 0 then [ x ] else x :: repeat (i - 1) ~f (f x)
+
+let eval_replicate r { upper = u; lower = l } =
+  let translate_boxes v bs =
+    Boxes.to_list bs |> List.map ~f:(Box.translate v) |> Boxes.of_list
+  in
+  let replicate_boxes r bs =
+    repeat ~f:(translate_boxes r.Cad_op.v) r.Cad_op.count bs
+  in
+  {
+    upper = List.reduce_exn ~f:Boxes.lub @@ replicate_boxes r u;
+    lower =
+      replicate_boxes r l |> List.concat_map ~f:Boxes.to_list |> Boxes.of_list;
+  }
+
 let eval params op args =
   match (op, args) with
   | Cad_op.Circle c, [] -> eval_circle params c
   | Rect r, [] -> eval_rect params r
   | Union, [ a; b ] -> eval_union a b
   | Inter, [ a; b ] -> eval_inter a b
+  | Replicate r, [ a ] -> eval_replicate r a
   | _ ->
       raise_s
       @@ [%message "unexpected arguments" (op : Cad_op.t) (args : t list)]
