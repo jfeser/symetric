@@ -1,3 +1,9 @@
+module type Comparable = sig
+  type t [@@deriving compare, hash, sexp]
+
+  include Comparator.S with type t := t
+end
+
 module type S = sig
   type bench
 
@@ -41,6 +47,8 @@ module type S = sig
     type t [@@deriving compare, hash, sexp]
 
     include Comparator.S with type t := t
+
+    val search_compare : params -> (module Comparable with type t = t)
 
     val graphviz_pp : params -> t Fmt.t
 

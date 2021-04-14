@@ -99,9 +99,10 @@ let cad_cli =
         Probe.record min_boxes (List.hd_exn n_boxes);
         Probe.record max_boxes (List.last_exn n_boxes);
         Probe.record median_boxes
-          (List.nth_exn n_boxes (List.length n_boxes / 2)) )
+          (List.nth_exn n_boxes (List.length n_boxes / 2)))
   end in
-  let module Lazy_cegis = Lazy_cegis.Make (Cad) (Search_state) (Refine) (Probes)
+  let module Lazy_cegis =
+    Lazy_cegis.Make (Cad_hashcode) (Search_state) (Refine) (Probes)
   in
   let open Search_state in
   let run params () =
@@ -132,9 +133,9 @@ let cad_cli =
         ~max_size:params.max_cost
         ~n_args:(G.Fold.V.filter_map (graph ss) ~f:Node.to_args |> List.length)
         ~total_arg_in_degree:
-          ( G.Fold.V.filter (graph ss) ~f:Node.is_args
+          (G.Fold.V.filter (graph ss) ~f:Node.is_args
           |> List.map ~f:(G.in_degree (graph ss))
-          |> List.sum (module Int) ~f:Fun.id )
+          |> List.sum (module Int) ~f:Fun.id)
         ~n_mergeable_hyper_edges:
           (mergeable_hyper_edges (module Search_state) ss)
     else
@@ -180,9 +181,9 @@ let cad_concrete_cli =
         ~n_roots:(List.length states_distinct)
         ~n_args:(G.Fold.V.filter_map (graph ss) ~f:Node.to_args |> List.length)
         ~total_arg_in_degree:
-          ( G.Fold.V.filter (graph ss) ~f:Node.is_args
+          (G.Fold.V.filter (graph ss) ~f:Node.is_args
           |> List.map ~f:(G.in_degree (graph ss))
-          |> List.sum (module Int) ~f:Fun.id )
+          |> List.sum (module Int) ~f:Fun.id)
         ~time
         ~sol_size:(Option.map prog ~f:Program.size)
         ~gold_size:(Option.map params.bench.solution ~f:Program.size)

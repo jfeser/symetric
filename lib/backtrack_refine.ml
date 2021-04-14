@@ -195,7 +195,8 @@ struct
       in
       List.iter target ~f:(fun v ->
           Cad_abs.pprint ~point:counter (params ss) Fmt.stderr
-            (State.state ss v));
+            (State.state ss v);
+          Fmt.epr "\n");
       List.concat_map target ~f:(refine_state ss counter)
       |> List.dedup_and_sort ~compare:[%compare: elem]
       |> Either.first

@@ -33,15 +33,6 @@ module Make (Lang : Lang_intf.S) = struct
     include Graph_ext.Changed (G0) ()
   end
 
-  module State_and_type = struct
-    module T = struct
-      type t = Abs.t * Type.t [@@deriving compare, hash, sexp]
-    end
-
-    include T
-    include Comparator.Make (T)
-  end
-
   module State0 = Int
   module Args0 = Int
 
@@ -56,7 +47,7 @@ module Make (Lang : Lang_intf.S) = struct
     costs : int Option_vector.t;
     states : Abs.t Option_vector.t;
     types : Type.t Option_vector.t;
-    state_idx : State0.t Hashtbl.M(State_and_type).t array;
+    state_idx : (Abs.t * Type.t, State0.t) Hashtbl.t array;
     states_by_cost : Set.M(State0).t array;
     mutable state_id : int;
     (* Hyper_edge data *)
@@ -68,6 +59,15 @@ module Make (Lang : Lang_intf.S) = struct
   }
 
   let create params =
+    let module Abs_comp = (val Abs.search_compare params) in
+    let module State_and_type = struct
+      module T = struct
+        type t = Abs_comp.t * Type.t [@@deriving compare, hash, sexp]
+      end
+
+      include T
+      include Comparator.Make (T)
+    end in
     {
       params;
       graph = G.create ();
@@ -263,17 +263,17 @@ module Make (Lang : Lang_intf.S) = struct
     if wrong_arity then (
       let work' = G.fold_pred (fun v' w -> add_work w v') ctx.graph v work in
       remove_args ctx v;
-      work' )
+      work')
     else if G.in_degree ctx.graph v = 0 then (
       remove_args ctx v;
-      work )
+      work)
     else work
 
   let fix_up_states ctx work add_work v =
     if G.out_degree ctx.graph v = 0 then (
       let work' = G.fold_pred (fun v' w -> add_work w v') ctx.graph v work in
       G.remove_vertex ctx.graph v;
-      work' )
+      work')
     else work
 
   module Unique_queue = struct
@@ -323,7 +323,7 @@ module Make (Lang : Lang_intf.S) = struct
       Hyper_edge.add ctx hyper_edge;
       List.iteri state_v_ins ~f:(fun i v ->
           G.add_edge_e ctx.graph (args_v, i, v));
-      G.add_edge_e ctx.graph (state_v_out, -1, args_v) )
+      G.add_edge_e ctx.graph (state_v_out, -1, args_v))
 
   let insert_merge ctx ins abs =
     let hyper_edge = (ins, Merge) in
@@ -350,7 +350,7 @@ module Make (Lang : Lang_intf.S) = struct
   end
 
   let attr ctx =
-    ( module struct
+    (module struct
       let vertex_name n = Fmt.str "%d" @@ Node.id n
 
       let vertex_attributes n =
@@ -363,7 +363,7 @@ module Make (Lang : Lang_intf.S) = struct
             if Abs.contains (State.state ctx n) (Bench.output ctx.params.bench)
             then [ `Style `Bold ]
             else [])
-    end : ATTR )
+    end : ATTR)
 
   let dump_detailed ?suffix ?cone ?separator ?refinement ?depth ctx =
     let (module Attr) = attr ctx in
