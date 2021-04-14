@@ -22,9 +22,8 @@ module Make
     (Probes : Probes_intf.S with type search_state := Search_state.t) =
 struct
   open Lang
-
-  open Cone.Make (Search_state.G)
-
+  module C = Cone.Make (Search_state.G)
+  open C
   open Search_state
 
   (* Profiling probes *)
@@ -142,14 +141,14 @@ struct
       Probe.record arg_nodes
       @@ (G.Fold.V.filter (graph ss) ~f:Node.is_args |> List.length);
       Probe.record states
-      @@ ( List.map state_vs ~f:(fun v -> Node.to_state_exn v |> State.state ss)
+      @@ (List.map state_vs ~f:(fun v -> Node.to_state_exn v |> State.state ss)
          |> List.dedup_and_sort ~compare:[%compare: Abs.t]
-         |> List.length );
+         |> List.length);
       fill_probe ss cost;
 
       Fmt.epr "Filling (cost=%d): size before=%d, after=%d, added %f%%\n%!" cost
         size size'
-        Float.(-(100.0 - (of_int size' / of_int size * 100.0))) )
+        Float.(-(100.0 - (of_int size' / of_int size * 100.0))))
 
   let state_set ss =
     match (params ss).state_set with
@@ -256,8 +255,10 @@ struct
                   if Abs.contains (State.state ss v) output then Some v
                   else None))
         in
-        if List.is_empty targets then fill (cost + 1) else refute ss targets;
-        fill cost )
+        if List.is_empty targets then fill (cost + 1)
+        else (
+          refute ss targets;
+          fill cost))
     in
 
     let prog =
