@@ -5,6 +5,23 @@ end
 include T
 include Comparator.Make (T)
 
+let getp = Map.find_exn
+
+let replicate_is_set (params : (Cad_bench.t, _) Params.t) repl scene pt =
+  let trans = Vector2.O.(-repl.Cad_op.v) in
+  let rec loop count pt =
+    if count <= 0 then false
+    else
+      Float.O.(
+        pt.Vector2.x >= 0.0
+        && pt.x < of_int params.bench.input.xmax
+        && pt.y >= 0.0
+        && pt.y < of_int params.bench.input.ymax)
+      && getp scene pt
+      || loop (count - 1) Vector2.O.(pt + trans)
+  in
+  loop repl.count pt
+
 let eval params op args =
   match (op, args) with
   | Cad_op.Inter, [ s; s' ] ->
@@ -29,7 +46,96 @@ let eval params op args =
              in
              (k, v))
       |> Map.of_alist_exn (module Vector2)
+  | Replicate r, [ s ] ->
+      Map.mapi s ~f:(fun ~key ~data:_ -> replicate_is_set params r s key)
   | _ -> raise_s [%message "Unexpected eval" (op : Cad_op.t)]
+
+let pprint (params : (Cad_bench.t, _) Params.t) fmt c =
+  for y = params.bench.input.ymax - 1 downto 0 do
+    for x = 0 to params.bench.input.xmax - 1 do
+      if getp c Vector2.{ x = Float.of_int x +. 0.5; y = Float.of_int y +. 0.5 }
+      then Fmt.pf fmt "X"
+      else Fmt.pf fmt "."
+    done;
+    Fmt.pf fmt "\n"
+  done
+
+let dummy_params ~xlen ~ylen =
+  Params.create
+    Cad_bench.
+      {
+        ops = [];
+        input = { xmax = xlen; ymax = ylen };
+        output = Map.empty (module Vector2);
+        solution = None;
+        filename = None;
+      }
+    Cad_params.{ concrete = false }
+
+let%expect_test "" =
+  let params = dummy_params ~xlen:8 ~ylen:8 in
+  eval params
+    (Circle { id = 0; center = { x = 3.0; y = 3.0 }; radius = 2.0 })
+    []
+  |> pprint params Fmt.stdout;
+  [%expect
+    {|
+    ........
+    ........
+    ........
+    ........
+    .XXXX...
+    .XXXX...
+    ........
+    ........ |}]
+
+let%expect_test "" =
+  let params = dummy_params ~xlen:8 ~ylen:8 in
+  eval params
+    (Rect
+       {
+         id = 0;
+         lo_left = { x = 1.0; y = 1.0 };
+         hi_right = { x = 4.0; y = 4.0 };
+       })
+    []
+  |> pprint params Fmt.stdout;
+  [%expect
+    {|
+    ........
+    ........
+    ........
+    ........
+    .XXX....
+    .XXX....
+    .XXX....
+    ........ |}]
+
+let%expect_test "" =
+  let params = dummy_params ~xlen:8 ~ylen:8 in
+  eval params
+    (Replicate { id = 0; count = 3; v = { x = 1.0; y = 1.0 } })
+    [
+      eval params
+        (Rect
+           {
+             id = 1;
+             lo_left = { x = 1.0; y = 1.0 };
+             hi_right = { x = 4.0; y = 4.0 };
+           })
+        [];
+    ]
+  |> pprint params Fmt.stdout;
+  [%expect
+    {|
+    ........
+    ........
+    ...XXX..
+    ..XXXX..
+    .XXXXX..
+    .XXXX...
+    .XXX....
+    ........ |}]
 
 module P = struct
   type t = Cad_op.t Program.t [@@deriving compare, hash, sexp]
