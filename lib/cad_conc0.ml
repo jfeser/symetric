@@ -3,5 +3,11 @@ module T = struct
   [@@deriving compare, hash, sexp]
 end
 
-include T
-include Comparator.Make (T)
+module C = Comparator.Make (T)
+
+module TC = struct
+  include T
+  include C
+end
+
+include TC

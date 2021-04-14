@@ -177,3 +177,5 @@ let contains = [%compare.equal: t]
 let graphviz_pp _ = failwith "unimplemented pp"
 
 let top _ = failwith "unimplemented top"
+
+let search_compare _ = (module TC : Lang_intf.Comparable with type t = t)

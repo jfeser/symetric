@@ -7,8 +7,14 @@ module T = struct
   [@@deriving compare, hash, sexp, quickcheck]
 end
 
-include T
-include Comparator.Make (T)
+module C = Comparator.Make (T)
+
+module TC = struct
+  include T
+  include C
+end
+
+include TC
 
 let eval_circle params (c : Cad_op.circle) =
   if params.lparams.concrete then
@@ -173,3 +179,5 @@ let is_subset params v ~of_:v' =
          && Boxes.contains v'.lower key ==> Boxes.contains v.lower key)
 
 let quickcheck_generator_leq = None
+
+let search_compare _ = (module TC : Lang_intf.Comparable with type t = t)
