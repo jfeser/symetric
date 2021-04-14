@@ -329,3 +329,4 @@ TSWLatexianTemp*
 /*.cpp
 /*.h
 *.pdf
+profiler.dat*
