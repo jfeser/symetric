@@ -34,5 +34,5 @@
 (executable
  (name dump_bench)
  (modules dump_bench)
- (libraries core progress progress.unix staged_synth combinat)
+ (libraries core progress staged_synth combinat)
  (preprocess (pps ppx_jane)))

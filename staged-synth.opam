@@ -6,9 +6,11 @@ depends: [
   "core" {>= "v0.14"}
   "ppx_jane" {>= "v0.14"}
   "base_quickcheck" {with-test & >= "v0.14"}
-  "ocamlgraph"
   "fmt"
   "progress"
+  "landmarks"
+  "memtrace"
+  "shexp"
   "odoc" {with-doc}
 ]
 build: [

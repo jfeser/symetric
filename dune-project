@@ -8,6 +8,8 @@
   (core (>= v0.14))
   (ppx_jane (>= v0.14))
   (base_quickcheck (and :with-test (>= v0.14)))
-  ocamlgraph
   fmt
-  progress))
+  progress
+  landmarks
+  memtrace
+  shexp))
