@@ -135,12 +135,15 @@ struct
     merge_refn t_groups @ merge_refn f_groups @ refn
     @ List.concat_map m ~f:(refine_state ss counter)
 
+  and refine_replicate _ _ _ _ _ = []
+
   and refine_args ss p output args_v =
     let inputs =
       G.succ (graph ss) (Node.of_args args_v) |> List.map ~f:Node.to_state_exn
     in
     match Args.label ss args_v with
     | Merge -> refine_merge ss p output args_v
+    | Op (Replicate r) -> refine_replicate ss p output args_v r
     | Op (Union | Inter) -> List.concat_map inputs ~f:(refine_state ss p)
     | Op ((Circle _ | Rect _) as op) ->
         let conc = Cad_conc.eval (params ss) op [] in
