@@ -1,3 +1,4 @@
+open Std
 open Ternary
 
 module Make
@@ -51,26 +52,6 @@ struct
   let split p a =
     List.concat_map a ~f:(fun b ->
         if Box.contains b p then Box.split b else [ b ])
-
-  let reduce_while l ~f =
-    let rec loop g gs = function
-      | [] -> g :: gs
-      | x :: xs -> (
-          match f g x with
-          | Some g' -> loop g' gs xs
-          | None -> loop x (g :: gs) xs )
-    in
-    match l with [] -> [] | x :: xs -> loop x [] xs
-
-  let rec update l ~f =
-    match l with
-    | [] -> None
-    | x :: xs -> (
-        match f x with
-        | Some x' -> Some (x' :: xs)
-        | None -> (
-            match update ~f xs with Some xs' -> Some (x :: xs') | None -> None )
-        )
 
   let summarize ss states =
     List.permute states
