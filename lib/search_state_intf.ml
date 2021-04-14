@@ -152,5 +152,5 @@ module type S = sig
 
   val sample : t -> State.t -> op Program.t
 
-  (* val validate : ?k:int -> t -> unit *)
+  val validate : ?k:int -> t -> unit
 end

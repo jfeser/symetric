@@ -258,6 +258,7 @@ struct
         if List.is_empty targets then fill (cost + 1)
         else (
           refute ss targets;
+          validate ss;
           fill cost))
     in
 

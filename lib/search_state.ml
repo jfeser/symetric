@@ -379,28 +379,58 @@ module Make (Lang : Lang_intf.S) = struct
 
   type program = Apply of Op.t * Abs.t * program list [@@deriving sexp]
 
-  let sample ctx state_v =
-    let value_exn x =
-      Option.value_exn ~here:[%here] ~message:"malformed state space" x
-    in
-    let rec sample arg =
+  let random_element_exn ctx l =
+    Option.value_exn ~here:[%here]
+      (List.random_element ~random_state:(params ctx).Params.random_state l)
+
+  (** Sample an annotated program from the search graph starting from state node
+     `state_v`. *)
+  let sample_annotated ctx state_v =
+    let random_succ v = G.succ (graph ctx) v |> random_element_exn ctx in
+    let rec sample annot arg =
       match Args.label ctx arg with
       | Merge ->
-          G.succ (graph ctx) arg
-          |> List.random_element |> value_exn
-          |> G.succ (graph ctx)
-          |> List.random_element |> value_exn |> sample
+          let state_v = random_succ arg in
+          sample (State.state ctx state_v) (random_succ state_v)
       | Op op ->
           let inputs =
             inputs ctx arg
             |> List.map ~f:(fun state_v ->
-                   G.succ (graph ctx) state_v
-                   |> List.random_element |> value_exn |> sample)
+                   sample (State.state ctx state_v) (random_succ state_v))
           in
-          Program.Apply (op, inputs)
+          Apply (op, annot, inputs)
     in
+    sample (State.state ctx state_v) (random_succ state_v)
 
-    G.succ (graph ctx) state_v
-    |> List.random_element ~random_state:(params ctx).Params.random_state
-    |> value_exn |> sample
+  (** Sample a program from the search graph starting from state node `state_v`. *)
+  let sample ctx state_v =
+    let rec unannotate (Apply (op, _, args)) =
+      Program.Apply (op, List.map args ~f:unannotate)
+    in
+    unannotate @@ sample_annotated ctx state_v
+
+  (** Check the search graph by sampling programs and checking that their state
+     nodes overapproximate their concrete behavior. *)
+  let validate ?(k = 10000) ctx =
+    let exception Eval_error of program * Abs.t * Conc.t in
+    let rec checked_eval params (Apply (op, abs, args) as p) =
+      let args = List.map args ~f:(checked_eval params) in
+      let conc = Conc.eval params op args in
+      if Abs.contains abs conc then conc else raise (Eval_error (p, abs, conc))
+    in
+    if (params ctx).validate then
+      let states = G.Fold.V.filter_map ctx.graph ~f:Node.to_state in
+      for _ = 1 to k do
+        let p = sample_annotated ctx @@ random_element_exn ctx states in
+        try ignore (checked_eval ctx.params p : Conc.t)
+        with Eval_error (p', abs, conc) ->
+          dump_detailed ~suffix:"error" ctx;
+          raise_s
+            [%message
+              "not an overapproximation"
+                (p : program)
+                (p' : program)
+                (abs : Abs.t)
+                (conc : Conc.t)]
+      done
 end

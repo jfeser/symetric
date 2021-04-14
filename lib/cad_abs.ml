@@ -149,6 +149,20 @@ let pprint ?point (params : (Cad_bench.t, _) Params.t) fmt a =
     Fmt.pf fmt "\n"
   done
 
+let pprintgv ?point (params : (Cad_bench.t, _) Params.t) fmt a =
+  for y = params.bench.input.ymax - 1 downto 0 do
+    for x = 0 to params.bench.input.xmax - 1 do
+      let p = Vector2.{ x = Float.of_int x; y = Float.of_int y } in
+      if [%compare.equal: Vector2.t option] point (Some p) then Fmt.pf fmt "╬"
+      else
+        match implies a Vector2.{ x = Float.of_int x; y = Float.of_int y } with
+        | True -> Fmt.pf fmt "█"
+        | False -> Fmt.pf fmt "."
+        | Maybe -> Fmt.pf fmt "░"
+    done;
+    Fmt.pf fmt "<br/>"
+  done
+
 let top = { upper = Boxes.top; lower = Boxes.bot }
 
 let bot = { upper = Boxes.bot; lower = Boxes.top }
@@ -159,11 +173,13 @@ let lub a a' =
 let glb a a' =
   { upper = Boxes.glb a.upper a'.upper; lower = Boxes.lub a.lower a'.lower }
 
-let graphviz_pp _ fmt { lower; upper } =
-  let pp_boxes =
-    Fmt.using Boxes.to_list @@ Fmt.list ~sep:(Fmt.any "<br/>") Box.graphviz_pp
-  in
-  Fmt.pf fmt "@[<h>%a<br/><br/>%a@]" pp_boxes upper pp_boxes lower
+(* let graphviz_pp _ fmt { lower; upper } =
+ *   let pp_boxes =
+ *     Fmt.using Boxes.to_list @@ Fmt.list ~sep:(Fmt.any "<br/>") Box.graphviz_pp
+ *   in
+ *   Fmt.pf fmt "@[<h>%a<br/><br/>%a@]" pp_boxes upper pp_boxes lower *)
+
+let graphviz_pp params fmt a = Fmt.pf fmt "%a" (pprintgv params) a
 
 let equiv params a a' =
   Cad_bench.points params.bench.Cad_bench.input

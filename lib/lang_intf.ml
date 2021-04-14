@@ -38,7 +38,7 @@ module type S = sig
   end
 
   module Conc : sig
-    type t
+    type t [@@deriving sexp_of]
 
     val eval : params -> Op.t -> t list -> t
   end
