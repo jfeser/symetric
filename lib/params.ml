@@ -49,9 +49,10 @@ let cli bench lparams =
       flag "max-cost"
         (optional_with_default default_max_cost int)
         ~doc:" maximum program cost"
+    and validate = flag "validate" no_arg ~doc:" validate search space"
     and print_csv = flag "csv" no_arg ~doc:" print stats as csv row"
     and bench = bench
     and lparams = lparams in
 
     create ~enable_dump ~hide_values ~enable_forced_bit_check ~max_cost
-      ~print_csv bench lparams]
+      ~print_csv ~validate bench lparams]

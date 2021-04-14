@@ -139,8 +139,8 @@ let cad_cli =
         ~n_mergeable_hyper_edges:
           (mergeable_hyper_edges (module Search_state) ss)
     else
-      Option.iter params.bench.solution ~f:(fun ground_truth ->
-          print_s [%message (ground_truth : Cad_op.t Program.t)])
+      Option.iter prog ~f:(fun solution ->
+          print_s [%message (solution : Cad_op.t Program.t)])
   in
 
   let open Command.Let_syntax in
