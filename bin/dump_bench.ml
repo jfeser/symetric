@@ -72,8 +72,8 @@ let no_total_counter ?message ?pp ?width ?(sampling_interval = 1) () =
     | None -> box_winsize ~fallback:80
   in
   list
-    ( (Option.map message ~f:const |> Option.to_list)
-    @ (Option.map pp ~f:(fun f -> f of_pp) |> Option.to_list) )
+    ((Option.map message ~f:const |> Option.to_list)
+    @ (Option.map pp ~f:(fun f -> f of_pp) |> Option.to_list))
   |> box |> periodic sampling_interval |> accumulator Int64.( + ) 0L
   |> make ~init:0L
 
@@ -93,7 +93,13 @@ let to_sexp ~xmax ~ymax (prog, ops) =
       {
         ops = [];
         input;
-        output = Map.empty (module Vector2);
+        output =
+          Cad_conc.
+            {
+              xlen = -1;
+              ylen = -1;
+              pixels = Bitarray.init 0 ~f:(fun _ -> false);
+            };
         solution = None;
         filename = None;
       }
@@ -102,8 +108,7 @@ let to_sexp ~xmax ~ymax (prog, ops) =
   let conc = Program.eval (Cad_conc.eval params) prog in
 
   let output =
-    Cad_bench.points input
-    |> List.map ~f:(fun p -> if Map.find_exn conc p then 1 else 0)
+    Bitarray.to_list conc.pixels |> List.map ~f:(fun p -> if p then 1 else 0)
   in
 
   [%sexp_of: Cad_bench.Serial.t]
@@ -118,7 +123,7 @@ let has_empty_inter params p =
   let rec eval (Program.Apply (op, args)) =
     let args = List.map ~f:eval args in
     let v = Cad_conc.eval params op args in
-    if [%compare.equal: Cad_op.t] op Inter && Map.for_all v ~f:(fun x -> not x)
+    if [%compare.equal: Cad_op.t] op Inter && Bitarray.(all @@ not v.pixels)
     then raise Empty_inter
     else v
   in
@@ -169,6 +174,46 @@ let take_while_with_state ~init ~f s =
   Sequence.unfold_with s ~init ~f:(fun st x ->
       match f st x with Some st' -> Yield (x, st') | None -> Done)
 
+let random_op ~xmax ~ymax ~id = function
+  | `Union -> Union
+  | `Inter -> Inter
+  | `Repl ->
+      Replicate
+        {
+          id;
+          count = Random.int_incl 1 4;
+          v =
+            List.random_element_exn
+              [
+                Vector2.{ x = 2.0; y = 2.0 };
+                { x = -2.0; y = 2.0 };
+                { x = 2.0; y = -2.0 };
+                { x = -2.0; y = -2.0 };
+              ];
+        }
+  | `Circle ->
+      Circle
+        {
+          id;
+          center =
+            {
+              x = Random.int xmax |> Float.of_int;
+              y = Random.int ymax |> Float.of_int;
+            };
+          radius = Random.int (Int.min xmax ymax / 2) |> Float.of_int;
+        }
+  | `Rect ->
+      let lo_x = random_int 0 xmax in
+      let lo_y = random_int 0 ymax in
+      let hi_x = random_int lo_x xmax in
+      let hi_y = random_int lo_y ymax in
+      Rect
+        {
+          id;
+          lo_left = { x = Float.of_int lo_x; y = Float.of_int lo_y };
+          hi_right = { x = Float.of_int hi_x; y = Float.of_int hi_y };
+        }
+
 (** 
 @param xmax canvas x length
 @param ymax canvas y length
@@ -176,14 +221,20 @@ let take_while_with_state ~init ~f s =
 @param nprim number of primitives available
 @param n number of programs to generate 
 @param k callback with program sequence *)
-let random ~xmax ~ymax ~size ~nprim ~n k =
+let random ~xmax ~ymax ~size ~n ~ops k =
   let params =
     Params.create
       Cad_bench.
         {
           ops = [];
           input = { xmax; ymax };
-          output = Map.empty (module Vector2);
+          output =
+            Cad_conc.
+              {
+                xlen = -1;
+                ylen = -1;
+                pixels = Bitarray.init 0 ~f:(fun _ -> false);
+              };
           solution = None;
           filename = None;
         }
@@ -191,58 +242,45 @@ let random ~xmax ~ymax ~size ~nprim ~n k =
   in
 
   let random_program size =
+    let open Option.Let_syntax in
+    let ops = List.mapi ops ~f:(fun id op -> random_op ~xmax ~ymax ~id op) in
     let nilops =
-      List.init nprim ~f:(fun i ->
-          match List.random_element_exn [ `Circle; `Rect ] with
-          | `Circle ->
-              Circle
-                {
-                  id = i;
-                  center =
-                    {
-                      x = Random.int xmax |> Float.of_int;
-                      y = Random.int ymax |> Float.of_int;
-                    };
-                  radius = Random.int (Int.min xmax ymax / 2) |> Float.of_int;
-                }
-          | `Rect ->
-              let lo_x = random_int 0 xmax in
-              let lo_y = random_int 0 ymax in
-              let hi_x = random_int lo_x xmax in
-              let hi_y = random_int lo_y ymax in
-              Rect
-                {
-                  id = i;
-                  lo_left = { x = Float.of_int lo_x; y = Float.of_int lo_y };
-                  hi_right = { x = Float.of_int hi_x; y = Float.of_int hi_y };
-                })
+      List.filter ops ~f:(function Circle _ | Rect _ -> true | _ -> false)
+    and unops = List.filter ops ~f:(function Replicate _ -> true | _ -> false)
+    and binops =
+      List.filter ops ~f:(function Union | Inter -> true | _ -> false)
     in
-    let binops = [ Union; Inter ] in
-
-    let rec random_tree size =
+    let rec random_unop op size =
+      let%map p = random_tree (size - 1) in
+      Program.Apply (op, [ p ])
+    and random_binop op size =
+      Combinat.(Composition.(create ~n:(size - 1) ~k:2 |> to_list))
+      |> List.permute
+      |> List.find_map ~f:(fun ss ->
+             let s = Combinat.Int_array.get ss 0
+             and s' = Combinat.Int_array.get ss 1 in
+             let%bind p = random_tree s and p' = random_tree s' in
+             return @@ Program.Apply (op, [ p; p' ]))
+    and random_tree size =
       [%test_pred: int] (fun size -> size > 0) size;
       if size = 1 then
         let op = List.random_element_exn nilops in
         Some (Program.Apply (op, []))
-      else if size = 2 then None
+      else if size = 2 then random_unop (List.random_element_exn unops) size
       else
-        let op = List.random_element_exn binops in
-        Combinat.(Composition.(create ~n:(size - 1) ~k:2 |> to_list))
-        |> List.permute
-        |> List.find_map ~f:(fun ss ->
-               let s = Combinat.Int_array.get ss 0
-               and s' = Combinat.Int_array.get ss 1 in
-               let open Option.Let_syntax in
-               let%bind p = random_tree s and p' = random_tree s' in
-               return @@ Program.Apply (op, [ p; p' ]))
+        let op = List.random_element_exn (unops @ binops) in
+        let arity = Cad_op.arity op in
+        if arity = 1 then random_unop op size
+        else if arity = 2 then random_binop op size
+        else failwith ""
     in
     let prog = Option.value_exn (random_tree size) and ops = nilops @ binops in
     (prog, ops)
   in
   Progress.(
     with_reporters
-      ( bar "samples" / bar "non-trivial programs" / bar "irreducible programs"
-      / tbar "unique programs" (Int64.of_int n) ))
+      (bar "samples" / bar "non-trivial programs" / bar "irreducible programs"
+      / tbar "unique programs" (Int64.of_int n)))
   @@ fun (((samples, non_trivial_progs), irreducible_progs), unique_progs) ->
   Sequence.unfold ~init:() ~f:(fun () -> Some (random_program size, ()))
   |> sequence_progress samples
@@ -326,8 +364,20 @@ let dumps ~dir seq =
           Sexp.output_hum ch sexp))
 
 let random_cli =
-  let open Command.Let_syntax in
-  Command.basic ~summary:"Random benchmarks"
+  let open Command in
+  let open Let_syntax in
+  let op =
+    Arg_type.of_map
+    @@ Map.of_alist_exn (module String)
+    @@ [
+         ("circle", `Circle);
+         ("rectangle", `Rect);
+         ("union", `Union);
+         ("intersection", `Inter);
+         ("replicate", `Repl);
+       ]
+  in
+  basic ~summary:"Random benchmarks"
     [%map_open
       let xmax =
         flag "xmax" (optional_with_default 30 int) ~doc:" x dimension size"
@@ -335,12 +385,12 @@ let random_cli =
         flag "ymax" (optional_with_default 30 int) ~doc:" y dimension size"
       and seed = flag "seed" (optional_with_default 0 int) ~doc:" random seed"
       and size = flag "size" (required int) ~doc:" program size"
-      and nprim = flag "prim" (required int) ~doc:" number of primitives"
+      and ops = flag "op" (listed op) ~doc:" allowed operator"
       and dir = flag "dir" (required string) ~doc:" output directory"
       and n = anon ("n" %: int) in
       fun () ->
         Random.init seed;
-        random ~xmax ~ymax ~size ~nprim ~n @@ dumps ~dir]
+        random ~xmax ~ymax ~size ~ops ~n @@ dumps ~dir]
 
 let crosses_cli =
   let open Command.Let_syntax in

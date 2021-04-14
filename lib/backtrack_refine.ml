@@ -33,10 +33,11 @@ struct
       let out = Cad_conc.eval_program (params ss) prog in
       if [%compare.equal: Conc.t] out expected then raise (Found_solution prog)
       else
-        Map.merge out expected ~f:(fun ~key:_ -> function
-          | `Left _ | `Right _ -> None
-          | `Both (x, x') -> if Bool.(x <> x') then Some x else None)
-        |> Map.to_alist
+        Bitarray.equal out.pixels expected.pixels
+        |> Bitarray.to_list
+        |> List.filter_mapi ~f:(fun i is_equal ->
+               if is_equal then None
+               else Some (Cad_conc.pt out i, Bitarray.get expected.pixels i))
     in
     List.init n ~f:(fun _ -> sample_counter ())
 
@@ -58,7 +59,7 @@ struct
       | x :: xs -> (
           match f g x with
           | Some g' -> loop g' gs xs
-          | None -> loop x (g :: gs) xs )
+          | None -> loop x (g :: gs) xs)
     in
     match l with [] -> [] | x :: xs -> loop x [] xs
 
@@ -69,8 +70,7 @@ struct
         match f x with
         | Some x' -> Some (x' :: xs)
         | None -> (
-            match update ~f xs with Some xs' -> Some (x :: xs') | None -> None )
-        )
+            match update ~f xs with Some xs' -> Some (x :: xs') | None -> None))
 
   let summarize ss states =
     List.permute states
@@ -151,7 +151,7 @@ struct
         let new_ =
           let module Boxes = Cad_abs.Boxes in
           let abs =
-            if Map.find_exn conc p then
+            if Cad_conc.getp conc p then
               let lower =
                 Boxes.of_list
                 @@ Box.create_closed ~xmin:p.x ~xmax:p.x ~ymin:p.y ~ymax:p.y
@@ -159,11 +159,12 @@ struct
               in
               { old with lower }
             else
+              let concl = Cad_conc.to_alist conc in
               let upper =
                 Cad_abs.Boxes.to_list old.upper
                 |> split p
                 |> List.filter ~f:(fun b ->
-                       Map.existsi conc ~f:(fun ~key ~data ->
+                       List.exists concl ~f:(fun (key, data) ->
                            data && Box.contains b key))
                 |> Cad_abs.Boxes.of_list
               in

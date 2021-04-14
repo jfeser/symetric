@@ -14,7 +14,7 @@ type t = {
   filename : string option;
   ops : Cad_op.t list;
   input : grid;
-  output : bool Map.M(Vector2).t;
+  output : Cad_conc0.t;
   solution : Cad_op.t Program.t option;
 }
 
@@ -26,8 +26,12 @@ let points g =
 
 let of_serial ?filename (x : Serial.t) =
   let output =
-    List.map2_exn (points x.input) x.output ~f:(fun k v -> (k, v > 0))
-    |> Map.of_alist_exn (module Vector2)
+    Cad_conc0.
+      {
+        xlen = x.input.xmax;
+        ylen = x.input.ymax;
+        pixels = Bitarray.of_list @@ List.map ~f:(fun x -> x > 0) x.output;
+      }
   in
   { ops = x.ops; input = x.input; output; solution = x.solution; filename }
 

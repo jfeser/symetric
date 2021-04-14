@@ -1,35 +1,56 @@
-module T = struct
-  type t = bool Map.M(Vector2).t [@@deriving compare, hash, sexp]
-end
+include Cad_conc0
 
-include T
-include Comparator.Make (T)
+let idx b v =
+  let x = Float.iround_nearest_exn v.Vector2.x
+  and y = Float.iround_nearest_exn v.y in
+  let stride = b.ylen in
+  (x * stride) + y
+
+let pt' ~ylen:stride idx =
+  Vector2.
+    { x = Float.of_int @@ (idx / stride); y = Float.of_int @@ (idx mod stride) }
+
+let pt b idx = pt' ~ylen:b.ylen idx
+
+let getp b v = Bitarray.get b.pixels @@ idx b v
+
+let geti b = Bitarray.get b.pixels
+
+let replicate_is_set repl scene pt =
+  let trans = Vector2.O.(-repl.Cad_op.v) in
+  let rec loop count pt =
+    if count < 0 then false
+    else getp scene pt || loop (count - 1) Vector2.O.(pt + trans)
+  in
+  loop repl.count pt
+
+let init params ~f =
+  let xlen = params.Params.bench.Cad_bench.input.xmax
+  and ylen = params.Params.bench.Cad_bench.input.ymax in
+  {
+    xlen;
+    ylen;
+    pixels = Bitarray.init (xlen * ylen) ~f:(fun i -> f (pt' ~ylen i) i);
+  }
 
 let eval params op args =
   match (op, args) with
   | Cad_op.Inter, [ s; s' ] ->
-      Map.merge s s' ~f:(fun ~key:_ -> function
-        | `Left x | `Right x -> Some x | `Both (x, x') -> Some (x && x'))
-  | Union, [ s; s' ] ->
-      Map.merge s s' ~f:(fun ~key:_ -> function
-        | `Left x | `Right x -> Some x | `Both (x, x') -> Some (x || x'))
+      init params ~f:(fun _ idx -> geti s idx && geti s' idx)
+  | Union, [ s; s' ] -> init params ~f:(fun _ idx -> geti s idx || geti s' idx)
   | Circle c, [] ->
-      Cad_bench.points params.Params.bench.Cad_bench.input
-      |> List.map ~f:(fun k ->
-             let v = Float.(Vector2.(l2_dist c.center k) <= c.radius) in
-             (k, v))
-      |> Map.of_alist_exn (module Vector2)
+      init params ~f:(fun pt _ ->
+          Float.(Vector2.(l2_dist c.center pt) <= c.radius))
   | Rect r, [] ->
-      Cad_bench.points params.Params.bench.Cad_bench.input
-      |> List.map ~f:(fun k ->
-             let v =
-               Float.(
-                 r.lo_left.x <= k.x && r.lo_left.y <= k.y && r.hi_right.x >= k.x
-                 && r.hi_right.y >= k.y)
-             in
-             (k, v))
-      |> Map.of_alist_exn (module Vector2)
+      init params ~f:(fun k _ ->
+          Float.(
+            r.lo_left.x <= k.x && r.lo_left.y <= k.y && r.hi_right.x >= k.x
+            && r.hi_right.y >= k.y))
+  | Replicate r, [ s ] -> init params ~f:(fun pt _ -> replicate_is_set r s pt)
   | _ -> raise_s [%message "Unexpected eval" (op : Cad_op.t)]
+
+let to_alist b =
+  List.init (Bitarray.length b.pixels) ~f:(fun i -> (pt b i, geti b i))
 
 module P = struct
   type t = Cad_op.t Program.t [@@deriving compare, hash, sexp]
