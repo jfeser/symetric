@@ -68,7 +68,8 @@ let mergeable_hyper_edges (type t)
  * |> List.sum (module Int) ~f:(fun (_, ct) -> ct) *)
 
 let cad_cli =
-  let module Search_state = Search_state.Make (Cad) in
+  let module Lang = Cad in
+  let module Search_state = Search_state.Make (Lang) in
   let module Refine = Backtrack_refine.Make (Search_state) in
   let module Probes = struct
     open Search_state
@@ -88,8 +89,8 @@ let cad_cli =
         G.Fold.V.filter_map (graph ss) ~f:Node.to_state
         |> List.concat_map ~f:(fun s ->
                let st = State.state ss s in
-               let lu = st.upper |> Cad.Abs.Boxes.to_list |> List.length in
-               let ll = st.lower |> Cad.Abs.Boxes.to_list |> List.length in
+               let lu = st.upper |> Lang.Abs.Boxes.to_list |> List.length in
+               let ll = st.lower |> Lang.Abs.Boxes.to_list |> List.length in
                [ lu; ll ])
         |> List.sort ~compare:[%compare: int]
       in
@@ -102,7 +103,7 @@ let cad_cli =
           (List.nth_exn n_boxes (List.length n_boxes / 2)))
   end in
   let module Lazy_cegis =
-    Lazy_cegis.Make (Cad_hashcode) (Search_state) (Refine) (Probes)
+    Lazy_cegis.Make (Lang) (Search_state) (Refine) (Probes)
   in
   let open Search_state in
   let run params () =

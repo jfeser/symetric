@@ -2,7 +2,8 @@ open Core
 open Staged_synth
 
 let print_bench fn =
-  Cad_conc.pprint Fmt.stdout (Cad.Bench.load fn).Cad_bench.output
+  let params = Params.create (Cad.Bench.load fn) () in
+  Cad_conc.pprint params Fmt.stdout params.bench.output
 
 let cli =
   let open Command in
