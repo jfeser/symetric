@@ -68,7 +68,7 @@ struct
 
   let size_cost costs = 1 + List.sum (module Int) costs ~f:Fun.id
 
-  let cost ?(weight = 0.0) params costs state =
+  let cost ?(weight = 0.95) params costs state =
     (Float.of_int (hamming_cost params state)
      /. (Float.of_int @@ (params.bench.input.xmax * params.bench.input.ymax))
      *. weight
@@ -98,8 +98,10 @@ struct
     |> Sequence.iter ~f:(fun args ->
            let args, costs = List.unzip args in
            let out = eval params op args in
-           if [%compare.equal: Lang.Conc.t] out (Bench.output params.bench) then
-             raise Done;
+           if [%compare.equal: Lang.Conc.t] out (Bench.output params.bench) then (
+             print_s [%message "solution"];
+             Cad.Conc.pprint params Fmt.stdout out;
+             raise Done);
            let c = cost params costs out in
            min_found := Int.min !min_found c;
            if
@@ -110,12 +112,30 @@ struct
   let synth (params : _ Params.t) =
     let ops = Bench.ops params.bench and states = State_set.create () in
 
-    let rec fill () =
-      print_s [%message "filling" (State_set.length states : int)];
-      try List.iter ops ~f:(fill_op params states) with Restart -> fill ()
+    let non_nil_ops =
+      List.filter ops ~f:(fun op -> Op.arity op > 0)
+      |> List.sort ~compare:(fun o o' -> compare (Op.arity o) (Op.arity o'))
+    in
+    let fill () =
+      while true do
+        print_s [%message "filling" (State_set.length states : int)];
+
+        print_s [%message "top 10"];
+        List.take (State_set.to_list states) 10
+        |> List.iter ~f:(fun (s, _) -> Cad.Conc.pprint params Fmt.stdout s);
+        print_s [%message "done"];
+
+        try List.iter non_nil_ops ~f:(fill_op params states)
+        with Restart -> ()
+      done
     in
 
     try
+      List.iter ops ~f:(fun op ->
+          if Op.arity op = 0 then
+            let state = eval params op [] in
+            let c = cost params [] state in
+            ignore (State_set.add states (state, c) : bool));
       fill ();
       None
     with Done -> Some ()
