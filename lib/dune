@@ -1,6 +1,6 @@
 (library
  (name staged_synth)
- (libraries core combinat ocamlgraph fmt landmarks core_profiler progress shexp.process)
+ (libraries core core_kernel.hash_heap combinat ocamlgraph fmt landmarks core_profiler progress shexp.process)
  (preprocess (pps ppx_jane))
  (inline_tests)
  (flags :standard -g -open Core -w -9))

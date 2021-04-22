@@ -4,30 +4,9 @@ open Staged_synth
 
 let () = Signal.Expert.handle Signal.int (fun _ -> exit 1)
 
-(* let csg_cli =
- *   let open Command.Let_syntax in
- *   Command.basic ~summary:"Synthesize a CAD program using lazy cegis."
- *     [%map_open
- *       let params =
- *         Params.cli
- *           [%map_open
- *             let bench_fn = anon ("bench" %: string) in
- *             Sexp.load_sexp_conv_exn bench_fn [%of_sexp: Csg.Bench.t]]
- *           (Command.Param.return ())
- *       in
- *       let module Search_state = Search_state.Make (Csg) in
- *       let module Refine = Interp_refine.Make (Csg) (Search_state) in
- *       let module Probes = struct
- *         let fill = None
- *       end in
- *       let module Lazy_cegis =
- *         Lazy_cegis.Make (Csg) (Search_state) (Refine) (Probes)
- *       in
- *       fun () -> (Lazy_cegis.synth params : _ * Search_state.t) |> ignore] *)
-
-let print_csv ~synth ?(bench = "") ~n_states ~time ~max_size ~sol_size
-    ~gold_size ~n_args ~total_arg_in_degree ~n_distinct_states ~n_roots
-    ~n_mergeable_hyper_edges =
+let print_csv ~synth ?(bench = "") ~n_states ~time ~max_size ?sol_size
+    ?gold_size ~n_args ~total_arg_in_degree ~n_distinct_states ~n_roots
+    ~n_mergeable_hyper_edges () =
   let optional_int x =
     Option.map x ~f:Int.to_string |> Option.value ~default:""
   in
@@ -62,10 +41,6 @@ let mergeable_hyper_edges (type t)
          let h = (out_v, in_v) in
          Map.update hedges h ~f:(function None -> 1 | Some c -> c + 1))
   |> Map.length
-
-(* |> Map.to_alist
- * |> List.filter ~f:(fun (_, ct) -> ct > 1)
- * |> List.sum (module Int) ~f:(fun (_, ct) -> ct) *)
 
 let cad_cli =
   let module Lang = Cad in
@@ -129,8 +104,8 @@ let cad_cli =
         ~n_states:(List.length states)
         ~n_distinct_states:(List.length states_distinct)
         ~n_roots:(List.length roots) ~time
-        ~sol_size:(Option.map prog ~f:Program.size)
-        ~gold_size:(Option.map params.bench.solution ~f:Program.size)
+        ?sol_size:(Option.map prog ~f:Program.size)
+        ?gold_size:(Option.map params.bench.solution ~f:Program.size)
         ~max_size:params.max_cost
         ~n_args:(G.Fold.V.filter_map (graph ss) ~f:Node.to_args |> List.length)
         ~total_arg_in_degree:
@@ -139,6 +114,7 @@ let cad_cli =
           |> List.sum (module Int) ~f:Fun.id)
         ~n_mergeable_hyper_edges:
           (mergeable_hyper_edges (module Search_state) ss)
+        ()
     else
       Option.iter prog ~f:(fun solution ->
           print_s [%message (solution : Cad_op.t Program.t)])
@@ -186,15 +162,44 @@ let cad_concrete_cli =
           |> List.map ~f:(G.in_degree (graph ss))
           |> List.sum (module Int) ~f:Fun.id)
         ~time
-        ~sol_size:(Option.map prog ~f:Program.size)
-        ~gold_size:(Option.map params.bench.solution ~f:Program.size)
+        ?sol_size:(Option.map prog ~f:Program.size)
+        ?gold_size:(Option.map params.bench.solution ~f:Program.size)
         ~max_size:params.max_cost
         ~n_distinct_states:(List.length states_distinct)
         ~n_mergeable_hyper_edges:
           (mergeable_hyper_edges (module Search_state) ss)
+        ()
     else
       Option.iter params.bench.solution ~f:(fun ground_truth ->
           print_s [%message (ground_truth : Cad_op.t Program.t)])
+  in
+
+  let open Command.Let_syntax in
+  Command.basic ~summary:"Synthesize a 2D CAD program using lazy cegis."
+    [%map_open
+      let params =
+        Params.cli
+          [%map_open
+            let bench_fn = anon ("bench" %: string) in
+            Cad.Bench.load bench_fn]
+          Cad_params.cli
+      in
+      run params]
+
+let cad_cost_naive_cli =
+  let module Lang = Cad in
+  let module Synth = Cost_ordered_naive.Make (Lang) in
+  let run params () =
+    let start = Time.now () in
+    let result = Synth.synth params in
+    let end_ = Time.now () in
+    let time = Time.diff end_ start in
+    Option.iter result ~f:(fun () -> print_s [%message "found solution"]);
+    if params.print_csv then
+      print_csv ?bench:params.bench.filename ~synth:"cad_cost_naive_hamming"
+        ~n_states:(-1) ~n_distinct_states:(-1) ~n_roots:(-1) ~time
+        ~max_size:params.max_cost ~n_args:(-1) ~total_arg_in_degree:(-1)
+        ~n_mergeable_hyper_edges:(-1) ()
   in
 
   let open Command.Let_syntax in
@@ -216,5 +221,6 @@ let () =
       (* ("cad", csg_cli); *)
       ("cad-abs", cad_cli);
       ("cad-concrete", cad_concrete_cli);
+      ("cad-cost-naive", cad_cost_naive_cli);
     ]
   |> Command.run

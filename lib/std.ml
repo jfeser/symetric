@@ -18,3 +18,7 @@ let rec update l ~f =
           match update ~f xs with Some xs' -> Some (x :: xs') | None -> None))
 
 let rec repeat ~f i x = if i <= 0 then [ x ] else x :: repeat (i - 1) ~f (f x)
+
+let unsafe_to_list a =
+  List.init (Option_array.length a)
+    ~f:(Option_array.unsafe_get_some_assuming_some a)

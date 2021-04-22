@@ -37,15 +37,6 @@ struct
 
   let fill_probe = Option.value Probes.fill ~default:(fun _ _ -> ())
 
-  let fold_range ~init ~f lo hi =
-    let rec fold_range acc i =
-      if i >= hi then acc
-      else
-        let acc' = f acc i in
-        fold_range acc' (i + 1)
-    in
-    fold_range init lo
-
   let roots ss =
     let is_subset v ~of_:v' =
       State.cost ss v = State.cost ss v'
@@ -103,6 +94,27 @@ struct
     fun ~type_ ~cost ->
       Hashtbl.find tbl (cost, type_) |> Option.value ~default:[]
 
+  let unsafe_to_list a =
+    List.init (Option_array.length a)
+      ~f:(Option_array.unsafe_get_some_assuming_some a)
+
+  let fill_with_costs ss (state_set : State_set.t) op cost costs =
+    let arity = Op.arity op in
+    let arg_types = Op.args_type op |> Array.of_list in
+    let args = Option_array.create ~len:arity in
+    let consume_args () = insert_hyper_edge ss (unsafe_to_list args) op cost in
+    let rec build_args arg_idx =
+      if arg_idx >= arity then consume_args ()
+      else
+        state_set
+          ~cost:(Combinat.Int_array.get costs arg_idx)
+          ~type_:arg_types.(arg_idx)
+        |> List.iter ~f:(fun v ->
+               Option_array.set_some args arg_idx v;
+               build_args (arg_idx + 1))
+    in
+    build_args 0
+
   let fill_cost ss (state_set : State_set.t) ops cost =
     let size = G.nb_vertex @@ graph ss in
     if cost = 1 then
@@ -115,22 +127,10 @@ struct
 
       List.iter ops ~f:(fun op ->
           let arity = Op.arity op in
-          let arg_types = Op.args_type op |> Array.of_list in
           let module Comp = Combinat.Composition in
           if arity > 0 then
             Comp.create ~n:arg_cost ~k:arity
-            |> Comp.iter ~f:(fun arg_costs ->
-                   let add_hyper_edges =
-                     fold_range
-                       ~init:(fun args -> insert_hyper_edge ss args op cost)
-                       ~f:(fun f i args ->
-                         state_set
-                           ~cost:(Combinat.Int_array.get arg_costs i)
-                           ~type_:arg_types.(i)
-                         |> List.iter ~f:(fun v -> f (v :: args)))
-                       0 arity
-                   in
-                   add_hyper_edges []));
+            |> Comp.iter ~f:(fill_with_costs ss state_set op cost));
 
       let size' = G.nb_vertex @@ graph ss in
 

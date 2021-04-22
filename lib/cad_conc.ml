@@ -7,6 +7,18 @@ include Comparator.Make (T)
 
 let getp = Map.find_exn
 
+let hamming (params : (Cad_bench.t, _) Params.t) c =
+  let ct = ref 0 in
+  for x = 0 to params.bench.input.xmax - 1 do
+    for y = 0 to params.bench.input.ymax - 1 do
+      let p =
+        Vector2.{ x = Float.of_int x +. 0.5; y = Float.of_int y +. 0.5 }
+      in
+      ct := !ct + if Bool.(getp c p = getp params.bench.output p) then 0 else 1
+    done
+  done;
+  !ct
+
 let replicate_is_set (params : (Cad_bench.t, _) Params.t) repl scene pt =
   let trans = Vector2.O.(-repl.Cad_op.v) in
   let rec loop count pt =
