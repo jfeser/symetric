@@ -40,6 +40,8 @@ module type S = sig
   module Conc : sig
     type t [@@deriving compare, sexp_of]
 
+    include Comparator.S with type t := t
+
     val eval : params -> Op.t -> t list -> t
   end
 

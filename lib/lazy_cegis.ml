@@ -187,8 +187,11 @@ struct
 
     let new_states =
       List.concat_map refinement ~f:(function
+        | Remove_node v ->
+            G.remove_vertex (graph ss) v;
+            []
         | Remove_edge (v, v') ->
-            G.remove_edge (graph ss) v v';
+            (try G.remove_edge (graph ss) v v' with Invalid_argument _ -> ());
             []
         | Add_edge ((v, _, v') as e) ->
             G.add_edge_e (graph ss) e;

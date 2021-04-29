@@ -68,7 +68,7 @@ struct
 
   let size_cost costs = 1 + List.sum (module Int) costs ~f:Fun.id
 
-  let cost ?(weight = 0.95) params costs state =
+  let cost ?(weight = 1.0) params costs state =
     (Float.of_int (hamming_cost params state)
      /. (Float.of_int @@ (params.bench.input.xmax * params.bench.input.ymax))
      *. weight
