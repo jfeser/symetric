@@ -22,3 +22,9 @@ let rec repeat ~f i x = if i <= 0 then [ x ] else x :: repeat (i - 1) ~f (f x)
 let unsafe_to_list a =
   List.init (Option_array.length a)
     ~f:(Option_array.unsafe_get_some_assuming_some a)
+
+module Option = struct
+  include Option
+
+  let value_lazy ~default = function Some x -> x | None -> Lazy.force default
+end

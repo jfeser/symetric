@@ -283,6 +283,35 @@ let cad_sample_diverse_cli =
       in
       run params]
 
+let cad_sample_diverse_vp_cli =
+  let module Lang = Cad in
+  let module Synth = Sampling_diverse_vp.Make (Lang) in
+  let run params () =
+    let stats = Synth.create_stats () in
+    let start = Time.now () in
+    (try Synth.synth params stats with Break -> ());
+    let end_ = Time.now () in
+    let time = Time.diff end_ start in
+    if params.print_csv then
+      print_csv ?bench:params.bench.filename ~synth:"cad_sample_diverse_vp"
+        ~n_states:stats.n_states ~n_iters:stats.n_iters ~n_distinct_states:(-1)
+        ~n_roots:(-1) ~time ~max_size:params.max_cost ~n_args:(-1)
+        ~total_arg_in_degree:(-1) ~n_mergeable_hyper_edges:(-1)
+        ~solved:stats.solved ()
+  in
+
+  let open Command.Let_syntax in
+  Command.basic ~summary:"Synthesize a 2D CAD program using lazy cegis."
+    [%map_open
+      let params =
+        Params.cli
+          [%map_open
+            let bench_fn = anon ("bench" %: string) in
+            Cad.Bench.load bench_fn]
+          Cad_params.cli
+      in
+      run params]
+
 let () =
   Memtrace.trace_if_requested ();
   Command.group ~summary:"Run lazy CEGIS."
@@ -293,5 +322,6 @@ let () =
       ("cad-cost-naive", cad_cost_naive_cli);
       ("cad-sample-naive", cad_sample_naive_cli);
       ("cad-sample-diverse", cad_sample_diverse_cli);
+      ("cad-sample-diverse-vp", cad_sample_diverse_vp_cli);
     ]
   |> Command.run
