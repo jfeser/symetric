@@ -49,6 +49,7 @@ module Make (Lang : Lang_intf.S) = struct
     types : Type.t Option_vector.t;
     state_idx : (Abs.t * Type.t, State0.t) Hashtbl.t array;
     states_by_cost : Set.M(State0).t array;
+    all_states : Hash_set.M(Abs).t;
     mutable state_id : int;
     (* Hyper_edge data *)
     hyper_edge_idx : Hyper_edge0.t Hash_set.t;
@@ -84,6 +85,7 @@ module Make (Lang : Lang_intf.S) = struct
       hyper_edge_idx = Hash_set.create (module Hyper_edge0);
       states_by_cost =
         Array.init params.max_cost ~f:(fun _ -> Set.empty (module State0));
+      all_states = Hash_set.create (module Abs);
     }
 
   let params ctx = ctx.params

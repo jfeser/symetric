@@ -38,7 +38,7 @@ module type S = sig
   end
 
   module Conc : sig
-    type t [@@deriving compare, sexp_of]
+    type t [@@deriving compare, hash, sexp_of]
 
     include Comparator.S with type t := t
 

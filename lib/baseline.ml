@@ -1,21 +1,7 @@
-module type DIST = sig
-  type t
-
-  type params
-
-  val dist : params -> t -> t -> float
-end
-
-module Make
-    (Lang : Lang_intf.S)
-    (Dist : DIST with type t = Lang.Conc.t and type params = Lang.params) =
-struct
+module Make (Lang : Lang_intf.S) = struct
   open Lang
-  open Dist
   module Search_state = Search_state_append.Make (Lang)
   open Search_state
-
-  let k = 100
 
   let unsafe_to_list a =
     List.init (Option_array.length a)
@@ -52,32 +38,7 @@ struct
 
   exception Done
 
-  let dedup_states ss states =
-    List.dedup_and_sort
-      ~compare:(fun (s, _, _) (s', _, _) -> [%compare: Conc.t] s s')
-      states
-    |> List.filter ~f:(fun (s, _, _) -> not (mem ss s))
-
-  let sample_states ss new_states =
-    let states =
-      List.map new_states ~f:(fun ((new_state, _, _) as x) ->
-          let min_dist =
-            List.map (states ss) ~f:(fun old_state ->
-                dist (params ss) old_state new_state)
-            |> List.min_elt ~compare:[%compare: float]
-            |> Option.value ~default:Float.infinity
-          in
-          (min_dist, x))
-      |> List.sort ~compare:(fun (d, _) (d', _) -> -[%compare: float] d d')
-    in
-    Fmt.epr "Max %f Min %f\n%!"
-      (List.hd states
-      |> Option.map ~f:Tuple.T2.get1
-      |> Option.value ~default:Float.nan)
-      (List.last states
-      |> Option.map ~f:Tuple.T2.get1
-      |> Option.value ~default:Float.nan);
-    states |> (fun l -> List.take l k) |> List.map ~f:(fun (_, x) -> x)
+  let sample_states _ = Fun.id
 
   let insert_states ss cost states =
     List.iter states ~f:(fun (state, op, args) -> insert ss cost state op args)
@@ -90,7 +51,7 @@ struct
     let rec fill cost =
       if cost > params.max_cost then ()
       else
-        let new_states = generate_states ss ops cost |> dedup_states ss in
+        let new_states = generate_states ss ops cost in
 
         if
           List.exists new_states ~f:(fun (s, _, _) ->
