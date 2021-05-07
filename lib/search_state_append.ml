@@ -31,4 +31,8 @@ module Make (Lang : Lang_intf.S) = struct
     Array.iteri ctx.of_cost ~f:(fun i q ->
         Fmt.epr "Cost %d: %d\n" i @@ Queue.length q);
     Fmt.epr "Total: %d\n%!" (Hashtbl.length ctx.paths)
+
+  let rec program_exn ctx state =
+    let op, args = Hashtbl.find_exn ctx.paths state in
+    Program.Apply (op, List.map args ~f:(program_exn ctx))
 end

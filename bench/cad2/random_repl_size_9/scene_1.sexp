@@ -33,15 +33,14 @@
    0 0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 1 1 1 1 1
    1 1 1 1 1 1 1 1 1 1 1 1))
  (solution
-  (Apply (Replicate ((id 5) (count 4) (v ((x 2) (y -2)))))
-   ((Apply (Replicate ((id 4) (count 4) (v ((x 2) (y 2)))))
-     ((Apply Union
-       ((Apply Inter
-         ((Apply (Replicate ((id 4) (count 4) (v ((x 2) (y 2)))))
-           ((Apply (Replicate ((id 4) (count 4) (v ((x 2) (y 2)))))
-             ((Apply
-               (Rect
-                ((id 2) (lo_left ((x 10) (y 11))) (hi_right ((x 16) (y 17)))))
-               ())))))
-          (Apply (Circle ((id 0) (center ((x 28) (y 15))) (radius 9))) ())))
-        (Apply (Circle ((id 1) (center ((x 24) (y 22))) (radius 12))) ())))))))))
+  (Apply (Replicate ((id 4) (count 4) (v ((x 2) (y 2)))))
+  ((Apply (Replicate ((id 5) (count 4) (v ((x 2) (y -2)))))
+    ((Apply Union
+      ((Apply Inter
+        ((Apply (Replicate ((id 4) (count 4) (v ((x 2) (y 2)))))
+          ((Apply
+            (Rect
+             ((id 2) (lo_left ((x 10) (y 11))) (hi_right ((x 16) (y 17)))))
+            ())))
+         (Apply (Circle ((id 0) (center ((x 28) (y 15))) (radius 9))) ())))
+       (Apply (Circle ((id 1) (center ((x 24) (y 22))) (radius 12))) ())))))))))

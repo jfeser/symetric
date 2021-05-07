@@ -1,4 +1,10 @@
-module Make (Lang : Lang_intf.S) = struct
+module Make
+    (Lang : Lang_intf.S)
+    (Dist : Dist_intf.S
+              with type value := Lang.Conc.t
+               and type params := Lang.params
+               and type op := Lang.Op.t) =
+struct
   open Lang
   module Search_state = Search_state_append.Make (Lang)
   open Search_state
@@ -36,7 +42,7 @@ module Make (Lang : Lang_intf.S) = struct
              |> List.concat_map ~f:(generate_args ss op))
     else []
 
-  exception Done
+  exception Done of Op.t Program.t
 
   let sample_states _ = Fun.id
 
@@ -46,25 +52,39 @@ module Make (Lang : Lang_intf.S) = struct
   let synth params =
     let ss = Search_state.create params
     and ops = Bench.ops params.bench
-    and output = Bench.output params.bench in
+    and output = Bench.output params.bench
+    and solution = Bench.solution_exn params.bench in
 
     let rec fill cost =
       if cost > params.max_cost then ()
       else
         let new_states = generate_states ss ops cost in
 
-        if
-          List.exists new_states ~f:(fun (s, _, _) ->
-              [%compare.equal: Conc.t] s output)
-        then raise Done;
-
         let new_states = sample_states ss new_states in
         insert_states ss cost new_states;
+
+        List.iter new_states ~f:(fun (s, _, _) ->
+            let p = program_exn ss s and p' = solution in
+            if Program.size p = Program.size p' then
+              let d = Dist.value params s output in
+              if Float.O.(d < 50.0) then print_s [%message (p : Op.t Program.t)]
+            (* let td = Dist.program p p' in
+             * Fmt.pr "%f,%f\n" d td *));
+
+        let solutions =
+          List.filter_map new_states ~f:(fun (s, _, _) ->
+              if [%compare.equal: Conc.t] s output then Some (program_exn ss s)
+              else None)
+        in
+        if not (List.is_empty solutions) then (
+          List.iter solutions ~f:(fun p ->
+              eprint_s [%message (p : Op.t Program.t)]);
+          raise (Done (List.hd_exn solutions)));
 
         Fmt.epr "Finished cost %d\n%!" cost;
         print_stats ss;
         fill (cost + 1)
     in
 
-    try fill 0 with Done -> Fmt.epr "Found solution"
+    try fill 0 with Done p -> eprint_s [%message (p : Op.t Program.t)]
 end

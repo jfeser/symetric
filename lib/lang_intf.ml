@@ -87,5 +87,7 @@ module type S = sig
     val ops : t -> Op.t list
 
     val output : t -> Conc.t
+
+    val solution_exn : t -> Op.t Program.t
   end
 end

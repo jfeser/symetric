@@ -1,17 +1,11 @@
-module type DIST = sig
-  type t
-
-  type params
-
-  val dist : params -> t -> t -> float
-end
-
 module Make
     (Lang : Lang_intf.S)
-    (Dist : DIST with type t = Lang.Conc.t and type params = Lang.params) =
+    (Dist : Dist_intf.S
+              with type value := Lang.Conc.t
+               and type params := Lang.params
+               and type op := Lang.Op.t) =
 struct
   open Lang
-  open Dist
   module Search_state = Search_state_append.Make (Lang)
   open Search_state
 
@@ -50,7 +44,7 @@ struct
              |> List.concat_map ~f:(generate_args ss op))
     else []
 
-  exception Done
+  exception Done of Op.t Program.t
 
   let dedup_states ss states =
     List.dedup_and_sort
@@ -63,7 +57,7 @@ struct
       List.map new_states ~f:(fun ((new_state, _, _) as x) ->
           let min_dist =
             List.map (states ss) ~f:(fun old_state ->
-                dist (params ss) old_state new_state)
+                Dist.value (params ss) old_state new_state)
             |> List.min_elt ~compare:[%compare: float]
             |> Option.value ~default:Float.infinity
           in
@@ -77,7 +71,7 @@ struct
       (List.last states
       |> Option.map ~f:Tuple.T2.get1
       |> Option.value ~default:Float.nan);
-    states |> (fun l -> List.take l k) |> List.map ~f:(fun (_, x) -> x)
+    states |> fun l -> List.take l k
 
   let insert_states ss cost states =
     List.iter states ~f:(fun (state, op, args) -> insert ss cost state op args)
@@ -85,25 +79,32 @@ struct
   let synth params =
     let ss = Search_state.create params
     and ops = Bench.ops params.bench
-    and output = Bench.output params.bench in
+    and output = Bench.output params.bench
+    and solution = Bench.solution_exn params.bench in
 
     let rec fill cost =
       if cost > params.max_cost then ()
       else
         let new_states = generate_states ss ops cost |> dedup_states ss in
 
-        if
-          List.exists new_states ~f:(fun (s, _, _) ->
-              [%compare.equal: Conc.t] s output)
-        then raise Done;
+        List.find_map new_states ~f:(fun (s, _, _) ->
+            if [%compare.equal: Conc.t] s output then Some (program_exn ss s)
+            else None)
+        |> Option.iter ~f:(fun p -> raise (Done p));
 
         let new_states = sample_states ss new_states in
-        insert_states ss cost new_states;
+        insert_states ss cost @@ List.map ~f:Tuple.T2.get2 new_states;
+        List.iter new_states ~f:(fun (d, (s, _, _)) ->
+            let p = program_exn ss s and p' = solution in
+            let td = Tree_dist.zhang_sasha ~eq:[%compare.equal: Op.t] p p' in
+            Fmt.epr "Dist %f, tree dist %d\n" d td;
+            if td <= 3 then
+              eprint_s [%message (p : Op.t Program.t) (p' : Op.t Program.t)]);
 
         Fmt.epr "Finished cost %d\n%!" cost;
         print_stats ss;
         fill (cost + 1)
     in
 
-    try fill 0 with Done -> Fmt.epr "Found solution"
+    try fill 0 with Done p -> eprint_s [%message (p : Op.t Program.t)]
 end

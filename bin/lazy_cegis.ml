@@ -319,32 +319,50 @@ let cad_sample_diverse_vp_cli =
       in
       run params]
 
+module Hamming_dist = struct
+  let value (params : Cad.params) (c : Cad.Conc.t) (c' : Cad.Conc.t) =
+    let ct = ref 0 in
+    for x = 0 to params.bench.input.xmax - 1 do
+      for y = 0 to params.bench.input.ymax - 1 do
+        let p =
+          Vector2.{ x = Float.of_int x +. 0.5; y = Float.of_int y +. 0.5 }
+        in
+        ct :=
+          !ct
+          +
+          if
+            let v = Map.find_exn c p and v' = Map.find_exn c' p in
+            Bool.(v = v')
+          then 0
+          else 1
+      done
+    done;
+    Float.of_int !ct
+end
+
+module Norm_zs_dist = struct
+  let rec norm = function
+    | Program.Apply (((Cad.Op.Union | Inter) as op), args) ->
+        let args' =
+          List.sort ~compare:[%compare: Cad.Op.t Program.t]
+          @@ List.map ~f:norm args
+        in
+        Apply (op, args')
+    | Apply (op, args) ->
+        let args' = List.map ~f:norm args in
+        Apply (op, args')
+
+  let program (p : Cad.Op.t Program.t) (p' : Cad.Op.t Program.t) =
+    Tree_dist.zhang_sasha ~eq:[%compare.equal: Cad.Op.t] p p' |> Float.of_int
+end
+
+module Dist = struct
+  include Hamming_dist
+  include Norm_zs_dist
+end
+
 let cad_simple_cli =
   let module Lang = Cad in
-  let module Dist = struct
-    type t = Lang.Conc.t
-
-    type params = Lang.params
-
-    let dist (params : params) (c : t) (c' : t) =
-      let ct = ref 0 in
-      for x = 0 to params.bench.input.xmax - 1 do
-        for y = 0 to params.bench.input.ymax - 1 do
-          let p =
-            Vector2.{ x = Float.of_int x +. 0.5; y = Float.of_int y +. 0.5 }
-          in
-          ct :=
-            !ct
-            +
-            if
-              let v = Map.find_exn c p and v' = Map.find_exn c' p in
-              Bool.(v = v')
-            then 0
-            else 1
-        done
-      done;
-      Float.of_int !ct
-  end in
   let module Synth = Sampling_enum.Make (Lang) (Dist) in
   let run params () =
     let start = Time.now () in
@@ -370,7 +388,7 @@ let cad_simple_cli =
 
 let cad_baseline_cli =
   let module Lang = Cad in
-  let module Synth = Baseline.Make (Lang) in
+  let module Synth = Baseline.Make (Lang) (Dist) in
   let run params () =
     let start = Time.now () in
     (try Synth.synth params with Break -> ());
