@@ -66,14 +66,15 @@ struct
         List.iter new_states ~f:(fun (s, _, _) ->
             let p = program_exn ss s and p' = solution in
             if Program.size p = Program.size p' then
-              let d = Dist.value params s output in
-              if Float.O.(d < 50.0) then print_s [%message (p : Op.t Program.t)]
+              let _d = Dist.value params s output in
+              ()
             (* let td = Dist.program p p' in
              * Fmt.pr "%f,%f\n" d td *));
 
         let solutions =
           List.filter_map new_states ~f:(fun (s, _, _) ->
-              if [%compare.equal: Value.t] s output then Some (program_exn ss s)
+              if Float.(Dist.value params s output <= 0.0) then
+                Some (program_exn ss s)
               else None)
         in
         if not (List.is_empty solutions) then (

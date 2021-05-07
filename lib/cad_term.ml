@@ -1,7 +1,5 @@
 module Op = Cad_op
 module Type = Cad_type
-module Abs = Cad_abs
-module Symb = Cad_symb
 
 module Value = Term_value.Make (struct
   type type_ = Type.t
@@ -14,8 +12,6 @@ module Bench = struct
 
   let output = solution_exn
 end
-
-type symb = Cad_symb.t
 
 type bench = Cad_bench.t
 

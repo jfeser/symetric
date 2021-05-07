@@ -384,14 +384,18 @@ let cad_baseline_cli =
       run params]
 
 let cad_baseline_term_cli =
-  let module Dist = struct
-    include Norm_zs_dist
-
-    let value _ = program
-  end in
   let module Lang = Cad_term in
-  let module Synth = Baseline.Make (Lang) (Dist) in
+  let module P = Program.Make (Lang.Op) in
   let run params () =
+    let eval = P.eval_memoized (Cad_conc.eval params) in
+    let module Dist = struct
+      let program = Norm_zs_dist.program
+
+      let value params p p' =
+        let v = eval p and v' = eval p' in
+        Hamming_dist.value params v v'
+    end in
+    let module Synth = Baseline.Make (Lang) (Dist) in
     let start = Time.now () in
     (try Synth.synth params with Break -> ());
     let end_ = Time.now () in

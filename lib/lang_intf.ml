@@ -5,8 +5,6 @@ module type S = sig
 
   type params = (bench, lparams) Params.t
 
-  type symb
-
   module Type : sig
     type t [@@deriving compare, hash, sexp]
 

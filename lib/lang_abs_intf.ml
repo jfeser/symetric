@@ -7,6 +7,8 @@ end
 module type S = sig
   include Lang_intf.S
 
+  type symb
+
   module Abs : sig
     type t [@@deriving compare, hash, sexp]
 
