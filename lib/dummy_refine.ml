@@ -29,7 +29,7 @@ struct
         |> Option.value_exn |> sample ss
       in
       let out = Cad_conc.eval_program (params ss) prog in
-      if [%compare.equal: Conc.t] out expected then raise (Found_solution prog)
+      if [%compare.equal: Value.t] out expected then raise (Found_solution prog)
     in
     while true do
       sample_counter ()

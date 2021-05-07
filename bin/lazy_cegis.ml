@@ -204,34 +204,6 @@ let cad_concrete_cli =
       in
       run params]
 
-let cad_cost_naive_cli =
-  let module Lang = Cad in
-  let module Synth = Cost_ordered_naive.Make (Lang) in
-  let run params () =
-    let start = Time.now () in
-    let result = Synth.synth params in
-    let end_ = Time.now () in
-    let time = Time.diff end_ start in
-    Option.iter result ~f:(fun () -> print_s [%message "found solution"]);
-    if params.print_csv then
-      print_csv ?bench:params.bench.filename ~synth:"cad_cost_naive_hamming"
-        ~n_states:(-1) ~n_distinct_states:(-1) ~n_roots:(-1) ~time
-        ~max_size:params.max_cost ~n_args:(-1) ~total_arg_in_degree:(-1)
-        ~n_mergeable_hyper_edges:(-1) ()
-  in
-
-  let open Command.Let_syntax in
-  Command.basic ~summary:"Synthesize a 2D CAD program using lazy cegis."
-    [%map_open
-      let params =
-        Params.cli
-          [%map_open
-            let bench_fn = anon ("bench" %: string) in
-            Cad.Bench.load bench_fn]
-          Cad_params.cli
-      in
-      run params]
-
 let cad_sample_naive_cli =
   let module Lang = Cad in
   let module Synth = Sampling_naive.Make (Lang) in
@@ -320,7 +292,7 @@ let cad_sample_diverse_vp_cli =
       run params]
 
 module Hamming_dist = struct
-  let value (params : Cad.params) (c : Cad.Conc.t) (c' : Cad.Conc.t) =
+  let value (params : Cad.params) (c : Cad.Value.t) (c' : Cad.Value.t) =
     let ct = ref 0 in
     for x = 0 to params.bench.input.xmax - 1 do
       for y = 0 to params.bench.input.ymax - 1 do
@@ -411,6 +383,36 @@ let cad_baseline_cli =
       in
       run params]
 
+let cad_baseline_term_cli =
+  let module Dist = struct
+    include Norm_zs_dist
+
+    let value _ = program
+  end in
+  let module Lang = Cad_term in
+  let module Synth = Baseline.Make (Lang) (Dist) in
+  let run params () =
+    let start = Time.now () in
+    (try Synth.synth params with Break -> ());
+    let end_ = Time.now () in
+    let time = Time.diff end_ start in
+    if params.print_csv then
+      print_csv ?bench:params.bench.filename ~synth:"cad_baseline" ~time
+        ~max_size:params.max_cost ()
+  in
+
+  let open Command.Let_syntax in
+  Command.basic ~summary:"Synthesize a 2D CAD program using lazy cegis."
+    [%map_open
+      let params =
+        Params.cli
+          [%map_open
+            let bench_fn = anon ("bench" %: string) in
+            Cad.Bench.load bench_fn]
+          Cad_params.cli
+      in
+      run params]
+
 let () =
   Memtrace.trace_if_requested ();
   Command.group ~summary:"Run lazy CEGIS."
@@ -418,11 +420,11 @@ let () =
       (* ("cad", csg_cli); *)
       ("cad-abs", cad_cli);
       ("cad-concrete", cad_concrete_cli);
-      ("cad-cost-naive", cad_cost_naive_cli);
       ("cad-sample-naive", cad_sample_naive_cli);
       ("cad-sample-diverse", cad_sample_diverse_cli);
       ("cad-sample-diverse-vp", cad_sample_diverse_vp_cli);
       ("cad-simple", cad_simple_cli);
       ("cad-baseline", cad_baseline_cli);
+      ("cad-baseline-term", cad_baseline_term_cli);
     ]
   |> Command.run

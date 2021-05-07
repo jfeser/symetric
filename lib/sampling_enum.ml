@@ -1,7 +1,7 @@
 module Make
     (Lang : Lang_intf.S)
     (Dist : Dist_intf.S
-              with type value := Lang.Conc.t
+              with type value := Lang.Value.t
                and type params := Lang.params
                and type op := Lang.Op.t) =
 struct
@@ -15,7 +15,7 @@ struct
     List.init (Option_array.length a)
       ~f:(Option_array.unsafe_get_some_assuming_some a)
 
-  let make_edge ss op args = (Conc.eval (params ss) op args, op, args)
+  let make_edge ss op args = (Value.eval (params ss) op args, op, args)
 
   let generate_args ss op costs =
     let arity = Op.arity op in
@@ -48,7 +48,7 @@ struct
 
   let dedup_states ss states =
     List.dedup_and_sort
-      ~compare:(fun (s, _, _) (s', _, _) -> [%compare: Conc.t] s s')
+      ~compare:(fun (s, _, _) (s', _, _) -> [%compare: Value.t] s s')
       states
     |> List.filter ~f:(fun (s, _, _) -> not (mem ss s))
 
@@ -88,7 +88,7 @@ struct
         let new_states = generate_states ss ops cost |> dedup_states ss in
 
         List.find_map new_states ~f:(fun (s, _, _) ->
-            if [%compare.equal: Conc.t] s output then Some (program_exn ss s)
+            if [%compare.equal: Value.t] s output then Some (program_exn ss s)
             else None)
         |> Option.iter ~f:(fun p -> raise (Done p));
 

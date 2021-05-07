@@ -1,14 +1,14 @@
 module Make
     (Lang : Lang_intf.S
-              with type Conc.t = Cad.Conc.t
+              with type Value.t = Cad.Value.t
                and type bench = Cad.Bench.t) =
 struct
   open Lang
 
   module State_set = struct
-    type t = Set.M(Lang.Conc).t ref
+    type t = Set.M(Value).t ref
 
-    let create () = ref (Set.empty (module Lang.Conc))
+    let create () = ref (Set.empty (module Value))
 
     let length x = Set.length !x
 
@@ -20,11 +20,11 @@ struct
       Option.value_exn (Set.nth !x (Random.int @@ length x))
   end
 
-  let eval = Lang.Conc.eval
+  let eval = Value.eval
 
   exception Done
 
-  let hamming = Cad.Conc.hamming
+  let hamming = Cad.Value.hamming
 
   type stats = {
     mutable n_states : int;
@@ -69,7 +69,7 @@ struct
           eprint_s
             [%message (stats.best_dist : int) (State_set.length states : int)];
 
-        if [%compare.equal: Lang.Conc.t] out (Bench.output params.bench) then (
+        if [%compare.equal: Value.t] out (Bench.output params.bench) then (
           stats.solved <- true;
           raise Done);
 

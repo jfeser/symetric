@@ -194,4 +194,4 @@ let is_subset params v ~of_:v' =
 
 let quickcheck_generator_leq = None
 
-let search_compare _ = (module TC : Lang_intf.Comparable with type t = t)
+let search_compare _ = (module TC : Lang_abs_intf.Comparable with type t = t)

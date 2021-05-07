@@ -3,15 +3,15 @@ module Make (Lang : Lang_intf.S) = struct
 
   type t = {
     params : Lang.params;
-    of_cost : Conc.t Queue.t array;
-    paths : (Op.t * Conc.t list) Hashtbl.M(Conc).t;
+    of_cost : Value.t Queue.t array;
+    paths : (Op.t * Value.t list) Hashtbl.M(Value).t;
   }
 
   let create params =
     {
       params;
       of_cost = Array.init (params.max_cost + 1) ~f:(fun _ -> Queue.create ());
-      paths = Hashtbl.create (module Conc);
+      paths = Hashtbl.create (module Value);
     }
 
   let params ctx = ctx.params

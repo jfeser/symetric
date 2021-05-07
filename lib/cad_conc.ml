@@ -182,5 +182,5 @@ let search_compare _ =
   (module struct
     include T
     include Comparator.Make (T)
-  end : Lang_intf.Comparable
+  end : Lang_abs_intf.Comparable
     with type t = t)

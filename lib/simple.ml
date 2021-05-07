@@ -8,7 +8,7 @@ module Make (Lang : Lang_intf.S) = struct
       ~f:(Option_array.unsafe_get_some_assuming_some a)
 
   let make_edge ss cost op args =
-    let state = Conc.eval (params ss) op args in
+    let state = Value.eval (params ss) op args in
     insert ss cost state op args
 
   let generate_args ss op cost costs =

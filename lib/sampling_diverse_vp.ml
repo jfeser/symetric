@@ -1,14 +1,14 @@
 module Make
     (Lang : Lang_intf.S
-              with type Conc.t = Cad.Conc.t
+              with type Value.t = Cad.Value.t
                and type bench = Cad.Bench.t) =
 struct
   open Lang
 
   module State_set = struct
-    type t = Set.M(Lang.Conc).t ref
+    type t = Set.M(Value).t ref
 
-    let create () = ref (Set.empty (module Lang.Conc))
+    let create () = ref (Set.empty (module Value))
 
     let length x = Set.length !x
 
@@ -22,7 +22,7 @@ struct
       Option.value_exn (Set.nth !x (Random.int @@ length x))
   end
 
-  let eval = Lang.Conc.eval
+  let eval = Value.eval
 
   exception Done
 
@@ -34,7 +34,7 @@ struct
           Vector2.{ x = Float.of_int x +. 0.5; y = Float.of_int y +. 0.5 }
         in
         ct :=
-          !ct + if Bool.(Cad.Conc.getp c p = Cad.Conc.getp c' p) then 0 else 1
+          !ct + if Bool.(Cad.Value.getp c p = Cad.Value.getp c' p) then 0 else 1
       done
     done;
     !ct
@@ -59,7 +59,7 @@ struct
     in
 
     let module Point = struct
-      type t = Lang.Conc.t
+      type t = Value.t
 
       let sexp_of_t _ = Sexp.Atom "p"
 
@@ -94,7 +94,7 @@ struct
           eprint_s
             [%message (stats.best_dist : int) (State_set.length states : int)];
 
-        if [%compare.equal: Lang.Conc.t] out (Bench.output params.bench) then (
+        if [%compare.equal: Value.t] out (Bench.output params.bench) then (
           stats.solved <- true;
           raise Done);
 

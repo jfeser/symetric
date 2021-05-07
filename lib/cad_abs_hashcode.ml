@@ -30,4 +30,4 @@ let search_compare params =
     include T
     include Comparator.Make (T)
   end in
-  (module C : Lang_intf.Comparable with type t = t)
+  (module C : Lang_abs_intf.Comparable with type t = t)
