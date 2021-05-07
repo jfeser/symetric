@@ -38,10 +38,10 @@ let eval params op args =
   match (op, args) with
   | Cad_op.Inter, [ s; s' ] ->
       Map.merge s s' ~f:(fun ~key:_ -> function
-        | `Left x | `Right x -> Some x | `Both (x, x') -> Some (x && x'))
+        | `Left _ | `Right _ -> assert false | `Both (x, x') -> Some (x && x'))
   | Union, [ s; s' ] ->
       Map.merge s s' ~f:(fun ~key:_ -> function
-        | `Left x | `Right x -> Some x | `Both (x, x') -> Some (x || x'))
+        | `Left _ | `Right _ -> assert false | `Both (x, x') -> Some (x || x'))
   | Circle c, [] ->
       Cad_bench.points params.Params.bench.Cad_bench.input
       |> List.map ~f:(fun k ->
@@ -83,71 +83,6 @@ let dummy_params ~xlen ~ylen =
         filename = None;
       }
     Cad_params.{ concrete = false }
-
-let%expect_test "" =
-  let params = dummy_params ~xlen:8 ~ylen:8 in
-  eval params
-    (Circle { id = 0; center = { x = 3.0; y = 3.0 }; radius = 2.0 })
-    []
-  |> pprint params Fmt.stdout;
-  [%expect
-    {|
-........
-........
-........
-........
-.████...
-.████...
-........
-........ |}]
-
-let%expect_test "" =
-  let params = dummy_params ~xlen:8 ~ylen:8 in
-  eval params
-    (Rect
-       {
-         id = 0;
-         lo_left = { x = 1.0; y = 1.0 };
-         hi_right = { x = 4.0; y = 4.0 };
-       })
-    []
-  |> pprint params Fmt.stdout;
-  [%expect
-    {|
-........
-........
-........
-........
-.███....
-.███....
-.███....
-........ |}]
-
-let%expect_test "" =
-  let params = dummy_params ~xlen:8 ~ylen:8 in
-  eval params
-    (Replicate { id = 0; count = 3; v = { x = 1.0; y = 1.0 } })
-    [
-      eval params
-        (Rect
-           {
-             id = 1;
-             lo_left = { x = 1.0; y = 1.0 };
-             hi_right = { x = 4.0; y = 4.0 };
-           })
-        [];
-    ]
-  |> pprint params Fmt.stdout;
-  [%expect
-    {|
-........
-........
-...███..
-..████..
-.█████..
-.████...
-.███....
-........ |}]
 
 module P = struct
   type t = Cad_op.t Program.t [@@deriving compare, hash, sexp]

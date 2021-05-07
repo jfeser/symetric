@@ -312,6 +312,11 @@ module Hamming_dist = struct
     Float.of_int !ct
 end
 
+module Zs_dist = struct
+  let program (p : Cad.Op.t Program.t) (p' : Cad.Op.t Program.t) =
+    Tree_dist.zhang_sasha ~eq:[%compare.equal: Cad.Op.t] p p' |> Float.of_int
+end
+
 module Norm_zs_dist = struct
   let rec norm = function
     | Program.Apply (((Cad.Op.Union | Inter) as op), args) ->
@@ -325,7 +330,8 @@ module Norm_zs_dist = struct
         Apply (op, args')
 
   let program (p : Cad.Op.t Program.t) (p' : Cad.Op.t Program.t) =
-    Tree_dist.zhang_sasha ~eq:[%compare.equal: Cad.Op.t] p p' |> Float.of_int
+    Tree_dist.zhang_sasha ~eq:[%compare.equal: Cad.Op.t] (norm p) (norm p')
+    |> Float.of_int
 end
 
 module Dist = struct
@@ -389,7 +395,7 @@ let cad_baseline_term_cli =
   let run params () =
     let eval = P.eval_memoized (Cad_conc.eval params) in
     let module Dist = struct
-      let program = Norm_zs_dist.program
+      let program = Zs_dist.program
 
       let value params p p' =
         let v = eval p and v' = eval p' in
@@ -401,7 +407,7 @@ let cad_baseline_term_cli =
     let end_ = Time.now () in
     let time = Time.diff end_ start in
     if params.print_csv then
-      print_csv ?bench:params.bench.filename ~synth:"cad_baseline" ~time
+      print_csv ?bench:params.bench.filename ~synth:"cad_baseline_term" ~time
         ~max_size:params.max_cost ()
   in
 

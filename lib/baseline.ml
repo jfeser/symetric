@@ -59,7 +59,6 @@ struct
       if cost > params.max_cost then ()
       else
         let new_states = generate_states ss ops cost in
-
         let new_states = sample_states ss new_states in
         insert_states ss cost new_states;
 
