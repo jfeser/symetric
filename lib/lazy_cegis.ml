@@ -106,9 +106,7 @@ struct
     let rec build_args arg_idx =
       if arg_idx >= arity then consume_args ()
       else
-        state_set
-          ~cost:(Combinat.Int_array.get costs arg_idx)
-          ~type_:arg_types.(arg_idx)
+        state_set ~cost:costs.(arg_idx) ~type_:arg_types.(arg_idx)
         |> List.iter ~f:(fun v ->
                Option_array.set_some args arg_idx v;
                build_args (arg_idx + 1))
@@ -127,10 +125,9 @@ struct
 
       List.iter ops ~f:(fun op ->
           let arity = Op.arity op in
-          let module Comp = Combinat.Composition in
           if arity > 0 then
-            Comp.create ~n:arg_cost ~k:arity
-            |> Comp.iter ~f:(fill_with_costs ss state_set op cost));
+            Combinat.compositions ~n:arg_cost ~k:arity
+              (fill_with_costs ss state_set op cost));
 
       let size' = G.nb_vertex @@ graph ss in
 

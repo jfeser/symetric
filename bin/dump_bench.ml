@@ -243,11 +243,10 @@ let random ~xmax ~ymax ~size ~n ~ops k =
       let%map p = random_tree (size - 1) in
       Program.Apply (op, [ p ])
     and random_binop op size =
-      Combinat.(Composition.(create ~n:(size - 1) ~k:2 |> to_list))
+      Combinat.(compositions ~n:(size - 1) ~k:2 |> to_list)
       |> List.permute
       |> List.find_map ~f:(fun ss ->
-             let s = Combinat.Int_array.get ss 0
-             and s' = Combinat.Int_array.get ss 1 in
+             let s = ss.(0) and s' = ss.(1) in
              let%bind p = random_tree s and p' = random_tree s' in
              return @@ Program.Apply (op, [ p; p' ]))
     and random_tree size =

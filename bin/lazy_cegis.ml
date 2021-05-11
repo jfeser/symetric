@@ -6,6 +6,13 @@ exception Break
 
 let break _ = raise Break
 
+let timed n f =
+  let start = Time.now () in
+  let ret = f () in
+  let end_ = Time.now () in
+  Fmt.epr "ran %s in %a\n%!" n Time.Span.pp (Time.diff end_ start);
+  ret
+
 let () = Caml.Sys.(set_signal sigint (Signal_handle break))
 
 let print_csv_header () =
@@ -317,18 +324,18 @@ module Zs_dist = struct
     Tree_dist.zhang_sasha ~eq:[%compare.equal: Cad.Op.t] p p' |> Float.of_int
 end
 
-module Norm_zs_dist = struct
-  let rec norm = function
-    | Program.Apply (((Cad.Op.Union | Inter) as op), args) ->
-        let args' =
-          List.sort ~compare:[%compare: Cad.Op.t Program.t]
-          @@ List.map ~f:norm args
-        in
-        Apply (op, args')
-    | Apply (op, args) ->
-        let args' = List.map ~f:norm args in
-        Apply (op, args')
+let rec norm = function
+  | Program.Apply (((Cad.Op.Union | Inter) as op), args) ->
+      let args' =
+        List.sort ~compare:[%compare: Cad.Op.t Program.t]
+        @@ List.map ~f:norm args
+      in
+      Apply (op, args')
+  | Apply (op, args) ->
+      let args' = List.map ~f:norm args in
+      Apply (op, args')
 
+module Norm_zs_dist = struct
   let program (p : Cad.Op.t Program.t) (p' : Cad.Op.t Program.t) =
     Tree_dist.zhang_sasha ~eq:[%compare.equal: Cad.Op.t] (norm p) (norm p')
     |> Float.of_int
@@ -366,7 +373,10 @@ let cad_simple_cli =
 
 let cad_baseline_cli =
   let module Lang = Cad in
-  let module Synth = Baseline.Make (Lang) (Dist) in
+  let module Validate = struct
+    let validate = ignore
+  end in
+  let module Synth = Baseline.Make (Lang) (Dist) (Validate) in
   let run params () =
     let start = Time.now () in
     (try Synth.synth params with Break -> ());
@@ -392,6 +402,16 @@ let cad_baseline_cli =
 let cad_baseline_term_cli =
   let module Lang = Cad_term in
   let module P = Program.Make (Lang.Op) in
+  let module Validate = struct
+    let validate vs =
+      let values =
+        List.map vs ~f:(fun (v, _, _) -> v) |> Set.of_list (module Lang.Value)
+      in
+      Set.iter values
+        ~f:([%test_pred: Lang.Value.t] (fun v -> Set.mem values (norm v)))
+
+    let validate vs = timed "validate" (fun () -> validate vs)
+  end in
   let run params () =
     let eval = P.eval_memoized (Cad_conc.eval params) in
     let module Dist = struct
@@ -401,7 +421,7 @@ let cad_baseline_term_cli =
         let v = eval p and v' = eval p' in
         Hamming_dist.value params v v'
     end in
-    let module Synth = Baseline.Make (Lang) (Dist) in
+    let module Synth = Baseline.Make (Lang) (Dist) (Validate) in
     let start = Time.now () in
     (try Synth.synth params with Break -> ());
     let end_ = Time.now () in
@@ -424,7 +444,6 @@ let cad_baseline_term_cli =
       run params]
 
 let () =
-  Memtrace.trace_if_requested ();
   Command.group ~summary:"Run lazy CEGIS."
     [
       (* ("cad", csg_cli); *)

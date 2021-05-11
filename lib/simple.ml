@@ -17,7 +17,7 @@ module Make (Lang : Lang_intf.S) = struct
     let rec build_args arg_idx =
       if arg_idx >= arity then make_edge ss cost op @@ unsafe_to_list args
       else
-        of_cost ss (Combinat.Int_array.get costs arg_idx)
+        of_cost ss costs.(arg_idx)
         |> List.iter ~f:(fun v ->
                Option_array.set_some args arg_idx v;
                build_args (arg_idx + 1))
@@ -32,9 +32,8 @@ module Make (Lang : Lang_intf.S) = struct
       let arg_cost = cost - 1 in
       List.filter ops ~f:(fun op -> Op.arity op > 0)
       |> List.iter ~f:(fun op ->
-             let module Comp = Combinat.Composition in
-             Comp.create ~n:arg_cost ~k:(Op.arity op)
-             |> Comp.iter ~f:(generate_args ss op cost))
+             Combinat.compositions ~n:arg_cost ~k:(Op.arity op)
+               (generate_args ss op cost))
 
   exception Done
 

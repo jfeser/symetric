@@ -3,7 +3,12 @@ module Make
     (Dist : Dist_intf.S
               with type value := Lang.Value.t
                and type params := Lang.params
-               and type op := Lang.Op.t) =
+               and type op := Lang.Op.t)
+    (Validate : sig
+      open Lang
+
+      val validate : (Value.t * Op.t * Value.t list) list -> unit
+    end) =
 struct
   open Lang
   module Search_state = Search_state_append.Make (Lang)
@@ -21,7 +26,7 @@ struct
     let rec build_args arg_idx =
       if arg_idx >= arity then [ make_edge ss op @@ unsafe_to_list args ]
       else
-        of_cost ss (Combinat.Int_array.get costs arg_idx)
+        of_cost ss costs.(arg_idx)
         |> List.concat_map ~f:(fun v ->
                Option_array.set_some args arg_idx v;
                build_args (arg_idx + 1))
@@ -36,9 +41,8 @@ struct
       let arg_cost = cost - 1 in
       List.filter ops ~f:(fun op -> Op.arity op > 0)
       |> List.concat_map ~f:(fun op ->
-             let module Comp = Combinat.Composition in
-             Comp.create ~n:arg_cost ~k:(Op.arity op)
-             |> Comp.to_list
+             Combinat.compositions ~n:arg_cost ~k:(Op.arity op)
+             |> Combinat.to_list
              |> List.concat_map ~f:(generate_args ss op))
     else []
 
@@ -52,23 +56,15 @@ struct
   let synth params =
     let ss = Search_state.create params
     and ops = Bench.ops params.bench
-    and output = Bench.output params.bench
-    and solution = Bench.solution_exn params.bench in
+    and output = Bench.output params.bench in
 
     let rec fill cost =
       if cost > params.max_cost then ()
       else
         let new_states = generate_states ss ops cost in
+        Validate.validate new_states;
         let new_states = sample_states ss new_states in
         insert_states ss cost new_states;
-
-        List.iter new_states ~f:(fun (s, _, _) ->
-            let p = program_exn ss s and p' = solution in
-            if Program.size p = Program.size p' then
-              let _d = Dist.value params s output in
-              ()
-            (* let td = Dist.program p p' in
-             * Fmt.pr "%f,%f\n" d td *));
 
         let solutions =
           List.filter_map new_states ~f:(fun (s, _, _) ->
@@ -76,6 +72,18 @@ struct
                 Some (program_exn ss s)
               else None)
         in
+        if not (List.is_empty solutions) then
+          List.iteri new_states ~f:(fun i (s, _, _) ->
+              let p = program_exn ss s in
+              let d = Dist.value params s output in
+              let td =
+                List.map solutions ~f:(Dist.program p)
+                |> List.min_elt ~compare:[%compare: float]
+                |> Option.value ~default:Float.nan
+              in
+              eprintf "%d/%d\n%!" i (List.length new_states);
+              Fmt.pr "%f,%f\n%!" d td);
+
         if not (List.is_empty solutions) then (
           List.iter solutions ~f:(fun p ->
               eprint_s [%message (p : Op.t Program.t)]);
