@@ -42,3 +42,9 @@
  (modules print_bench)
  (libraries core staged_synth)
  (preprocess (pps ppx_jane)))
+
+(executable
+ (name test_progress)
+ (modules test_progress)
+ (libraries core staged_synth)
+ (preprocess (pps ppx_jane)))
