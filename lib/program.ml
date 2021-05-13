@@ -6,6 +6,23 @@ let rec eval oeval (Apply (op, args)) = oeval op (List.map args ~f:(eval oeval))
 
 let rec size (Apply (_, args)) = 1 + List.sum (module Int) args ~f:size
 
+let mapi p ~f =
+  let rec mapi i (Apply (op, args)) =
+    let op' = f i op in
+    let args' = List.mapi args ~f:(fun j -> mapi (i + j + 1)) in
+    Apply (op', args')
+  in
+  mapi 0 p
+
+let%test_unit "" =
+  (mapi
+     (Apply (0, [ Apply (1, []); Apply (2, [ Apply (3, []) ]) ]))
+     ~f:(fun i j ->
+       [%test_result: int] ~expect:j i;
+       i)
+    : int t)
+  |> ignore
+
 module Make (Op : sig
   type t [@@deriving compare, hash, sexp]
 end) =
