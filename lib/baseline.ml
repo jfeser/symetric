@@ -14,6 +14,8 @@ struct
   module Search_state = Search_state_append.Make (Lang)
   open Search_state
 
+  let dump_solution_dists = false
+
   let unsafe_to_list a =
     List.init (Option_array.length a)
       ~f:(Option_array.unsafe_get_some_assuming_some a)
@@ -72,7 +74,8 @@ struct
                 Some (program_exn ss s)
               else None)
         in
-        if not (List.is_empty solutions) then
+
+        if dump_solution_dists && not (List.is_empty solutions) then
           List.iteri new_states ~f:(fun i (s, _, _) ->
               let p = program_exn ss s in
               let d = Dist.value params s output in
@@ -84,13 +87,14 @@ struct
               eprintf "%d/%d\n%!" i (List.length new_states);
               Fmt.pr "%f,%f\n%!" d td);
 
+        Fmt.epr "Finished cost %d\n%!" cost;
+        print_stats ss;
+
         if not (List.is_empty solutions) then (
           List.iter solutions ~f:(fun p ->
               eprint_s [%message (p : Op.t Program.t)]);
           raise (Done (List.hd_exn solutions)));
 
-        Fmt.epr "Finished cost %d\n%!" cost;
-        print_stats ss;
         fill (cost + 1)
     in
 

@@ -11,9 +11,18 @@ struct
 
   let k = 100
 
+  and thresh = 150.0
+
+  and ball_width = 2
+
   let unsafe_to_list a =
     List.init (Option_array.length a)
       ~f:(Option_array.unsafe_get_some_assuming_some a)
+
+  let eval ss p =
+    try Program.eval (Value.eval (params ss)) p
+    with Program.Eval_error e ->
+      raise @@ Program.Eval_error [%message (p : Op.t Program.t) (e : Sexp.t)]
 
   let make_edge ss op args = (Value.eval (params ss) op args, op, args)
 
@@ -53,7 +62,8 @@ struct
 
   let sample_states ss new_states =
     let states =
-      List.map new_states ~f:(fun ((new_state, _, _) as x) ->
+      Dumb_progress.List.map ~name:"sampling" new_states
+        ~f:(fun ((new_state, _, _) as x) ->
           let min_dist =
             List.map (states ss) ~f:(fun old_state ->
                 Dist.value (params ss) old_state new_state)
@@ -78,32 +88,31 @@ struct
   let synth params =
     let ss = Search_state.create params
     and ops = Bench.ops params.bench
-    and output = Bench.output params.bench
-    and solution = Bench.solution_exn params.bench in
+    and output = Bench.output params.bench in
 
-    let rec fill cost =
-      if cost > params.max_cost then ()
-      else
-        let new_states = generate_states ss ops cost |> dedup_states ss in
-
-        List.find_map new_states ~f:(fun (s, _, _) ->
-            if [%compare.equal: Value.t] s output then Some (program_exn ss s)
-            else None)
-        |> Option.iter ~f:(fun p -> raise (Done p));
-
+    try
+      let cost = ref 0 in
+      while !cost <= params.max_cost do
+        let new_states = generate_states ss ops !cost |> dedup_states ss in
         let new_states = sample_states ss new_states in
-        insert_states ss cost @@ List.map ~f:Tuple.T2.get2 new_states;
+        insert_states ss !cost @@ List.map ~f:Tuple.T2.get2 new_states;
+
+        (* Check balls around new states *)
         List.iter new_states ~f:(fun (d, (s, _, _)) ->
-            let p = program_exn ss s and p' = solution in
-            let td = Tree_dist.zhang_sasha ~eq:[%compare.equal: Op.t] p p' in
-            Fmt.epr "Dist %f, tree dist %d\n" d td;
-            if td <= 3 then
-              eprint_s [%message (p : Op.t Program.t) (p' : Op.t Program.t)]);
+            if Float.(d < thresh) then
+              let center = program_exn ss s in
+              try
+                Tree_ball.ball (module Op) ops center ball_width @@ fun p ->
+                if [%compare.equal: Value.t] (eval ss p) output then
+                  raise (Done p)
+              with Program.Eval_error e ->
+                raise
+                @@ Program.Eval_error
+                     [%message (center : Op.t Program.t) (e : Sexp.t)]);
 
-        Fmt.epr "Finished cost %d\n%!" cost;
+        Fmt.epr "Finished cost %d\n%!" !cost;
         print_stats ss;
-        fill (cost + 1)
-    in
-
-    try fill 0 with Done p -> eprint_s [%message (p : Op.t Program.t)]
+        cost := !cost + 1
+      done
+    with Done p -> eprint_s [%message (p : Op.t Program.t)]
 end

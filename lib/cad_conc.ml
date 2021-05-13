@@ -60,7 +60,8 @@ let eval params op args =
       |> Map.of_alist_exn (module Vector2)
   | Replicate r, [ s ] ->
       Map.mapi s ~f:(fun ~key ~data:_ -> replicate_is_set params r s key)
-  | _ -> raise_s [%message "Unexpected eval" (op : Cad_op.t)]
+  | _ ->
+      raise @@ Program.Eval_error [%message "Unexpected eval" (op : Cad_op.t)]
 
 let pprint (params : (Cad_bench.t, _) Params.t) fmt c =
   for y = params.bench.input.ymax - 1 downto 0 do
