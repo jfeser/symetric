@@ -223,7 +223,7 @@ let random ~xmax ~ymax ~size ~n ~ops k =
         {
           ops = [];
           input = { xmax; ymax };
-          output = Map.empty (module Vector2);
+          output = Bitarray.init ~f:(Fun.const true) 0;
           solution = None;
           filename = None;
         }
