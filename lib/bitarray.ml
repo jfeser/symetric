@@ -74,3 +74,14 @@ let all a =
     ret := !ret && get a i
   done;
   !ret
+
+let hamming_weight x =
+  String.fold x.buf
+    ~f:(fun ct ch -> (Int.popcount @@ Char.to_int ch) + ct)
+    ~init:0
+
+let%expect_test "" =
+  for i = 0 to 10 do
+    let b = init 10 ~f:(fun j -> j < i) in
+    [%test_result: int] ~expect:i (hamming_weight b)
+  done

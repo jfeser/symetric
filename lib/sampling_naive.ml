@@ -37,7 +37,9 @@ struct
     { n_states = 0; n_iters = 0; best_dist = 0; solved = false }
 
   let synth (params : _ Params.t) stats =
-    let ops = Bench.ops params.bench and states = State_set.create () in
+    let ops = Bench.ops params.bench
+    and output = Bench.output params.bench
+    and states = State_set.create () in
     let non_nil_ops =
       List.filter ops ~f:(fun op -> Op.arity op > 0)
       |> List.sort ~compare:(fun o o' -> compare (Op.arity o) (Op.arity o'))
@@ -57,10 +59,10 @@ struct
 
         (match !best with
         | None ->
-            stats.best_dist <- hamming params out;
+            stats.best_dist <- hamming output out;
             best := Some out
         | Some _ ->
-            let dist = hamming params out in
+            let dist = hamming output out in
             if dist < stats.best_dist then (
               stats.best_dist <- dist;
               best := Some out));

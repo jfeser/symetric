@@ -86,6 +86,9 @@ let sequence_progress bar =
       bar 1L;
       Yield (x, ()))
 
+let pixels input conc =
+  Cad_bench.points input |> List.map ~f:(Cad_conc.getp conc)
+
 let to_sexp ~xmax ~ymax (prog, ops) =
   let input = { xmax; ymax } in
   let bench =
@@ -93,7 +96,7 @@ let to_sexp ~xmax ~ymax (prog, ops) =
       {
         ops = [];
         input;
-        output = Map.empty (module Vector2);
+        output = Cad_conc.dummy;
         solution = None;
         filename = None;
       }
@@ -101,10 +104,7 @@ let to_sexp ~xmax ~ymax (prog, ops) =
   let params = Params.create bench Cad_params.{ concrete = false } in
   let conc = Program.eval (Cad_conc.eval params) prog in
 
-  let output =
-    Cad_bench.points input
-    |> List.map ~f:(fun p -> if Map.find_exn conc p then 1 else 0)
-  in
+  let output = pixels input conc |> List.map ~f:(fun x -> if x then 1 else 0) in
 
   [%sexp_of: Cad_bench.Serial.t]
     Cad_bench.Serial.{ ops; input; output; solution = Some prog }
@@ -118,7 +118,9 @@ let has_empty_inter params p =
   let rec eval (Program.Apply (op, args)) =
     let args = List.map ~f:eval args in
     let v = Cad_conc.eval params op args in
-    if [%compare.equal: Cad_op.t] op Inter && Map.for_all v ~f:(fun x -> not x)
+    if
+      [%compare.equal: Cad_op.t] op Inter
+      && pixels params.bench.input v |> List.for_all ~f:(fun x -> not x)
     then raise Empty_inter
     else v
   in
@@ -223,7 +225,7 @@ let random ~xmax ~ymax ~size ~n ~ops k =
         {
           ops = [];
           input = { xmax; ymax };
-          output = Bitarray.init ~f:(Fun.const true) 0;
+          output = Cad_conc.dummy;
           solution = None;
           filename = None;
         }

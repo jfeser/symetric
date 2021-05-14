@@ -1,14 +1,16 @@
 include Cad_conc0
 
 let idx b v =
-  let x = Float.iround_nearest_exn v.Vector2.x
-  and y = Float.iround_nearest_exn v.y in
+  let x = Float.iround_down_exn v.Vector2.x and y = Float.iround_down_exn v.y in
   let stride = b.ylen in
   (x * stride) + y
 
 let pt' ~ylen:stride idx =
   Vector2.
-    { x = Float.of_int @@ (idx / stride); y = Float.of_int @@ (idx mod stride) }
+    {
+      x = (Float.of_int @@ (idx / stride)) +. 0.5;
+      y = (Float.of_int @@ (idx mod stride)) +. 0.5;
+    }
 
 let pt b idx = pt' ~ylen:b.ylen idx
 
@@ -40,17 +42,7 @@ let init params ~f =
     pixels = Bitarray.init (xlen * ylen) ~f:(fun i -> f (pt' ~ylen i) i);
   }
 
-let hamming (params : (Cad_bench.t, _) Params.t) c =
-  let ct = ref 0 in
-  for x = 0 to params.bench.input.xmax - 1 do
-    for y = 0 to params.bench.input.ymax - 1 do
-      let p =
-        Vector2.{ x = Float.of_int x +. 0.5; y = Float.of_int y +. 0.5 }
-      in
-      ct := !ct + if Bool.(getp c p = getp params.bench.output p) then 0 else 1
-    done
-  done;
-  !ct
+let hamming c c' = Bitarray.hamming_weight (Bitarray.xor c.pixels c'.pixels)
 
 let eval params op args =
   try
@@ -81,14 +73,16 @@ let pprint fmt c =
     Fmt.pf fmt "\n"
   done
 
+let dummy =
+  { xlen = -1; ylen = -1; pixels = Bitarray.init 0 ~f:(fun _ -> false) }
+
 let dummy_params ~xlen ~ylen =
   Params.create
     Cad_bench.
       {
         ops = [];
         input = { xmax = xlen; ymax = ylen };
-        output =
-          { xlen = -1; ylen = -1; pixels = Bitarray.init 0 ~f:(fun _ -> false) };
+        output = dummy;
         solution = None;
         filename = None;
       }
