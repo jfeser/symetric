@@ -1,0 +1,3 @@
+[submodule "vendor/tree_diff"]
+	path = vendor/tree_diff
+	url = git@github.com:jfeser/ocaml-tree-diff.git
