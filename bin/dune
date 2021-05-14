@@ -21,8 +21,8 @@
  (name lazy_cegis)
  (public_name lazy_cegis)
  (modules lazy_cegis)
- (libraries core staged_synth memtrace)
- (preprocess (pps ppx_jane landmarks.ppx --auto)))
+ (libraries core staged_synth)
+ (preprocess (pps ppx_jane)))
 
 ; (executable
 ;  (name mk_simple_cad_bench)
@@ -40,5 +40,11 @@
 (executable
  (name print_bench)
  (modules print_bench)
+ (libraries core staged_synth)
+ (preprocess (pps ppx_jane)))
+
+(executable
+ (name test_progress)
+ (modules test_progress)
  (libraries core staged_synth)
  (preprocess (pps ppx_jane)))

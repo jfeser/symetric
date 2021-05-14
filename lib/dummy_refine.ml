@@ -12,6 +12,7 @@ struct
 
   module Refinement = struct
     type elem =
+      | Remove_node of G.V.t
       | Remove_edge of G.V.t * G.V.t
       | Add_edge of G.E.t
       | Add_merge of State.t list * Abs.t
@@ -28,7 +29,7 @@ struct
         |> Option.value_exn |> sample ss
       in
       let out = Cad_conc.eval_program (params ss) prog in
-      if [%compare.equal: Conc.t] out expected then raise (Found_solution prog)
+      if [%compare.equal: Value.t] out expected then raise (Found_solution prog)
     in
     while true do
       sample_counter ()

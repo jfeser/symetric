@@ -12,6 +12,7 @@ struct
 
   module Refinement = struct
     type elem =
+      | Remove_node of G.V.t
       | Remove_edge of G.V.t * G.V.t
       | Add_edge of G.E.t
       | Add_merge of State.t list * Abs.t
@@ -32,7 +33,7 @@ struct
         |> Option.value_exn |> sample ss
       in
       let out = Cad_conc.eval_program (params ss) prog in
-      if [%compare.equal: Conc.t] out expected then raise (Found_solution prog)
+      if [%compare.equal: Value.t] out expected then raise (Found_solution prog)
       else
         Bitarray.equal out.pixels expected.pixels
         |> Bitarray.to_list
@@ -169,7 +170,7 @@ struct
         in
 
         [
-          Remove_edge (Node.of_state output, Node.of_args args_v);
+          Remove_node (Node.of_state output);
           Add_edge (Node.of_state new_, -1, Node.of_args args_v);
         ]
 
@@ -204,5 +205,7 @@ struct
       |> Either.first
     with Found_solution p -> Second p
 
-  let summarize = Some summarize
+  let _ = summarize
+
+  let summarize = None
 end

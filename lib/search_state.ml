@@ -1,6 +1,6 @@
 open Is_fresh
 
-module Make (Lang : Lang_intf.S) = struct
+module Make (Lang : Lang_abs_intf.S) = struct
   open Lang
 
   type op = Lang.Op.t
@@ -49,6 +49,7 @@ module Make (Lang : Lang_intf.S) = struct
     types : Type.t Option_vector.t;
     state_idx : (Abs.t * Type.t, State0.t) Hashtbl.t array;
     states_by_cost : Set.M(State0).t array;
+    all_states : Hash_set.M(Abs).t;
     mutable state_id : int;
     (* Hyper_edge data *)
     hyper_edge_idx : Hyper_edge0.t Hash_set.t;
@@ -84,6 +85,7 @@ module Make (Lang : Lang_intf.S) = struct
       hyper_edge_idx = Hash_set.create (module Hyper_edge0);
       states_by_cost =
         Array.init params.max_cost ~f:(fun _ -> Set.empty (module State0));
+      all_states = Hash_set.create (module Abs);
     }
 
   let params ctx = ctx.params
@@ -412,17 +414,17 @@ module Make (Lang : Lang_intf.S) = struct
   (** Check the search graph by sampling programs and checking that their state
      nodes overapproximate their concrete behavior. *)
   let validate ?(k = 10000) ctx =
-    let exception Eval_error of program * Abs.t * Conc.t in
+    let exception Eval_error of program * Abs.t * Value.t in
     let rec checked_eval params (Apply (op, abs, args) as p) =
       let args = List.map args ~f:(checked_eval params) in
-      let conc = Conc.eval params op args in
+      let conc = Value.eval params op args in
       if Abs.contains abs conc then conc else raise (Eval_error (p, abs, conc))
     in
     if (params ctx).validate then
       let states = G.Fold.V.filter_map ctx.graph ~f:Node.to_state in
       for _ = 1 to k do
         let p = sample_annotated ctx @@ random_element_exn ctx states in
-        try ignore (checked_eval ctx.params p : Conc.t)
+        try ignore (checked_eval ctx.params p : Value.t)
         with Eval_error (p', abs, conc) ->
           dump_detailed ~suffix:"error" ctx;
           raise_s
@@ -431,6 +433,6 @@ module Make (Lang : Lang_intf.S) = struct
                 (p : program)
                 (p' : program)
                 (abs : Abs.t)
-                (conc : Conc.t)]
+                (conc : Value.t)]
       done
 end

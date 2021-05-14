@@ -27,6 +27,7 @@ module type S = sig
 
   module Refinement : sig
     type elem =
+      | Remove_node of G.V.t
       | Remove_edge of G.V.t * G.V.t
       | Add_edge of G.E.t
       | Add_merge of State.t list * Abs.t

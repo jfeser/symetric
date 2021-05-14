@@ -93,13 +93,7 @@ let to_sexp ~xmax ~ymax (prog, ops) =
       {
         ops = [];
         input;
-        output =
-          Cad_conc.
-            {
-              xlen = -1;
-              ylen = -1;
-              pixels = Bitarray.init 0 ~f:(fun _ -> false);
-            };
+        output = Map.empty (module Vector2);
         solution = None;
         filename = None;
       }
@@ -108,7 +102,8 @@ let to_sexp ~xmax ~ymax (prog, ops) =
   let conc = Program.eval (Cad_conc.eval params) prog in
 
   let output =
-    Bitarray.to_list conc.pixels |> List.map ~f:(fun p -> if p then 1 else 0)
+    Cad_bench.points input
+    |> List.map ~f:(fun p -> if Map.find_exn conc p then 1 else 0)
   in
 
   [%sexp_of: Cad_bench.Serial.t]
@@ -123,7 +118,7 @@ let has_empty_inter params p =
   let rec eval (Program.Apply (op, args)) =
     let args = List.map ~f:eval args in
     let v = Cad_conc.eval params op args in
-    if [%compare.equal: Cad_op.t] op Inter && Bitarray.(all @@ not v.pixels)
+    if [%compare.equal: Cad_op.t] op Inter && Map.for_all v ~f:(fun x -> not x)
     then raise Empty_inter
     else v
   in
@@ -228,13 +223,7 @@ let random ~xmax ~ymax ~size ~n ~ops k =
         {
           ops = [];
           input = { xmax; ymax };
-          output =
-            Cad_conc.
-              {
-                xlen = -1;
-                ylen = -1;
-                pixels = Bitarray.init 0 ~f:(fun _ -> false);
-              };
+          output = Map.empty (module Vector2);
           solution = None;
           filename = None;
         }
@@ -254,11 +243,10 @@ let random ~xmax ~ymax ~size ~n ~ops k =
       let%map p = random_tree (size - 1) in
       Program.Apply (op, [ p ])
     and random_binop op size =
-      Combinat.(Composition.(create ~n:(size - 1) ~k:2 |> to_list))
+      Combinat.(compositions ~n:(size - 1) ~k:2 |> to_list)
       |> List.permute
       |> List.find_map ~f:(fun ss ->
-             let s = Combinat.Int_array.get ss 0
-             and s' = Combinat.Int_array.get ss 1 in
+             let s = ss.(0) and s' = ss.(1) in
              let%bind p = random_tree s and p' = random_tree s' in
              return @@ Program.Apply (op, [ p; p' ]))
     and random_tree size =

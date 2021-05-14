@@ -7,7 +7,7 @@ module Probes_intf : sig
 end
 
 module Make
-    (Lang : Lang_intf.S)
+    (Lang : Lang_abs_intf.S)
     (Search_state : Search_state_intf.S
                       with type op = Lang.Op.t
                        and type abs = Lang.Abs.t

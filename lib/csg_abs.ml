@@ -13,15 +13,15 @@ module Offset = struct
   let top ctx t =
     let min =
       Option.value_exn
-        ( Offset.of_type ctx t
+        (Offset.of_type ctx t
         |> Sequence.map ~f:Offset.offset
-        |> Sequence.min_elt ~compare:[%compare: float] )
+        |> Sequence.min_elt ~compare:[%compare: float])
     in
     let max =
       Option.value_exn
-        ( Offset.of_type ctx t
+        (Offset.of_type ctx t
         |> Sequence.map ~f:Offset.offset
-        |> Sequence.max_elt ~compare:[%compare: float] )
+        |> Sequence.max_elt ~compare:[%compare: float])
     in
     { lo = min; hi = max; type_ = t }
 

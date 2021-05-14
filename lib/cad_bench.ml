@@ -43,3 +43,5 @@ let t_of_sexp s = [%of_sexp: Serial.t] s |> of_serial
 let output x = x.output
 
 let ops x = x.ops
+
+let solution_exn x = Option.value_exn x.solution

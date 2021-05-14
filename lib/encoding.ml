@@ -1,5 +1,5 @@
 module Make
-    (Lang : Lang_intf.S)
+    (Lang : Lang_abs_intf.S)
     (Search_state : Search_state_intf.S
                       with type op = Lang.Op.t
                        and type type_ = Lang.Type.t
@@ -276,9 +276,9 @@ struct
         in
 
         Smt.assert_
-          ( List.map target ~f:(fun v ->
-                Symb.equals expected (symb_var ctx [] (State.type_ ss v)))
-          |> Smt.or_ )
+          (List.map target ~f:(fun v ->
+               Symb.equals expected (symb_var ctx [] (State.type_ ss v)))
+          |> Smt.or_)
       in
       let%bind () = assert_path_constr ctx in
       let%bind () = assert_value_constr ss ctx in
@@ -290,7 +290,7 @@ struct
           @@ Option.value_exn model
         in
         print_s [%message (program : (Path.t * Op.t) list)];
-        return (Some program) )
+        return (Some program))
       else return None
     in
     Smt.eval smt
@@ -330,13 +330,13 @@ struct
                         |> String.concat ~sep:" || " |> sprintf "(%s)"
                         |> Option.return)
              in
-             ( if not (List.is_empty cases) then
-               let arg_str = string_of_args args_v in
-               let cases_str = String.concat cases ~sep:" && " in
+             (if not (List.is_empty cases) then
+              let arg_str = string_of_args args_v in
+              let cases_str = String.concat cases ~sep:" && " in
 
-               constrs :=
-                 [%string "op(%{path#Path}) = %{arg_str} => %{cases_str}"]
-                 :: !constrs );
+              constrs :=
+                [%string "op(%{path#Path}) = %{arg_str} => %{cases_str}"]
+                :: !constrs);
 
              G.iter_succ_e
                (fun (_, i, v') -> walk (Node.to_state_exn v') (path @ [ i ]))
@@ -347,11 +347,11 @@ struct
 
     Hashtbl.iteri op_domains ~f:(fun ~key:path ~data ->
         print_endline
-          ( Set.to_list data
+          (Set.to_list data
           |> List.map ~f:(fun v ->
                  let v_str = string_of_args v in
                  [%string "op(%{path#Path}) = %{v_str}"])
-          |> String.concat ~sep:" || " );
+          |> String.concat ~sep:" || ");
 
         Set.to_list data
         |> List.map ~f:(fun v -> (Args.op_exn ss v, v))

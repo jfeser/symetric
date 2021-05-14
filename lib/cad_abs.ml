@@ -20,7 +20,7 @@ let eval_circle params (c : Cad_op.circle) =
   if params.lparams.concrete then
     let lower =
       Cad_conc.eval params (Circle c) []
-      |> Cad_conc.to_alist
+      |> Map.to_alist
       |> List.filter ~f:(fun (_, is_in) -> is_in)
       |> List.map ~f:(fun ((p : Vector2.t), _) ->
              Box.create_closed ~xmin:p.x ~xmax:p.x ~ymin:p.y ~ymax:p.y)
@@ -42,7 +42,7 @@ let eval_rect params (r : Cad_op.rect) =
   if params.lparams.concrete then
     let lower =
       Cad_conc.eval params (Rect r) []
-      |> Cad_conc.to_alist
+      |> Map.to_alist
       |> List.filter ~f:(fun (_, is_in) -> is_in)
       |> List.map ~f:(fun ((p : Vector2.t), _) ->
              Box.create_closed ~xmin:p.x ~xmax:p.x ~ymin:p.y ~ymax:p.y)
@@ -121,10 +121,8 @@ let to_symb _ = failwith "to_symb"
 let leq a a' = Boxes.leq a.upper a'.upper && Boxes.leq a'.lower a.lower
 
 let contains a c =
-  Cad_conc.to_alist c
-  |> List.for_all ~f:(fun (v, is_in) ->
-         if is_in then Boxes.contains a.upper v
-         else not (Boxes.contains a.lower v))
+  Map.for_alli c ~f:(fun ~key:v ~data:is_in ->
+      if is_in then Boxes.contains a.upper v else not (Boxes.contains a.lower v))
 
 let implies a p =
   let open Ternary in
@@ -182,18 +180,18 @@ let glb a a' =
 let graphviz_pp params fmt a = Fmt.pf fmt "%a" (pprintgv params) a
 
 let equiv params a a' =
-  Cad_bench.points params.bench.Cad_bench.input
-  |> List.for_all ~f:(fun key ->
+  Cad_bench.output params.bench
+  |> Map.for_alli ~f:(fun ~key ~data:_ ->
          Bool.(
            Boxes.contains a.upper key = Boxes.contains a'.upper key
            && Boxes.contains a.lower key = Boxes.contains a'.lower key))
 
 let is_subset params v ~of_:v' =
-  Cad_bench.points params.bench.Cad_bench.input
-  |> List.for_all ~f:(fun key ->
+  Cad_bench.output params.bench
+  |> Map.for_alli ~f:(fun ~key ~data:_ ->
          Boxes.contains v.upper key ==> Boxes.contains v'.upper key
          && Boxes.contains v'.lower key ==> Boxes.contains v.lower key)
 
 let quickcheck_generator_leq = None
 
-let search_compare _ = (module TC : Lang_intf.Comparable with type t = t)
+let search_compare _ = (module TC : Lang_abs_intf.Comparable with type t = t)

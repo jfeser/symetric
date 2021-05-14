@@ -40,6 +40,18 @@ let init params ~f =
     pixels = Bitarray.init (xlen * ylen) ~f:(fun i -> f (pt' ~ylen i) i);
   }
 
+let hamming (params : (Cad_bench.t, _) Params.t) c =
+  let ct = ref 0 in
+  for x = 0 to params.bench.input.xmax - 1 do
+    for y = 0 to params.bench.input.ymax - 1 do
+      let p =
+        Vector2.{ x = Float.of_int x +. 0.5; y = Float.of_int y +. 0.5 }
+      in
+      ct := !ct + if Bool.(getp c p = getp params.bench.output p) then 0 else 1
+    done
+  done;
+  !ct
+
 let eval params op args =
   try
     match (op, args) with
@@ -54,7 +66,8 @@ let eval params op args =
             Float.(
               r.lo_left.x <= k.x && r.lo_left.y <= k.y && r.hi_right.x >= k.x
               && r.hi_right.y >= k.y))
-    | Replicate r, [ s ] -> init params ~f:(fun pt _ -> replicate_is_set r s pt)
+    | Replicate repl, [ s ] ->
+        init params ~f:(fun pt _ -> replicate_is_set repl s pt)
     | _ -> raise_s [%message "Unexpected eval" (op : Cad_op.t)]
   with e ->
     raise Info.(to_exn @@ tag_s ~tag:[%message (op : Cad_op.t)] @@ of_exn e)
@@ -80,74 +93,6 @@ let dummy_params ~xlen ~ylen =
         filename = None;
       }
     Cad_params.{ concrete = false }
-
-let%expect_test "" =
-  let params = dummy_params ~xlen:8 ~ylen:8 in
-  eval params
-    (Circle { id = 0; center = { x = 3.0; y = 3.0 }; radius = 2.0 })
-    []
-  |> pprint Fmt.stdout;
-  [%expect
-    {|
-    ........
-    ........
-    ........
-    ..███...
-    .█████..
-    ..███...
-    ........
-    ........ |}]
-
-let%expect_test "" =
-  let params = dummy_params ~xlen:8 ~ylen:8 in
-  eval params
-    (Rect
-       {
-         id = 0;
-         lo_left = { x = 1.0; y = 1.0 };
-         hi_right = { x = 4.0; y = 4.0 };
-       })
-    []
-  |> pprint Fmt.stdout;
-  [%expect
-    {|
-    ........
-    ........
-    ........
-    .████...
-    .████...
-    .████...
-    .████...
-    ........ |}]
-
-let%expect_test "" =
-  let params = dummy_params ~xlen:8 ~ylen:8 in
-  eval params
-    (Replicate { id = 0; count = 3; v = { x = 1.0; y = 1.0 } })
-    [
-      eval params
-        (Rect
-           {
-             id = 1;
-             lo_left = { x = 1.0; y = 1.0 };
-             hi_right = { x = 4.0; y = 4.0 };
-           })
-        [];
-    ]
-  |> pprint Fmt.stdout;
-  [%expect
-    {|
-    ........
-    ...████.
-    ..█████.
-    .██████.
-    .██████.
-    .█████..
-    .████...
-    ........ |}]
-
-let to_alist b =
-  List.init (Bitarray.length b.pixels) ~f:(fun i -> (pt b i, geti b i))
 
 module P = struct
   type t = Cad_op.t Program.t [@@deriving compare, hash, sexp]
@@ -177,5 +122,3 @@ let contains = [%compare.equal: t]
 let graphviz_pp _ = failwith "unimplemented pp"
 
 let top _ = failwith "unimplemented top"
-
-let search_compare _ = (module TC : Lang_intf.Comparable with type t = t)
