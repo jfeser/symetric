@@ -63,12 +63,13 @@ let render_all (display : Display.t) =
   let now = Time.now () in
   if Time.Span.(Time.diff now display.last_render > display.render_interval)
   then (
+    if Time.(display.last_render > Time.epoch) then
+      Ansi.move_up display.ch (Queue.length display.bars);
     display.last_render <- now;
     Queue.iter display.Display.bars ~f:(fun (Bar b) ->
         b.render display.buf;
         Bigstring_unix.really_output display.ch display.buf;
         Out_channel.output_string display.ch "\n");
-    Ansi.move_up display.ch (Queue.length display.bars);
     Out_channel.flush display.ch)
 
 let update ?(display = Display.default) bar state =
@@ -106,10 +107,16 @@ let draw_basic ?per_sec ?name ~tot ~n buf =
   let head_width = String.length head in
   let body_width = Bigstring.length buf - String.length tail - head_width in
   Bigstring.From_string.blito ~src:head ~dst:buf ();
-  Bigstring.From_string.blito ~src:tail ~dst:buf ~dst_pos:body_width ();
+  Bigstring.From_string.blito ~src:tail ~dst:buf
+    ~dst_pos:(head_width + body_width) ();
   let head_buf = Bigstring.sub_shared ~pos:head_width ~len:body_width buf in
   let prog = Float.(of_int n / of_int tot) in
   draw_progress head_buf prog
+
+let%expect_test "" =
+  let buf = Bigstring.create 80 in
+  draw_basic ~per_sec:3320.60 ~name:"sampling" ~tot:100 ~n:45 buf;
+  printf "%S\n" @@ Bigstring.to_string buf
 
 let basic_bar ?(display = Display.default) ?name tot =
   let id = Fresh.int display.fresh in
