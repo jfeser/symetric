@@ -1,137 +1,146 @@
 module Make
-    (Lang : Lang_intf.S
-              with type Value.t = Cad.Value.t
-               and type bench = Cad.Bench.t) =
+    (Lang : Lang_intf.S)
+    (Dist : Dist_intf.S with type value := Lang.Value.t and type op := Lang.Op.t) =
 struct
   open Lang
-
-  module State_set = struct
-    type t = Set.M(Value).t ref
-
-    let create () = ref (Set.empty (module Value))
-
-    let length x = Set.length !x
-
-    let add s x = s := Set.add !s x
-
-    let to_list x = Set.to_list !x
-
-    let to_sequence x = Set.to_sequence !x
-
-    let random_element_exn x =
-      Option.value_exn (Set.nth !x (Random.int @@ length x))
-  end
-
-  let eval = Value.eval
-
-  exception Done
-
-  let hamming (params : (Cad.Bench.t, _) Params.t) c c' =
-    let ct = ref 0 in
-    for x = 0 to params.bench.input.xmax - 1 do
-      for y = 0 to params.bench.input.ymax - 1 do
-        let p =
-          Vector2.{ x = Float.of_int x +. 0.5; y = Float.of_int y +. 0.5 }
-        in
-        ct :=
-          !ct + if Bool.(Cad.Value.getp c p = Cad.Value.getp c' p) then 0 else 1
-      done
-    done;
-    !ct
+  module Search_state = Search_state_append.Make (Lang)
+  open Search_state
 
   type stats = {
-    mutable n_states : int;
-    mutable n_iters : int;
-    mutable best_dist : int;
-    mutable solved : bool;
+    per_cost : int;
+    thresh : float;
+    ball_width : int;
+    mutable bank_size : float;
+    mutable value_dist : float;
+    mutable program_dist : float;
+    mutable program_cost : int;
+    mutable found_program : bool;
   }
 
-  let create_stats () =
-    { n_states = 0; n_iters = 0; best_dist = 0; solved = false }
+  let create ?(per_cost = 100) ?(thresh = 150.0) ?(ball_width = 2) () =
+    {
+      per_cost;
+      thresh;
+      ball_width;
+      bank_size = Float.nan;
+      value_dist = Float.nan;
+      program_dist = Float.nan;
+      program_cost = -1;
+      found_program = false;
+    }
 
-  let synth (params : _ Params.t) stats =
-    let ops = Bench.ops params.bench
-    and output = Bench.output params.bench
-    and states = State_set.create () in
-    let non_nil_ops =
+  let unsafe_to_list a =
+    List.init (Option_array.length a)
+      ~f:(Option_array.unsafe_get_some_assuming_some a)
+
+  let make_edge ss op args = (Value.eval (params ss) op args, op, args)
+
+  let generate_args ss op costs =
+    let arity = Op.arity op in
+    let args = Option_array.create ~len:arity in
+    let rec build_args arg_idx =
+      if arg_idx >= arity then [ make_edge ss op @@ unsafe_to_list args ]
+      else
+        of_cost ss costs.(arg_idx)
+        |> List.concat_map ~f:(fun v ->
+               Option_array.set_some args arg_idx v;
+               build_args (arg_idx + 1))
+    in
+    build_args 0
+
+  let generate_states ss ops cost =
+    if cost = 1 then
+      List.filter ops ~f:(fun op -> Op.arity op = 0)
+      |> List.map ~f:(fun op -> make_edge ss op [])
+    else if cost > 1 then
+      let arg_cost = cost - 1 in
       List.filter ops ~f:(fun op -> Op.arity op > 0)
-      |> List.sort ~compare:(fun o o' -> compare (Op.arity o) (Op.arity o'))
+      |> List.concat_map ~f:(fun op ->
+             Combinat.compositions ~n:arg_cost ~k:(Op.arity op)
+             |> Combinat.to_list
+             |> List.concat_map ~f:(generate_args ss op))
+    else []
+
+  exception Done of Op.t Program.t
+
+  let dedup_states ss states =
+    states
+    |> List.filter ~f:(fun (s, _, _) -> not (mem ss s))
+    |> List.dedup_and_sort ~compare:(fun (s, _, _) (s', _, _) ->
+           [%compare: Value.t] s s')
+
+  let sample_states stats ss new_states =
+    let states =
+      Dumb_progress.List.map ~name:"sampling" new_states
+        ~f:(fun ((new_state, _, _) as x) ->
+          let min_dist =
+            List.map (states ss) ~f:(fun old_state ->
+                Dist.value old_state new_state)
+            |> List.min_elt ~compare:[%compare: float]
+            |> Option.value ~default:Float.infinity
+          in
+          (min_dist, x))
+      |> List.sort ~compare:(fun (d, _) (d', _) -> -[%compare: float] d d')
     in
+    Fmt.epr "Max %f Min %f\n%!"
+      (List.hd states
+      |> Option.map ~f:Tuple.T2.get1
+      |> Option.value ~default:Float.nan)
+      (List.last states
+      |> Option.map ~f:Tuple.T2.get1
+      |> Option.value ~default:Float.nan);
+    Sample.weighted_random ~state:(params ss).random_state stats.per_cost states
+      ~weight:(fun (w, _) -> w)
 
-    let op_sets = Hashtbl.create (module Op) in
-    List.iter ops ~f:(fun op ->
-        let sets = Array.init (Op.arity op) ~f:(fun _ -> State_set.create ()) in
-        Hashtbl.set op_sets ~key:op ~data:sets);
+  let insert_states stats ss cost states =
+    List.iter states ~f:(fun (state, op, args) -> insert ss cost state op args);
+    stats.bank_size <- Float.of_int @@ Search_state.length ss
 
-    let select_args (dist : _ -> _ -> int) seen all =
-      let sample =
-        List.init
-          (Int.min (State_set.length all) 10)
-          ~f:(fun _ -> State_set.random_element_exn all)
-      in
-      let seen_sample = List.take (List.permute seen) 10 in
-      let sample, _ =
-        Option.value_exn
-          (List.map sample ~f:(fun v ->
-               let min_dist =
-                 List.map seen_sample ~f:(dist v)
-                 |> List.min_elt ~compare
-                 |> Option.value ~default:Int.max_value
-               in
-               (v, min_dist))
-          |> List.max_elt ~compare:(fun (_, d) (_, d') -> compare d d'))
-      in
-      sample
+  let synth stats params =
+    let ss = Search_state.create params
+    and ops = Bench.ops params.bench
+    and output = Bench.output params.bench in
+
+    let eval =
+      let module P = Program.Make (Op) in
+      P.eval_memoized (Value.eval params)
     in
-
-    let fill () =
-      let best = ref None in
-      while true do
-        stats.n_iters <- stats.n_iters + 1;
-
-        let op = List.random_element_exn non_nil_ops in
-        let op_sets = Hashtbl.find_exn op_sets op in
-        let args =
-          List.init (Op.arity op) ~f:(fun i ->
-              let arg =
-                select_args (hamming params)
-                  (State_set.to_list op_sets.(i))
-                  states
-              in
-              State_set.add op_sets.(i) arg;
-              arg)
-        in
-
-        let out = eval params op args in
-        (match !best with
-        | None ->
-            stats.best_dist <- hamming params output out;
-            best := Some out
-        | Some _ ->
-            let dist = hamming params output out in
-            if stats.best_dist > dist then (
-              best := Some out;
-              stats.best_dist <- dist));
-
-        if stats.n_iters mod 10 = 0 then
-          eprint_s
-            [%message (stats.best_dist : int) (State_set.length states : int)];
-
-        if [%compare.equal: Value.t] out (Bench.output params.bench) then (
-          stats.solved <- true;
-          raise Done);
-
-        State_set.add states out;
-        stats.n_states <- State_set.length states
-      done
+    let eval p =
+      try eval p
+      with Program.Eval_error e ->
+        raise @@ Program.Eval_error [%message (p : Op.t Program.t) (e : Sexp.t)]
     in
 
     try
-      List.iter ops ~f:(fun op ->
-          if Op.arity op = 0 then
-            let state = eval params op [] in
-            State_set.add states state);
+      let cost = ref 0 in
+      while !cost <= params.max_cost do
+        let new_states = generate_states ss ops !cost |> dedup_states ss in
+        let new_states = sample_states stats ss new_states in
+        insert_states stats ss !cost @@ List.map ~f:Tuple.T2.get2 new_states;
 
-      fill ()
-    with Done -> ()
+        (* Check balls around new states *)
+        List.iter new_states ~f:(fun (d, (s, _, _)) ->
+            if Float.(d < stats.thresh) then
+              let center = program_exn ss s in
+              try
+                Tree_ball.ball (module Op) ops center stats.ball_width
+                @@ fun p ->
+                if [%compare.equal: Value.t] (eval p) output then (
+                  stats.value_dist <- d;
+                  stats.program_dist <-
+                    Float.of_int
+                    @@ Tree_dist.zhang_sasha ~eq:[%compare.equal: Op.t] center p;
+                  stats.program_cost <- !cost;
+                  stats.found_program <- true;
+                  raise (Done p))
+              with Program.Eval_error e ->
+                raise
+                @@ Program.Eval_error
+                     [%message (center : Op.t Program.t) (e : Sexp.t)]);
+
+        Fmt.epr "Finished cost %d\n%!" !cost;
+        print_stats ss;
+        cost := !cost + 1
+      done
+    with Done p -> eprint_s [%message (p : Op.t Program.t)]
 end

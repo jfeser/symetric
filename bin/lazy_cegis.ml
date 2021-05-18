@@ -1,5 +1,4 @@
 open! Core
-open Core_profiler.Std_offline
 open Staged_synth
 
 exception Break
@@ -19,25 +18,71 @@ let print_csv_header () =
   printf
     "method,max_size,bench,n_states,n_distinct_states,n_roots,time,sol_size,gold_size,n_args,total_arg_in_degree,n_mergeable_hyper_edges,n_iters,solved\n"
 
+module Csv = struct
+  type 'a typ =
+    | Int : int typ
+    | Bool : bool typ
+    | Float : float typ
+    | String : string typ
+    | Span : Time.Span.t typ
+    | Opt : 'a typ -> 'a option typ
+
+  type field = Field : 'a typ * 'a -> field
+
+  let rec field_to_string (Field (t, x)) =
+    match t with
+    | Int -> sprintf "%d" x
+    | Bool -> if x then "1" else "0"
+    | Float -> sprintf "%f" x
+    | String -> if String.contains x ',' then sprintf "\"%s\"" x else x
+    | Span -> sprintf "%f" @@ Time.Span.to_ms x
+    | Opt t' ->
+        Option.map x ~f:(fun x' -> field_to_string (Field (t', x')))
+        |> Option.value ~default:""
+
+  let print l =
+    List.map l ~f:field_to_string |> String.concat ~sep:"," |> printf "%s\n"
+
+  let string x = Field (String, x)
+
+  let int x = Field (Int, x)
+
+  let span x = Field (Span, x)
+
+  let float x = Field (Float, x)
+
+  let bool x = Field (Bool, x)
+
+  let optional_string x = Field (Opt String, x)
+
+  let optional_int x = Field (Opt Int, x)
+
+  let optional_bool x = Field (Opt Bool, x)
+
+  let optional_span x = Field (Opt Span, x)
+end
+
 let print_csv ~synth ?(bench = "") ?n_states ?time ?max_size ?sol_size
     ?gold_size ?n_args ?total_arg_in_degree ?n_distinct_states ?n_roots
     ?n_mergeable_hyper_edges ?n_iters ?solved () =
-  let optional_int x = Option.map x ~f:Int.to_string |> Option.value ~default:""
-  and optional_bool x =
-    Option.map x ~f:(fun v -> if v then "1" else "0")
-    |> Option.value ~default:""
-  and optional_span x =
-    Option.map x ~f:(fun x -> Time.Span.to_ms x |> sprintf "%f")
-    |> Option.value ~default:""
-  in
-  printf "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n" synth
-    (optional_int max_size) bench (optional_int n_states)
-    (optional_int n_distinct_states)
-    (optional_int n_roots) (optional_span time) (optional_int sol_size)
-    (optional_int gold_size) (optional_int n_args)
-    (optional_int total_arg_in_degree)
-    (optional_int n_mergeable_hyper_edges)
-    (optional_int n_iters) (optional_bool solved)
+  Csv.(
+    print
+      [
+        string synth;
+        optional_int max_size;
+        string bench;
+        optional_int n_states;
+        optional_int n_distinct_states;
+        optional_int n_roots;
+        optional_span time;
+        optional_int sol_size;
+        optional_int gold_size;
+        optional_int n_args;
+        optional_int total_arg_in_degree;
+        optional_int n_mergeable_hyper_edges;
+        optional_int n_iters;
+        optional_bool solved;
+      ])
 
 let mergeable_hyper_edges (type t)
     (module Search_state : Search_state_intf.S with type t = t) (ss : t) =
@@ -155,24 +200,11 @@ let cad_sample_diverse_vp_cli =
       run params]
 
 module Hamming_dist = struct
-  let value (params : Cad.params) (c : Cad.Value.t) (c' : Cad.Value.t) =
-    let ct = ref 0 in
-    for x = 0 to params.bench.input.xmax - 1 do
-      for y = 0 to params.bench.input.ymax - 1 do
-        let p =
-          Vector2.{ x = Float.of_int x +. 0.5; y = Float.of_int y +. 0.5 }
-        in
-        ct :=
-          !ct
-          +
-          if
-            let v = Map.find_exn c p and v' = Map.find_exn c' p in
-            Bool.(v = v')
-          then 0
-          else 1
-      done
-    done;
-    Float.of_int !ct
+  let value c c' = Cad.Value.hamming c c' |> Float.of_int
+end
+
+module Jaccard_dist = struct
+  let value c c' = Cad.Value.jaccard c c'
 end
 
 module Zs_dist = struct
@@ -198,21 +230,37 @@ module Norm_zs_dist = struct
 end
 
 module Dist = struct
-  include Hamming_dist
+  include Jaccard_dist
   include Norm_zs_dist
 end
 
 let cad_simple_cli =
   let module Lang = Cad in
   let module Synth = Sampling_enum.Make (Lang) (Dist) in
-  let run params () =
+  let run ~thresh ~ball_width ~per_cost params () =
+    let stats = Synth.create ?thresh ?ball_width ?per_cost () in
     let start = Time.now () in
-    (try Synth.synth params with Break -> ());
+    (try Synth.synth stats params with Break -> ());
     let end_ = Time.now () in
     let time = Time.diff end_ start in
     if params.print_csv then
-      print_csv ?bench:params.bench.filename ~synth:"cad_simple_enum" ~time
-        ~max_size:params.max_cost ()
+      Csv.(
+        print
+          [
+            optional_string params.bench.filename;
+            string "cad_simple_enum";
+            span time;
+            int params.max_cost;
+            int stats.per_cost;
+            float stats.thresh;
+            int stats.ball_width;
+            float stats.bank_size;
+            float stats.value_dist;
+            float stats.program_dist;
+            int stats.program_cost;
+            int params.seed;
+            bool stats.found_program;
+          ])
   in
 
   let open Command.Let_syntax in
@@ -224,8 +272,11 @@ let cad_simple_cli =
             let bench_fn = anon ("bench" %: string) in
             Cad.Bench.load bench_fn]
           Cad_params.cli
-      in
-      run params]
+      and thresh = flag "d" ~doc:" exhaustive search threshold" (optional float)
+      and ball_width =
+        flag "w" ~doc:" exhaustive search distance" (optional int)
+      and per_cost = flag "p" ~doc:" programs per cost" (optional int) in
+      run ~thresh ~ball_width ~per_cost params]
 
 let cad_baseline_cli =
   let module Lang = Cad in
@@ -273,9 +324,9 @@ let cad_baseline_term_cli =
     let module Dist = struct
       let program = Zs_dist.program
 
-      let value params p p' =
+      let value p p' =
         let v = eval p and v' = eval p' in
-        Hamming_dist.value params v v'
+        Hamming_dist.value v v'
     end in
     let module Synth = Baseline.Make (Lang) (Dist) (Validate) in
     let start = Time.now () in

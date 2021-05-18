@@ -17,15 +17,17 @@ let rewrites (type op) (module Op : Arity_intf.S with type t = op)
       valid_ops.(i) <-
         List.filter ops ~f:(fun op' -> Op.arity op = Op.arity op'));
 
-  Combinat.combinations (List.init n ~f:Fun.id) ~k:d @@ fun loc ->
-  (* Only consider sequences of valid ops *)
-  let selected_ops =
-    Array.to_list loc |> List.map ~f:(fun l -> valid_ops.(l))
-  in
-  Combinat.sequences_restricted selected_ops @@ fun ops ->
-  Array.fill rewrite ~pos:0 ~len:n None;
-  Array.iteri loc ~f:(fun i l -> rewrite.(l) <- Some ops.(i));
-  f rewrite
+  for k = 1 to Int.min n d do
+    Combinat.combinations (List.init n ~f:Fun.id) ~k @@ fun loc ->
+    (* Only consider sequences of valid ops *)
+    let selected_ops =
+      Array.to_list loc |> List.map ~f:(fun l -> valid_ops.(l))
+    in
+    Combinat.sequences_restricted selected_ops @@ fun ops ->
+    Array.fill rewrite ~pos:0 ~len:n None;
+    Array.iteri loc ~f:(fun i l -> rewrite.(l) <- Some ops.(i));
+    f rewrite
+  done
 
 let ball (type op) (module Op : Arity_intf.S with type t = op) (ops : op list) t
     d f =

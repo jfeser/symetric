@@ -1,18 +1,19 @@
 type ('a, 'b) t = {
-  random_state : (Random.State.t[@sexp.opaque]);
-  fresh : (Fresh.t[@sexp.opaque]);
-  enable_dump : bool;
-  max_cost : int;
-  enable_forced_bit_check : bool;
-  hide_values : bool;
-  bench : 'a;
-  lparams : 'b;
-  validate : bool;
-  state_set : [ `Full | `Roots ];
-  cone : [ `Full | `Rand ];
-  print_csv : bool;
-}
-[@@deriving sexp_of]
+    seed : int;
+    random_state : (Random.State.t[@sexp.opaque]);
+    fresh : (Fresh.t[@sexp.opaque]);
+    enable_dump : bool;
+    max_cost : int;
+    enable_forced_bit_check : bool;
+    hide_values : bool;
+    bench : 'a;
+    lparams : 'b;
+    validate : bool;
+    state_set : [ `Full | `Roots ];
+    cone : [ `Full | `Rand ];
+    print_csv : bool;
+  }
+                  [@@deriving sexp_of]
 
 let default_max_cost = 20
 
@@ -24,6 +25,7 @@ let create ?(enable_dump = false) ?(max_cost = default_max_cost)
     bench;
     lparams;
     fresh = Fresh.create ();
+    seed;
     random_state = Random.State.make [| seed |];
     enable_dump;
     max_cost;
@@ -51,8 +53,9 @@ let cli bench lparams =
         ~doc:" maximum program cost"
     and validate = flag "validate" no_arg ~doc:" validate search space"
     and print_csv = flag "csv" no_arg ~doc:" print stats as csv row"
+    and seed = flag "seed" (optional int) ~doc:" random seed"
     and bench = bench
     and lparams = lparams in
 
     create ~enable_dump ~hide_values ~enable_forced_bit_check ~max_cost
-      ~print_csv ~validate bench lparams]
+      ~print_csv ~validate ?seed bench lparams]

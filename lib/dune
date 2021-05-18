@@ -1,6 +1,6 @@
 (library
  (name staged_synth)
- (libraries core core_kernel.hash_heap combinat ocamlgraph fmt core_profiler progress shexp.process tree_diff bitvec bitvec-order bitvec-sexp)
+ (libraries core core_kernel.hash_heap combinat ocamlgraph fmt core_profiler progress shexp.process tree_diff)
  (preprocess (pps ppx_jane))
  (inline_tests)
  (flags :standard -g -open Core -w -9))

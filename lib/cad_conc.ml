@@ -44,6 +44,11 @@ let init params ~f =
 
 let hamming c c' = Bitarray.hamming_weight (Bitarray.xor c.pixels c'.pixels)
 
+let jaccard c c' =
+  let h = hamming c c' in
+  let l = Bitarray.length c.pixels in
+  Float.(of_int h / of_int l)
+
 let eval params op args =
   try
     match (op, args) with
