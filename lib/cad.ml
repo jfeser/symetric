@@ -8,6 +8,10 @@ type symb = Cad_symb.t
 
 type bench = Cad_bench.t
 
-type lparams = Cad_params.t
+open Params
 
-type params = (bench, lparams) Params.t
+let lang = P.const_str ~name:"lang" "cad"
+
+include Cad_params
+
+let spec = spec @ [ P.to_spec lang ]

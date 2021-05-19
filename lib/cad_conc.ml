@@ -1,4 +1,5 @@
 include Cad_conc0
+module P = Dumb_params
 
 let idx b v =
   let x = Float.iround_down_exn v.Vector2.x and y = Float.iround_down_exn v.y in
@@ -34,8 +35,8 @@ let replicate_is_set repl scene pt =
   loop repl.count pt
 
 let init params ~f =
-  let xlen = params.Params.bench.Cad_bench.input.xmax
-  and ylen = params.Params.bench.Cad_bench.input.ymax in
+  let bench = P.get params Cad_params.bench in
+  let xlen = bench.Cad_bench.input.xmax and ylen = bench.Cad_bench.input.ymax in
   {
     xlen;
     ylen;
@@ -82,22 +83,26 @@ let dummy =
   { xlen = -1; ylen = -1; pixels = Bitarray.init 0 ~f:(fun _ -> false) }
 
 let dummy_params ~xlen ~ylen =
-  Params.create
-    Cad_bench.
-      {
-        ops = [];
-        input = { xmax = xlen; ymax = ylen };
-        output = dummy;
-        solution = None;
-        filename = None;
-      }
-    Cad_params.{ concrete = false }
+  P.(
+    of_alist_exn
+      [
+        P
+          ( Cad_params.bench,
+            Cad_bench.
+              {
+                ops = [];
+                input = { xmax = xlen; ymax = ylen };
+                output = dummy;
+                solution = None;
+                filename = None;
+              } );
+      ])
 
-module P = struct
+module Prog = struct
   type t = Cad_op.t Program.t [@@deriving compare, hash, sexp]
 end
 
-let hashable = Hashtbl.Hashable.of_key (module P)
+let hashable = Hashtbl.Hashable.of_key (module Prog)
 
 let table = Hash_queue.create hashable
 

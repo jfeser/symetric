@@ -1,3 +1,47 @@
+module P = Dumb_params
+
+let per_cost =
+  P.int ~name:"per-cost" ~aliases:[ "p" ] ~doc:" programs stored per cost level"
+    ~init:(`Cli (Some 100)) ()
+
+let thresh =
+  P.float ~name:"thresh" ~aliases:[ "d" ] ~doc:" exhaustive search threshold"
+    ~init:(`Cli (Some 1.0)) ()
+
+let ball_width =
+  P.int ~name:"width" ~aliases:[ "w" ] ~doc:" exhaustive search width"
+    ~init:(`Cli (Some 2)) ()
+
+let diversity =
+  P.bool ~name:"diversity" ~doc:" use diversity sampling"
+    ~init:(`Cli (Some true)) ()
+
+let bank_size = P.float_ref ~name:"bank-size" ()
+
+let value_dist = P.float_ref ~name:"value-dist" ()
+
+let program_dist = P.float_ref ~name:"program-dist" ()
+
+let program_cost = P.float_ref ~name:"program-cost" ()
+
+let found_program = P.bool_ref ~name:"found-program" ()
+
+let synth = P.const_str ~name:"synth" "sampling-diverse"
+
+let spec =
+  [
+    P.to_spec per_cost;
+    P.to_spec thresh;
+    P.to_spec ball_width;
+    P.to_spec diversity;
+    P.to_spec bank_size;
+    P.to_spec value_dist;
+    P.to_spec program_dist;
+    P.to_spec program_cost;
+    P.to_spec found_program;
+    P.to_spec synth;
+  ]
+
 module Make
     (Lang : Lang_intf.S)
     (Dist : Dist_intf.S with type value := Lang.Value.t and type op := Lang.Op.t) =
@@ -5,29 +49,6 @@ struct
   open Lang
   module Search_state = Search_state_append.Make (Lang)
   open Search_state
-
-  type stats = {
-    per_cost : int;
-    thresh : float;
-    ball_width : int;
-    mutable bank_size : float;
-    mutable value_dist : float;
-    mutable program_dist : float;
-    mutable program_cost : int;
-    mutable found_program : bool;
-  }
-
-  let create ?(per_cost = 100) ?(thresh = 150.0) ?(ball_width = 2) () =
-    {
-      per_cost;
-      thresh;
-      ball_width;
-      bank_size = Float.nan;
-      value_dist = Float.nan;
-      program_dist = Float.nan;
-      program_cost = -1;
-      found_program = false;
-    }
 
   let unsafe_to_list a =
     List.init (Option_array.length a)
@@ -69,7 +90,7 @@ struct
     |> List.dedup_and_sort ~compare:(fun (s, _, _) (s', _, _) ->
            [%compare: Value.t] s s')
 
-  let sample_states stats ss new_states =
+  let sample_diverse ss new_states =
     let states =
       Dumb_progress.List.map ~name:"sampling" new_states
         ~f:(fun ((new_state, _, _) as x) ->
@@ -82,24 +103,36 @@ struct
           (min_dist, x))
       |> List.sort ~compare:(fun (d, _) (d', _) -> -[%compare: float] d d')
     in
-    Fmt.epr "Max %f Min %f\n%!"
-      (List.hd states
-      |> Option.map ~f:Tuple.T2.get1
-      |> Option.value ~default:Float.nan)
-      (List.last states
-      |> Option.map ~f:Tuple.T2.get1
-      |> Option.value ~default:Float.nan);
-    Sample.weighted_random ~state:(params ss).random_state stats.per_cost states
+    Sample.weighted_random
+      (Params.get (params ss) per_cost)
+      states
       ~weight:(fun (w, _) -> w)
+    |> List.map ~f:Tuple.T2.get2
 
-  let insert_states stats ss cost states =
+  let sample_naive ss new_states =
+    let states = List.permute new_states in
+    List.take states (Params.get (params ss) per_cost)
+
+  let sample_states ss =
+    if Params.get (params ss) diversity then sample_diverse ss
+    else sample_naive ss
+
+  let insert_states ss cost states =
     List.iter states ~f:(fun (state, op, args) -> insert ss cost state op args);
-    stats.bank_size <- Float.of_int @@ Search_state.length ss
+    Params.get (params ss) bank_size := Float.of_int @@ Search_state.length ss
 
-  let synth stats params =
-    let ss = Search_state.create params
-    and ops = Bench.ops params.bench
-    and output = Bench.output params.bench in
+  let synth params =
+    let ss = Search_state.create params in
+    let bench = Params.get params bench in
+    let ops = Bench.ops bench and output = Bench.output bench in
+
+    let thresh = Params.get params thresh
+    and ball_width = Params.get params ball_width
+    and max_cost = Params.get params Params.max_cost
+    and value_dist = Params.get params value_dist
+    and program_dist = Params.get params program_dist
+    and program_cost = Params.get params program_cost
+    and found_program = Params.get params found_program in
 
     let eval =
       let module P = Program.Make (Op) in
@@ -113,25 +146,25 @@ struct
 
     try
       let cost = ref 0 in
-      while !cost <= params.max_cost do
+      while !cost <= max_cost do
         let new_states = generate_states ss ops !cost |> dedup_states ss in
-        let new_states = sample_states stats ss new_states in
-        insert_states stats ss !cost @@ List.map ~f:Tuple.T2.get2 new_states;
+        let new_states = sample_states ss new_states in
+        insert_states ss !cost new_states;
 
         (* Check balls around new states *)
-        List.iter new_states ~f:(fun (d, (s, _, _)) ->
-            if Float.(d < stats.thresh) then
+        List.iter new_states ~f:(fun (s, _, _) ->
+            let d = Dist.value output s in
+            if Float.(d < thresh) then
               let center = program_exn ss s in
               try
-                Tree_ball.ball (module Op) ops center stats.ball_width
-                @@ fun p ->
+                Tree_ball.ball (module Op) ops center ball_width @@ fun p ->
                 if [%compare.equal: Value.t] (eval p) output then (
-                  stats.value_dist <- d;
-                  stats.program_dist <-
+                  value_dist := d;
+                  program_dist :=
                     Float.of_int
                     @@ Tree_dist.zhang_sasha ~eq:[%compare.equal: Op.t] center p;
-                  stats.program_cost <- !cost;
-                  stats.found_program <- true;
+                  program_cost := Float.of_int !cost;
+                  found_program := true;
                   raise (Done p))
               with Program.Eval_error e ->
                 raise

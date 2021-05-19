@@ -1,61 +1,29 @@
-type ('a, 'b) t = {
-    seed : int;
-    random_state : (Random.State.t[@sexp.opaque]);
-    fresh : (Fresh.t[@sexp.opaque]);
-    enable_dump : bool;
-    max_cost : int;
-    enable_forced_bit_check : bool;
-    hide_values : bool;
-    bench : 'a;
-    lparams : 'b;
-    validate : bool;
-    state_set : [ `Full | `Roots ];
-    cone : [ `Full | `Rand ];
-    print_csv : bool;
-  }
-                  [@@deriving sexp_of]
+module P = Dumb_params
 
-let default_max_cost = 20
+type t = Dumb_params.t
 
-let create ?(enable_dump = false) ?(max_cost = default_max_cost)
-    ?(enable_forced_bit_check = false) ?(hide_values = false)
-    ?(validate = false) ?(state_set = `Full) ?(cone = `Full) ?(seed = 0)
-    ?(print_csv = false) bench lparams =
-  {
-    bench;
-    lparams;
-    fresh = Fresh.create ();
-    seed;
-    random_state = Random.State.make [| seed |];
-    enable_dump;
-    max_cost;
-    enable_forced_bit_check;
-    hide_values;
-    validate;
-    state_set;
-    cone;
-    print_csv;
-  }
+let seed = P.int ~name:"seed" ~doc:" random seed" ~init:(`Cli (Some 0)) ()
 
-let cli bench lparams =
-  let open Command.Let_syntax in
-  [%map_open
-    let enable_dump =
-      flag "output-graph" no_arg ~doc:" enable output of dot graphs"
-    and hide_values =
-      flag "hide-values" no_arg ~doc:" hide abstract values in graph output"
-    and enable_forced_bit_check =
-      flag "enable-forced-bit-check" no_arg
-        ~doc:" enable checking for forced bits when refining"
-    and max_cost =
-      flag "max-cost"
-        (optional_with_default default_max_cost int)
-        ~doc:" maximum program cost"
-    and validate = flag "validate" no_arg ~doc:" validate search space"
-    and print_csv = flag "csv" no_arg ~doc:" print stats as csv row"
-    and seed = flag "seed" (optional int) ~doc:" random seed"
-    and bench = bench
-    and lparams = lparams in
+let max_cost = P.int ~name:"max-cost" ~doc:" max search cost" ()
 
-    create ~enable_dump ~hide_values ~enable_forced_bit_check ~max_cost
-      ~print_csv ~validate ?seed bench lparams]
+let print_csv =
+  P.bool ~name:"print-csv" ~doc:" print csv when done" ~init:(`Cli (Some false))
+    ()
+
+let print_csv_header =
+  P.bool ~name:"print-csv-header" ~doc:" print csv header and exit"
+    ~init:(`Cli (Some false)) ()
+
+let runtime = P.span_ref ~name:"runtime" ()
+
+let spec =
+  P.
+    [
+      to_spec seed;
+      to_spec max_cost;
+      to_spec print_csv;
+      to_spec runtime;
+      to_spec print_csv_header;
+    ]
+
+let get = Dumb_params.get

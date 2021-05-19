@@ -101,7 +101,7 @@ let to_sexp ~xmax ~ymax (prog, ops) =
         filename = None;
       }
   in
-  let params = Params.create bench Cad_params.{ concrete = false } in
+  let params = Dumb_params.(of_alist_exn [ P (Cad_params.bench, bench) ]) in
   let conc = Program.eval (Cad_conc.eval params) prog in
 
   let output = pixels input conc |> List.map ~f:(fun x -> if x then 1 else 0) in
@@ -120,7 +120,8 @@ let has_empty_inter params p =
     let v = Cad_conc.eval params op args in
     if
       [%compare.equal: Cad_op.t] op Inter
-      && pixels params.bench.input v |> List.for_all ~f:(fun x -> not x)
+      && pixels (Params.get params Cad_params.bench).input v
+         |> List.for_all ~f:(fun x -> not x)
     then raise Empty_inter
     else v
   in
@@ -220,7 +221,7 @@ let random_op ~xmax ~ymax ~id = function
 @param k callback with program sequence *)
 let random ~xmax ~ymax ~size ~n ~ops k =
   let params =
-    Params.create
+    let bench =
       Cad_bench.
         {
           ops = [];
@@ -229,7 +230,8 @@ let random ~xmax ~ymax ~size ~n ~ops k =
           solution = None;
           filename = None;
         }
-      Cad_params.{ concrete = false }
+    in
+    Dumb_params.(of_alist_exn [ P (Cad_params.bench, bench) ])
   in
 
   let random_program size =

@@ -2,7 +2,7 @@ module Make (Lang : Lang_intf.S) = struct
   open Lang
 
   type t = {
-    params : Lang.params;
+    params : Params.t;
     of_cost : Value.t Queue.t array;
     paths : (Op.t * Value.t list) Hashtbl.M(Value).t;
   }
@@ -10,7 +10,10 @@ module Make (Lang : Lang_intf.S) = struct
   let create params =
     {
       params;
-      of_cost = Array.init (params.max_cost + 1) ~f:(fun _ -> Queue.create ());
+      of_cost =
+        Array.init
+          (Params.(get params max_cost) + 1)
+          ~f:(fun _ -> Queue.create ());
       paths = Hashtbl.create (module Value);
     }
 

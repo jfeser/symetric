@@ -1,3 +1,24 @@
+open Params
+
+let n_states = P.float_ref ~name:"n_states" ()
+
+let n_iters = P.float_ref ~name:"n_iters" ()
+
+let best_dist = P.float_ref ~name:"best_dist" ()
+
+let found_program = P.bool_ref ~name:"found_program" ()
+
+let synth = P.const_str ~name:"synth" "sampling-naive"
+
+let spec =
+  [
+    P.to_spec n_states;
+    P.to_spec n_iters;
+    P.to_spec best_dist;
+    P.to_spec found_program;
+    P.to_spec synth;
+  ]
+
 module Make
     (Lang : Lang_intf.S
               with type Value.t = Cad.Value.t
@@ -26,20 +47,16 @@ struct
 
   let hamming = Cad.Value.hamming
 
-  type stats = {
-    mutable n_states : int;
-    mutable n_iters : int;
-    mutable best_dist : int;
-    mutable solved : bool;
-  }
+  let synth params =
+    let bench = get params bench in
+    let ops = Bench.ops bench
+    and output = Bench.output bench
+    and states = State_set.create ()
+    and n_iters = get params n_iters
+    and best_dist = get params best_dist
+    and found_program = get params found_program
+    and n_states = get params n_states in
 
-  let create_stats () =
-    { n_states = 0; n_iters = 0; best_dist = 0; solved = false }
-
-  let synth (params : _ Params.t) stats =
-    let ops = Bench.ops params.bench
-    and output = Bench.output params.bench
-    and states = State_set.create () in
     let non_nil_ops =
       List.filter ops ~f:(fun op -> Op.arity op > 0)
       |> List.sort ~compare:(fun o o' -> compare (Op.arity o) (Op.arity o'))
@@ -48,7 +65,7 @@ struct
     let fill () =
       let best = ref None in
       while true do
-        stats.n_iters <- stats.n_iters + 1;
+        n_iters := !n_iters +. 1.0;
 
         let op = List.random_element_exn non_nil_ops in
         let args =
@@ -59,24 +76,24 @@ struct
 
         (match !best with
         | None ->
-            stats.best_dist <- hamming output out;
+            best_dist := Float.of_int @@ hamming output out;
             best := Some out
         | Some _ ->
-            let dist = hamming output out in
-            if dist < stats.best_dist then (
-              stats.best_dist <- dist;
+            let dist = Float.of_int @@ hamming output out in
+            if Float.(dist < !best_dist) then (
+              best_dist := dist;
               best := Some out));
 
-        if stats.n_iters mod 1000 = 0 then
+        if Float.to_int !n_iters mod 1000 = 0 then
           eprint_s
-            [%message (stats.best_dist : int) (State_set.length states : int)];
+            [%message (!best_dist : float) (State_set.length states : int)];
 
-        if [%compare.equal: Value.t] out (Bench.output params.bench) then (
-          stats.solved <- true;
+        if [%compare.equal: Value.t] out output then (
+          found_program := true;
           raise Done);
 
         State_set.add states out;
-        stats.n_states <- State_set.length states
+        n_states := Float.of_int @@ State_set.length states
       done
     in
 

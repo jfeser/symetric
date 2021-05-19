@@ -1,3 +1,9 @@
+open Params
+
+let synth = P.const_str ~name:"synth" "baseline"
+
+let spec = [ P.to_spec synth ]
+
 module Make
     (Lang : Lang_intf.S)
     (Dist : Dist_intf.S with type value := Lang.Value.t and type op := Lang.Op.t)
@@ -53,12 +59,13 @@ struct
     List.iter states ~f:(fun (state, op, args) -> insert ss cost state op args)
 
   let synth params =
-    let ss = Search_state.create params
-    and ops = Bench.ops params.bench
-    and output = Bench.output params.bench in
+    let ss = Search_state.create params in
+    let bench = Params.get params Lang.bench in
+    let max_cost = Params.get params Params.max_cost in
+    let ops = Bench.ops bench and output = Bench.output bench in
 
     let rec fill cost =
-      if cost > params.max_cost then ()
+      if cost > max_cost then ()
       else
         let new_states = generate_states ss ops cost in
         Validate.validate new_states;

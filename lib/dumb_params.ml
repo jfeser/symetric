@@ -1,119 +1,184 @@
-module type Spec_intf = sig
+module type Param_intf = sig
   type t [@@deriving sexp_of]
-
-  val type_ : t Csv.typ
 
   val name : string
 
-  val doc : string
+  val to_csv : (t -> string) option
 
-  val from_cli : bool
-
-  val to_csv : bool
-
-  val default : t option
+  val init : (Univ_map.Packed.t Command.Param.t, unit -> t) Either.t
 
   val key : t Univ_map.Key.t
 end
 
-type t = { specs : (module Spec_intf) list; values : Univ_map.t }
+type 'a param = (module Param_intf with type t = 'a)
 
-let arg_type (type t) (typ : t Csv.typ) : t Command.Arg_type.t =
-  let open Command.Param in
-  match typ with
-  | Csv.Int -> int
-  | Bool -> bool
-  | String -> string
-  | Float -> float
-  | Span -> Arg_type.map float ~f:Time.Span.of_sec
-  | Opt _ -> failwith "unsupported"
+type spec = (module Param_intf)
 
-let param (module S : Spec_intf) =
-  let open Command.Param in
-  if S.from_cli then
-    let param =
-      match S.default with
-      | Some d ->
-          flag_optional_with_default_doc S.name ~doc:S.doc ~default:d
-            (arg_type S.type_) S.sexp_of_t
-      | None -> flag S.name ~doc:S.doc (required @@ arg_type S.type_)
-    in
-    let wrapped = map param ~f:(fun v -> Univ_map.Packed.T (S.key, v)) in
-    Some wrapped
-  else None
+type 'a mk =
+  name:string ->
+  doc:string ->
+  ?init:[ `Cli of 'a option | `Default of unit -> 'a ] ->
+  ?csv:bool ->
+  ?aliases:string list ->
+  unit ->
+  'a param
+
+type t = { specs : spec list; values : Univ_map.t }
+
+let to_spec (type t) (module S : Param_intf with type t = t) =
+  (module S : Param_intf)
 
 let cli m =
-  let compare (module S : Spec_intf) (module S' : Spec_intf) =
+  let compare (module S : Param_intf) (module S' : Param_intf) =
     [%compare: string] S.name S'.name
   in
-  List.filter_map m ~f:param |> Command.Param.all
+  List.map m ~f:(fun (module S : Param_intf) ->
+      match S.init with
+      | First p -> p
+      | Second f -> Command.Param.return (Univ_map.Packed.T (S.key, f ())))
+  |> Command.Param.all
   |> Command.Param.map ~f:(fun vs ->
          { specs = List.sort ~compare m; values = Univ_map.of_alist_exn vs })
 
-let int ~name ~doc ?(cli = true) ?(csv = true) ?default () =
+let make_param ~name ~doc ?default ?(aliases = []) key arg_type sexp_of_t =
+  let open Command.Param in
+  let param =
+    match default with
+    | Some d ->
+        flag_optional_with_default_doc name ~doc ~default:d ~aliases arg_type
+          sexp_of_t
+    | None -> flag name ~aliases ~doc (required arg_type)
+  in
+  map param ~f:(fun v -> Univ_map.Packed.T (key, v))
+
+let make_init ~name ~doc ?aliases key arg_type sexp_of_t = function
+  | `Cli default ->
+      First (make_param ~name ~doc ?default ?aliases key arg_type sexp_of_t)
+  | `Default f -> Second f
+
+let make_to_csv csv f = if csv then Some f else None
+
+let int ~name ~doc ?(init = `Cli None) ?(csv = true) ?aliases () =
   (module struct
     type t = int [@@deriving sexp_of]
 
-    let type_ = Csv.Int
+    let key = Univ_map.Key.create ~name [%sexp_of: t]
 
     let name = name
 
-    let doc = doc
+    let to_csv = make_to_csv csv @@ sprintf "%d"
 
-    let from_cli = cli
+    let init =
+      make_init ~name ~doc ?aliases key Command.Param.int sexp_of_t init
+  end : Param_intf
+    with type t = int)
 
-    let to_csv = csv
-
-    let default = default
-
-    let key = Univ_map.Key.create ~name [%sexp_of: t]
-  end : Spec_intf)
-
-let bool ~name ~doc ?(cli = true) ?(csv = true) ?default () =
+let bool ~name ~doc ?(init = `Cli None) ?(csv = true) ?aliases () =
   (module struct
     type t = bool [@@deriving sexp_of]
 
-    let type_ = Csv.Bool
+    let key = Univ_map.Key.create ~name [%sexp_of: t]
 
     let name = name
 
-    let doc = doc
+    let to_csv = make_to_csv csv @@ fun x -> if x then "1" else "0"
 
-    let from_cli = cli
+    let init =
+      make_init ~name ~doc ?aliases key Command.Param.bool sexp_of_t init
+  end : Param_intf
+    with type t = bool)
 
-    let to_csv = csv
-
-    let default = default
-
-    let key = Univ_map.Key.create ~name [%sexp_of: t]
-  end : Spec_intf)
-
-let float ~name ~doc ?(cli = true) ?(csv = true) ?default () =
+let float ~name ~doc ?(init = `Cli None) ?(csv = true) ?aliases () =
   (module struct
     type t = float [@@deriving sexp_of]
 
-    let type_ = Csv.Float
+    let key = Univ_map.Key.create ~name [%sexp_of: t]
 
     let name = name
 
-    let doc = doc
+    let to_csv = make_to_csv csv @@ sprintf "%f"
 
-    let from_cli = cli
+    let init =
+      make_init ~name ~doc ?aliases key Command.Param.float sexp_of_t init
+  end : Param_intf
+    with type t = float)
 
-    let to_csv = csv
-
-    let default = default
+let float_ref ~name ?(csv = true) () =
+  (module struct
+    type t = float ref [@@deriving sexp_of]
 
     let key = Univ_map.Key.create ~name [%sexp_of: t]
-  end : Spec_intf)
+
+    let name = name
+
+    let init = Second (fun () -> ref Float.nan)
+
+    let to_csv = make_to_csv csv @@ fun x -> sprintf "%f" !x
+  end : Param_intf
+    with type t = float ref)
+
+let bool_ref ~name ?(default = false) ?(csv = true) () =
+  (module struct
+    type t = bool ref [@@deriving sexp_of]
+
+    let key = Univ_map.Key.create ~name [%sexp_of: t]
+
+    let name = name
+
+    let init = Second (fun () -> ref default)
+
+    let to_csv = make_to_csv csv @@ fun x -> if !x then "1" else "0"
+  end : Param_intf
+    with type t = bool ref)
+
+let span_ref ~name ?(csv = true) () =
+  (module struct
+    type t = Time.Span.t ref [@@deriving sexp_of]
+
+    let key = Univ_map.Key.create ~name [%sexp_of: t]
+
+    let name = name
+
+    let init = Second (fun () -> ref (Time.Span.of_ms Float.nan))
+
+    let to_csv = make_to_csv csv @@ fun x -> sprintf "%f" @@ Time.Span.to_ms !x
+  end : Param_intf
+    with type t = Time.Span.t ref)
+
+let const_str ~name ?(csv = true) v =
+  (module struct
+    type t = string [@@deriving sexp_of]
+
+    let key = Univ_map.Key.create ~name [%sexp_of: t]
+
+    let name = name
+
+    let init = Second (fun () -> v)
+
+    let to_csv = make_to_csv csv Fun.id
+  end : Param_intf
+    with type t = string)
+
+let get (type t) m (module S : Param_intf with type t = t) =
+  Univ_map.find_exn m.values S.key
+
+type packed = P : 'a param * 'a -> packed
+
+let of_alist_exn ms =
+  let specs = List.map ms ~f:(fun (P (x, _)) -> to_spec x) in
+  {
+    specs;
+    values =
+      List.map ms ~f:(fun (P ((module P), v)) -> Univ_map.Packed.T (P.key, v))
+      |> Univ_map.of_alist_exn;
+  }
 
 let csv m =
-  List.filter m.specs ~f:(fun (module P : Spec_intf) -> P.to_csv)
-  |> List.map ~f:(fun (module P : Spec_intf) ->
-         Csv.Field (P.type_, Univ_map.find_exn m.values P.key))
-  |> Csv.to_string
+  List.filter_map m.specs ~f:(fun (module P : Param_intf) ->
+      Option.map P.to_csv ~f:(fun f -> f @@ Univ_map.find_exn m.values P.key))
+  |> String.concat ~sep:","
 
 let csv_header m =
-  List.filter m ~f:(fun (module P : Spec_intf) -> P.to_csv)
-  |> List.map ~f:(fun (module P : Spec_intf) -> Csv.Field (Csv.String, P.name))
-  |> Csv.to_string
+  List.filter_map m.specs ~f:(fun (module P : Param_intf) ->
+      if Option.is_some P.to_csv then Some P.name else None)
+  |> String.concat ~sep:","

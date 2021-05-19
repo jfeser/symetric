@@ -17,6 +17,7 @@ type t = {
   output : Cad_conc0.t;
   solution : Cad_op.t Program.t option;
 }
+[@@deriving sexp]
 
 let points g =
   List.init g.xmax ~f:(fun x ->

@@ -1,10 +1,22 @@
-type t = { concrete : bool }
+module P = Dumb_params
 
-let create ~concrete = { concrete }
+let bench =
+  (module struct
+    type t = Cad_bench.t [@@deriving sexp_of]
 
-let cli =
-  let open Command.Let_syntax in
-  [%map_open
-    let concrete = flag "cad-concrete" no_arg ~doc:" disable abstraction" in
+    let name = "bench"
 
-    create ~concrete]
+    let key = Univ_map.Key.create ~name [%sexp_of: t]
+
+    let init =
+      let open Command.Param in
+      anon ("bench" %: string)
+      |> map ~f:(fun v -> Univ_map.Packed.T (key, Cad_bench.load v))
+
+    let to_csv = None
+
+    let init = First init
+  end : P.Param_intf
+    with type t = Cad_bench.t)
+
+let spec = [ P.to_spec bench ]
