@@ -1,6 +1,10 @@
 include Cad_conc0
 module P = Dumb_params
 
+let eval_calls = P.float_ref ~name:"eval-calls" ()
+
+let spec = [ P.to_spec eval_calls ]
+
 let idx b v =
   let x = Float.iround_down_exn v.Vector2.x and y = Float.iround_down_exn v.y in
   let stride = b.ylen in
@@ -50,7 +54,10 @@ let jaccard c c' =
   let l = Bitarray.length c.pixels in
   Float.(of_int h / of_int l)
 
+let fincr r = if Float.is_nan !r then r := 1.0 else r := !r +. 1.0
+
 let eval params op args =
+  fincr (Params.get params eval_calls);
   try
     match (op, args) with
     | Cad_op.Inter, [ s; s' ] ->

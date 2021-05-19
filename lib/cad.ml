@@ -14,4 +14,4 @@ let lang = P.const_str ~name:"lang" "cad"
 
 include Cad_params
 
-let spec = spec @ [ P.to_spec lang ]
+let spec = spec @ Value.spec @ [ P.to_spec lang ]
