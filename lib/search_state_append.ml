@@ -40,4 +40,7 @@ module Make (Lang : Lang_intf.S) = struct
   let rec program_exn ctx state =
     let op, args = Hashtbl.find_exn ctx.paths state in
     Program.Apply (op, List.map args ~f:(program_exn ctx))
+
+  let program_of_op_args_exn ctx op args =
+    Program.Apply (op, List.map args ~f:(program_exn ctx))
 end

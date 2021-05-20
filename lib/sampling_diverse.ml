@@ -152,14 +152,12 @@ struct
        let cost = ref 0 in
        while !cost <= max_cost do
          let new_states = generate_states ss ops !cost |> dedup_states ss in
-         let new_states = sample_states ss new_states in
-         insert_states ss !cost new_states;
 
          (* Check balls around new states *)
-         List.iter new_states ~f:(fun (s, _, _) ->
+         List.iter new_states ~f:(fun (s, op, args) ->
              let d = Dist.value output s in
              if Float.(d < thresh) then
-               let center = program_exn ss s in
+               let center = program_of_op_args_exn ss op args in
                try
                  Tree_ball.ball (module Op) ops center ball_width @@ fun p ->
                  if [%compare.equal: Value.t] (eval p) output then (
@@ -175,6 +173,9 @@ struct
                  raise
                  @@ Program.Eval_error
                       [%message (center : Op.t Program.t) (e : Sexp.t)]);
+
+         let new_states = sample_states ss new_states in
+         insert_states ss !cost new_states;
 
          Fmt.epr "Finished cost %d\n%!" !cost;
          print_stats ss;
