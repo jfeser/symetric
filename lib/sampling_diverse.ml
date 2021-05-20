@@ -28,6 +28,10 @@ let found_program = P.bool_ref ~name:"found-program" ()
 
 let closest_program = P.float_ref ~name:"closest-program" ()
 
+let have_parts = P.float_ref ~name:"have-parts" ()
+
+let total_parts = P.float_ref ~name:"total-parts" ()
+
 let synth = P.const_str ~name:"synth" "sampling-diverse"
 
 let spec =
@@ -43,6 +47,8 @@ let spec =
     P.to_spec found_program;
     P.to_spec synth;
     P.to_spec closest_program;
+    P.to_spec have_parts;
+    P.to_spec total_parts;
   ]
 
 module Make
@@ -93,6 +99,24 @@ struct
     |> List.dedup_and_sort ~compare:(fun (s, _, _) (s', _, _) ->
            [%compare: Value.t] s s')
 
+  (* let summarize l =
+   * 
+   * let measure_spread ss new_states =
+   *   let min_dists = 
+   *     Dumb_progress.List.map ~name:"sampling" new_states
+   *       ~f:(fun ((new_state, _, _) as x) ->
+   *           List.map (new_states) ~f:(fun (old_state, _, _) ->
+   *               if [%compare.equal:Value.t] new_state old_state then
+   *                 Float.infinity
+   *               else
+   *                 Dist.value old_state new_state)
+   *           |> List.min_elt ~compare:[%compare: float]
+   *           |> Option.value ~default:Float.infinity
+   *         )
+   *   in
+   *   
+   *   Fmt.epr "%s\n" @@ summarize min_dists *)
+  
   let sample_diverse ss new_states =
     let states =
       Dumb_progress.List.map ~name:"sampling" new_states
@@ -111,7 +135,7 @@ struct
       states
       ~weight:(fun (w, _) -> w)
     |> List.map ~f:Tuple.T2.get2
-
+  
   let sample_naive ss new_states =
     let states = List.permute new_states in
     List.take states (Params.get (params ss) per_cost)
@@ -137,7 +161,15 @@ struct
     and value_dist = Params.get params value_dist
     and program_dist = Params.get params program_dist
     and program_cost = Params.get params program_cost
-    and found_program = Params.get params found_program in
+    and found_program = Params.get params found_program
+    and have_parts = Params.get params have_parts
+    and total_parts = Params.get params total_parts in
+
+    let solution_parts =
+      Program.eval_parts (Value.eval params) solution
+      |> List.dedup_and_sort ~compare:[%compare: Value.t]
+    in
+    total_parts := Float.of_int @@ List.length solution_parts;
 
     let eval =
       let module P = Program.Make (Op) in
@@ -148,8 +180,8 @@ struct
       with Program.Eval_error e ->
         raise @@ Program.Eval_error [%message (p : Op.t Program.t) (e : Sexp.t)]
     in
+    let cost = ref 0 in
     (try
-       let cost = ref 0 in
        while !cost <= max_cost do
          let new_states = generate_states ss ops !cost |> dedup_states ss in
 
@@ -174,8 +206,27 @@ struct
                  @@ Program.Eval_error
                       [%message (center : Op.t Program.t) (e : Sexp.t)]);
 
+         let closest_programs =
+           List.map new_states ~f:(fun (s, op, args) ->
+               let vd = Dist.value output s in
+               let p = program_of_op_args_exn ss op args in
+               let pd = Dist.program solution p in
+               (pd, vd, s, p))
+           |> List.sort ~compare:(fun (d, _, _, _) (d', _, _, _) ->
+                  [%compare: float] d d')
+           |> fun l -> List.take l 5
+         in
+         (* List.iter closest_programs ~f:(fun (_, _, v, _) ->
+          *     Fmt.epr "%a\n" Cad_conc.pprint v);
+          * Fmt.epr "%a\n" Cad_conc.pprint output; *)
+         print_s
+         @@ [%message
+              (closest_programs : (float * float * _ * Op.t Program.t) list)
+                (solution : Op.t Program.t)];
          let new_states = sample_states ss new_states in
          insert_states ss !cost new_states;
+
+         have_parts := Float.of_int @@ List.count solution_parts ~f:(mem ss);
 
          Fmt.epr "Finished cost %d\n%!" !cost;
          print_stats ss;
@@ -186,7 +237,7 @@ struct
     Params.get params closest_program
     := List.map (states ss) ~f:(fun s ->
            let p = program_exn ss s in
-           Tree_ball.dist ~compare:[%compare: Op.t] solution p)
+           Dist.program solution p)
        |> List.min_elt ~compare:[%compare: float]
        |> Option.value_exn
 end

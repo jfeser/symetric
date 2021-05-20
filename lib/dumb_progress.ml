@@ -64,7 +64,8 @@ let render_all (display : Display.t) =
   if Time.Span.(Time.diff now display.last_render > display.render_interval)
   then (
     if Time.(display.last_render > Time.epoch) then
-      Ansi.move_up display.ch (Queue.length display.bars);
+      Ansi.move_up display.ch (Queue.length display.bars)
+    else Out_channel.print_string "\n";
     display.last_render <- now;
     Queue.iter display.Display.bars ~f:(fun (Bar b) ->
         b.render display.buf;
@@ -116,7 +117,9 @@ let draw_basic ?per_sec ?name ~tot ~n buf =
 let%expect_test "" =
   let buf = Bigstring.create 80 in
   draw_basic ~per_sec:3320.60 ~name:"sampling" ~tot:100 ~n:45 buf;
-  printf "%S\n" @@ Bigstring.to_string buf
+  printf "%S\n" @@ Bigstring.to_string buf;
+  [%expect
+    {| "sampling [######################                          ] 45/100it 3320.60it/s" |}]
 
 let basic_bar ?(display = Display.default) ?name tot =
   let id = Fresh.int display.fresh in

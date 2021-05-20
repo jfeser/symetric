@@ -6,6 +6,16 @@ let apply ?(args = []) op = Apply (op, args)
 
 let rec eval oeval (Apply (op, args)) = oeval op (List.map args ~f:(eval oeval))
 
+let eval_parts oeval p =
+  let parts = Queue.create () in
+  let rec eval oeval (Apply (op, args)) =
+    let part = oeval op (List.map args ~f:(eval oeval)) in
+    Queue.enqueue parts part;
+    part
+  in
+  ignore (eval oeval p : _);
+  Queue.to_list parts
+
 let rec size (Apply (_, args)) = 1 + List.sum (module Int) args ~f:size
 
 let rec map ~f (Apply (op, args)) =

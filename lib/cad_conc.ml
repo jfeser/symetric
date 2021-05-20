@@ -10,6 +10,10 @@ let idx b v =
   let stride = b.ylen in
   (x * stride) + y
 
+let iidx b x y =
+  let stride = b.ylen in
+  (x * stride) + y
+
 let pt' ~ylen:stride idx =
   Vector2.
     {
@@ -47,12 +51,42 @@ let init params ~f =
     pixels = Bitarray.init (xlen * ylen) ~f:(fun i -> f (pt' ~ylen i) i);
   }
 
+let iinit params ~f =
+  let bench = P.get params Cad_params.bench in
+  let xlen = bench.Cad_bench.input.xmax and ylen = bench.Cad_bench.input.ymax in
+  {
+    xlen;
+    ylen;
+    pixels = Bitarray.init (xlen * ylen) ~f:(fun i -> f (i / ylen) (i mod ylen));
+  }
+
 let hamming c c' = Bitarray.hamming_weight (Bitarray.xor c.pixels c'.pixels)
 
 let jaccard c c' =
   let h = hamming c c' in
   let l = Bitarray.length c.pixels in
   Float.(of_int h / of_int l)
+
+let edges c =
+  let to_int x = if x then 1 else 0 in
+  let above i =
+    let i' = i - c.ylen in
+    if i' >= 0 then to_int @@ Bitarray.get c.pixels i' else 0
+  and below i =
+    let i' = i + c.ylen in
+    if i' < Bitarray.length c.pixels then to_int @@ Bitarray.get c.pixels i'
+    else 0
+  and left i =
+    if i mod c.ylen = 0 then 0 else to_int @@ Bitarray.get c.pixels (i - 1)
+  and right i =
+    if (i + 1) mod c.ylen = 0 then 0 else to_int @@ Bitarray.get c.pixels (i + 1)
+  in
+  {
+    c with
+    pixels =
+      Bitarray.init (c.xlen * c.ylen) ~f:(fun i ->
+          Bitarray.get c.pixels i && above i + below i + left i + right i < 4);
+  }
 
 let fincr r = if Float.is_nan !r then r := 1.0 else r := !r +. 1.0
 

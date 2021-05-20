@@ -14,5 +14,5 @@ find $WORKDIR/bench/cad2/random_repl_size_11/ -name "*.sexp" | sort | head -n10 
 rm -f "$OUT_FILE"
 parallel --eta --joblog "$WORKDIR/notebooks/${NAME}_joblog" --timeout 600 --colsep ' ' \
          "$FULL_EXE cad-sample-diverse -max-cost 11 -print-csv true -d 0.0 -w 0 -p {2} -seed {1} -diversity {3} {4} 2> /dev/null" \
-         ::: {0..99} ::: 1000 5000 10000 ::: true false :::: $WORKDIR/jobs \
+         ::: {0..99} ::: 200 ::: true false :::: $WORKDIR/jobs \
     >> "$OUT_FILE"
