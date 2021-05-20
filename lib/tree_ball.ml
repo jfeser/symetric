@@ -34,6 +34,15 @@ let ball (type op) (module Op : Arity_intf.S with type t = op) (ops : op list) t
   rewrites (module Op) ops t d @@ fun rewrite ->
   f @@ Program.mapi t ~f:(fun i op -> Option.value rewrite.(i) ~default:op)
 
+let rec dist ~compare (Program.Apply (op, args)) (Program.Apply (op', args')) =
+  let d = if compare op op' = 0 then 0.0 else 1.0 in
+  if List.is_empty args && List.is_empty args' then d
+  else if List.length args = List.length args' then
+    d
+    +. (List.map2_exn args args' ~f:(dist ~compare)
+       |> List.sum (module Float) ~f:Fun.id)
+  else Float.infinity
+
 let%expect_test "" =
   let module A = struct
     type t = string
@@ -45,12 +54,13 @@ let%expect_test "" =
       | _ -> assert false
   end in
   let print_ball d =
-    ball
-      (module A)
-      [ "x"; "y"; "z" ]
+    let init =
       Program.(apply "a" ~args:[ apply "b"; apply "c" ~args:[ apply "d" ] ])
-      d
-    @@ fun p -> print_s [%message (p : string Program.t)]
+    in
+    ball (module A) [ "x"; "y"; "z" ] init d @@ fun p ->
+    print_s
+      [%message
+        (p : string Program.t) (dist ~compare:[%compare: string] p init : float)]
   in
   print_ball 1;
   [%expect

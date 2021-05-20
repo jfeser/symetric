@@ -26,6 +26,8 @@ let program_cost = P.float_ref ~name:"program-cost" ()
 
 let found_program = P.bool_ref ~name:"found-program" ()
 
+let closest_program = P.float_ref ~name:"closest-program" ()
+
 let synth = P.const_str ~name:"synth" "sampling-diverse"
 
 let spec =
@@ -40,10 +42,11 @@ let spec =
     P.to_spec program_cost;
     P.to_spec found_program;
     P.to_spec synth;
+    P.to_spec closest_program;
   ]
 
 module Make
-    (Lang : Lang_intf.S)
+    (Lang : Lang_intf.S with type Value.t = Cad_conc.t)
     (Dist : Dist_intf.S with type value := Lang.Value.t and type op := Lang.Op.t) =
 struct
   open Lang
@@ -124,7 +127,9 @@ struct
   let synth params =
     let ss = Search_state.create params in
     let bench = Params.get params bench in
-    let ops = Bench.ops bench and output = Bench.output bench in
+    let ops = Bench.ops bench
+    and output = Bench.output bench
+    and solution = Bench.solution_exn bench in
 
     let thresh = Params.get params thresh
     and ball_width = Params.get params ball_width
@@ -143,37 +148,44 @@ struct
       with Program.Eval_error e ->
         raise @@ Program.Eval_error [%message (p : Op.t Program.t) (e : Sexp.t)]
     in
+    (try
+       let cost = ref 0 in
+       while !cost <= max_cost do
+         let new_states = generate_states ss ops !cost |> dedup_states ss in
+         let new_states = sample_states ss new_states in
+         insert_states ss !cost new_states;
 
-    try
-      let cost = ref 0 in
-      while !cost <= max_cost do
-        let new_states = generate_states ss ops !cost |> dedup_states ss in
-        let new_states = sample_states ss new_states in
-        insert_states ss !cost new_states;
+         (* Check balls around new states *)
+         List.iter new_states ~f:(fun (s, _, _) ->
+             let d = Dist.value output s in
+             if Float.(d < thresh) then
+               let center = program_exn ss s in
+               try
+                 Tree_ball.ball (module Op) ops center ball_width @@ fun p ->
+                 if [%compare.equal: Value.t] (eval p) output then (
+                   value_dist := d;
+                   program_dist :=
+                     Float.of_int
+                     @@ Tree_dist.zhang_sasha ~eq:[%compare.equal: Op.t] center
+                          p;
+                   program_cost := Float.of_int !cost;
+                   found_program := true;
+                   raise (Done p))
+               with Program.Eval_error e ->
+                 raise
+                 @@ Program.Eval_error
+                      [%message (center : Op.t Program.t) (e : Sexp.t)]);
 
-        (* Check balls around new states *)
-        List.iter new_states ~f:(fun (s, _, _) ->
-            let d = Dist.value output s in
-            if Float.(d < thresh) then
-              let center = program_exn ss s in
-              try
-                Tree_ball.ball (module Op) ops center ball_width @@ fun p ->
-                if [%compare.equal: Value.t] (eval p) output then (
-                  value_dist := d;
-                  program_dist :=
-                    Float.of_int
-                    @@ Tree_dist.zhang_sasha ~eq:[%compare.equal: Op.t] center p;
-                  program_cost := Float.of_int !cost;
-                  found_program := true;
-                  raise (Done p))
-              with Program.Eval_error e ->
-                raise
-                @@ Program.Eval_error
-                     [%message (center : Op.t Program.t) (e : Sexp.t)]);
+         Fmt.epr "Finished cost %d\n%!" !cost;
+         print_stats ss;
+         cost := !cost + 1
+       done
+     with Done p -> eprint_s [%message (p : Op.t Program.t)]);
 
-        Fmt.epr "Finished cost %d\n%!" !cost;
-        print_stats ss;
-        cost := !cost + 1
-      done
-    with Done p -> eprint_s [%message (p : Op.t Program.t)]
+    Params.get params closest_program
+    := List.map (states ss) ~f:(fun s ->
+           let p = program_exn ss s in
+           Tree_ball.dist ~compare:[%compare: Op.t] solution p)
+       |> List.min_elt ~compare:[%compare: float]
+       |> Option.value_exn
 end

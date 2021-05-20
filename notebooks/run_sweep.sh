@@ -9,10 +9,10 @@ FULL_EXE=$BUILD_DIR/$EXE
 
 dune build --profile=release "$EXE"
 
-find $WORKDIR/bench/cad2/random_repl_size_9/ -name "*.sexp" | sort > $WORKDIR/jobs
+find $WORKDIR/bench/cad2/random_repl_size_11/ -name "*.sexp" | sort | head -n10 > $WORKDIR/jobs
 
 rm -f "$OUT_FILE"
-parallel --eta --joblog "$WORKDIR/notebooks/${NAME}_joblog" --timeout 60 --colsep ' ' \
-         "$FULL_EXE cad-sample-diverse -max-cost 9 -csv -d 1.0 -w {3} -p {2} -seed {1} -diversity {4} {5} 2> /dev/null" \
-         ::: {0..99} ::: 25 50 100 200 ::: {1..3} ::: true false :::: $WORKDIR/jobs \
+parallel --eta --joblog "$WORKDIR/notebooks/${NAME}_joblog" --timeout 600 --colsep ' ' \
+         "$FULL_EXE cad-sample-diverse -max-cost 11 -print-csv true -d 0.0 -w 0 -p {2} -seed {1} -diversity {3} {4} 2> /dev/null" \
+         ::: {0..99} ::: 1000 5000 10000 ::: true false :::: $WORKDIR/jobs \
     >> "$OUT_FILE"

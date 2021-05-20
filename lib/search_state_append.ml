@@ -19,7 +19,7 @@ module Make (Lang : Lang_intf.S) = struct
 
   let params ctx = ctx.params
 
-  let of_cost ctx c = Queue.to_list ctx.of_cost.(c)
+  let of_cost ctx c = if c >= 0 then Queue.to_list ctx.of_cost.(c) else []
 
   let mem ctx = Hashtbl.mem ctx.paths
 

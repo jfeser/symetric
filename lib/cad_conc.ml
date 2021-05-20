@@ -57,7 +57,7 @@ let jaccard c c' =
 let fincr r = if Float.is_nan !r then r := 1.0 else r := !r +. 1.0
 
 let eval params op args =
-  fincr (Params.get params eval_calls);
+  (* fincr (Params.get params eval_calls); *)
   try
     match (op, args) with
     | Cad_op.Inter, [ s; s' ] ->
