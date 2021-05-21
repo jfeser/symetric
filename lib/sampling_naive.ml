@@ -64,6 +64,7 @@ struct
 
     let fill () =
       let best = ref None in
+      n_iters := 0.0;
       while true do
         n_iters := !n_iters +. 1.0;
 
@@ -84,7 +85,7 @@ struct
               best_dist := dist;
               best := Some out));
 
-        if Float.to_int !n_iters mod 1000 = 0 then
+        if Float.to_int !n_iters mod 10000 = 0 then
           eprint_s
             [%message (!best_dist : float) (State_set.length states : int)];
 
