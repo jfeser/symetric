@@ -22,8 +22,7 @@
  (public_name lazy_cegis)
  (modules lazy_cegis)
  (libraries core staged_synth)
- (preprocess (pps ppx_jane))
- (flags (-ccopt -static)))
+ (preprocess (pps ppx_jane)))
 
 ; (executable
 ;  (name mk_simple_cad_bench)
