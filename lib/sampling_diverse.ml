@@ -1,6 +1,27 @@
 include struct
   open Dumb_params
 
+  let float_list ~name ?(csv = true) () =
+    (module struct
+      type t = float list Queue.t [@@deriving sexp_of]
+
+      let key = Univ_map.Key.create ~name [%sexp_of: t]
+
+      let name = name
+
+      let init = Second (fun () -> Queue.create ())
+
+      let to_json =
+        if csv then
+          Option.return @@ fun v ->
+          `List
+            (Queue.to_list v
+            |> List.map ~f:(fun l -> `List (List.map l ~f:(fun x -> `Float x)))
+            )
+        else None
+    end : Param.S
+      with type t = float list Queue.t)
+
   let spec = Spec.create ()
 
   let per_cost =
@@ -25,9 +46,11 @@ include struct
 
   let bank_size = Spec.add spec @@ Param.float_ref ~name:"bank-size" ()
 
-  let value_dist = Spec.add spec @@ Param.float_ref ~name:"value-dist" ()
+  let final_value_dist =
+    Spec.add spec @@ Param.float_ref ~name:"final-value-dist" ()
 
-  let program_dist = Spec.add spec @@ Param.float_ref ~name:"program-dist" ()
+  let final_program_dist =
+    Spec.add spec @@ Param.float_ref ~name:"final-program-dist" ()
 
   let program_cost = Spec.add spec @@ Param.float_ref ~name:"program-cost" ()
 
@@ -41,6 +64,15 @@ include struct
   let total_parts = Spec.add spec @@ Param.float_ref ~name:"total-parts" ()
 
   let synth = Spec.add spec @@ Param.const_str ~name:"synth" "sampling-diverse"
+
+  let value_dist =
+    Spec.add spec @@ Param.create @@ float_list ~name:"value-dist" ()
+
+  let program_ball_dist =
+    Spec.add spec @@ Param.create @@ float_list ~name:"program-ball-dist" ()
+
+  let program_zs_dist =
+    Spec.add spec @@ Param.create @@ float_list ~name:"program-zs-dist" ()
 end
 
 module Make
@@ -112,7 +144,7 @@ struct
   let sample_diverse ss new_states =
     let states =
       Dumb_progress.List.map ~name:"sampling" new_states
-        ~f:(fun ((new_state, _, _) as x) ->
+        ~f:(fun ((_, new_state, _, _) as x) ->
           let min_dist =
             List.map (states ss) ~f:(fun old_state ->
                 Dist.value old_state new_state)
@@ -137,7 +169,8 @@ struct
     else sample_naive ss
 
   let insert_states ss cost states =
-    List.iter states ~f:(fun (state, op, args) -> insert ss cost state op args);
+    List.iter states ~f:(fun (_, state, op, args) ->
+        insert ss cost state op args);
     Params.get (params ss) bank_size := Float.of_int @@ Search_state.length ss
 
   let synth params =
@@ -150,12 +183,15 @@ struct
     let thresh = Params.get params thresh
     and ball_width = Params.get params ball_width
     and max_cost = Params.get params Params.max_cost
-    and value_dist = Params.get params value_dist
-    and program_dist = Params.get params program_dist
+    and final_value_dist = Params.get params final_value_dist
+    and final_program_dist = Params.get params final_program_dist
     and program_cost = Params.get params program_cost
     and found_program = Params.get params found_program
     and have_parts = Params.get params have_parts
-    and total_parts = Params.get params total_parts in
+    and total_parts = Params.get params total_parts
+    and value_dist = Params.get params value_dist
+    and program_ball_dist = Params.get params program_ball_dist
+    and program_zs_dist = Params.get params program_zs_dist in
 
     let solution_parts =
       Program.eval_parts (Value.eval params) solution
@@ -177,16 +213,34 @@ struct
        while !cost <= max_cost do
          let new_states = generate_states ss ops !cost |> dedup_states ss in
 
+         let new_states =
+           List.map new_states ~f:(fun (s, op, args) ->
+               (Dist.value output s, s, op, args))
+         in
+
+         Queue.enqueue value_dist
+         @@ List.map new_states ~f:(fun (d, _, _, _) -> d);
+
+         Queue.enqueue program_ball_dist
+         @@ List.map new_states ~f:(fun (_, _, op, args) ->
+                let p = program_of_op_args_exn ss op args in
+                Tree_ball.dist ~compare:[%compare: Op.t] p solution);
+
+         Queue.enqueue program_zs_dist
+         @@ List.map new_states ~f:(fun (_, _, op, args) ->
+                let p = program_of_op_args_exn ss op args in
+                Float.of_int
+                @@ Tree_dist.zhang_sasha ~eq:[%compare.equal: Op.t] p solution);
+
          (* Check balls around new states *)
-         List.iter new_states ~f:(fun (s, op, args) ->
-             let d = Dist.value output s in
+         List.iter new_states ~f:(fun (d, _, op, args) ->
              if Float.(d < thresh) then
                let center = program_of_op_args_exn ss op args in
                try
                  Tree_ball.ball (module Op) ops center ball_width @@ fun p ->
                  if [%compare.equal: Value.t] (eval p) output then (
-                   value_dist := d;
-                   program_dist :=
+                   final_value_dist := d;
+                   final_program_dist :=
                      Float.of_int
                      @@ Tree_dist.zhang_sasha ~eq:[%compare.equal: Op.t] center
                           p;
@@ -198,23 +252,6 @@ struct
                  @@ Program.Eval_error
                       [%message (center : Op.t Program.t) (e : Sexp.t)]);
 
-         let closest_programs =
-           List.map new_states ~f:(fun (s, op, args) ->
-               let vd = Dist.value output s in
-               let p = program_of_op_args_exn ss op args in
-               let pd = Dist.program solution p in
-               (pd, vd, s, p))
-           |> List.sort ~compare:(fun (d, _, _, _) (d', _, _, _) ->
-                  [%compare: float] d d')
-           |> fun l -> List.take l 5
-         in
-         (* List.iter closest_programs ~f:(fun (_, _, v, _) ->
-          *     Fmt.epr "%a\n" Cad_conc.pprint v);
-          * Fmt.epr "%a\n" Cad_conc.pprint output; *)
-         print_s
-         @@ [%message
-              (closest_programs : (float * float * _ * Op.t Program.t) list)
-                (solution : Op.t Program.t)];
          let new_states = sample_states ss new_states in
          insert_states ss !cost new_states;
 
