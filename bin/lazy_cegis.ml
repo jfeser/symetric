@@ -14,25 +14,25 @@ let timed n f =
 
 let () = Caml.Sys.(set_signal sigint (Signal_handle break))
 
+let print_json = Yojson.Basic.to_channel Out_channel.stdout
+
 let cad_sample_naive_cli =
   let module Lang = Cad in
   let module Synth = Sampling_naive.Make (Lang) in
   let run params () =
-    if Params.(get params print_csv_header) then
-      print_endline @@ Dumb_params.csv_header params
-    else
-      let start = Time.now () in
-      (try Synth.synth params with Break -> ());
-      let end_ = Time.now () in
-      Params.(get params runtime) := Time.diff end_ start;
-      if Params.(get params print_csv) then
-        print_endline @@ Dumb_params.csv params
+    let start = Time.now () in
+    (try Synth.synth params with Break -> ());
+    let end_ = Time.now () in
+    Params.(get params runtime) := Time.diff end_ start;
+    if Params.(get params print_json) then print_json @@ Dumb_params.json params
   in
-  let spec = Lang.spec @ Params.spec @ Sampling_naive.spec in
+  let spec =
+    Dumb_params.Spec.union [ Lang.spec; Params.spec; Sampling_naive.spec ]
+  in
   let open Command.Let_syntax in
   Command.basic ~summary:""
     [%map_open
-      let params = Dumb_params.cli spec in
+      let params = Dumb_params.Spec.cli spec in
       run params]
 
 module Hamming_dist = struct
@@ -83,22 +83,20 @@ let cad_sample_diverse_cli =
   let module Lang = Cad in
   let module Synth = Sampling_diverse.Make (Lang) (Dist) in
   let run params () =
-    if Params.(get params print_csv_header) then
-      print_endline @@ Dumb_params.csv_header params
-    else (
-      Random.set_state @@ Random.State.make [| Params.(get params seed) |];
-      let start = Time.now () in
-      (try Synth.synth params with Break -> ());
-      let end_ = Time.now () in
-      Params.(get params runtime) := Time.diff end_ start;
-      if Params.(get params print_csv) then
-        print_endline @@ Dumb_params.csv params)
+    Random.set_state @@ Random.State.make [| Params.(get params seed) |];
+    let start = Time.now () in
+    (try Synth.synth params with Break -> ());
+    let end_ = Time.now () in
+    Params.(get params runtime) := Time.diff end_ start;
+    if Params.(get params print_json) then print_json @@ Dumb_params.json params
   in
-  let spec = Lang.spec @ Params.spec @ Sampling_diverse.spec in
+  let spec =
+    Dumb_params.Spec.union [ Lang.spec; Params.spec; Sampling_diverse.spec ]
+  in
   let open Command.Let_syntax in
   Command.basic ~summary:""
     [%map_open
-      let params = Dumb_params.cli spec in
+      let params = Dumb_params.Spec.cli spec in
       run params]
 
 let cad_baseline_cli =
@@ -108,22 +106,18 @@ let cad_baseline_cli =
   end in
   let module Synth = Baseline.Make (Lang) (Dist) (Validate) in
   let run params () =
-    if Params.(get params print_csv_header) then
-      print_endline @@ Dumb_params.csv_header params
-    else (
-      Random.set_state @@ Random.State.make [| Params.(get params seed) |];
-      let start = Time.now () in
-      (try Synth.synth params with Break -> ());
-      let end_ = Time.now () in
-      Params.(get params runtime) := Time.diff end_ start;
-      if Params.(get params print_csv) then
-        print_endline @@ Dumb_params.csv params)
+    Random.set_state @@ Random.State.make [| Params.(get params seed) |];
+    let start = Time.now () in
+    (try Synth.synth params with Break -> ());
+    let end_ = Time.now () in
+    Params.(get params runtime) := Time.diff end_ start;
+    if Params.(get params print_json) then print_json @@ Dumb_params.json params
   in
-  let spec = Lang.spec @ Params.spec in
+  let spec = Dumb_params.Spec.union [ Lang.spec; Params.spec; Baseline.spec ] in
   let open Command.Let_syntax in
   Command.basic ~summary:""
     [%map_open
-      let params = Dumb_params.cli spec in
+      let params = Dumb_params.Spec.cli spec in
       run params]
 
 let cad_baseline_term_cli =
@@ -140,32 +134,28 @@ let cad_baseline_term_cli =
     let validate vs = timed "validate" (fun () -> validate vs)
   end in
   let run params () =
-    if Params.(get params print_csv_header) then
-      print_endline @@ Dumb_params.csv_header params
-    else (
-      Random.set_state @@ Random.State.make [| Params.(get params seed) |];
-      let eval = P.eval_memoized (Cad_conc.eval params) in
-      let module Dist = struct
-        let program = Zs_dist.program
+    Random.set_state @@ Random.State.make [| Params.(get params seed) |];
+    let eval = P.eval_memoized (Cad_conc.eval params) in
+    let module Dist = struct
+      let program = Zs_dist.program
 
-        let value p p' =
-          let v = eval p and v' = eval p' in
-          Hamming_dist.value v v'
-      end in
-      let module Synth = Baseline.Make (Lang) (Dist) (Validate) in
-      let start = Time.now () in
-      (try Synth.synth params with Break -> ());
-      let end_ = Time.now () in
-      Params.(get params runtime) := Time.diff end_ start;
-      if Params.(get params print_csv) then
-        print_endline @@ Dumb_params.csv params)
+      let value p p' =
+        let v = eval p and v' = eval p' in
+        Hamming_dist.value v v'
+    end in
+    let module Synth = Baseline.Make (Lang) (Dist) (Validate) in
+    let start = Time.now () in
+    (try Synth.synth params with Break -> ());
+    let end_ = Time.now () in
+    Params.(get params runtime) := Time.diff end_ start;
+    if Params.(get params print_json) then print_json @@ Dumb_params.json params
   in
 
-  let spec = Lang.spec @ Params.spec in
+  let spec = Dumb_params.Spec.union [ Lang.spec; Params.spec; Baseline.spec ] in
   let open Command.Let_syntax in
   Command.basic ~summary:""
     [%map_open
-      let params = Dumb_params.cli spec in
+      let params = Dumb_params.Spec.cli spec in
       run params]
 
 let () =

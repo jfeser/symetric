@@ -1,55 +1,72 @@
-module type Param_intf = sig
-  type t [@@deriving sexp_of]
+module Param : sig
+  module type S = sig
+    type t [@@deriving sexp_of]
 
-  val name : string
+    val name : string
 
-  val to_csv : (t -> string) option
+    val to_json : (t -> Yojson.Basic.t) option
 
-  val init : (Univ_map.Packed.t Command.Param.t, unit -> t) Either.t
+    val init : (Univ_map.Packed.t Command.Param.t, unit -> t) Either.t
 
-  val key : t Univ_map.Key.t
+    val key : t Univ_map.Key.t
+  end
+
+  type ('a, 'b) t
+
+  type free
+
+  type bound
+
+  type 'a mk =
+    name:string ->
+    doc:string ->
+    ?init:[ `Cli of 'a option | `Default of unit -> 'a ] ->
+    ?csv:bool ->
+    ?aliases:string list ->
+    unit ->
+    ('a, free) t
+
+  val create : (module S with type t = 'a) -> ('a, free) t
+
+  val int : int mk
+
+  val bool : bool mk
+
+  val float : float mk
+
+  val span_ref : name:string -> ?csv:bool -> unit -> (Time.Span.t ref, free) t
+
+  val float_ref : name:string -> ?csv:bool -> unit -> (float ref, free) t
+
+  val float_seq : name:string -> ?csv:bool -> unit -> (float Queue.t, free) t
+
+  val bool_ref :
+    name:string -> ?default:bool -> ?csv:bool -> unit -> (bool ref, free) t
+
+  val const_str : name:string -> ?csv:bool -> string -> (string, free) t
 end
-
-type 'a param = (module Param_intf with type t = 'a)
-
-type spec
 
 type t
 
-val cli : spec list -> t Command.Param.t
+val get : t -> ('a, Param.bound) Param.t -> 'a
 
-type 'a mk =
-  name:string ->
-  doc:string ->
-  ?init:[ `Cli of 'a option | `Default of unit -> 'a ] ->
-  ?csv:bool ->
-  ?aliases:string list ->
-  unit ->
-  'a param
+val json : t -> Yojson.Basic.t
 
-val int : int mk
+module Spec : sig
+  type t
 
-val bool : bool mk
+  type values
 
-val float : float mk
+  val create : unit -> t
 
-val span_ref : name:string -> ?csv:bool -> unit -> Time.Span.t ref param
+  val add : t -> ('a, Param.free) Param.t -> ('a, Param.bound) Param.t
 
-val float_ref : name:string -> ?csv:bool -> unit -> float ref param
+  val union : t list -> t
 
-val bool_ref :
-  name:string -> ?default:bool -> ?csv:bool -> unit -> bool ref param
+  val cli : t -> values Command.Param.t
+end
+with type values := t
 
-val const_str : name:string -> ?csv:bool -> string -> string param
+type pair = P : ('a, Param.bound) Param.t * 'a -> pair
 
-val csv : t -> string
-
-val csv_header : t -> string
-
-val get : t -> 'a param -> 'a
-
-val to_spec : 'a param -> spec
-
-type packed = P : 'a param * 'a -> packed
-
-val of_alist_exn : packed list -> t
+val of_alist_exn : pair list -> t

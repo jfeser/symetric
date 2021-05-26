@@ -1,9 +1,9 @@
 include Cad_conc0
 module P = Dumb_params
 
-let eval_calls = P.float_ref ~name:"eval-calls" ()
+let spec = P.Spec.create ()
 
-let spec = [ P.to_spec eval_calls ]
+let eval_calls = P.Spec.add spec @@ P.Param.float_ref ~name:"eval-calls" ()
 
 let idx b v =
   let x = Float.iround_down_exn v.Vector2.x and y = Float.iround_down_exn v.y in
@@ -90,26 +90,25 @@ let edges c =
 
 let fincr r = if Float.is_nan !r then r := 1.0 else r := !r +. 1.0
 
+exception Eval_error of Cad_op.t
+
 let eval params op args =
   (* fincr (Params.get params eval_calls); *)
-  try
-    match (op, args) with
-    | Cad_op.Inter, [ s; s' ] ->
-        { s with pixels = Bitarray.and_ s.pixels s'.pixels }
-    | Union, [ s; s' ] -> { s with pixels = Bitarray.or_ s.pixels s'.pixels }
-    | Circle c, [] ->
-        init params ~f:(fun pt _ ->
-            Float.(Vector2.(l2_dist c.center pt) <= c.radius))
-    | Rect r, [] ->
-        init params ~f:(fun k _ ->
-            Float.(
-              r.lo_left.x <= k.x && r.lo_left.y <= k.y && r.hi_right.x >= k.x
-              && r.hi_right.y >= k.y))
-    | Replicate repl, [ s ] ->
-        init params ~f:(fun pt _ -> replicate_is_set repl s pt)
-    | _ -> raise_s [%message "Unexpected eval" (op : Cad_op.t)]
-  with e ->
-    raise Info.(to_exn @@ tag_s ~tag:[%message (op : Cad_op.t)] @@ of_exn e)
+  match (op, args) with
+  | Cad_op.Inter, [ s; s' ] ->
+      { s with pixels = Bitarray.and_ s.pixels s'.pixels }
+  | Union, [ s; s' ] -> { s with pixels = Bitarray.or_ s.pixels s'.pixels }
+  | Circle c, [] ->
+      init params ~f:(fun pt _ ->
+          Float.(Vector2.(l2_dist c.center pt) <= c.radius))
+  | Rect r, [] ->
+      init params ~f:(fun k _ ->
+          Float.(
+            r.lo_left.x <= k.x && r.lo_left.y <= k.y && r.hi_right.x >= k.x
+            && r.hi_right.y >= k.y))
+  | Replicate repl, [ s ] ->
+      init params ~f:(fun pt _ -> replicate_is_set repl s pt)
+  | _ -> raise (Eval_error op)
 
 let pprint fmt c =
   for y = c.ylen - 1 downto 0 do

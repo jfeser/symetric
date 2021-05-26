@@ -1,8 +1,10 @@
-open Params
+include struct
+  open Dumb_params
 
-let synth = P.const_str ~name:"synth" "baseline"
+  let spec = Spec.create ()
 
-let spec = [ P.to_spec synth ]
+  let synth = Spec.add spec @@ Param.const_str ~name:"synth" "baseline"
+end
 
 module Make
     (Lang : Lang_intf.S)

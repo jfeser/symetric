@@ -1,4 +1,4 @@
-module P = Dumb_params
+open Dumb_params
 
 let bench =
   (module struct
@@ -13,10 +13,12 @@ let bench =
       anon ("bench" %: string)
       |> map ~f:(fun v -> Univ_map.Packed.T (key, Cad_bench.load v))
 
-    let to_csv = None
+    let to_json = None
 
     let init = First init
-  end : P.Param_intf
+  end : Param.S
     with type t = Cad_bench.t)
 
-let spec = [ P.to_spec bench ]
+let spec = Spec.create ()
+
+let bench = Spec.add spec @@ Param.create bench

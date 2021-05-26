@@ -1,55 +1,47 @@
-module P = Dumb_params
+include struct
+  open Dumb_params
 
-let per_cost =
-  P.int ~name:"per-cost" ~aliases:[ "p" ] ~doc:" programs stored per cost level"
-    ~init:(`Cli (Some 100)) ()
+  let spec = Spec.create ()
 
-let thresh =
-  P.float ~name:"thresh" ~aliases:[ "d" ] ~doc:" exhaustive search threshold"
-    ~init:(`Cli (Some 1.0)) ()
+  let per_cost =
+    Spec.add spec
+    @@ Param.int ~name:"per-cost" ~aliases:[ "p" ]
+         ~doc:" programs stored per cost level" ~init:(`Cli (Some 100)) ()
 
-let ball_width =
-  P.int ~name:"width" ~aliases:[ "w" ] ~doc:" exhaustive search width"
-    ~init:(`Cli (Some 2)) ()
+  let thresh =
+    Spec.add spec
+    @@ Param.float ~name:"thresh" ~aliases:[ "d" ]
+         ~doc:" exhaustive search threshold" ~init:(`Cli (Some 1.0)) ()
 
-let diversity =
-  P.bool ~name:"diversity" ~doc:" use diversity sampling"
-    ~init:(`Cli (Some true)) ()
+  let ball_width =
+    Spec.add spec
+    @@ Param.int ~name:"width" ~aliases:[ "w" ] ~doc:" exhaustive search width"
+         ~init:(`Cli (Some 2)) ()
 
-let bank_size = P.float_ref ~name:"bank-size" ()
+  let diversity =
+    Spec.add spec
+    @@ Param.bool ~name:"diversity" ~doc:" use diversity sampling"
+         ~init:(`Cli (Some true)) ()
 
-let value_dist = P.float_ref ~name:"value-dist" ()
+  let bank_size = Spec.add spec @@ Param.float_ref ~name:"bank-size" ()
 
-let program_dist = P.float_ref ~name:"program-dist" ()
+  let value_dist = Spec.add spec @@ Param.float_ref ~name:"value-dist" ()
 
-let program_cost = P.float_ref ~name:"program-cost" ()
+  let program_dist = Spec.add spec @@ Param.float_ref ~name:"program-dist" ()
 
-let found_program = P.bool_ref ~name:"found-program" ()
+  let program_cost = Spec.add spec @@ Param.float_ref ~name:"program-cost" ()
 
-let closest_program = P.float_ref ~name:"closest-program" ()
+  let found_program = Spec.add spec @@ Param.bool_ref ~name:"found-program" ()
 
-let have_parts = P.float_ref ~name:"have-parts" ()
+  let closest_program =
+    Spec.add spec @@ Param.float_ref ~name:"closest-program" ()
 
-let total_parts = P.float_ref ~name:"total-parts" ()
+  let have_parts = Spec.add spec @@ Param.float_ref ~name:"have-parts" ()
 
-let synth = P.const_str ~name:"synth" "sampling-diverse"
+  let total_parts = Spec.add spec @@ Param.float_ref ~name:"total-parts" ()
 
-let spec =
-  [
-    P.to_spec per_cost;
-    P.to_spec thresh;
-    P.to_spec ball_width;
-    P.to_spec diversity;
-    P.to_spec bank_size;
-    P.to_spec value_dist;
-    P.to_spec program_dist;
-    P.to_spec program_cost;
-    P.to_spec found_program;
-    P.to_spec synth;
-    P.to_spec closest_program;
-    P.to_spec have_parts;
-    P.to_spec total_parts;
-  ]
+  let synth = Spec.add spec @@ Param.const_str ~name:"synth" "sampling-diverse"
+end
 
 module Make
     (Lang : Lang_intf.S with type Value.t = Cad_conc.t)
@@ -116,7 +108,7 @@ struct
    *   in
    *   
    *   Fmt.epr "%s\n" @@ summarize min_dists *)
-  
+
   let sample_diverse ss new_states =
     let states =
       Dumb_progress.List.map ~name:"sampling" new_states
@@ -135,7 +127,7 @@ struct
       states
       ~weight:(fun (w, _) -> w)
     |> List.map ~f:Tuple.T2.get2
-  
+
   let sample_naive ss new_states =
     let states = List.permute new_states in
     List.take states (Params.get (params ss) per_cost)

@@ -8,10 +8,12 @@ type symb = Cad_symb.t
 
 type bench = Cad_bench.t
 
-open Params
+include struct
+  open Dumb_params
 
-let lang = P.const_str ~name:"lang" "cad"
+  let spec = Spec.union [ Value.spec; Cad_params.spec ]
 
-include Cad_params
+  let lang = Spec.add spec @@ Param.const_str ~name:"lang" "cad"
+end
 
-let spec = spec @ Value.spec @ [ P.to_spec lang ]
+let bench = Cad_params.bench

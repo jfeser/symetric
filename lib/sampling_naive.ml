@@ -1,23 +1,20 @@
 open Params
 
-let n_states = P.float_ref ~name:"n_states" ()
+include struct
+  open Dumb_params
 
-let n_iters = P.float_ref ~name:"n_iters" ()
+  let spec = Spec.create ()
 
-let best_dist = P.float_ref ~name:"best_dist" ()
+  let n_states = Spec.add spec @@ Param.float_ref ~name:"n_states" ()
 
-let found_program = P.bool_ref ~name:"found_program" ()
+  let n_iters = Spec.add spec @@ Param.float_ref ~name:"n_iters" ()
 
-let synth = P.const_str ~name:"synth" "sampling-naive"
+  let best_dist = Spec.add spec @@ Param.float_ref ~name:"best_dist" ()
 
-let spec =
-  [
-    P.to_spec n_states;
-    P.to_spec n_iters;
-    P.to_spec best_dist;
-    P.to_spec found_program;
-    P.to_spec synth;
-  ]
+  let found_program = Spec.add spec @@ Param.bool_ref ~name:"found_program" ()
+
+  let synth = Spec.add spec @@ Param.const_str ~name:"synth" "sampling-naive"
+end
 
 module Make
     (Lang : Lang_intf.S

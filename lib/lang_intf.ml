@@ -21,7 +21,7 @@ module type S = sig
     val solution_exn : t -> Op.t Program.t
   end
 
-  val bench : Bench.t Dumb_params.param
+  val bench : (Bench.t, Dumb_params.Param.bound) Dumb_params.Param.t
 
-  val spec : Dumb_params.spec list
+  val spec : Dumb_params.Spec.t
 end

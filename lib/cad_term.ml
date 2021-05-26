@@ -15,10 +15,8 @@ end
 
 type bench = Cad_bench.t
 
-open Params
-
-let lang = P.const_str ~name:"lang" "cad"
-
 include Cad_params
 
-let spec = spec @ [ P.to_spec lang ]
+let lang =
+  let module P = Dumb_params in
+  P.Spec.add spec @@ P.Param.const_str ~name:"lang" "cad"
