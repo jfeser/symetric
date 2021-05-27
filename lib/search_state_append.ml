@@ -2,22 +2,17 @@ module Make (Lang : Lang_intf.S) = struct
   open Lang
 
   type t = {
-    params : Params.t;
+    max_cost : int;
     of_cost : Value.t Queue.t array;
     paths : (Op.t * Value.t list) Hashtbl.M(Value).t;
   }
 
-  let create params =
+  let create max_cost =
     {
-      params;
-      of_cost =
-        Array.init
-          (Params.(get params max_cost) + 1)
-          ~f:(fun _ -> Queue.create ());
+      max_cost;
+      of_cost = Array.init (max_cost + 1) ~f:(fun _ -> Queue.create ());
       paths = Hashtbl.create (module Value);
     }
-
-  let params ctx = ctx.params
 
   let of_cost ctx c = if c >= 0 then Queue.to_list ctx.of_cost.(c) else []
 

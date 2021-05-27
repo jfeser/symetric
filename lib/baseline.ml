@@ -25,13 +25,13 @@ struct
     List.init (Option_array.length a)
       ~f:(Option_array.unsafe_get_some_assuming_some a)
 
-  let make_edge ss op args = (Value.eval (params ss) op args, op, args)
+  let make_edge params op args = (Value.eval params op args, op, args)
 
-  let generate_args ss op costs =
+  let generate_args params ss op costs =
     let arity = Op.arity op in
     let args = Option_array.create ~len:arity in
     let rec build_args arg_idx =
-      if arg_idx >= arity then [ make_edge ss op @@ unsafe_to_list args ]
+      if arg_idx >= arity then [ make_edge params op @@ unsafe_to_list args ]
       else
         of_cost ss costs.(arg_idx)
         |> List.concat_map ~f:(fun v ->
@@ -40,17 +40,17 @@ struct
     in
     build_args 0
 
-  let generate_states ss ops cost =
+  let generate_states params ss ops cost =
     if cost = 1 then
       List.filter ops ~f:(fun op -> Op.arity op = 0)
-      |> List.map ~f:(fun op -> make_edge ss op [])
+      |> List.map ~f:(fun op -> make_edge params op [])
     else if cost > 1 then
       let arg_cost = cost - 1 in
       List.filter ops ~f:(fun op -> Op.arity op > 0)
       |> List.concat_map ~f:(fun op ->
              Combinat.compositions ~n:arg_cost ~k:(Op.arity op)
              |> Combinat.to_list
-             |> List.concat_map ~f:(generate_args ss op))
+             |> List.concat_map ~f:(generate_args params ss op))
     else []
 
   exception Done of Op.t Program.t
@@ -61,15 +61,15 @@ struct
     List.iter states ~f:(fun (state, op, args) -> insert ss cost state op args)
 
   let synth params =
-    let ss = Search_state.create params in
-    let bench = Params.get params Lang.bench in
     let max_cost = Params.get params Params.max_cost in
+    let ss = Search_state.create max_cost in
+    let bench = Params.get params Lang.bench in
     let ops = Bench.ops bench and output = Bench.output bench in
 
     let rec fill cost =
       if cost > max_cost then ()
       else
-        let new_states = generate_states ss ops cost in
+        let new_states = generate_states params ss ops cost in
         Validate.validate new_states;
         let new_states = sample_states ss new_states in
         insert_states ss cost new_states;

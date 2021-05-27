@@ -87,13 +87,13 @@ struct
     List.init (Option_array.length a)
       ~f:(Option_array.unsafe_get_some_assuming_some a)
 
-  let make_edge ss op args = (Value.eval (params ss) op args, op, args)
+  let make_edge params op args = (Value.eval params op args, op, args)
 
-  let generate_args ss op costs =
+  let generate_args params ss op costs =
     let arity = Op.arity op in
     let args = Option_array.create ~len:arity in
     let rec build_args arg_idx =
-      if arg_idx >= arity then [ make_edge ss op @@ unsafe_to_list args ]
+      if arg_idx >= arity then [ make_edge params op @@ unsafe_to_list args ]
       else
         of_cost ss costs.(arg_idx)
         |> List.concat_map ~f:(fun v ->
@@ -102,17 +102,17 @@ struct
     in
     build_args 0
 
-  let generate_states ss ops cost =
+  let generate_states params ss ops cost =
     if cost = 1 then
       List.filter ops ~f:(fun op -> Op.arity op = 0)
-      |> List.map ~f:(fun op -> make_edge ss op [])
+      |> List.map ~f:(fun op -> make_edge params op [])
     else if cost > 1 then
       let arg_cost = cost - 1 in
       List.filter ops ~f:(fun op -> Op.arity op > 0)
       |> List.concat_map ~f:(fun op ->
              Combinat.compositions ~n:arg_cost ~k:(Op.arity op)
              |> Combinat.to_list
-             |> List.concat_map ~f:(generate_args ss op))
+             |> List.concat_map ~f:(generate_args params ss op))
     else []
 
   exception Done of Op.t Program.t
@@ -123,25 +123,7 @@ struct
     |> List.dedup_and_sort ~compare:(fun (s, _, _) (s', _, _) ->
            [%compare: Value.t] s s')
 
-  (* let summarize l =
-   * 
-   * let measure_spread ss new_states =
-   *   let min_dists = 
-   *     Dumb_progress.List.map ~name:"sampling" new_states
-   *       ~f:(fun ((new_state, _, _) as x) ->
-   *           List.map (new_states) ~f:(fun (old_state, _, _) ->
-   *               if [%compare.equal:Value.t] new_state old_state then
-   *                 Float.infinity
-   *               else
-   *                 Dist.value old_state new_state)
-   *           |> List.min_elt ~compare:[%compare: float]
-   *           |> Option.value ~default:Float.infinity
-   *         )
-   *   in
-   *   
-   *   Fmt.epr "%s\n" @@ summarize min_dists *)
-
-  let sample_diverse ss new_states =
+  let sample_diverse params ss new_states =
     let states =
       Dumb_progress.List.map ~name:"sampling" new_states
         ~f:(fun ((_, new_state, _, _) as x) ->
@@ -154,27 +136,26 @@ struct
           (min_dist, x))
       |> List.sort ~compare:(fun (d, _) (d', _) -> -[%compare: float] d d')
     in
-    Sample.weighted_random
-      (Params.get (params ss) per_cost)
-      states
+    Sample.weighted_random (Params.get params per_cost) states
       ~weight:(fun (w, _) -> w)
     |> List.map ~f:Tuple.T2.get2
 
-  let sample_naive ss new_states =
+  let sample_naive params new_states =
     let states = List.permute new_states in
-    List.take states (Params.get (params ss) per_cost)
+    List.take states (Params.get params per_cost)
 
-  let sample_states ss =
-    if Params.get (params ss) diversity then sample_diverse ss
-    else sample_naive ss
+  let sample_states params ss =
+    if Params.get params diversity then sample_diverse params ss
+    else sample_naive params
 
-  let insert_states ss cost states =
+  let insert_states params ss cost states =
     List.iter states ~f:(fun (_, state, op, args) ->
         insert ss cost state op args);
-    Params.get (params ss) bank_size := Float.of_int @@ Search_state.length ss
+    Params.get params bank_size := Float.of_int @@ Search_state.length ss
 
   let synth params =
-    let ss = Search_state.create params in
+    let max_cost = Params.get params Params.max_cost in
+    let ss = Search_state.create max_cost in
     let bench = Params.get params bench in
     let ops = Bench.ops bench
     and output = Bench.output bench
@@ -182,7 +163,6 @@ struct
 
     let thresh = Params.get params thresh
     and ball_width = Params.get params ball_width
-    and max_cost = Params.get params Params.max_cost
     and final_value_dist = Params.get params final_value_dist
     and final_program_dist = Params.get params final_program_dist
     and program_cost = Params.get params program_cost
@@ -211,7 +191,9 @@ struct
     let cost = ref 0 in
     (try
        while !cost <= max_cost do
-         let new_states = generate_states ss ops !cost |> dedup_states ss in
+         let new_states =
+           generate_states params ss ops !cost |> dedup_states ss
+         in
 
          let new_states =
            List.map new_states ~f:(fun (s, op, args) ->
@@ -233,9 +215,33 @@ struct
                 @@ Tree_dist.zhang_sasha ~eq:[%compare.equal: Op.t] p solution);
 
          (* Check balls around new states *)
-         List.iter new_states ~f:(fun (d, _, op, args) ->
-             if Float.(d < thresh) then
+         List.iter new_states ~f:(fun (d, st, op, args) ->
+             if Float.(d < thresh) then (
                let center = program_of_op_args_exn ss op args in
+
+               let zd =
+                 Float.of_int
+                 @@ Tree_dist.zhang_sasha ~eq:[%compare.equal: Op.t] center
+                      solution
+               in
+               if Float.(zd < 6.0) then (
+                 Fmt.pr "%a\n" Cad_conc.pprint st;
+                 Fmt.pr "%a\n" Cad_conc.pprint output;
+
+                 Program.eval_parts (Value.eval params) solution
+                 |> List.dedup_and_sort ~compare:[%compare: Value.t]
+                 |> List.iteri ~f:(fun i p ->
+                        Fmt.pr "Sol part %d\n%a\n" i Cad_conc.pprint p);
+                 Program.eval_parts (Value.eval params) center
+                 |> List.dedup_and_sort ~compare:[%compare: Value.t]
+                 |> List.iteri ~f:(fun i p ->
+                        Fmt.pr "Can part %d\n%a\n" i Cad_conc.pprint p);
+
+                 print_s
+                   [%message
+                     (center : Op.t Program.t) (solution : Op.t Program.t)];
+                 Tree_dist.print_zhang_sasha_diff (module Op) center solution);
+
                try
                  Tree_ball.ball (module Op) ops center ball_width @@ fun p ->
                  if [%compare.equal: Value.t] (eval p) output then (
@@ -250,10 +256,10 @@ struct
                with Program.Eval_error e ->
                  raise
                  @@ Program.Eval_error
-                      [%message (center : Op.t Program.t) (e : Sexp.t)]);
+                      [%message (center : Op.t Program.t) (e : Sexp.t)]));
 
-         let new_states = sample_states ss new_states in
-         insert_states ss !cost new_states;
+         let new_states = sample_states params ss new_states in
+         insert_states params ss !cost new_states;
 
          have_parts := Float.of_int @@ List.count solution_parts ~f:(mem ss);
 
