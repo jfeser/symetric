@@ -13,7 +13,7 @@ let bench =
       anon ("bench" %: string)
       |> map ~f:(fun v -> Univ_map.Packed.T (key, Cad_bench.load v))
 
-    let to_json = None
+    let to_json = Option.return @@ fun b -> `String (Cad_bench.filename_exn b)
 
     let init = First init
   end : Param.S

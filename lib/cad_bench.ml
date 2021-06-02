@@ -46,3 +46,5 @@ let output x = x.output
 let ops x = x.ops
 
 let solution_exn x = Option.value_exn x.solution
+
+let filename_exn x = Option.value_exn x.filename
