@@ -18,29 +18,48 @@ let eval_parts oeval p =
 
 let rec size (Apply (_, args)) = 1 + List.sum (module Int) args ~f:size
 
-let rec map ~f (Apply (op, args)) =
+let rec map_preorder ~f (Apply (op, args)) =
   let op' = f op in
-  let args' = List.map args ~f:(map ~f) in
+  let args' = List.map args ~f:(map_preorder ~f) in
   Apply (op', args')
 
-let rec iter ~f (Apply (op, args)) =
-  f op;
-  List.iter args ~f:(iter ~f)
+let rec map_postorder ~f (Apply (op, args)) =
+  let args' = List.map args ~f:(map_postorder ~f) in
+  let op' = f op in
+  Apply (op', args')
 
-let mapi p ~f =
+let map ?(order = `Pre) =
+  match order with `Pre -> map_preorder | `Post -> map_postorder
+
+let rec iter_preorder ~f (Apply (op, args)) =
+  f op;
+  List.iter args ~f:(iter_preorder ~f)
+
+let rec iter_postorder ~f (Apply (op, args)) =
+  List.iter args ~f:(iter_postorder ~f);
+  f op
+
+let iter ?(order = `Pre) =
+  match order with `Pre -> iter_preorder | `Post -> iter_postorder
+
+let mapi ?(order = `Pre) ~f p =
   let idx = ref 0 in
-  map
+  map ~order
     ~f:(fun op ->
       let ret = f !idx op in
       incr idx;
       ret)
     p
 
-let iteri p ~f =
+let annotate ?(order = `Pre) p = mapi ~order p ~f:(fun i op -> (i, op))
+
+let iteri ?(order = `Pre) ~f p =
   let idx = ref 0 in
-  iter p ~f:(fun op ->
+  iter ~order
+    ~f:(fun op ->
       f !idx op;
       incr idx)
+    p
 
 let test_mapi_iteri p =
   let p' = mapi p ~f:(fun i _ -> i) in
