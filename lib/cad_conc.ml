@@ -93,7 +93,7 @@ let fincr r = if Float.is_nan !r then r := 1.0 else r := !r +. 1.0
 exception Eval_error of Cad_op.t
 
 let eval params op args =
-  (* fincr (Params.get params eval_calls); *)
+  fincr (Params.get params eval_calls);
   match (op, args) with
   | Cad_op.Inter, [ s; s' ] ->
       { s with pixels = Bitarray.and_ s.pixels s'.pixels }
@@ -109,6 +109,24 @@ let eval params op args =
   | Replicate repl, [ s ] ->
       init params ~f:(fun pt _ -> replicate_is_set repl s pt)
   | _ -> raise (Eval_error op)
+
+let eval =
+  let module Key = struct
+    module T = struct
+      type nonrec t = Cad_op.t * t list [@@deriving compare, hash, sexp]
+    end
+
+    include T
+    include Comparable.Make (T)
+  end in
+  let tbl = Hashtbl.create (module Key) in
+  fun params op args ->
+    match Hashtbl.find tbl (op, args) with
+    | Some v -> v
+    | None ->
+        let v = eval params op args in
+        Hashtbl.set tbl ~key:(op, args) ~data:v;
+        v
 
 let pprint fmt c =
   for y = c.ylen - 1 downto 0 do

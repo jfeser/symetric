@@ -20,6 +20,8 @@ end
 include T
 include Comparator.Make (T)
 
+type type_ = Cad_type.t
+
 let pp fmt = function
   | Union -> Fmt.pf fmt "or"
   | Inter -> Fmt.pf fmt "and"

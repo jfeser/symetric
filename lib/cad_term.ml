@@ -1,11 +1,6 @@
 module Op = Cad_op
 module Type = Cad_type
-
-module Value = Term_value.Make (struct
-  type type_ = Type.t
-
-  include Op
-end)
+module Value = Term_value.Make (Op)
 
 module Bench = struct
   include Cad_bench

@@ -18,6 +18,8 @@ let eval_parts oeval p =
 
 let rec size (Apply (_, args)) = 1 + List.sum (module Int) args ~f:size
 
+let rec ops (Apply (op, args)) = op :: List.concat_map args ~f:ops
+
 let rec map_preorder ~f (Apply (op, args)) =
   let op' = f op in
   let args' = List.map args ~f:(map_preorder ~f) in

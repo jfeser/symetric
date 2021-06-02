@@ -7,7 +7,7 @@ module type S = sig
     include Comparator.S with type t := t
   end
 
-  module Op : Op_intf.S with type type_ := Type.t
+  module Op : Op_intf.S with type type_ = Type.t
 
   module Value : Value_intf.S with type op := Op.t
 

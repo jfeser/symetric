@@ -65,10 +65,10 @@ module Norm_zs_dist = struct
     |> Float.of_int
 end
 
-module Norm_tree_ball_dist = struct
-  let program (p : Cad.Op.t Program.t) (p' : Cad.Op.t Program.t) =
-    Tree_ball.dist ~compare:[%compare: Cad.Op.t] (norm p) (norm p')
-end
+(* module Norm_tree_ball_dist = struct
+ *   let program (p : Cad.Op.t Program.t) (p' : Cad.Op.t Program.t) =
+ *     Tree_ball.dist ~compare:[%compare: Cad.Op.t] (norm p) (norm p')
+ * end *)
 
 module Jaccard_edge_dist = struct
   let value c c' = Cad.Value.jaccard (Cad.Value.edges c) (Cad.Value.edges c')

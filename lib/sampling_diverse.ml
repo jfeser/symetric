@@ -68,8 +68,8 @@ include struct
   let value_dist =
     Spec.add spec @@ Param.create @@ float_list ~name:"value-dist" ()
 
-  let program_ball_dist =
-    Spec.add spec @@ Param.create @@ float_list ~name:"program-ball-dist" ()
+  (* let program_ball_dist =
+   *   Spec.add spec @@ Param.create @@ float_list ~name:"program-ball-dist" () *)
 
   let program_zs_dist =
     Spec.add spec @@ Param.create @@ float_list ~name:"program-zs-dist" ()
@@ -170,7 +170,7 @@ struct
     and have_parts = Params.get params have_parts
     and total_parts = Params.get params total_parts
     and value_dist = Params.get params value_dist
-    and program_ball_dist = Params.get params program_ball_dist
+    (* and program_ball_dist = Params.get params program_ball_dist *)
     and program_zs_dist = Params.get params program_zs_dist in
 
     let solution_parts =
@@ -179,15 +179,7 @@ struct
     in
     total_parts := Float.of_int @@ List.length solution_parts;
 
-    let eval =
-      let module P = Program.Make (Op) in
-      P.eval_memoized (Value.eval params)
-    in
-    let eval p =
-      try eval p
-      with Program.Eval_error e ->
-        raise @@ Program.Eval_error [%message (p : Op.t Program.t) (e : Sexp.t)]
-    in
+    let eval = Program.eval (Value.eval params) in
     let cost = ref 0 in
     (try
        while !cost <= max_cost do
@@ -203,11 +195,10 @@ struct
          Queue.enqueue value_dist
          @@ List.map new_states ~f:(fun (d, _, _, _) -> d);
 
-         Queue.enqueue program_ball_dist
-         @@ List.map new_states ~f:(fun (_, _, op, args) ->
-                let p = program_of_op_args_exn ss op args in
-                Tree_ball.dist ~compare:[%compare: Op.t] p solution);
-
+         (* Queue.enqueue program_ball_dist
+          * @@ List.map new_states ~f:(fun (_, _, op, args) ->
+          *        let p = program_of_op_args_exn ss op args in
+          *        Tree_ball.dist ~compare:[%compare: Op.t] p solution); *)
          Queue.enqueue program_zs_dist
          @@ List.map new_states ~f:(fun (_, _, op, args) ->
                 let p = program_of_op_args_exn ss op args in
@@ -243,7 +234,10 @@ struct
                  Tree_dist.print_zhang_sasha_diff (module Op) center solution);
 
                try
-                 Tree_ball.ball (module Op) ops center ball_width @@ fun p ->
+                 Tree_ball.Rename_insert_delete.ball
+                   (module Op)
+                   ops center ball_width
+                 @@ fun p ->
                  if [%compare.equal: Value.t] (eval p) output then (
                    final_value_dist := d;
                    final_program_dist :=
