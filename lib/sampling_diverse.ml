@@ -206,33 +206,32 @@ struct
                 @@ Tree_dist.zhang_sasha ~eq:[%compare.equal: Op.t] p solution);
 
          (* Check balls around new states *)
-         List.iter new_states ~f:(fun (d, st, op, args) ->
-             if Float.(d < thresh) then (
+         List.iter new_states ~f:(fun (d, _, op, args) ->
+             if Float.(d < thresh) then
                let center = program_of_op_args_exn ss op args in
 
-               let zd =
-                 Float.of_int
-                 @@ Tree_dist.zhang_sasha ~eq:[%compare.equal: Op.t] center
-                      solution
-               in
-               if Float.(zd < 6.0) then (
-                 Fmt.pr "%a\n" Cad_conc.pprint st;
-                 Fmt.pr "%a\n" Cad_conc.pprint output;
-
-                 Program.eval_parts (Value.eval params) solution
-                 |> List.dedup_and_sort ~compare:[%compare: Value.t]
-                 |> List.iteri ~f:(fun i p ->
-                        Fmt.pr "Sol part %d\n%a\n" i Cad_conc.pprint p);
-                 Program.eval_parts (Value.eval params) center
-                 |> List.dedup_and_sort ~compare:[%compare: Value.t]
-                 |> List.iteri ~f:(fun i p ->
-                        Fmt.pr "Can part %d\n%a\n" i Cad_conc.pprint p);
-
-                 print_s
-                   [%message
-                     (center : Op.t Program.t) (solution : Op.t Program.t)];
-                 Tree_dist.print_zhang_sasha_diff (module Op) center solution);
-
+               (* let zd =
+                *   Float.of_int
+                *   @@ Tree_dist.zhang_sasha ~eq:[%compare.equal: Op.t] center
+                *        solution
+                * in
+                * if Float.(zd < 6.0) then (
+                *   Fmt.pr "%a\n" Cad_conc.pprint st;
+                *   Fmt.pr "%a\n" Cad_conc.pprint output;
+                * 
+                *   Program.eval_parts (Value.eval params) solution
+                *   |> List.dedup_and_sort ~compare:[%compare: Value.t]
+                *   |> List.iteri ~f:(fun i p ->
+                *          Fmt.pr "Sol part %d\n%a\n" i Cad_conc.pprint p);
+                *   Program.eval_parts (Value.eval params) center
+                *   |> List.dedup_and_sort ~compare:[%compare: Value.t]
+                *   |> List.iteri ~f:(fun i p ->
+                *          Fmt.pr "Can part %d\n%a\n" i Cad_conc.pprint p);
+                * 
+                *   print_s
+                *     [%message
+                *       (center : Op.t Program.t) (solution : Op.t Program.t)];
+                *   Tree_dist.print_zhang_sasha_diff (module Op) center solution); *)
                try
                  Tree_ball.Rename_insert_delete.ball
                    (module Op)
@@ -250,7 +249,7 @@ struct
                with Program.Eval_error e ->
                  raise
                  @@ Program.Eval_error
-                      [%message (center : Op.t Program.t) (e : Sexp.t)]));
+                      [%message (center : Op.t Program.t) (e : Sexp.t)]);
 
          let new_states = sample_states params ss new_states in
          insert_states params ss !cost new_states;
