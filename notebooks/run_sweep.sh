@@ -10,10 +10,12 @@ WORKDIR=/home/feser/work/ocaml-workspace/staged-synth/
 BUILD_DIR="$WORKDIR/../_build/default/staged-synth/"
 OUT_FILE="$WORKDIR/notebooks/${NAME}_results.json"
 EXE=bin/lazy_cegis.exe
-FULL_EXE=$BUILD_DIR/$EXE
 
 cd $WORKDIR || exit
 dune build --profile=release "$EXE"
+
+FULL_EXE=/tmp/$(basename $EXE)
+cp -f $BUILD_DIR/$EXE "$FULL_EXE"
 
 find $WORKDIR/bench/cad2/random_repl_size_11/ -name "*.sexp" | sort | head -n30 > $WORKDIR/jobs
 
