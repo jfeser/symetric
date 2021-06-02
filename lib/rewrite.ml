@@ -63,57 +63,71 @@ module Make (Lang_op : Op_intf.S) = struct
           raise_s [%message "unexpected arguments" (op : Op.t) (args : t list)]
   end
 
-  let sample ops n p =
-    let ops_by_arity =
-      Hashtbl.of_alist_multi (module Int)
-      @@ List.map ops ~f:(fun op -> (Lang_op.arity op, op))
+  type ctx = {
+    ops : Lang_op.t list;
+    ops_by_arity : Lang_op.t list Hashtbl.M(Int).t;
+  }
+
+  let sample_id v = Random.int (Program.size v)
+
+  let sample_op_arity ctx arity =
+    Hashtbl.find_exn ctx.ops_by_arity arity |> List.random_element_exn
+
+  let sample_op ctx = List.random_element_exn ctx.ops
+
+  let sample_rename ctx v =
+    let node = sample_id v in
+    let (Apply (old_op, _)) = Option.value_exn (Value.nth v node) in
+    let arity = Lang_op.arity old_op in
+    Op.Rename { node; op = sample_op_arity ctx arity }
+
+  let sample_insert ctx v =
+    let new_op = sample_op ctx in
+    let children = List.init (Lang_op.arity new_op) ~f:(fun _ -> sample_id v) in
+    Op.Insert { node = sample_id v; op = new_op; children }
+
+  let sample_delete v =
+    let rec nodes_with_children (Program.Apply (op, args)) =
+      if List.is_empty args then []
+      else (op, args) :: List.concat_map args ~f:nodes_with_children
     in
-    let sample_id v = Random.int (Program.size v) in
-    let sample_op_arity arity =
-      Hashtbl.find_exn ops_by_arity arity |> List.random_element_exn
+    nodes_with_children @@ Program.annotate v
+    |> List.random_element
+    |> Option.map ~f:(fun ((node, _), args) ->
+           let child = Random.int @@ List.length args in
+           Op.Delete { node; child })
+
+  let rec sample_op ctx v =
+    let op_kind = List.random_element_exn [ `Rename; `Insert; `Delete ] in
+    let op =
+      match op_kind with
+      | `Rename -> Some (sample_rename ctx v)
+      | `Insert -> Some (sample_insert ctx v)
+      | `Delete -> sample_delete v
     in
-    let sample_op () = List.random_element_exn ops in
-    let sample_rename v =
-      let node = sample_id v in
-      let (Apply (old_op, _)) = Option.value_exn (Value.nth v node) in
-      let arity = Lang_op.arity old_op in
-      Op.Rename { node; op = sample_op_arity arity }
-    in
-    let sample_insert v =
-      let new_op = sample_op () in
-      let children =
-        List.init (Lang_op.arity new_op) ~f:(fun _ -> sample_id v)
-      in
-      Op.Insert { node = sample_id v; op = new_op; children }
-    in
-    let sample_delete v =
-      let rec nodes_with_children (Program.Apply (op, args)) =
-        if List.is_empty args then []
-        else (op, args) :: List.concat_map args ~f:nodes_with_children
-      in
-      nodes_with_children @@ Program.annotate v
-      |> List.random_element
-      |> Option.map ~f:(fun ((node, _), args) ->
-             let child = Random.int @@ List.length args in
-             Op.Delete { node; child })
-    in
-    let rec sample_op v =
-      let op_kind = List.random_element_exn [ `Rename; `Insert; `Delete ] in
-      let op =
-        match op_kind with
-        | `Rename -> Some (sample_rename v)
-        | `Insert -> Some (sample_insert v)
-        | `Delete -> sample_delete v
-      in
-      match op with Some op -> op | None -> sample_op v
-    in
-    let rec sample_program_and_value n v =
-      if n <= 1 then (P.apply (Op.Id v), v)
-      else
-        let p, v = sample_program_and_value (n - 1) v in
-        let op = sample_op v in
-        let v' = Value.eval () op [ v ] in
-        (Apply (op, [ p ]), v')
-    in
-    sample_program_and_value n p
+    match op with Some op -> op | None -> sample_op ctx v
+
+  let rec sample_program_and_value ctx n v =
+    if n <= 1 then (P.apply (Op.Id v), v)
+    else
+      let p, v = sample_program_and_value ctx (n - 1) v in
+      let op = sample_op ctx v in
+      let v' = Value.eval () op [ v ] in
+      (Apply (op, [ p ]), v')
+
+  let mk_ctx ops =
+    {
+      ops;
+      ops_by_arity =
+        Hashtbl.of_alist_multi (module Int)
+        @@ List.map ops ~f:(fun op -> (Lang_op.arity op, op));
+    }
+
+  let sample ops n v =
+    let ctx = mk_ctx ops in
+    sample_program_and_value ctx n v
+
+  let sample_single ops =
+    let ctx = mk_ctx ops in
+    fun v -> sample_op ctx v
 end
