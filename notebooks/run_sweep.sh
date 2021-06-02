@@ -27,7 +27,7 @@ parallel --eta --joblog "$WORKDIR/notebooks/${NAME}_joblog" --timeout 600 --cols
          >> "$OUT_FILE"
 
 parallel --eta --joblog "$WORKDIR/notebooks/${NAME}_joblog" --timeout 600 --colsep ' ' \
-         "$FULL_EXE cad-baseline -max-cost 11 -print-json true {4} 2> /dev/null" \
+         "$FULL_EXE cad-baseline -max-cost 11 -print-json true {1} 2> /dev/null" \
          :::: $WORKDIR/jobs \
          >> "$OUT_FILE"
 
