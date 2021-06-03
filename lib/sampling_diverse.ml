@@ -68,6 +68,9 @@ include struct
   let value_dist =
     Spec.add spec @@ Param.create @@ float_list ~name:"value-dist" ()
 
+  let max_cost =
+    Spec.add spec @@ Param.int ~name:"max-cost" ~doc:" max search cost" ()
+
   (* let program_ball_dist =
    *   Spec.add spec @@ Param.create @@ float_list ~name:"program-ball-dist" () *)
 
@@ -154,7 +157,7 @@ struct
     Params.get params bank_size := Float.of_int @@ Search_state.length ss
 
   let synth params =
-    let max_cost = Params.get params Params.max_cost in
+    let max_cost = Params.get params max_cost in
     let ss = Search_state.create max_cost in
     let bench = Params.get params bench in
     let ops = Bench.ops bench

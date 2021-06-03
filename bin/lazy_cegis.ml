@@ -99,6 +99,26 @@ let cad_sample_diverse_cli =
       let params = Dumb_params.Spec.cli spec in
       run params]
 
+let cad_sample_naive_ball_cli =
+  let module Lang = Cad in
+  let module Synth = Sampling_naive_ball.Make (Lang) (Dist) in
+  let run params () =
+    Random.set_state @@ Random.State.make [| Params.(get params seed) |];
+    let start = Time.now () in
+    (try Synth.synth params with Break -> ());
+    let end_ = Time.now () in
+    Params.(get params runtime) := Time.diff end_ start;
+    if Params.(get params print_json) then print_json @@ Dumb_params.json params
+  in
+  let spec =
+    Dumb_params.Spec.union [ Lang.spec; Params.spec; Sampling_naive_ball.spec ]
+  in
+  let open Command.Let_syntax in
+  Command.basic ~summary:""
+    [%map_open
+      let params = Dumb_params.Spec.cli spec in
+      run params]
+
 let cad_baseline_cli =
   let module Lang = Cad in
   let module Validate = struct
@@ -162,6 +182,7 @@ let () =
   Command.group ~summary:"Run lazy CEGIS."
     [
       ("cad-sample-naive", cad_sample_naive_cli);
+      ("cad-sample-naive-ball", cad_sample_naive_ball_cli);
       ("cad-sample-diverse", cad_sample_diverse_cli);
       ("cad-baseline", cad_baseline_cli);
       ("cad-baseline-term", cad_baseline_term_cli);

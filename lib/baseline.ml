@@ -4,6 +4,9 @@ include struct
   let spec = Spec.create ()
 
   let synth = Spec.add spec @@ Param.const_str ~name:"synth" "baseline"
+
+  let max_cost =
+    Spec.add spec @@ Param.int ~name:"max-cost" ~doc:" max search cost" ()
 end
 
 module Make
@@ -61,7 +64,7 @@ struct
     List.iter states ~f:(fun (state, op, args) -> insert ss cost state op args)
 
   let synth params =
-    let max_cost = Params.get params Params.max_cost in
+    let max_cost = Params.get params max_cost in
     let ss = Search_state.create max_cost in
     let bench = Params.get params Lang.bench in
     let ops = Bench.ops bench and output = Bench.output bench in
