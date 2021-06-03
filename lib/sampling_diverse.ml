@@ -236,16 +236,19 @@ struct
                  Tree_ball.Rename_insert_delete.ball
                    (module Op)
                    ops center ball_width
-                 @@ fun p ->
-                 if [%compare.equal: Value.t] (eval p) output then (
-                   final_value_dist := d;
-                   final_program_dist :=
-                     Float.of_int
-                     @@ Tree_dist.zhang_sasha ~eq:[%compare.equal: Op.t] center
-                          p;
-                   program_cost := Float.of_int !cost;
-                   found_program := true;
-                   raise (Done p))
+                   (fun p ->
+                     let v = eval p in
+                     if [%compare.equal: Value.t] v output then (
+                       Fmt.epr "%a\n%a\n" Cad_conc.pprint v Cad_conc.pprint
+                         output;
+                       final_value_dist := d;
+                       final_program_dist :=
+                         Float.of_int
+                         @@ Tree_dist.zhang_sasha ~eq:[%compare.equal: Op.t]
+                              center p;
+                       program_cost := Float.of_int !cost;
+                       found_program := true;
+                       raise (Done p)))
                with Program.Eval_error e ->
                  raise
                  @@ Program.Eval_error

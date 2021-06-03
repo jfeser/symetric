@@ -5,6 +5,9 @@ let spec = P.Spec.create ()
 
 let eval_calls = P.Spec.add spec @@ P.Param.float_ref ~name:"eval-calls" ()
 
+let raw_eval_calls =
+  P.Spec.add spec @@ P.Param.float_ref ~name:"raw-eval-calls" ()
+
 let idx b v =
   let x = Float.iround_down_exn v.Vector2.x and y = Float.iround_down_exn v.y in
   let stride = b.ylen in
@@ -121,6 +124,7 @@ let eval =
   end in
   let tbl = Hashtbl.create (module Key) in
   fun params op args ->
+    fincr (Params.get params raw_eval_calls);
     match Hashtbl.find tbl (op, args) with
     | Some v -> v
     | None ->
