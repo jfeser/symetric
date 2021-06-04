@@ -10,11 +10,11 @@ let raw_eval_calls =
 
 let idx b v =
   let x = Float.iround_down_exn v.Vector2.x and y = Float.iround_down_exn v.y in
-  let stride = b.ylen in
+  let stride = ylen b in
   (x * stride) + y
 
 let iidx b x y =
-  let stride = b.ylen in
+  let stride = ylen b in
   (x * stride) + y
 
 let pt' ~ylen:stride idx =
@@ -24,11 +24,11 @@ let pt' ~ylen:stride idx =
       y = (Float.of_int @@ (idx mod stride)) +. 0.5;
     }
 
-let pt b idx = pt' ~ylen:b.ylen idx
+let pt b idx = pt' ~ylen:(ylen b) idx
 
-let getp b v = Bitarray.get b.pixels @@ idx b v
+let getp b v = Bitarray.get (pixels b) @@ idx b v
 
-let geti b = Bitarray.get b.pixels
+let geti b = Bitarray.get (pixels b)
 
 let replicate_is_set repl scene pt =
   let trans = Vector2.O.(-repl.Cad_op.v) in
@@ -37,9 +37,9 @@ let replicate_is_set repl scene pt =
     else
       Float.O.(
         pt.Vector2.x >= 0.0
-        && pt.x < of_int scene.xlen
+        && pt.x < of_int (xlen scene)
         && pt.y >= 0.0
-        && pt.y < of_int scene.ylen)
+        && pt.y < of_int (ylen scene))
       && getp scene pt
       || loop (count - 1) Vector2.O.(pt + trans)
   in
@@ -48,48 +48,45 @@ let replicate_is_set repl scene pt =
 let init params ~f =
   let bench = P.get params Cad_params.bench in
   let xlen = bench.Cad_bench.input.xmax and ylen = bench.Cad_bench.input.ymax in
-  {
-    xlen;
-    ylen;
-    pixels = Bitarray.init (xlen * ylen) ~f:(fun i -> f (pt' ~ylen i) i);
-  }
+  create ~xlen ~ylen
+  @@ Bitarray.init (xlen * ylen) ~f:(fun i -> f (pt' ~ylen i) i)
 
 let iinit params ~f =
   let bench = P.get params Cad_params.bench in
   let xlen = bench.Cad_bench.input.xmax and ylen = bench.Cad_bench.input.ymax in
-  {
-    xlen;
-    ylen;
-    pixels = Bitarray.init (xlen * ylen) ~f:(fun i -> f (i / ylen) (i mod ylen));
-  }
+  create ~xlen ~ylen
+  @@ Bitarray.init (xlen * ylen) ~f:(fun i -> f (i / ylen) (i mod ylen))
 
-let hamming c c' = Bitarray.hamming_weight (Bitarray.xor c.pixels c'.pixels)
+let hamming c c' =
+  Bitarray.hamming_weight @@ Bitarray.xor (pixels c) (pixels c')
 
 let jaccard c c' =
   let h = hamming c c' in
-  let l = Bitarray.length c.pixels in
+  let l = Bitarray.length (pixels c) in
   Float.(of_int h / of_int l)
 
 let edges c =
   let to_int x = if x then 1 else 0 in
   let above i =
-    let i' = i - c.ylen in
-    if i' >= 0 then to_int @@ Bitarray.get c.pixels i' else 0
+    let i' = i - ylen c in
+    if i' >= 0 then to_int @@ Bitarray.get (pixels c) i' else 0
   and below i =
-    let i' = i + c.ylen in
-    if i' < Bitarray.length c.pixels then to_int @@ Bitarray.get c.pixels i'
+    let i' = i + ylen c in
+    if i' < Bitarray.length (pixels c) then to_int @@ Bitarray.get (pixels c) i'
     else 0
   and left i =
-    if i mod c.ylen = 0 then 0 else to_int @@ Bitarray.get c.pixels (i - 1)
+    if i mod ylen c = 0 then 0 else to_int @@ Bitarray.get (pixels c) (i - 1)
   and right i =
-    if (i + 1) mod c.ylen = 0 then 0 else to_int @@ Bitarray.get c.pixels (i + 1)
+    if (i + 1) mod ylen c = 0 then 0
+    else to_int @@ Bitarray.get (pixels c) (i + 1)
   in
-  {
-    c with
-    pixels =
-      Bitarray.init (c.xlen * c.ylen) ~f:(fun i ->
-          Bitarray.get c.pixels i && above i + below i + left i + right i < 4);
-  }
+  let pixels =
+    Bitarray.init
+      (xlen c * ylen c)
+      ~f:(fun i ->
+        Bitarray.get (pixels c) i && above i + below i + left i + right i < 4)
+  in
+  copy c ~pixels
 
 let fincr r = if Float.is_nan !r then r := 1.0 else r := !r +. 1.0
 
@@ -99,8 +96,8 @@ let eval params op args =
   fincr (Params.get params eval_calls);
   match (op, args) with
   | Cad_op.Inter, [ s; s' ] ->
-      { s with pixels = Bitarray.and_ s.pixels s'.pixels }
-  | Union, [ s; s' ] -> { s with pixels = Bitarray.or_ s.pixels s'.pixels }
+      copy s ~pixels:(Bitarray.and_ (pixels s) (pixels s'))
+  | Union, [ s; s' ] -> copy s ~pixels:(Bitarray.or_ (pixels s) (pixels s'))
   | Circle c, [] ->
       init params ~f:(fun pt _ ->
           Float.(Vector2.(l2_dist c.center pt) <= c.radius))
@@ -133,16 +130,15 @@ let eval =
         v
 
 let pprint fmt c =
-  for y = c.ylen - 1 downto 0 do
-    for x = 0 to c.xlen - 1 do
+  for y = ylen c - 1 downto 0 do
+    for x = 0 to xlen c - 1 do
       if getp c { x = Float.of_int x; y = Float.of_int y } then Fmt.pf fmt "█"
       else Fmt.pf fmt "."
     done;
     Fmt.pf fmt "\n"
   done
 
-let dummy =
-  { xlen = -1; ylen = -1; pixels = Bitarray.init 0 ~f:(fun _ -> false) }
+let dummy = create ~xlen:(-1) ~ylen:(-1) @@ Bitarray.init 0 ~f:(fun _ -> false)
 
 let dummy_params ~xlen ~ylen =
   P.(
@@ -158,6 +154,8 @@ let dummy_params ~xlen ~ylen =
                 solution = None;
                 filename = None;
               } );
+        P (eval_calls, ref Float.nan);
+        P (raw_eval_calls, ref Float.nan);
       ])
 
 module Prog = struct

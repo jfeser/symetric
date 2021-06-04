@@ -27,12 +27,9 @@ let points g =
 
 let of_serial ?filename (x : Serial.t) =
   let output =
-    Cad_conc0.
-      {
-        xlen = x.input.xmax;
-        ylen = x.input.ymax;
-        pixels = Bitarray.of_list @@ List.map ~f:(fun x -> x > 0) x.output;
-      }
+    Cad_conc0.create ~xlen:x.input.xmax ~ylen:x.input.ymax
+    @@ Bitarray.of_list
+    @@ List.map ~f:(fun x -> x > 0) x.output
   in
   { ops = x.ops; input = x.input; output; solution = x.solution; filename }
 
