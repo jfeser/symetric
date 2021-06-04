@@ -1,7 +1,7 @@
 module type S = sig
   type type_
 
-  type t [@@deriving compare, hash, sexp]
+  type t [@@deriving compare, equal, hash, sexp]
 
   include Comparator.S with type t := t
 

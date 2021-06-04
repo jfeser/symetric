@@ -123,11 +123,11 @@ module Make (Lang_op : Op_intf.S) = struct
         @@ List.map ops ~f:(fun op -> (Lang_op.arity op, op));
     }
 
-  let sample ops n v =
+  let sample ops =
     let ctx = mk_ctx ops in
-    sample_program_and_value ctx n v
+    sample_program_and_value ctx
 
   let sample_single ops =
     let ctx = mk_ctx ops in
-    fun v -> sample_op ctx v
+    sample_op ctx
 end

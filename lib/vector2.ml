@@ -2,7 +2,8 @@ open! Core
 open Base_quickcheck
 
 module T = struct
-  type t = { x : float; y : float } [@@deriving compare, hash, quickcheck, sexp]
+  type t = { x : float; y : float }
+  [@@deriving compare, equal, hash, quickcheck, sexp]
 end
 
 include T

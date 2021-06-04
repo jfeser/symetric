@@ -178,7 +178,7 @@ struct
         ops center ball_width
         (fun p ->
           let v = Program.eval (Value.eval params) p in
-          if [%compare.equal: Value.t] v output then f p)
+          if Value.equal v output then f p)
     with Program.Eval_error e ->
       raise
       @@ Program.Eval_error [%message (center : Op.t Program.t) (e : Sexp.t)]

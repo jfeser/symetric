@@ -1,11 +1,11 @@
 type circle = { id : int; center : Vector2.t; radius : float }
-[@@deriving compare, hash, sexp]
+[@@deriving compare, equal, hash, sexp]
 
 type rect = { id : int; lo_left : Vector2.t; hi_right : Vector2.t }
-[@@deriving compare, hash, sexp]
+[@@deriving compare, equal, hash, sexp]
 
 type replicate = { id : int; count : int; v : Vector2.t }
-[@@deriving compare, hash, sexp]
+[@@deriving compare, equal, hash, sexp]
 
 module T = struct
   type t =
@@ -14,7 +14,7 @@ module T = struct
     | Circle of circle
     | Rect of rect
     | Replicate of replicate
-  [@@deriving compare, hash, sexp]
+  [@@deriving compare, equal, hash, sexp]
 end
 
 include T

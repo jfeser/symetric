@@ -1,6 +1,6 @@
 module Make (Op : Op_intf.S) = struct
   module T = struct
-    type t = Op.t Program.t [@@deriving compare, hash, sexp]
+    type t = Op.t Program.t [@@deriving compare, equal, hash, sexp]
   end
 
   include T

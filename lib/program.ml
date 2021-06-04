@@ -1,6 +1,6 @@
 exception Eval_error of Sexp.t [@@deriving sexp]
 
-type 'o t = Apply of 'o * 'o t list [@@deriving compare, hash, sexp]
+type 'o t = Apply of 'o * 'o t list [@@deriving compare, equal, hash, sexp]
 
 let apply ?(args = []) op = Apply (op, args)
 
