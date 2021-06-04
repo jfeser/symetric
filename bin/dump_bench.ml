@@ -119,7 +119,7 @@ let has_empty_inter params p =
     let args = List.map ~f:eval args in
     let v = Cad_conc.eval params op args in
     if
-      [%compare.equal: Cad_op.t] op Inter
+      [%compare.equal: Cad_op.t] op inter
       && pixels (Params.get params Cad_params.bench).input v
          |> List.for_all ~f:(fun x -> not x)
     then raise Empty_inter
@@ -152,7 +152,7 @@ let non_trivial params p =
   let v' =
     nilops p
     |> List.map ~f:(fun op -> Program.Apply (op, []))
-    |> List.reduce_exn ~f:(fun p p' -> Program.Apply (Union, [ p; p' ]))
+    |> List.reduce_exn ~f:(fun p p' -> Program.Apply (union, [ p; p' ]))
     |> Cad_conc.eval_program params
   in
   not ([%compare.equal: Cad_conc.t] v v')
@@ -173,44 +173,37 @@ let take_while_with_state ~init ~f s =
       match f st x with Some st' -> Yield (x, st') | None -> Done)
 
 let random_op ~xmax ~ymax ~id = function
-  | `Union -> Union
-  | `Inter -> Inter
+  | `Union -> union
+  | `Inter -> inter
   | `Repl ->
-      Replicate
-        {
-          id;
-          count = Random.int_incl 1 4;
-          v =
-            List.random_element_exn
-              [
-                Vector2.{ x = 2.0; y = 2.0 };
-                { x = -2.0; y = 2.0 };
-                { x = 2.0; y = -2.0 };
-                { x = -2.0; y = -2.0 };
-              ];
-        }
+      let v =
+        List.random_element_exn
+          [
+            Vector2.{ x = 2.0; y = 2.0 };
+            { x = -2.0; y = 2.0 };
+            { x = 2.0; y = -2.0 };
+            { x = -2.0; y = -2.0 };
+          ]
+      in
+      replicate ~id ~count:(Random.int_incl 1 4) ~v
   | `Circle ->
-      Circle
-        {
-          id;
-          center =
-            {
-              x = Random.int xmax |> Float.of_int;
-              y = Random.int ymax |> Float.of_int;
-            };
-          radius = Random.int (Int.min xmax ymax / 2) |> Float.of_int;
-        }
+      let center =
+        Vector2.
+          {
+            x = Random.int xmax |> Float.of_int;
+            y = Random.int ymax |> Float.of_int;
+          }
+      in
+      let radius = Random.int (Int.min xmax ymax / 2) |> Float.of_int in
+      circle ~id ~center ~radius
   | `Rect ->
       let lo_x = random_int 0 xmax in
       let lo_y = random_int 0 ymax in
       let hi_x = random_int lo_x xmax in
       let hi_y = random_int lo_y ymax in
-      Rect
-        {
-          id;
-          lo_left = { x = Float.of_int lo_x; y = Float.of_int lo_y };
-          hi_right = { x = Float.of_int hi_x; y = Float.of_int hi_y };
-        }
+      rect ~id
+        ~lo_left:{ x = Float.of_int lo_x; y = Float.of_int lo_y }
+        ~hi_right:{ x = Float.of_int hi_x; y = Float.of_int hi_y }
 
 (** 
 @param xmax canvas x length
@@ -238,10 +231,14 @@ let random ~xmax ~ymax ~size ~n ~ops k =
     let open Option.Let_syntax in
     let ops = List.mapi ops ~f:(fun id op -> random_op ~xmax ~ymax ~id op) in
     let nilops =
-      List.filter ops ~f:(function Circle _ | Rect _ -> true | _ -> false)
-    and unops = List.filter ops ~f:(function Replicate _ -> true | _ -> false)
+      List.filter ops ~f:(fun x ->
+          match value x with Circle _ | Rect _ -> true | _ -> false)
+    and unops =
+      List.filter ops ~f:(fun x ->
+          match value x with Replicate _ -> true | _ -> false)
     and binops =
-      List.filter ops ~f:(function Union | Inter -> true | _ -> false)
+      List.filter ops ~f:(fun x ->
+          match value x with Union | Inter -> true | _ -> false)
     in
     let rec random_unop op size =
       let%map p = random_tree (size - 1) in
@@ -318,37 +315,6 @@ let circles_and_rects_unsat =
   let ops = [ Inter; Union ] @ circs in
   (prog, ops)
 
-let crosses n =
-  let shapes =
-    List.init n ~f:(fun i ->
-        let j = Float.of_int i in
-        let vert =
-          Rect
-            {
-              id = i;
-              lo_left = { x = j +. 1.0; y = 0.0 };
-              hi_right = { x = j +. 3.0; y = 4.0 };
-            }
-        in
-        let horiz =
-          Rect
-            {
-              id = n + i;
-              lo_left = { x = j; y = 1.0 };
-              hi_right = { x = j +. 4.0; y = 3.0 };
-            }
-        in
-        [ vert; horiz ])
-    |> List.concat
-  in
-  let prog =
-    let lhs = List.take shapes 2 in
-    let rhs = List.take (List.rev shapes) 2 in
-    union_many @@ List.map (lhs @ rhs) ~f:Program.apply
-  in
-  let ops = Union :: shapes in
-  (sprintf "crosses_%d" n, to_sexp ~xmax:(4 * n) ~ymax:4 (prog, ops))
-
 let dumps ~dir seq =
   Unix.mkdir_p dir;
   Sequence.iter seq ~f:(fun (fn, sexp) ->
@@ -384,14 +350,6 @@ let random_cli =
         Random.init seed;
         random ~xmax ~ymax ~size ~ops ~n @@ dumps ~dir]
 
-let crosses_cli =
-  let open Command.Let_syntax in
-  Command.basic ~summary:"Crosses benchmark"
-    [%map_open
-      let n = anon ("n" %: int) in
-      fun () -> crosses n |> Sequence.singleton |> dumps ~dir:"bench/cad2"]
-
 let () =
-  Command.group ~summary:"Dump benchmarks"
-    [ ("crosses", crosses_cli); ("random", random_cli) ]
+  Command.group ~summary:"Dump benchmarks" [ ("random", random_cli) ]
   |> Command.run

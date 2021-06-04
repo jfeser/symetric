@@ -7,38 +7,61 @@ type rect = { id : int; lo_left : Vector2.t; hi_right : Vector2.t }
 type replicate = { id : int; count : int; v : Vector2.t }
 [@@deriving compare, equal, hash, sexp]
 
-module T = struct
-  type t =
-    | Union
-    | Inter
-    | Circle of circle
-    | Rect of rect
-    | Replicate of replicate
-  [@@deriving compare, equal, hash, sexp]
-end
+type op =
+  | Union
+  | Inter
+  | Circle of circle
+  | Rect of rect
+  | Replicate of replicate
+[@@deriving compare, equal, hash, sexp]
+
+module T = Hash_cached.Make (struct
+  type t = op [@@deriving compare, equal, hash, sexp]
+end)
 
 include T
 include Comparator.Make (T)
 
 type type_ = Cad_type.t
 
-let pp fmt = function
-  | Union -> Fmt.pf fmt "or"
-  | Inter -> Fmt.pf fmt "and"
-  | Circle x -> Fmt.pf fmt "circle%d" x.id
-  | Rect x -> Fmt.pf fmt "rect%d" x.id
-  | Replicate x -> Fmt.pf fmt "replicate%d" x.id
+let match_ ~union ~inter ~circle ~rect ~replicate x =
+  match value x with
+  | Union -> union ()
+  | Inter -> inter ()
+  | Circle x -> circle x
+  | Rect x -> rect x
+  | Replicate x -> replicate x
+
+let pp fmt =
+  match_
+    ~union:(fun () -> Fmt.pf fmt "or")
+    ~inter:(fun () -> Fmt.pf fmt "and")
+    ~circle:(fun x -> Fmt.pf fmt "circle%d" x.id)
+    ~rect:(fun x -> Fmt.pf fmt "rect%d" x.id)
+    ~replicate:(fun x -> Fmt.pf fmt "replicate%d" x.id)
+
+let union = create Union
+
+let inter = create Inter
+
+let circle ~id ~center ~radius = create (Circle { id; center; radius })
+
+let rect ~id ~lo_left ~hi_right = create (Rect { id; lo_left; hi_right })
+
+let replicate ~id ~count ~v = create (Replicate { id; count; v })
 
 let to_string = Fmt.to_to_string pp
 
-let arity = function
+let arity x =
+  match value x with
   | Circle _ | Rect _ -> 0
   | Replicate _ -> 1
   | Union | Inter -> 2
 
 let ret_type _ = Cad_type.Scene
 
-let args_type = function
+let args_type x =
+  match value x with
   | Circle _ | Rect _ -> []
   | Replicate _ -> [ Cad_type.Scene ]
   | Union | Inter -> [ Scene; Scene ]

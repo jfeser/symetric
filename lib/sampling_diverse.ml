@@ -50,12 +50,6 @@ include struct
   let max_cost =
     Spec.add spec @@ Param.int ~name:"max-cost" ~doc:" max search cost" ()
 
-  (* let program_ball_dist =
-   *   Spec.add spec @@ Param.create @@ float_list ~name:"program-ball-dist" () *)
-
-  let program_zs_dist =
-    Spec.add spec @@ Param.float_list ~csv:false ~name:"program-zs-dist" ()
-
   let local_search_param ~name ?(csv = true) () =
     (module struct
       type t = [ `Bounded | `Stochastic ] [@@deriving sexp_of]
@@ -219,8 +213,7 @@ struct
     and found_program = Params.get params found_program
     and have_parts = Params.get params have_parts
     and total_parts = Params.get params total_parts
-    and value_dist = Params.get params value_dist
-    and program_zs_dist = Params.get params program_zs_dist in
+    and value_dist = Params.get params value_dist in
 
     let solution_parts =
       Program.eval_parts (Value.eval params) solution
@@ -242,12 +235,6 @@ struct
 
          Queue.enqueue value_dist
          @@ List.map new_states ~f:(fun (d, _, _, _) -> d);
-
-         Queue.enqueue program_zs_dist
-         @@ List.map new_states ~f:(fun (_, _, op, args) ->
-                let p = program_of_op_args_exn ss op args in
-                Float.of_int
-                @@ Tree_dist.zhang_sasha ~eq:[%compare.equal: Op.t] p solution);
 
          (* Check neighbors around new states *)
          List.iter new_states ~f:(fun (d, _, op, args) ->

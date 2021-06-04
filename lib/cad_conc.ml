@@ -94,7 +94,7 @@ exception Eval_error of Cad_op.t
 
 let eval_unmemoized params op args =
   fincr (Params.get params eval_calls);
-  match (op, args) with
+  match (Cad_op.value op, args) with
   | Cad_op.Inter, [ s; s' ] ->
       copy s ~pixels:(Bitarray.and_ (pixels s) (pixels s'))
   | Union, [ s; s' ] -> copy s ~pixels:(Bitarray.or_ (pixels s) (pixels s'))

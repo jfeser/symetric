@@ -48,14 +48,15 @@ module Zs_dist = struct
     Tree_dist.zhang_sasha ~eq:[%compare.equal: Cad.Op.t] p p' |> Float.of_int
 end
 
-let rec norm = function
-  | Program.Apply (((Cad.Op.Union | Inter) as op), args) ->
+let rec norm (Program.Apply (op, args)) =
+  match Cad_op.value op with
+  | Union | Inter ->
       let args' =
         List.sort ~compare:[%compare: Cad.Op.t Program.t]
         @@ List.map ~f:norm args
       in
       Apply (op, args')
-  | Apply (op, args) ->
+  | _ ->
       let args' = List.map ~f:norm args in
       Apply (op, args')
 
