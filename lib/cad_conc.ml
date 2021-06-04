@@ -92,7 +92,7 @@ let fincr r = if Float.is_nan !r then r := 1.0 else r := !r +. 1.0
 
 exception Eval_error of Cad_op.t
 
-let eval params op args =
+let eval_unmemoized params op args =
   fincr (Params.get params eval_calls);
   match (op, args) with
   | Cad_op.Inter, [ s; s' ] ->
@@ -120,14 +120,16 @@ let eval =
     include Comparable.Make (T)
   end in
   let tbl = Hashtbl.create (module Key) in
-  fun params op args ->
+  let find_or_eval params op args =
     fincr (Params.get params raw_eval_calls);
     match Hashtbl.find tbl (op, args) with
     | Some v -> v
     | None ->
-        let v = eval params op args in
+        let v = eval_unmemoized params op args in
         Hashtbl.set tbl ~key:(op, args) ~data:v;
         v
+  in
+  find_or_eval
 
 let pprint fmt c =
   for y = ylen c - 1 downto 0 do

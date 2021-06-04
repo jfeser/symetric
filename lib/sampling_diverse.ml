@@ -172,13 +172,14 @@ struct
     Params.get params bank_size := Float.of_int @@ Search_state.length ss
 
   let search_bounded params ball_width ops center output f =
+    let check_program p =
+      let v = Program.eval (Value.eval params) p in
+      if Value.equal v output then f p
+    in
     try
       Tree_ball.Rename_insert_delete.ball
         (module Op)
-        ops center ball_width
-        (fun p ->
-          let v = Program.eval (Value.eval params) p in
-          if Value.equal v output then f p)
+        ops center ball_width check_program
     with Program.Eval_error e ->
       raise
       @@ Program.Eval_error [%message (center : Op.t Program.t) (e : Sexp.t)]
