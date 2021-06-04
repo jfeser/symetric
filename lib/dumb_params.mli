@@ -40,6 +40,9 @@ module Param : sig
 
   val float_seq : name:string -> ?csv:bool -> unit -> (float Queue.t, free) t
 
+  val float_list :
+    name:string -> ?csv:bool -> unit -> (float list Queue.t, free) t
+
   val bool_ref :
     name:string -> ?default:bool -> ?csv:bool -> unit -> (bool ref, free) t
 

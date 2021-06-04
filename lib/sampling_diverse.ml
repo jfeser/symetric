@@ -1,27 +1,6 @@
 include struct
   open Dumb_params
 
-  let float_list ~name ?(csv = true) () =
-    (module struct
-      type t = float list Queue.t [@@deriving sexp_of]
-
-      let key = Univ_map.Key.create ~name [%sexp_of: t]
-
-      let name = name
-
-      let init = Second (fun () -> Queue.create ())
-
-      let to_json =
-        if csv then
-          Option.return @@ fun v ->
-          `List
-            (Queue.to_list v
-            |> List.map ~f:(fun l -> `List (List.map l ~f:(fun x -> `Float x)))
-            )
-        else None
-    end : Param.S
-      with type t = float list Queue.t)
-
   let spec = Spec.create ()
 
   let per_cost =
@@ -66,7 +45,7 @@ include struct
   let synth = Spec.add spec @@ Param.const_str ~name:"synth" "sampling-diverse"
 
   let value_dist =
-    Spec.add spec @@ Param.create @@ float_list ~name:"value-dist" ()
+    Spec.add spec @@ Param.float_list ~csv:false ~name:"value-dist" ()
 
   let max_cost =
     Spec.add spec @@ Param.int ~name:"max-cost" ~doc:" max search cost" ()
@@ -75,7 +54,43 @@ include struct
    *   Spec.add spec @@ Param.create @@ float_list ~name:"program-ball-dist" () *)
 
   let program_zs_dist =
-    Spec.add spec @@ Param.create @@ float_list ~name:"program-zs-dist" ()
+    Spec.add spec @@ Param.float_list ~csv:false ~name:"program-zs-dist" ()
+
+  let local_search_param ~name ?(csv = true) () =
+    (module struct
+      type t = [ `Bounded | `Stochastic ] [@@deriving sexp_of]
+
+      let key = Univ_map.Key.create ~name [%sexp_of: t]
+
+      let name = name
+
+      let of_string = function
+        | "bounded" -> `Bounded
+        | "stochastic" -> `Stochastic
+        | kind -> raise_s [%message "unexpected" (kind : string)]
+
+      let to_string = function
+        | `Bounded -> "bounded"
+        | `Stochastic -> "stochastic"
+
+      let arg_type = Command.Arg_type.create of_string
+
+      let init =
+        First
+          (let open Command.Param in
+          let param =
+            flag_optional_with_default_doc name ~doc:" kind of local search"
+              ~default:`Bounded arg_type sexp_of_t
+          in
+          map param ~f:(fun v -> Univ_map.Packed.T (key, v)))
+
+      let to_json =
+        if csv then Option.return @@ fun v -> `String (to_string v) else None
+    end : Param.S
+      with type t = [ `Bounded | `Stochastic ])
+
+  let local_search =
+    Spec.add spec @@ Param.create @@ local_search_param ~name:"local" ()
 end
 
 module Make
@@ -156,6 +171,38 @@ struct
         insert ss cost state op args);
     Params.get params bank_size := Float.of_int @@ Search_state.length ss
 
+  let search_bounded params ball_width ops center output f =
+    try
+      Tree_ball.Rename_insert_delete.ball
+        (module Op)
+        ops center ball_width
+        (fun p ->
+          let v = Program.eval (Value.eval params) p in
+          if [%compare.equal: Value.t] v output then f p)
+    with Program.Eval_error e ->
+      raise
+      @@ Program.Eval_error [%message (center : Op.t Program.t) (e : Sexp.t)]
+
+  let search_stochastic params ops center output f =
+    try
+      Tree_ball.Rename_insert_delete.stochastic
+        (module Op)
+        ~score:(fun p ->
+          1.0 -. (Dist.value output @@ Program.eval (Value.eval params) p))
+        ops center
+        (fun p s ->
+          if Float.(s = 1.0) then
+            let v = Program.eval (Value.eval params) p in
+            if [%compare.equal: Value.t] v output then f p)
+    with Program.Eval_error e ->
+      raise
+      @@ Program.Eval_error [%message (center : Op.t Program.t) (e : Sexp.t)]
+
+  let search_neighbors params =
+    match Params.get params local_search with
+    | `Bounded -> search_bounded params (Params.get params ball_width)
+    | `Stochastic -> search_stochastic params
+
   let synth params =
     let max_cost = Params.get params max_cost in
     let ss = Search_state.create max_cost in
@@ -165,7 +212,6 @@ struct
     and solution = Bench.solution_exn bench in
 
     let thresh = Params.get params thresh
-    and ball_width = Params.get params ball_width
     and final_value_dist = Params.get params final_value_dist
     and final_program_dist = Params.get params final_program_dist
     and program_cost = Params.get params program_cost
@@ -173,7 +219,6 @@ struct
     and have_parts = Params.get params have_parts
     and total_parts = Params.get params total_parts
     and value_dist = Params.get params value_dist
-    (* and program_ball_dist = Params.get params program_ball_dist *)
     and program_zs_dist = Params.get params program_zs_dist in
 
     let solution_parts =
@@ -182,12 +227,11 @@ struct
     in
     total_parts := Float.of_int @@ List.length solution_parts;
 
-    let eval = Program.eval (Value.eval params) in
-    let cost = ref 0 in
+    let search_neighbors = search_neighbors params in
     (try
-       while !cost <= max_cost do
+       for cost = 0 to max_cost do
          let new_states =
-           generate_states params ss ops !cost |> dedup_states ss
+           generate_states params ss ops cost |> dedup_states ss
          in
 
          let new_states =
@@ -198,73 +242,34 @@ struct
          Queue.enqueue value_dist
          @@ List.map new_states ~f:(fun (d, _, _, _) -> d);
 
-         (* Queue.enqueue program_ball_dist
-          * @@ List.map new_states ~f:(fun (_, _, op, args) ->
-          *        let p = program_of_op_args_exn ss op args in
-          *        Tree_ball.dist ~compare:[%compare: Op.t] p solution); *)
          Queue.enqueue program_zs_dist
          @@ List.map new_states ~f:(fun (_, _, op, args) ->
                 let p = program_of_op_args_exn ss op args in
                 Float.of_int
                 @@ Tree_dist.zhang_sasha ~eq:[%compare.equal: Op.t] p solution);
 
-         (* Check balls around new states *)
+         (* Check neighbors around new states *)
          List.iter new_states ~f:(fun (d, _, op, args) ->
              if Float.(d < thresh) then
                let center = program_of_op_args_exn ss op args in
 
-               (* let zd =
-                *   Float.of_int
-                *   @@ Tree_dist.zhang_sasha ~eq:[%compare.equal: Op.t] center
-                *        solution
-                * in
-                * if Float.(zd < 6.0) then (
-                *   Fmt.pr "%a\n" Cad_conc.pprint st;
-                *   Fmt.pr "%a\n" Cad_conc.pprint output;
-                * 
-                *   Program.eval_parts (Value.eval params) solution
-                *   |> List.dedup_and_sort ~compare:[%compare: Value.t]
-                *   |> List.iteri ~f:(fun i p ->
-                *          Fmt.pr "Sol part %d\n%a\n" i Cad_conc.pprint p);
-                *   Program.eval_parts (Value.eval params) center
-                *   |> List.dedup_and_sort ~compare:[%compare: Value.t]
-                *   |> List.iteri ~f:(fun i p ->
-                *          Fmt.pr "Can part %d\n%a\n" i Cad_conc.pprint p);
-                * 
-                *   print_s
-                *     [%message
-                *       (center : Op.t Program.t) (solution : Op.t Program.t)];
-                *   Tree_dist.print_zhang_sasha_diff (module Op) center solution); *)
-               try
-                 Tree_ball.Rename_insert_delete.ball
-                   (module Op)
-                   ops center ball_width
-                   (fun p ->
-                     let v = eval p in
-                     if [%compare.equal: Value.t] v output then (
-                       Fmt.epr "%a\n%a\n" Cad_conc.pprint v Cad_conc.pprint
-                         output;
-                       final_value_dist := d;
-                       final_program_dist :=
-                         Float.of_int
-                         @@ Tree_dist.zhang_sasha ~eq:[%compare.equal: Op.t]
-                              center p;
-                       program_cost := Float.of_int !cost;
-                       found_program := true;
-                       raise (Done p)))
-               with Program.Eval_error e ->
-                 raise
-                 @@ Program.Eval_error
-                      [%message (center : Op.t Program.t) (e : Sexp.t)]);
+               search_neighbors ops center output (fun p ->
+                   final_value_dist := d;
+                   final_program_dist :=
+                     Float.of_int
+                     @@ Tree_dist.zhang_sasha ~eq:[%compare.equal: Op.t] center
+                          p;
+                   program_cost := Float.of_int cost;
+                   found_program := true;
+                   raise (Done p)));
 
          let new_states = sample_states params ss new_states in
-         insert_states params ss !cost new_states;
+         insert_states params ss cost new_states;
 
          have_parts := Float.of_int @@ List.count solution_parts ~f:(mem ss);
 
-         Fmt.epr "Finished cost %d\n%!" !cost;
-         print_stats ss;
-         cost := !cost + 1
+         Fmt.epr "Finished cost %d\n%!" cost;
+         print_stats ss
        done
      with Done p -> eprint_s [%message (p : Op.t Program.t)]);
 

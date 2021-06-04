@@ -111,22 +111,30 @@ module Rename_insert_delete = struct
       f t'
     done
 
-  (* let stochastic (type op type_)
-   *     (module Op : Op_intf.S with type t = op and type type_ = type_)
-   *     (ops : op list) ?(n = 10000) t d f =
-   *   let module R = Rewrite.Make (Op) in
-   * 
-   *   let sample = R.sample_single ops in
-   *   let rec loop t v =
-   *     let t' =
-   *       let op = sample t in
-   *       R.Value.eval () op [ t ]
-   *     in
-   *     let v' = score t' in
-   *     let ratio = v' /. v in
-   *     
-   *   for _ = 0 to n do
-   *     let _, t' = R.sample ops d t in
-   *     f t'
-   *   done *)
+  let stochastic (type op type_)
+      (module Op : Op_intf.S with type t = op and type type_ = type_)
+      (ops : op list) ?(n = 5) ~score t f =
+    let module R = Rewrite.Make (Op) in
+    let sample = R.sample_single ops in
+    let rec loop i t v =
+      f t v;
+      if i < n then
+        let t' =
+          let op = sample t in
+          R.Value.eval () op [ t ]
+        in
+        let v' = score t' in
+        let ratio = v' /. v in
+        let accept = Random.float 1.0 in
+        if Float.(accept < ratio) then loop (i + 1) t' v' else loop (i + 1) t v
+    in
+    loop 0 t (score t)
+
+  let stochastic (type op type_)
+      (module Op : Op_intf.S with type t = op and type type_ = type_)
+      (ops : op list) ?n ?(k = 10000) ~score t f =
+    let module R = Rewrite.Make (Op) in
+    for _ = 0 to k do
+      stochastic (module Op) ?n ops ~score t f
+    done
 end

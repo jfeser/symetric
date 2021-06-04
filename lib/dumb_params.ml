@@ -189,6 +189,27 @@ module Param = struct
     end : Param_intf
       with type t = float Queue.t)
 
+  let float_list ~name ?(csv = true) () =
+    (module struct
+      type t = float list Queue.t [@@deriving sexp_of]
+
+      let key = Univ_map.Key.create ~name [%sexp_of: t]
+
+      let name = name
+
+      let init = Second (fun () -> Queue.create ())
+
+      let to_json =
+        if csv then
+          Option.return @@ fun v ->
+          `List
+            (Queue.to_list v
+            |> List.map ~f:(fun l -> `List (List.map l ~f:(fun x -> `Float x)))
+            )
+        else None
+    end : S
+      with type t = float list Queue.t)
+
   let const_str ~name ?(csv = true) v =
     (module struct
       type t = string [@@deriving sexp_of]
