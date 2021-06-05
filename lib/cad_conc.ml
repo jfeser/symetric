@@ -57,8 +57,7 @@ let iinit params ~f =
   create ~xlen ~ylen
   @@ Bitarray.init (xlen * ylen) ~f:(fun i -> f (i / ylen) (i mod ylen))
 
-let hamming c c' =
-  Bitarray.hamming_weight @@ Bitarray.xor (pixels c) (pixels c')
+let hamming c c' = Bitarray.hamming_distance (pixels c) (pixels c')
 
 let jaccard c c' =
   let h = hamming c c' in
