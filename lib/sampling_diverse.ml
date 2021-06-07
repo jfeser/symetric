@@ -203,68 +203,69 @@ struct
     let ss = Search_state.create max_cost in
     let bench = Params.get params bench in
     let ops = Bench.ops bench
-    and output = Bench.output bench
-    and solution = Bench.solution_exn bench in
+    and output =
+      Bench.output bench
+      (* and solution = Bench.solution_exn bench *)
+    in
 
     let thresh = Params.get params thresh
     and final_value_dist = Params.get params final_value_dist
     and final_program_dist = Params.get params final_program_dist
     and program_cost = Params.get params program_cost
     and found_program = Params.get params found_program
-    and have_parts = Params.get params have_parts
-    and total_parts = Params.get params total_parts
+    (* and have_parts = Params.get params have_parts
+     * and total_parts = Params.get params total_parts *)
     and value_dist = Params.get params value_dist in
 
-    let solution_parts =
-      Program.eval_parts (Value.eval params) solution
-      |> List.dedup_and_sort ~compare:[%compare: Value.t]
-    in
-    total_parts := Float.of_int @@ List.length solution_parts;
-
+    (* let solution_parts =
+     *   Program.eval_parts (Value.eval params) solution
+     *   |> List.dedup_and_sort ~compare:[%compare: Value.t]
+     * in
+     * total_parts := Float.of_int @@ List.length solution_parts; *)
     let search_neighbors = search_neighbors params in
-    (try
-       for cost = 0 to max_cost do
-         let new_states =
-           generate_states params ss ops cost |> dedup_states ss
-         in
+    try
+      for cost = 0 to max_cost do
+        let new_states =
+          generate_states params ss ops cost |> dedup_states ss
+        in
 
-         let new_states =
-           List.map new_states ~f:(fun (s, op, args) ->
-               (Dist.value output s, s, op, args))
-         in
+        let new_states =
+          List.map new_states ~f:(fun (s, op, args) ->
+              (Dist.value output s, s, op, args))
+        in
 
-         Queue.enqueue value_dist
-         @@ List.map new_states ~f:(fun (d, _, _, _) -> d);
+        Queue.enqueue value_dist
+        @@ List.map new_states ~f:(fun (d, _, _, _) -> d);
 
-         (* Check neighbors around new states *)
-         List.iter new_states ~f:(fun (d, _, op, args) ->
-             if Float.(d < thresh) then
-               let center = program_of_op_args_exn ss op args in
+        (* Check neighbors around new states *)
+        List.iter new_states ~f:(fun (d, _, op, args) ->
+            if Float.(d <= thresh) then
+              let center = program_of_op_args_exn ss op args in
 
-               search_neighbors ops center output (fun p ->
-                   final_value_dist := d;
-                   final_program_dist :=
-                     Float.of_int
-                     @@ Tree_dist.zhang_sasha ~eq:[%compare.equal: Op.t] center
-                          p;
-                   program_cost := Float.of_int cost;
-                   found_program := true;
-                   raise (Done p)));
+              search_neighbors ops center output (fun p ->
+                  final_value_dist := d;
+                  final_program_dist :=
+                    Float.of_int
+                    @@ Tree_dist.zhang_sasha ~eq:[%compare.equal: Op.t] center p;
+                  program_cost := Float.of_int cost;
+                  found_program := true;
+                  raise (Done p)));
 
-         let new_states = sample_states params ss new_states in
-         insert_states params ss cost new_states;
+        let new_states = sample_states params ss new_states in
+        insert_states params ss cost new_states;
 
-         have_parts := Float.of_int @@ List.count solution_parts ~f:(mem ss);
+        (* have_parts := Float.of_int @@ List.count solution_parts ~f:(mem ss); *)
+        Fmt.epr "Finished cost %d\n%!" cost;
+        print_stats ss
+      done
+    with Done p ->
+      assert (Value.equal (Program.eval (Value.eval params) p) output);
+      eprint_s [%message (p : Op.t Program.t)]
 
-         Fmt.epr "Finished cost %d\n%!" cost;
-         print_stats ss
-       done
-     with Done p -> eprint_s [%message (p : Op.t Program.t)]);
-
-    Params.get params closest_program
-    := List.map (states ss) ~f:(fun s ->
-           let p = program_exn ss s in
-           Dist.program solution p)
-       |> List.min_elt ~compare:[%compare: float]
-       |> Option.value_exn
+  (* Params.get params closest_program
+   * := List.map (states ss) ~f:(fun s ->
+   *        let p = program_exn ss s in
+   *        Dist.program solution p)
+   *    |> List.min_elt ~compare:[%compare: float]
+   *    |> Option.value_exn *)
 end
