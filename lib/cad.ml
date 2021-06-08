@@ -3,6 +3,7 @@ module Type = Cad_type
 module Symb = Cad_symb
 module Value = Cad_conc
 module Bench = Cad_bench
+module Gen = Cad_gen
 
 type symb = Cad_symb.t
 

@@ -47,6 +47,13 @@ module Param : sig
     name:string -> ?default:bool -> ?csv:bool -> unit -> (bool ref, free) t
 
   val const_str : name:string -> ?csv:bool -> string -> (string, free) t
+
+  val ids :
+    (module Comparator.S with type t = 't) ->
+    name:string ->
+    doc:string ->
+    (string * 't) list ->
+    ('t list, free) t
 end
 
 type t

@@ -17,6 +17,10 @@ module type S = sig
     val output : t -> Value.t
 
     val solution_exn : t -> Op.t Program.t
+
+    val load : string -> t
+
+    val save : string -> t -> unit
   end
 
   val name : string
@@ -29,5 +33,14 @@ end
 module type S_with_gen = sig
   include S
 
-  module Gen : sig end
+  module Gen : sig
+    val check : Dumb_params.t -> Op.t Program.t -> bool
+
+    val random_ops : Dumb_params.t -> Op.t list
+
+    val to_bench :
+      Dumb_params.t -> Op.t list -> Op.t Program.t -> Value.t -> Bench.t
+
+    val spec : Dumb_params.Spec.t
+  end
 end

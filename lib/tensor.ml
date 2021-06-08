@@ -115,6 +115,10 @@ include (
       let output = Bench.output
 
       let ops = Bench.ops
+
+      let load = Bench.load [%of_sexp: Op.t] [%of_sexp: Value.t]
+
+      let save = Bench.save [%sexp_of: Op.t] [%sexp_of: Value.t]
     end
 
     include struct

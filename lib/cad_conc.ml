@@ -8,11 +8,6 @@ let eval_calls = P.Spec.add spec @@ P.Param.float_ref ~name:"eval-calls" ()
 let raw_eval_calls =
   P.Spec.add spec @@ P.Param.float_ref ~name:"raw-eval-calls" ()
 
-let idx b v =
-  let x = Float.iround_down_exn v.Vector2.x and y = Float.iround_down_exn v.y in
-  let stride = ylen b in
-  (x * stride) + y
-
 let iidx b x y =
   let stride = ylen b in
   (x * stride) + y
@@ -25,8 +20,6 @@ let pt' ~ylen:stride idx =
     }
 
 let pt b idx = pt' ~ylen:(ylen b) idx
-
-let getp b v = Bitarray.get (pixels b) @@ idx b v
 
 let geti b = Bitarray.get (pixels b)
 

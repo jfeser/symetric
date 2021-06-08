@@ -223,6 +223,30 @@ module Param = struct
       let to_json = make_to_json csv Json.string
     end : Param_intf
       with type t = string)
+
+  let ids (type t) (module Cmp : Comparator.S with type t = t) ~name ~doc ids =
+    (module struct
+      type nonrec t = t list
+
+      let sexp_of_t = List.sexp_of_t Cmp.comparator.sexp_of_t
+
+      let ids_map = Map.of_alist_exn (module String) ids
+
+      let key = Univ_map.Key.create ~name [%sexp_of: t]
+
+      let name = name
+
+      let init =
+        let open Command in
+        let arg_type = Arg_type.of_map ids_map in
+        First
+          Param.(
+            flag name ~doc (listed arg_type)
+            |> map ~f:(fun v -> Univ_map.Packed.T (key, v)))
+
+      let to_json = None
+    end : Param_intf
+      with type t = t list)
 end
 
 let get (type t) m (module S : Param_intf with type t = t) =
