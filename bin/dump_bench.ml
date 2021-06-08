@@ -8,53 +8,6 @@ let rec union_many = function
   | [ x ] -> x
   | x :: xs -> Program.Apply (Union, [ x; union_many xs ])
 
-let circle_inter =
-  let c1 = Circle { id = 0; center = { x = 2.0; y = 2.0 }; radius = 2.0 } in
-  let c2 = Circle { id = 1; center = { x = 3.0; y = 2.0 }; radius = 2.0 } in
-  let prog = Program.Apply (Inter, [ Apply (c1, []); Apply (c2, []) ]) in
-  let ops = [ Inter; Union; c1; c2 ] in
-  (prog, ops)
-
-let circle_and_rect =
-  let c1 = Circle { id = 0; center = { x = 2.0; y = 2.0 }; radius = 2.0 } in
-  let r1 =
-    Rect
-      {
-        id = 0;
-        lo_left = { x = 0.0; y = 0.0 };
-        hi_right = { x = 4.0; y = 4.0 };
-      }
-  in
-  let prog = Program.Apply (c1, []) in
-  let ops = [ Inter; Union; c1; r1 ] in
-  (prog, ops)
-
-let circles_and_rects n =
-  let circs =
-    List.init n ~f:(fun i ->
-        Circle
-          {
-            id = i;
-            center = { x = Float.of_int @@ ((i * 2) + 1); y = 1.0 };
-            radius = 1.0;
-          })
-  in
-  let r1 =
-    Rect
-      {
-        id = 0;
-        lo_left = { x = 0.0; y = 0.0 };
-        hi_right = { x = 2.0 *. Float.of_int n; y = 2.0 };
-      }
-  in
-  let prog =
-    let open Program in
-    List.map circs ~f:(fun c -> Apply (c, []))
-    |> List.reduce ~f:(fun c c' -> Apply (Union, [ c; c' ]))
-  in
-  let ops = [ Inter; Union; r1 ] @ circs in
-  (Option.value_exn prog, ops)
-
 let pp_iters_fixed =
   let pp fmt n = Format.fprintf fmt "%10Ld" n in
   (pp, 10)
@@ -86,9 +39,6 @@ let sequence_progress bar =
       bar 1L;
       Yield (x, ()))
 
-let pixels input conc =
-  Cad_bench.points input |> List.map ~f:(Cad_conc.getp conc)
-
 let to_sexp ~xmax ~ymax (prog, ops) =
   let input = { xmax; ymax } in
   let bench =
@@ -109,211 +59,99 @@ let to_sexp ~xmax ~ymax (prog, ops) =
   [%sexp_of: Cad_bench.Serial.t]
     Cad_bench.Serial.{ ops; input; output; solution = Some prog }
 
-let random_int lo hi =
-  [%test_pred: int * int] (fun (lo, hi) -> lo < hi) (lo, hi);
-  lo + Random.int (hi - lo)
-
-let has_empty_inter params p =
-  let exception Empty_inter in
-  let rec eval (Program.Apply (op, args)) =
-    let args = List.map ~f:eval args in
-    let v = Cad_conc.eval params op args in
-    if
-      [%compare.equal: Cad_op.t] op inter
-      && pixels (Params.get params Cad_params.bench).input v
-         |> List.for_all ~f:(fun x -> not x)
-    then raise Empty_inter
-    else v
-  in
-  try
-    (eval p : Cad_conc.t) |> ignore;
-    false
-  with Empty_inter -> true
-
-let has_noop params p =
-  let exception Noop in
-  let rec eval (Program.Apply (op, args)) =
-    let args = List.map ~f:eval args in
-    let v = Cad_conc.eval params op args in
-    if List.mem args v ~equal:[%compare.equal: Cad_conc.t] then raise Noop
-    else v
-  in
-  try
-    (eval p : Cad_conc.t) |> ignore;
-    false
-  with Noop -> true
-
-let non_trivial params p =
-  let v = Cad_conc.eval_program params p in
-  let rec nilops = function
-    | Program.Apply (op, []) -> [ op ]
-    | Apply (_, args) -> List.concat_map ~f:nilops args
-  in
-  let v' =
-    nilops p
-    |> List.map ~f:(fun op -> Program.Apply (op, []))
-    |> List.reduce_exn ~f:(fun p p' -> Program.Apply (union, [ p; p' ]))
-    |> Cad_conc.eval_program params
-  in
-  not ([%compare.equal: Cad_conc.t] v v')
-
-let irreducible params p =
-  let values = Hashtbl.create (module Cad_conc) in
-  let rec eval (Program.Apply (op, args) as p) =
-    let args = List.map ~f:eval args in
-    let out = Cad_conc.eval params op args in
-    Hashtbl.update values out ~f:(fun ps -> p :: Option.value ps ~default:[]);
-    out
-  in
-  (eval p : Cad_conc.t) |> ignore;
-  not @@ Hashtbl.existsi values ~f:(fun ~key:_ ~data:ps -> List.length ps > 1)
-
 let take_while_with_state ~init ~f s =
   Sequence.unfold_with s ~init ~f:(fun st x ->
       match f st x with Some st' -> Yield (x, st') | None -> Done)
 
-let random_op ~xmax ~ymax ~id = function
-  | `Union -> union
-  | `Inter -> inter
-  | `Repl ->
-      let v =
-        List.random_element_exn
-          [
-            Vector2.{ x = 2.0; y = 2.0 };
-            { x = -2.0; y = 2.0 };
-            { x = 2.0; y = -2.0 };
-            { x = -2.0; y = -2.0 };
-          ]
-      in
-      replicate ~id ~count:(Random.int_incl 1 4) ~v
-  | `Circle ->
-      let center =
-        Vector2.
-          {
-            x = Random.int xmax |> Float.of_int;
-            y = Random.int ymax |> Float.of_int;
-          }
-      in
-      let radius = Random.int (Int.min xmax ymax / 2) |> Float.of_int in
-      circle ~id ~center ~radius
-  | `Rect ->
-      let lo_x = random_int 0 xmax in
-      let lo_y = random_int 0 ymax in
-      let hi_x = random_int lo_x xmax in
-      let hi_y = random_int lo_y ymax in
-      rect ~id
-        ~lo_left:{ x = Float.of_int lo_x; y = Float.of_int lo_y }
-        ~hi_right:{ x = Float.of_int hi_x; y = Float.of_int hi_y }
+module Make (Lang : Lang_intf.S_with_gen) = struct
+  open Lang
 
-(** 
+  let eval_program params = Program.eval (Value.eval params)
+
+  let has_noop params p =
+    let exception Noop in
+    let rec eval (Program.Apply (op, args)) =
+      let args = List.map ~f:eval args in
+      let v = Value.eval params op args in
+      if List.mem args v ~equal:[%compare.equal: Value.t] then raise Noop else v
+    in
+    try
+      (eval p : Value.t) |> ignore;
+      false
+    with Noop -> true
+
+  let irreducible params p =
+    let values = Hashtbl.create (module Value) in
+    let rec eval (Program.Apply (op, args) as p) =
+      let args = List.map ~f:eval args in
+      let out = Value.eval params op args in
+      Hashtbl.update values out ~f:(fun ps -> p :: Option.value ps ~default:[]);
+      out
+    in
+    (eval p : Value.t) |> ignore;
+    not @@ Hashtbl.existsi values ~f:(fun ~key:_ ~data:ps -> List.length ps > 1)
+
+  (** 
 @param xmax canvas x length
 @param ymax canvas y length
 @param size program size
 @param nprim number of primitives available
 @param n number of programs to generate 
 @param k callback with program sequence *)
-let random ~xmax ~ymax ~size ~n ~ops k =
-  let params =
-    let bench =
-      Cad_bench.
-        {
-          ops = [];
-          input = { xmax; ymax };
-          output = Cad_conc.dummy;
-          solution = None;
-          filename = None;
-        }
+  let random ~size ~n ~ops params k =
+    let random_program size =
+      let open Option.Let_syntax in
+      let nilops = List.filter ops ~f:(fun op -> Op.arity op = 0)
+      and unops = List.filter ops ~f:(fun op -> Op.arity op = 1)
+      and binops = List.filter ops ~f:(fun op -> Op.arity op = 2) in
+      let rec random_unop op size =
+        let%map p = random_tree (size - 1) in
+        Program.Apply (op, [ p ])
+      and random_binop op size =
+        Combinat.(compositions ~n:(size - 1) ~k:2 |> to_list)
+        |> List.permute
+        |> List.find_map ~f:(fun ss ->
+               let s = ss.(0) and s' = ss.(1) in
+               let%bind p = random_tree s and p' = random_tree s' in
+               return @@ Program.Apply (op, [ p; p' ]))
+      and random_tree size =
+        [%test_pred: int] (fun size -> size > 0) size;
+        if size = 1 then
+          let op = List.random_element_exn nilops in
+          Some (Program.Apply (op, []))
+        else if size = 2 then random_unop (List.random_element_exn unops) size
+        else
+          let op = List.random_element_exn (unops @ binops) in
+          let arity = Op.arity op in
+          if arity = 1 then random_unop op size
+          else if arity = 2 then random_binop op size
+          else failwith ""
+      in
+      let prog = Option.value_exn (random_tree size) in
+      (prog, ops)
     in
-    Dumb_params.(of_alist_exn [ P (Cad_params.bench, bench) ])
-  in
-
-  let random_program size =
-    let open Option.Let_syntax in
-    let ops = List.mapi ops ~f:(fun id op -> random_op ~xmax ~ymax ~id op) in
-    let nilops =
-      List.filter ops ~f:(fun x ->
-          match value x with Circle _ | Rect _ -> true | _ -> false)
-    and unops =
-      List.filter ops ~f:(fun x ->
-          match value x with Replicate _ -> true | _ -> false)
-    and binops =
-      List.filter ops ~f:(fun x ->
-          match value x with Union | Inter -> true | _ -> false)
-    in
-    let rec random_unop op size =
-      let%map p = random_tree (size - 1) in
-      Program.Apply (op, [ p ])
-    and random_binop op size =
-      Combinat.(compositions ~n:(size - 1) ~k:2 |> to_list)
-      |> List.permute
-      |> List.find_map ~f:(fun ss ->
-             let s = ss.(0) and s' = ss.(1) in
-             let%bind p = random_tree s and p' = random_tree s' in
-             return @@ Program.Apply (op, [ p; p' ]))
-    and random_tree size =
-      [%test_pred: int] (fun size -> size > 0) size;
-      if size = 1 then
-        let op = List.random_element_exn nilops in
-        Some (Program.Apply (op, []))
-      else if size = 2 then random_unop (List.random_element_exn unops) size
-      else
-        let op = List.random_element_exn (unops @ binops) in
-        let arity = Cad_op.arity op in
-        if arity = 1 then random_unop op size
-        else if arity = 2 then random_binop op size
-        else failwith ""
-    in
-    let prog = Option.value_exn (random_tree size) in
-    (prog, ops)
-  in
-  Progress.(
-    with_reporters
-      (bar "samples" / bar "non-trivial programs" / bar "irreducible programs"
-      / tbar "unique programs" (Int64.of_int n)))
-  @@ fun (((samples, non_trivial_progs), irreducible_progs), unique_progs) ->
-  Sequence.unfold ~init:() ~f:(fun () -> Some (random_program size, ()))
-  |> sequence_progress samples
-  |> Sequence.filter ~f:(fun (p, _) ->
-         (not (has_empty_inter params p))
-         && (not (has_noop params p))
-         && non_trivial params p)
-  |> sequence_progress non_trivial_progs
-  |> Sequence.filter ~f:(fun (p, _) -> irreducible params p)
-  |> sequence_progress irreducible_progs
-  |> take_while_with_state
-       ~init:(Set.empty (module Cad_conc))
-       ~f:(fun seen (prog, _) ->
-         if Set.length seen < n then
-           let out = Cad_conc.eval_program params prog in
-           if Set.mem seen out then Some seen else Some (Set.add seen out)
-         else None)
-  |> sequence_progress unique_progs
-  |> Sequence.map ~f:(to_sexp ~xmax ~ymax)
-  |> Sequence.mapi ~f:(fun i sexp -> ([%string "scene_%{i#Int}.sexp"], sexp))
-  |> k
-
-let circles_and_rects_unsat =
-  let circs =
-    List.init 3 ~f:(fun i ->
-        Circle
-          {
-            id = i;
-            center = { x = Float.of_int @@ ((i * 2) + 1); y = 1.0 };
-            radius = 1.0;
-          })
-  in
-  let r1 =
-    Rect
-      {
-        id = 0;
-        lo_left = { x = 0.0; y = 0.0 };
-        hi_right = { x = 6.0; y = 2.0 };
-      }
-  in
-  let prog = Program.(Apply (r1, [])) in
-
-  let ops = [ Inter; Union ] @ circs in
-  (prog, ops)
+    Progress.(
+      with_reporters
+        (bar "samples" / bar "irreducible programs"
+        / tbar "unique programs" (Int64.of_int n)))
+    @@ fun ((samples, irreducible_progs), unique_progs) ->
+    Sequence.unfold ~init:() ~f:(fun () -> Some (random_program size, ()))
+    |> sequence_progress samples
+    |> Sequence.filter ~f:(fun (p, _) ->
+           (not (has_noop params p)) && irreducible params p)
+    |> sequence_progress irreducible_progs
+    |> take_while_with_state
+         ~init:(Set.empty (module Value))
+         ~f:(fun seen (prog, _) ->
+           if Set.length seen < n then
+             let out = eval_program params prog in
+             if Set.mem seen out then Some seen else Some (Set.add seen out)
+           else None)
+    |> sequence_progress unique_progs
+    |> Sequence.map ~f:(to_sexp ~xmax ~ymax)
+    |> Sequence.mapi ~f:(fun i sexp -> ([%string "scene_%{i#Int}.sexp"], sexp))
+    |> k
+end
 
 let dumps ~dir seq =
   Unix.mkdir_p dir;

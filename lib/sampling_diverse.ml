@@ -87,10 +87,7 @@ include struct
     Spec.add spec @@ Param.create @@ local_search_param ~name:"local" ()
 end
 
-module Make
-    (Lang : Lang_intf.S with type Value.t = Cad_conc.t)
-    (Dist : Dist_intf.S with type value := Lang.Value.t and type op := Lang.Op.t) =
-struct
+module Make (Lang : Lang_intf.S) = struct
   open Lang
   module Search_state = Search_state_append.Make (Lang)
   open Search_state
@@ -141,7 +138,7 @@ struct
         ~f:(fun ((_, new_state, _, _) as x) ->
           let min_dist =
             List.map (states ss) ~f:(fun old_state ->
-                Dist.value old_state new_state)
+                Value.dist params old_state new_state)
             |> List.min_elt ~compare:[%compare: float]
             |> Option.value ~default:Float.infinity
           in
@@ -183,7 +180,7 @@ struct
       Tree_ball.Rename_insert_delete.stochastic
         (module Op)
         ~score:(fun p ->
-          1.0 -. (Dist.value output @@ Program.eval (Value.eval params) p))
+          1.0 -. (Value.dist params output @@ Program.eval (Value.eval params) p))
         ops center
         (fun p s ->
           if Float.(s = 1.0) then
@@ -231,7 +228,7 @@ struct
 
         let new_states =
           List.map new_states ~f:(fun (s, op, args) ->
-              (Dist.value output s, s, op, args))
+              (Value.dist params output s, s, op, args))
         in
 
         Queue.enqueue value_dist

@@ -1,6 +1,4 @@
 module type S = sig
-  type bench
-
   module Type : sig
     type t [@@deriving compare, hash, sexp]
 
@@ -12,7 +10,7 @@ module type S = sig
   module Value : Value_intf.S with type op := Op.t
 
   module Bench : sig
-    type t = bench [@@deriving of_sexp]
+    type t [@@deriving of_sexp]
 
     val ops : t -> Op.t list
 
@@ -21,7 +19,15 @@ module type S = sig
     val solution_exn : t -> Op.t Program.t
   end
 
+  val name : string
+
   val bench : (Bench.t, Dumb_params.Param.bound) Dumb_params.Param.t
 
   val spec : Dumb_params.Spec.t
+end
+
+module type S_with_gen = sig
+  include S
+
+  module Gen : sig end
 end

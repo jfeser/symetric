@@ -19,7 +19,7 @@ end
 module Make
     (Lang : Lang_intf.S
               with type Value.t = Cad.Value.t
-               and type bench = Cad.Bench.t) =
+               and type Bench.t = Cad.Bench.t) =
 struct
   open Lang
 

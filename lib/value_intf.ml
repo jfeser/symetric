@@ -6,4 +6,6 @@ module type S = sig
   include Comparator.S with type t := t
 
   val eval : Params.t -> op -> t list -> t
+
+  val dist : Params.t -> t -> t -> float
 end

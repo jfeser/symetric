@@ -5,10 +5,6 @@ module type S = sig
 
   include Comparator.S with type t := t
 
-  val pp : t Fmt.t
-
-  val to_string : t -> string
-
   val arity : t -> int
 
   val type_ : t -> type_ list * type_

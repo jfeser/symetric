@@ -29,8 +29,7 @@ end
 module Make
     (Lang : Lang_intf.S
               with type Value.t = Cad.Value.t
-               and type bench = Cad.Bench.t)
-    (Dist : Dist_intf.S with type value := Lang.Value.t and type op := Lang.Op.t) =
+               and type Bench.t = Cad.Bench.t) =
 struct
   open Lang
   module Search_state = Search_state_append.Make (Lang)
@@ -70,7 +69,7 @@ struct
           Search_state.insert search_state 0 value op args;
           states := value :: !states;
 
-          let dist = Dist.value output value in
+          let dist = Value.dist params output value in
           if Float.(dist < thresh) then
             let center = Search_state.program_exn search_state value in
             Tree_ball.Rename_insert_delete.ball

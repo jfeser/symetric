@@ -64,6 +64,8 @@ let jaccard c c' =
   let l = Bitarray.length (pixels c) in
   Float.(of_int h / of_int l)
 
+let dist _ = jaccard
+
 let edges c =
   let to_int x = if x then 1 else 0 in
   let above i =

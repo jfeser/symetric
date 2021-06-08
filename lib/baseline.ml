@@ -10,9 +10,7 @@ include struct
 end
 
 module Make
-    (Lang : Lang_intf.S)
-    (Dist : Dist_intf.S with type value := Lang.Value.t and type op := Lang.Op.t)
-    (Validate : sig
+    (Lang : Lang_intf.S) (Validate : sig
       open Lang
 
       val validate : (Value.t * Op.t * Value.t list) list -> unit
@@ -79,21 +77,10 @@ struct
 
         let solutions =
           List.filter_map new_states ~f:(fun (s, _, _) ->
-              if Float.(Dist.value s output <= 0.0) then Some (program_exn ss s)
+              if Float.(Value.dist params s output <= 0.0) then
+                Some (program_exn ss s)
               else None)
         in
-
-        if dump_solution_dists && not (List.is_empty solutions) then
-          List.iteri new_states ~f:(fun i (s, _, _) ->
-              let p = program_exn ss s in
-              let d = Dist.value s output in
-              let td =
-                List.map solutions ~f:(Dist.program p)
-                |> List.min_elt ~compare:[%compare: float]
-                |> Option.value ~default:Float.nan
-              in
-              eprintf "%d/%d\n%!" i (List.length new_states);
-              Fmt.pr "%f,%f\n%!" d td);
 
         Fmt.epr "Finished cost %d\n%!" cost;
         print_stats ss;
