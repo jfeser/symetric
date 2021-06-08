@@ -7,6 +7,8 @@ module Type = struct
 
   include T
   include Comparator.Make (T)
+
+  let output = Tensor
 end
 
 module Tensor = struct

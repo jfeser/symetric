@@ -4,3 +4,5 @@ end
 
 include T
 include Comparator.Make (T)
+
+let output = Scene

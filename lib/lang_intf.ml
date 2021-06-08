@@ -3,6 +3,8 @@ module type S = sig
     type t [@@deriving compare, hash, sexp]
 
     include Comparator.S with type t := t
+
+    val output : t
   end
 
   module Op : Op_intf.S with type type_ = Type.t

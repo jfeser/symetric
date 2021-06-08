@@ -74,34 +74,34 @@ module Make (Lang : Lang_intf.S_with_gen) = struct
 
     let random_program size =
       let open Option.Let_syntax in
-      let nilops = List.filter ops ~f:(fun op -> Op.arity op = 0)
-      and unops = List.filter ops ~f:(fun op -> Op.arity op = 1)
-      and binops = List.filter ops ~f:(fun op -> Op.arity op = 2) in
-      let rec random_unop op size =
-        let%map p = random_tree (size - 1) in
-        Program.Apply (op, [ p ])
-      and random_binop op size =
-        Combinat.(compositions ~n:(size - 1) ~k:2 |> to_list)
+      let random_op type_ min_args max_args =
+        List.filter ops ~f:(fun op ->
+            let arity = Op.arity op in
+            [%compare.equal: Type.t] type_ (Op.ret_type op)
+            && min_args <= arity && arity <= max_args)
+        |> List.random_element
+      in
+
+      let random_args random_tree op size =
+        Combinat.(compositions ~n:size ~k:(Op.arity op) |> to_list)
         |> List.permute
         |> List.find_map ~f:(fun ss ->
-               let s = ss.(0) and s' = ss.(1) in
-               let%bind p = random_tree s and p' = random_tree s' in
-               return @@ Program.Apply (op, [ p; p' ]))
-      and random_tree size =
-        [%test_pred: int] (fun size -> size > 0) size;
-        if size = 1 then
-          let op = List.random_element_exn nilops in
-          Some (Program.Apply (op, []))
-        else if size = 2 then random_unop (List.random_element_exn unops) size
-        else
-          let op = List.random_element_exn (unops @ binops) in
-          let arity = Op.arity op in
-          if arity = 1 then random_unop op size
-          else if arity = 2 then random_binop op size
-          else failwith ""
+               List.map2_exn (Op.args_type op) (Array.to_list ss) ~f:random_tree
+               |> Option.all)
       in
-      let prog = Option.value_exn (random_tree size) in
-      (prog, ops)
+
+      let rec random_tree type_ size =
+        [%test_pred: int] (fun size -> size > 0) size;
+        let%bind op =
+          random_op type_
+            (if size = 1 then 0 else 1)
+            (if size = 1 then 0 else size - 1)
+        in
+        let%map args = random_args random_tree op (size - 1) in
+        Program.Apply (op, args)
+      in
+
+      Option.map (random_tree Type.output size) ~f:(fun prog -> (prog, ops))
     in
 
     Progress.(
@@ -110,6 +110,7 @@ module Make (Lang : Lang_intf.S_with_gen) = struct
         / tbar "unique programs" (Int64.of_int n)))
     @@ fun ((samples, irreducible_progs), unique_progs) ->
     Sequence.unfold ~init:() ~f:(fun () -> Some (random_program size, ()))
+    |> Sequence.filter_map ~f:Fun.id
     |> sequence_progress samples
     |> Sequence.filter ~f:(fun (p, _) ->
            Gen.check params p
