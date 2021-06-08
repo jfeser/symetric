@@ -150,5 +150,5 @@ let random_cli (module Lang : Lang_intf.S_with_gen) =
 
 let () =
   Command.group ~summary:"Dump benchmarks"
-    [ ("random", random_cli (module Cad)) ]
+    [ ("cad", random_cli (module Cad)); ("tensor", random_cli (module Tensor)) ]
   |> Command.run

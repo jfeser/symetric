@@ -30,6 +30,8 @@ let save (type op v) (sexp_of_op : op -> Sexp.t) (sexp_of_v : v -> Sexp.t) fn x
   @@ [%sexp_of: (op, v) Serial.t]
        { ops = x.ops; output = x.output; solution = x.solution }
 
+let create ?filename ?solution ops output = { filename; ops; output; solution }
+
 let output x = x.output
 
 let ops x = x.ops
