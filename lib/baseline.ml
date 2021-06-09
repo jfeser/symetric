@@ -30,11 +30,12 @@ struct
 
   let generate_args params ss op costs =
     let arity = Op.arity op in
+    let types_ = Op.args_type op |> Array.of_list in
     let args = Option_array.create ~len:arity in
     let rec build_args arg_idx =
       if arg_idx >= arity then [ make_edge params op @@ unsafe_to_list args ]
       else
-        of_cost ss costs.(arg_idx)
+        search ss ~cost:costs.(arg_idx) ~type_:types_.(arg_idx)
         |> List.concat_map ~f:(fun v ->
                Option_array.set_some args arg_idx v;
                build_args (arg_idx + 1))
@@ -77,8 +78,7 @@ struct
 
         let solutions =
           List.filter_map new_states ~f:(fun (s, _, _) ->
-              if Float.(Value.dist params s output <= 0.0) then
-                Some (program_exn ss s)
+              if [%compare.equal: Value.t] s output then Some (program_exn ss s)
               else None)
         in
 

@@ -97,6 +97,7 @@ let () =
       ("cad-sample-diverse", diverse_cli (module Cad));
       ("cad-baseline", baseline_cli (module Cad));
       ("tensor-baseline", baseline_cli (module Tensor));
+      ("tensor-sample-diverse", diverse_cli (module Tensor));
       ("cad-term-baseline", baseline_cli (module Cad_term));
     ]
   |> Command.run
