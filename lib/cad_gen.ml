@@ -106,6 +106,56 @@ let random_ops params =
           ~lo_left:{ x = Float.of_int lo_x; y = Float.of_int lo_y }
           ~hi_right:{ x = Float.of_int hi_x; y = Float.of_int hi_y })
 
+let gen_ops = ref None
+
+let random_program params size =
+  let open Option.Let_syntax in
+  let ops =
+    match !gen_ops with
+    | None ->
+        let ops = random_ops params in
+        gen_ops := Some ops;
+        ops
+    | Some ops -> ops
+  in
+
+  let random_op type_ min_args max_args =
+    List.filter ops ~f:(fun op ->
+        let arity = Cad_op.arity op in
+        [%compare.equal: Cad_type.t] type_ (Cad_op.ret_type op)
+        && min_args <= arity && arity <= max_args)
+    |> List.random_element
+  in
+
+  let random_args random_tree op size =
+    Combinat.(compositions ~n:size ~k:(Cad_op.arity op) |> to_list)
+    |> List.permute
+    |> List.find_map ~f:(fun ss ->
+           List.map2_exn (Cad_op.args_type op) (Array.to_list ss) ~f:random_tree
+           |> Option.all)
+  in
+
+  let retry_count = 10 in
+  let rec random_tree type_ size =
+    [%test_pred: int] (fun size -> size > 0) size;
+
+    let rec loop ct =
+      if ct > retry_count then None
+      else
+        let%bind op =
+          random_op type_
+            (if size = 1 then 0 else 1)
+            (if size = 1 then 0 else size - 1)
+        in
+        let%bind args = random_args random_tree op (size - 1) in
+        let p = Program.Apply (op, args) in
+        if check params p then return p else loop (ct + 1)
+    in
+    loop 0
+  in
+
+  Option.map (random_tree Cad_type.output size) ~f:(fun prog -> (prog, ops))
+
 let to_bench params ops solution output =
   let xmax = Params.get params xmax and ymax = Params.get params ymax in
   {

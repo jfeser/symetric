@@ -36,9 +36,7 @@ module type S_with_gen = sig
   include S
 
   module Gen : sig
-    val check : Dumb_params.t -> Op.t Program.t -> bool
-
-    val random_ops : Dumb_params.t -> Op.t list
+    val random_program : Params.t -> int -> (Op.t Program.t * Op.t list) option
 
     val to_bench :
       Dumb_params.t -> Op.t list -> Op.t Program.t -> Value.t -> Bench.t

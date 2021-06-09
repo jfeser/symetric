@@ -61,11 +61,16 @@ module Op = struct
     | Reshape | Permute -> [ Type.Tensor; Vector ]
     | Flip -> [ Tensor; Int ]
     | Cons -> [ Int; Vector ]
-    | Vec -> [ Int; Int ]
+    | Vec -> [ Int ]
 
   let type_ x = (args_type x, ret_type x)
 
   let arity x = List.length @@ args_type x
+
+  let rec vec_of_list = function
+    | [] -> failwith "not enough elements"
+    | [ x ] -> Program.(apply Vec ~args:[ apply (Int x) ])
+    | x :: xs -> Program.(apply Cons ~args:[ apply (Int x); vec_of_list xs ])
 end
 
 module Value = struct
@@ -102,10 +107,10 @@ module Value = struct
           else Error
     | Flip, [ Tensor m; Int x ] ->
         let dims = Arr.num_dims m in
-        if x > 0 && x < dims then Tensor (Arr.flip ~axis:x m) else Error
+        if x >= 0 && x < dims then Tensor (Arr.flip ~axis:x m) else Error
     | Cons, [ Int x; Vector xs ] ->
         Vector (Array.of_list (x :: Array.to_list xs))
-    | Vec, [ Int x; Int x' ] -> Vector [| x; x' |]
+    | Vec, [ Int x ] -> Vector [| x |]
     | Int x, [] -> Int x
     | (Reshape | Permute | Flip), ([ Error; _ ] | [ _; Error ]) -> Error
     | op, args ->
@@ -181,7 +186,37 @@ module Gen = struct
   let factors n =
     List.init n ~f:(fun i -> i + 1) |> List.filter ~f:(fun m -> n mod m = 0)
 
-  let random_ops params =
+  let rec k_factors n k =
+    if k = 1 then [ [ n ] ]
+    else
+      List.init n ~f:(fun i -> i + 1)
+      |> List.filter ~f:(fun m -> n mod m = 0)
+      |> List.concat_map ~f:(fun m ->
+             List.map (k_factors (n / m) (k - 1)) ~f:(fun ms -> m :: ms))
+
+  let%expect_test "" =
+    print_s [%message (k_factors 16 1 : int list list)];
+    print_s [%message (k_factors 16 2 : int list list)];
+    print_s [%message (k_factors 16 3 : int list list)];
+    print_s [%message (k_factors 16 4 : int list list)];
+    [%expect
+      {|
+      ("k_factors 16 1" ((16)))
+      ("k_factors 16 2" ((1 16) (2 8) (4 4) (8 2) (16 1)))
+      ("k_factors 16 3"
+       ((1 1 16) (1 2 8) (1 4 4) (1 8 2) (1 16 1) (2 1 8) (2 2 4) (2 4 2) (2 8 1)
+        (4 1 4) (4 2 2) (4 4 1) (8 1 2) (8 2 1) (16 1 1)))
+      ("k_factors 16 4"
+       ((1 1 1 16) (1 1 2 8) (1 1 4 4) (1 1 8 2) (1 1 16 1) (1 2 1 8) (1 2 2 4)
+        (1 2 4 2) (1 2 8 1) (1 4 1 4) (1 4 2 2) (1 4 4 1) (1 8 1 2) (1 8 2 1)
+        (1 16 1 1) (2 1 1 8) (2 1 2 4) (2 1 4 2) (2 1 8 1) (2 2 1 4) (2 2 2 2)
+        (2 2 4 1) (2 4 1 2) (2 4 2 1) (2 8 1 1) (4 1 1 4) (4 1 2 2) (4 1 4 1)
+        (4 2 1 2) (4 2 2 1) (4 4 1 1) (8 1 1 2) (8 1 2 1) (8 2 1 1) (16 1 1 1))) |}]
+
+  let check params p =
+    match Program.eval (Value.eval params) p with Error -> false | _ -> true
+
+  let random_program params size =
     let min_dims = Params.get params min_dims
     and max_dims = Params.get params max_dims
     and min_len = Params.get params min_len
@@ -190,18 +225,47 @@ module Gen = struct
     let dim_lens =
       Array.init dims ~f:(fun _ -> Random.int_incl min_len max_len)
     in
-    let tensor =
-      Owl.Arr.init_nd dim_lens (fun _ -> Float.of_int @@ Random.int 10)
+
+    let wrap p =
+      let t =
+        match Program.eval (Value.eval params) p with
+        | Tensor t -> t
+        | v ->
+            raise_s [%message "not a tensor" (p : Op.t Program.t) (v : Value.t)]
+      in
+      let op = List.random_element_exn [ `Reshape; `Permute; `Flip ] in
+      match op with
+      | `Reshape ->
+          let new_dims = Random.int_incl min_dims max_dims in
+          let new_shape =
+            List.random_element_exn (k_factors (Owl.Arr.numel t) new_dims)
+          in
+          Program.apply Op.Reshape ~args:[ p; Op.vec_of_list new_shape ]
+      | `Permute ->
+          let dims =
+            List.init (Owl.Arr.num_dims t) ~f:Fun.id
+            |> Combinat.permutations |> Combinat.random |> List.hd_exn
+            |> Array.to_list
+          in
+          Program.apply Op.Permute ~args:[ p; Op.vec_of_list dims ]
+      | `Flip ->
+          let axis = Random.int_incl 0 @@ (Owl.Arr.num_dims t - 1) in
+          Program.(apply Op.Flip ~args:[ p; apply (Op.Int axis) ])
     in
-    let ints =
-      List.init dims ~f:Fun.id @ factors (Array.fold ~f:( * ) ~init:1 dim_lens)
-      |> List.dedup_and_sort ~compare
-      |> List.map ~f:(fun i -> Op.Int i)
+
+    let generate n =
+      let tensor =
+        Owl.Arr.init_nd dim_lens (fun _ -> Float.of_int @@ Random.int 10)
+      in
+      let p_init = Program.apply (Op.Id tensor) in
+      let rec add_ops p = if Program.size p < n then add_ops @@ wrap p else p in
+      add_ops p_init
     in
-    ints @ [ Op.Cons; Vec; Id tensor ] @ Params.get params ops
+
+    let p_final = generate size in
+    if Program.size p_final = size && check params p_final then
+      Some (p_final, Program.ops p_final)
+    else None
 
   let to_bench _ ops solution output = Bench.create ~solution ops output
-
-  let check params p =
-    match Program.eval (Value.eval params) p with Error -> false | _ -> true
 end

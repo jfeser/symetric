@@ -66,60 +66,17 @@ module Make (Lang : Lang_intf.S_with_gen) = struct
 @param n number of programs to generate 
 *)
   let random ~size ~n ~dir params =
-    let ops = Gen.random_ops params in
-
-    let random_program size =
-      let open Option.Let_syntax in
-      let random_op type_ min_args max_args =
-        List.filter ops ~f:(fun op ->
-            let arity = Op.arity op in
-            [%compare.equal: Type.t] type_ (Op.ret_type op)
-            && min_args <= arity && arity <= max_args)
-        |> List.random_element
-      in
-
-      let random_args random_tree op size =
-        Combinat.(compositions ~n:size ~k:(Op.arity op) |> to_list)
-        |> List.permute
-        |> List.find_map ~f:(fun ss ->
-               List.map2_exn (Op.args_type op) (Array.to_list ss) ~f:random_tree
-               |> Option.all)
-      in
-
-      let retry_count = 10 in
-      let rec random_tree type_ size =
-        [%test_pred: int] (fun size -> size > 0) size;
-
-        let rec loop ct =
-          if ct > retry_count then None
-          else
-            let%bind op =
-              random_op type_
-                (if size = 1 then 0 else 1)
-                (if size = 1 then 0 else size - 1)
-            in
-            let%bind args = random_args random_tree op (size - 1) in
-            let p = Program.Apply (op, args) in
-            if Gen.check params p then return p else loop (ct + 1)
-        in
-        loop 0
-      in
-
-      Option.map (random_tree Type.output size) ~f:(fun prog -> (prog, ops))
-    in
-
     Progress.(
       with_reporters
         (bar "samples" / bar "irreducible programs"
         / tbar "unique programs" (Int64.of_int n)))
     @@ fun ((samples, irreducible_progs), unique_progs) ->
-    Sequence.unfold ~init:() ~f:(fun () -> Some (random_program size, ()))
+    Sequence.unfold ~init:() ~f:(fun () ->
+        Some (Gen.random_program params size, ()))
     |> Sequence.filter_map ~f:Fun.id
     |> sequence_progress samples
     |> Sequence.filter ~f:(fun (p, _) ->
-           Gen.check params p
-           && (not (has_noop params p))
-           && irreducible params p)
+           (not (has_noop params p)) && irreducible params p)
     |> sequence_progress irreducible_progs
     |> Sequence.map ~f:(fun (prog, ops) ->
            (prog, ops, eval_program params prog))
