@@ -91,8 +91,18 @@ module Value = struct
     | Op.Id t, [] -> Tensor t
     | Reshape, [ Tensor m; Vector v ] -> (
         try Tensor (Arr.reshape m v) with Invalid_argument _ -> Error)
-    | Permute, [ Tensor m; Vector v ] -> Tensor (Arr.transpose ~axis:v m)
-    | Flip, [ Tensor m; Int x ] -> Tensor (Arr.flip ~axis:x m)
+    | Permute, [ Tensor m; Vector v ] ->
+        let dims = Arr.num_dims m in
+        if Array.length v <> dims then Error
+        else
+          let found = Array.create ~len:dims false in
+          Array.iter v ~f:(fun ax ->
+              if ax >= 0 && ax < dims then found.(ax) <- true);
+          if Array.for_all ~f:Fun.id found then Tensor (Arr.transpose ~axis:v m)
+          else Error
+    | Flip, [ Tensor m; Int x ] ->
+        let dims = Arr.num_dims m in
+        if x > 0 && x < dims then Tensor (Arr.flip ~axis:x m) else Error
     | Cons, [ Int x; Vector xs ] ->
         Vector (Array.of_list (x :: Array.to_list xs))
     | Vec, [ Int x; Int x' ] -> Vector [| x; x' |]
@@ -192,5 +202,6 @@ module Gen = struct
 
   let to_bench _ ops solution output = Bench.create ~solution ops output
 
-  let check _ _ = true
+  let check params p =
+    match Program.eval (Value.eval params) p with Error -> false | _ -> true
 end

@@ -32,10 +32,6 @@ let sequence_progress bar =
       bar 1L;
       Yield (x, ()))
 
-let take_while_with_state ~init ~f s =
-  Sequence.unfold_with s ~init ~f:(fun st x ->
-      match f st x with Some st' -> Yield (x, st') | None -> Done)
-
 module Make (Lang : Lang_intf.S_with_gen) = struct
   open Lang
 
@@ -90,15 +86,23 @@ module Make (Lang : Lang_intf.S_with_gen) = struct
                |> Option.all)
       in
 
+      let retry_count = 10 in
       let rec random_tree type_ size =
         [%test_pred: int] (fun size -> size > 0) size;
-        let%bind op =
-          random_op type_
-            (if size = 1 then 0 else 1)
-            (if size = 1 then 0 else size - 1)
+
+        let rec loop ct =
+          if ct > retry_count then None
+          else
+            let%bind op =
+              random_op type_
+                (if size = 1 then 0 else 1)
+                (if size = 1 then 0 else size - 1)
+            in
+            let%bind args = random_args random_tree op (size - 1) in
+            let p = Program.Apply (op, args) in
+            if Gen.check params p then return p else loop (ct + 1)
         in
-        let%map args = random_args random_tree op (size - 1) in
-        Program.Apply (op, args)
+        loop 0
       in
 
       Option.map (random_tree Type.output size) ~f:(fun prog -> (prog, ops))
@@ -119,12 +123,12 @@ module Make (Lang : Lang_intf.S_with_gen) = struct
     |> sequence_progress irreducible_progs
     |> Sequence.map ~f:(fun (prog, ops) ->
            (prog, ops, eval_program params prog))
-    |> take_while_with_state
+    |> Sequence.unfold_with
          ~init:(Set.empty (module Value))
-         ~f:(fun seen (_, _, out) ->
-           if Set.length seen < n then
-             if Set.mem seen out then Some seen else Some (Set.add seen out)
-           else None)
+         ~f:(fun seen ((_, _, out) as x) ->
+           if Set.length seen >= n then Done
+           else if Set.mem seen out then Skip seen
+           else Yield (x, Set.add seen out))
     |> sequence_progress unique_progs
     |> Sequence.map ~f:(fun (prog, ops, out) ->
            Gen.to_bench params ops prog out)
