@@ -17,7 +17,7 @@ dune build --profile=release "$EXE"
 FULL_EXE=/tmp/$(basename $EXE)
 cp -f $BUILD_DIR/$EXE "$FULL_EXE"
 
-find $WORKDIR/bench/cad2/random_repl_size_11_60x60/ -name "*.sexp" | sort > $WORKDIR/jobs
+find $WORKDIR/bench/cad2/random_repl_size_11_150x150/ -name "*.sexp" | sort > $WORKDIR/jobs
 
 rm -f "$OUT_FILE"
 
