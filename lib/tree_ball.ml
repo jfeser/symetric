@@ -104,7 +104,7 @@ end
 module Rename_insert_delete = struct
   let ball (type op type_)
       (module Op : Op_intf.S with type t = op and type type_ = type_)
-      (ops : op list) ?(n = 1000) t d f =
+      (ops : op list) ?(n = 500) t d f =
     let module R = Rewrite.Make (Op) in
     let sample = R.sample ops in
     for _ = 0 to n do
