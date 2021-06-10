@@ -27,17 +27,18 @@ def plot_vs_baseline(stat, diverse=1, ylabel=None, title=None):
     y = []
     c = []
     bench = sorted(df['bench'].unique())
+    below = 0
+    total = 0
     for k in bench:
         baseline = df[(df['bench'] == k) & (df['synth'] == 'baseline')][stat].item()
 
         data = df[(df['bench'] == k) & (df['synth'] == 'sampling-diverse') & (df['diversity'] == diverse)]
-        # print(data[stat].median())
-        # x.append(baseline)
-        # y.append(data[stat].median())
-        # c.append('blue')
         for _, row in data.iterrows():
             x.append(baseline)
             y.append(row[stat])
+            if baseline > row[stat]:
+                below += 1
+            total += 1
             c.append('blue' if row['found-program'] > 0 else 'red')
 
     fig, ax = plt.subplots()
@@ -52,16 +53,57 @@ def plot_vs_baseline(stat, diverse=1, ylabel=None, title=None):
     ]
     ax.plot(lims, lims, 'k-', alpha=0.75, zorder=0)
 
-    # ax.set_xlim(xlim)
-    # ax.set_ylim(ylim)
-    ax.set_yscale('log')
-    ax.set_xscale('log')
+    ax.set_xlim(xlim)
+    ax.set_ylim(ylim)
+    # ax.set_yscale('log')
+    # ax.set_xscale('log')
+    ax.set_ylabel('Sampling')
+    ax.set_xlabel('Baseline')
+    ax.set_title('%s: %d/%d' % (title, below, total))
+
+def plot_vs_baseline_median(stat, diverse=1, ylabel=None, title=None):
+    x = []
+    y = []
+    c = []
+    bench = sorted(df['bench'].unique())
+    for k in bench:
+        baseline = df[(df['bench'] == k) & (df['synth'] == 'baseline')][stat].item()
+
+        data = df[(df['bench'] == k) & (df['synth'] == 'sampling-diverse') & (df['diversity'] == diverse)]
+        x.append(baseline)
+        y.append(data[stat].median())
+        c.append('blue')
+        # for _, row in data.iterrows():
+        #     x.append(baseline)
+        #     y.append(row[stat])
+        #     c.append('blue' if row['found-program'] > 0 else 'red')
+
+    fig, ax = plt.subplots()
+    ax.scatter(x, y, c=c, s = 20, marker='x')
+
+    xlim = ax.get_xlim()
+    ylim = ax.get_ylim()
+    
+    lims = [
+        np.min([ax.get_xlim(), ax.get_ylim()]),  # min of both axes
+        np.max([ax.get_xlim(), ax.get_ylim()]),  # max of both axes
+    ]
+    ax.plot(lims, lims, 'k-', alpha=0.75, zorder=0)
+
+    ax.set_xlim(xlim)
+    ax.set_ylim(ylim)
+    # ax.set_yscale('log')
+    # ax.set_xscale('log')
     ax.set_ylabel('Sampling')
     ax.set_xlabel('Baseline')
     ax.set_title(title)
-    
+
 plot_vs_baseline('runtime', diverse=1, title='Runtime (ms)')
 plt.savefig('runtime.pdf')
+plt.close()
+
+plot_vs_baseline_median('runtime', diverse=1, title='Median runtime (ms)')
+plt.savefig('runtime-median.pdf')
 plt.close()
 
 plot_vs_baseline('eval-calls', diverse=1, title='Calls to eval')
