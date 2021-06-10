@@ -60,6 +60,8 @@ type t
 
 val get : t -> ('a, Param.bound) Param.t -> 'a
 
+val set : t -> ('a, Param.bound) Param.t -> 'a -> t
+
 val json : t -> Yojson.Basic.t
 
 module Spec : sig

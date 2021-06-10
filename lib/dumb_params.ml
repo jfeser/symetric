@@ -252,6 +252,9 @@ end
 let get (type t) m (module S : Param_intf with type t = t) =
   Univ_map.find_exn m.values S.key
 
+let set (type t) m (module S : Param_intf with type t = t) v =
+  { m with values = Univ_map.set m.values S.key v }
+
 let json m =
   let elems =
     List.filter_map m.spec ~f:(fun (module P : Param_intf) ->

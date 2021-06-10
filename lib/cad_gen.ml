@@ -69,6 +69,8 @@ include struct
   let xmax = Spec.add spec @@ Param.int ~name:"xmax" ~doc:" x width" ()
 
   let ymax = Spec.add spec @@ Param.int ~name:"ymax" ~doc:" y width" ()
+
+  let spec = Spec.union [ spec; Cad_conc.spec ]
 end
 
 let random_ops params =
@@ -109,7 +111,6 @@ let random_ops params =
 let gen_ops = ref None
 
 let random_program params size =
-  let open Option.Let_syntax in
   let ops =
     match !gen_ops with
     | None ->
@@ -118,43 +119,102 @@ let random_program params size =
         ops
     | Some ops -> ops
   in
-
-  let random_op type_ min_args max_args =
-    List.filter ops ~f:(fun op ->
-        let arity = Cad_op.arity op in
-        [%compare.equal: Cad_type.t] type_ (Cad_op.ret_type op)
-        && min_args <= arity && arity <= max_args)
-    |> List.random_element
+  let params =
+    let xmax = Params.get params xmax and ymax = Params.get params ymax in
+    Dumb_params.set params Cad_params.bench
+      Cad_bench.
+        {
+          ops = [];
+          input = { xmax; ymax };
+          output = Cad_conc.dummy;
+          solution = None;
+          filename = None;
+        }
   in
 
-  let random_args random_tree op size =
-    Combinat.(compositions ~n:size ~k:(Cad_op.arity op) |> to_list)
+  let open Option.Let_syntax in
+  let nilops = List.filter ops ~f:(fun op -> Cad_op.arity op = 0)
+  and unops = List.filter ops ~f:(fun op -> Cad_op.arity op = 1)
+  and binops = List.filter ops ~f:(fun op -> Cad_op.arity op = 2) in
+  let rec random_unop op size =
+    let%map p = random_tree (size - 1) in
+    Program.Apply (op, [ p ])
+  and random_binop op size =
+    Combinat.(compositions ~n:(size - 1) ~k:2 |> to_list)
     |> List.permute
     |> List.find_map ~f:(fun ss ->
-           List.map2_exn (Cad_op.args_type op) (Array.to_list ss) ~f:random_tree
-           |> Option.all)
-  in
-
-  let retry_count = 10 in
-  let rec random_tree type_ size =
+           let s = ss.(0) and s' = ss.(1) in
+           let%bind p = random_tree s and p' = random_tree s' in
+           return @@ Program.Apply (op, [ p; p' ]))
+  and random_tree size =
     [%test_pred: int] (fun size -> size > 0) size;
-
-    let rec loop ct =
-      if ct > retry_count then None
-      else
-        let%bind op =
-          random_op type_
-            (if size = 1 then 0 else 1)
-            (if size = 1 then 0 else size - 1)
-        in
-        let%bind args = random_args random_tree op (size - 1) in
-        let p = Program.Apply (op, args) in
-        if check params p then return p else loop (ct + 1)
-    in
-    loop 0
+    if size = 1 then
+      let op = List.random_element_exn nilops in
+      Some (Program.Apply (op, []))
+    else if size = 2 then random_unop (List.random_element_exn unops) size
+    else
+      let op = List.random_element_exn (unops @ binops) in
+      let arity = Cad_op.arity op in
+      if arity = 1 then random_unop op size
+      else if arity = 2 then random_binop op size
+      else failwith ""
   in
+  let prog = Option.value_exn (random_tree size) in
+  if check params prog then return (prog, ops) else None
 
-  Option.map (random_tree Cad_type.output size) ~f:(fun prog -> (prog, ops))
+(* let random_program params size =
+ *   let open Option.Let_syntax in
+ *   let ops =
+ *     match !gen_ops with
+ *     | None ->
+ *         let ops = random_ops params in
+ *         gen_ops := Some ops;
+ *         ops
+ *     | Some ops -> ops
+ *   in
+ *   let params =
+ *     let xmax = Params.get params xmax and ymax = Params.get params ymax in
+ *     Dumb_params.set params Cad_params.bench
+ *       Cad_bench.
+ *         {
+ *           ops = [];
+ *           input = { xmax; ymax };
+ *           output = Cad_conc.dummy;
+ *           solution = None;
+ *           filename = None;
+ *         }
+ *   in
+ * 
+ *   let random_op type_ min_args max_args =
+ *     List.filter ops ~f:(fun op ->
+ *         let arity = Cad_op.arity op in
+ *         [%compare.equal: Cad_type.t] type_ (Cad_op.ret_type op)
+ *         && min_args <= arity && arity <= max_args)
+ *     |> List.random_element
+ *   in
+ * 
+ *   let random_args random_tree op size =
+ *     Combinat.(compositions ~n:size ~k:(Cad_op.arity op) |> to_list)
+ *     |> List.permute
+ *     |> List.find_map ~f:(fun ss ->
+ *            List.map2_exn (Cad_op.args_type op) (Array.to_list ss) ~f:random_tree
+ *            |> Option.all)
+ *   in
+ * 
+ *   let rec random_tree type_ size =
+ *     [%test_pred: int] (fun size -> size > 0) size;
+ * 
+ *     let%bind op =
+ *       random_op type_
+ *         (if size = 1 then 0 else 1)
+ *         (if size = 1 then 0 else size - 1)
+ *     in
+ *     let%bind args = random_args random_tree op (size - 1) in
+ *     let p = Program.Apply (op, args) in
+ *     if check params p then return p else None
+ *   in
+ * 
+ *   Option.map (random_tree Cad_type.output size) ~f:(fun prog -> (prog, ops)) *)
 
 let to_bench params ops solution output =
   let xmax = Params.get params xmax and ymax = Params.get params ymax in

@@ -31,6 +31,10 @@ def plot_vs_baseline(stat, diverse=1, ylabel=None, title=None):
         baseline = df[(df['bench'] == k) & (df['synth'] == 'baseline')][stat].item()
 
         data = df[(df['bench'] == k) & (df['synth'] == 'sampling-diverse') & (df['diversity'] == diverse)]
+        # print(data[stat].median())
+        # x.append(baseline)
+        # y.append(data[stat].median())
+        # c.append('blue')
         for _, row in data.iterrows():
             x.append(baseline)
             y.append(row[stat])
@@ -48,8 +52,10 @@ def plot_vs_baseline(stat, diverse=1, ylabel=None, title=None):
     ]
     ax.plot(lims, lims, 'k-', alpha=0.75, zorder=0)
 
-    ax.set_xlim(xlim)
-    ax.set_ylim(ylim)
+    # ax.set_xlim(xlim)
+    # ax.set_ylim(ylim)
+    ax.set_yscale('log')
+    ax.set_xscale('log')
     ax.set_ylabel('Sampling')
     ax.set_xlabel('Baseline')
     ax.set_title(title)
