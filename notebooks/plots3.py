@@ -9,8 +9,14 @@ from collections import defaultdict
 import math
 import ujson
 import os.path
+import os
+import tempfile
 
-df = pd.read_json(sys.argv[1], orient='records')
+(_, fn) = tempfile.mkstemp()
+os.system('jq -c -s < \"%s\" > \"%s\"' % (sys.argv[1], fn))
+df = pd.read_json(fn, orient='records')
+os.remove(fn)
+print(df.describe())
 
 # df.loc[df['found-program'] == 0, 'runtime'] = float('nan')
 # df.loc[df['found-program'] == 0, 'eval-calls'] = float('nan')
