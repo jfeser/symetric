@@ -17,12 +17,12 @@ dune build --profile=release "$EXE"
 FULL_EXE=/tmp/$(basename $EXE)
 cp -f $BUILD_DIR/$EXE "$FULL_EXE"
 
-find $WORKDIR/bench/cad2/random_repl_size_11/ -name "*.sexp" | sort | head -n30 > $WORKDIR/jobs
+find $WORKDIR/bench/cad2/random_repl_size_11/ -name "*.sexp" | sort > $WORKDIR/jobs
 
 rm -f "$OUT_FILE"
 
 parallel --eta --joblog "$WORKDIR/notebooks/${NAME}_joblog" --timeout 600 --colsep ' ' \
-         "$FULL_EXE cad-sample-diverse -max-cost 11 -print-json true -d 0.1 -w 5 -p {2} -seed {1} -diversity {3} {4} 2> /dev/null" \
+         "$FULL_EXE cad-sample-diverse -max-cost 11 -print-json true -d 0.1 -w 2 -p {2} -seed {1} -diversity {3} {4} 2> /dev/null" \
          ::: {0..99} ::: 50 ::: true false :::: $WORKDIR/jobs \
          >> "$OUT_FILE"
 
