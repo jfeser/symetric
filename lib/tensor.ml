@@ -116,7 +116,11 @@ module Value = struct
     | op, args ->
         raise_s [%message "unexpected arguments" (op : Op.t) (args : t list)]
 
-  let dist _ _ _ = Float.infinity
+  let dist _ v v' =
+    match (v, v') with
+    | Tensor t, Tensor t' ->
+        if Owl.Arr.num_dims t <> Owl.Arr.num_dims t' then 1.0 else 0.0
+    | _ -> Float.infinity
 end
 
 module Bench0 = struct
