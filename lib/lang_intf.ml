@@ -35,10 +35,10 @@ end
 module type S_with_features = sig
   include S
 
-  val features : Value.t -> Owl.Dense.Ndarray.S.arr
+  val features : Value.t -> Owl.Arr.arr
   (** Returns an array of features of shape (nfeatures,). *)
 
-  val dist : Params.t -> Owl.Dense.Ndarray.S.arr -> Value.t -> Value.t -> float
+  val dist : Params.t -> Owl.Arr.arr -> Value.t -> Value.t -> float
   (** Takes a distance matrix M of shape (nfeatures, nfeatures) and produces a distance. *)
 
   module Gen : sig

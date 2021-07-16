@@ -63,5 +63,4 @@ let%expect_test "" =
 
 let to_ndarray x =
   let len = length x and bit_get = get in
-  let open Owl.Dense.Ndarray.Generic in
-  init Owl.float32 [| len |] (fun i -> if bit_get x i then 1.0 else 0.0)
+  Owl.Arr.init [| len |] (fun i -> if bit_get x i then 1.0 else 0.0)

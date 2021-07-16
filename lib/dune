@@ -1,7 +1,7 @@
 (library
  (name staged_synth)
  (libraries core core_kernel.hash_heap core.bigstring_unix combinat
-   ocamlgraph fmt progress tree_diff yojson owl)
+   ocamlgraph fmt progress tree_diff yojson owl npy)
  (preprocess
   (pps ppx_jane))
  (inline_tests)

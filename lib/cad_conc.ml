@@ -48,9 +48,7 @@ let jaccard c c' =
 
 let dist _ = jaccard
 
-let to_ndarray v =
-  let arr = Bitarray.to_ndarray (pixels v) in
-  Owl.Dense.Ndarray.Generic.reshape arr [| xlen v; ylen v |]
+let to_ndarray v = Bitarray.to_ndarray (pixels v)
 
 let edges c =
   let to_int x = if x then 1 else 0 in

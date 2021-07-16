@@ -20,3 +20,7 @@ include struct
 end
 
 let bench = Cad_params.bench
+
+let dist _ _ _ = failwith "dist"
+
+let features = Value.to_ndarray
