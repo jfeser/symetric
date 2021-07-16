@@ -16,11 +16,9 @@ module type S = sig
 
   val iter : 'a set code -> ('a code -> unit code) -> unit code
 
-  val fold :
-    'a set code -> init:'b code -> f:('b code -> 'a code -> 'b code) -> 'b code
+  val fold : 'a set code -> init:'b code -> f:('b code -> 'a code -> 'b code) -> 'b code
 
-  val of_sexp :
-    'a set ctype -> sexp code -> (sexp code -> 'a code) -> 'a set code
+  val of_sexp : 'a set ctype -> sexp code -> (sexp code -> 'a code) -> 'a set code
 
   val sexp_of : 'a set code -> ('a code -> sexp code) -> sexp code
 end
@@ -72,23 +70,15 @@ for(auto $(iter) = $(set).begin(); $(iter) != $(set).end(); ++$(iter)) {
 
   let fold a ~init ~f =
     let_ (fresh_global init.etype) (fun acc ->
-        sseq
-          [
-            assign init ~to_:acc;
-            iter a (fun x -> assign (f acc x) ~to_:acc);
-            acc;
-          ])
+        sseq [ assign init ~to_:acc; iter a (fun x -> assign (f acc x) ~to_:acc); acc ])
     |> with_comment "Set.fold"
 
-  let add a x =
-    eformat ~has_effect:true "0" unit_t "$(name).insert($(val));"
-      [ ("name", C a); ("val", C x) ]
+  let add a x = eformat ~has_effect:true "0" unit_t "$(name).insert($(val));" [ ("name", C a); ("val", C x) ]
 
   let of_sexp type_ sexp elem_of_sexp =
     let_ (empty type_) @@ fun set ->
     let_ (Sexp.to_list sexp) @@ fun sexp ->
-    for_ (Int.int 0) (Int.int 1) (Sexp.List.length sexp) (fun i ->
-        add set (elem_of_sexp (Sexp.List.get sexp i)))
+    for_ (Int.int 0) (Int.int 1) (Sexp.List.length sexp) (fun i -> add set (elem_of_sexp (Sexp.List.get sexp i)))
 
   let sexp_of _ _ = failwith "unimplemented"
 end
@@ -103,9 +93,7 @@ module Ordered_set (C : Cstage_core.S) =
 
       let elem_type t = Univ_map.find_exn t elem_t
 
-      let mk_type e =
-        Type.create ~name:(sprintf "std::set<%s >" (Type.name e))
-        |> Type.add_exn ~key:elem_t ~data:e
+      let mk_type e = Type.create ~name:(sprintf "std::set<%s >" (Type.name e)) |> Type.add_exn ~key:elem_t ~data:e
     end)
 
 module Hash_set (C : Cstage_core.S) =
@@ -119,6 +107,5 @@ module Hash_set (C : Cstage_core.S) =
       let elem_type t = Univ_map.find_exn t elem_t
 
       let mk_type e =
-        Type.create ~name:(sprintf "std::unordered_set<%s >" (Type.name e))
-        |> Type.add_exn ~key:elem_t ~data:e
+        Type.create ~name:(sprintf "std::unordered_set<%s >" (Type.name e)) |> Type.add_exn ~key:elem_t ~data:e
     end)

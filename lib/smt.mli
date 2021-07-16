@@ -65,12 +65,7 @@ val make_defn : ?n_args:int -> string -> Expr.t -> Var.t t
 val fresh_defn : ?n_args:int -> ?prefix:string -> Expr.t -> Var.t t
 
 val fresh_defn_or_literal :
-  ?n_args:int ->
-  ?prefix:string ->
-  literal:(bool -> 'a t) ->
-  defn:(Var.t -> 'a t) ->
-  Expr.t ->
-  'a t
+  ?n_args:int -> ?prefix:string -> literal:(bool -> 'a t) -> defn:(Var.t -> 'a t) -> Expr.t -> 'a t
 
 val annotate : string -> string -> Expr.t -> Expr.t
 
@@ -133,9 +128,7 @@ val get_interpolant_or_model_inner :
 
 val get_interpolant : Interpolant.Group.t list -> Expr.t option t
 
-val get_interpolant_or_model :
-  Interpolant.Group.t list ->
-  (Expr.t Or_error.t, (Var.t * bool) list) Either.t t
+val get_interpolant_or_model : Interpolant.Group.t list -> (Expr.t Or_error.t, (Var.t * bool) list) Either.t t
 
 val get_model : (Var.t * bool) list option t
 

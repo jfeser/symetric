@@ -25,8 +25,7 @@ module type LABELED_GRAPH = sig
 
   type label
 
-  include
-    GRAPH with type vertex := vertex and type edge = vertex * label * vertex
+  include GRAPH with type vertex := vertex and type edge = vertex * label * vertex
 end
 
 module Make (V' : sig
@@ -39,23 +38,24 @@ end) =
 struct
   type label = E'.t
 
-  include Graph.Imperative.Digraph.ConcreteBidirectionalLabeled
-            (struct
-              type t = V'.t
+  include
+    Graph.Imperative.Digraph.ConcreteBidirectionalLabeled
+      (struct
+        type t = V'.t
 
-              let compare = [%compare: V'.t]
+        let compare = [%compare: V'.t]
 
-              let hash = [%hash: V'.t]
+        let hash = [%hash: V'.t]
 
-              let equal = [%compare.equal: V'.t]
-            end)
-            (struct
-              type t = E'.t
+        let equal = [%compare.equal: V'.t]
+      end)
+      (struct
+        type t = E'.t
 
-              let compare = [%compare: E'.t]
+        let compare = [%compare: E'.t]
 
-              let default = E'.default
-            end)
+        let default = E'.default
+      end)
 
   module V = struct
     include V'
@@ -99,11 +99,9 @@ module type FOLDS = sig
     val filter : graph -> f:(vertex -> bool) -> vertex list
   end
 
-  module Pred :
-    Container.S0 with type t := graph * vertex and type elt := vertex
+  module Pred : Container.S0 with type t := graph * vertex and type elt := vertex
 
-  module Succ :
-    Container.S0 with type t := graph * vertex and type elt := vertex
+  module Succ : Container.S0 with type t := graph * vertex and type elt := vertex
 end
 
 module Folds (G : GRAPH) = struct
@@ -128,13 +126,9 @@ module Folds (G : GRAPH) = struct
       let length = `Custom G.nb_vertex
     end)
 
-    let filter g ~f =
-      fold ~f:(fun xs x -> if f x then x :: xs else xs) g ~init:[]
+    let filter g ~f = fold ~f:(fun xs x -> if f x then x :: xs else xs) g ~init:[]
 
-    let filter_map g ~f =
-      fold
-        ~f:(fun xs x -> match f x with Some x' -> x' :: xs | None -> xs)
-        g ~init:[]
+    let filter_map g ~f = fold ~f:(fun xs x -> match f x with Some x' -> x' :: xs | None -> xs) g ~init:[]
 
     include G.V
   end

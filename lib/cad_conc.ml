@@ -5,19 +5,14 @@ let spec = P.Spec.create ()
 
 let eval_calls = P.Spec.add spec @@ P.Param.float_ref ~name:"eval-calls" ()
 
-let raw_eval_calls =
-  P.Spec.add spec @@ P.Param.float_ref ~name:"raw-eval-calls" ()
+let raw_eval_calls = P.Spec.add spec @@ P.Param.float_ref ~name:"raw-eval-calls" ()
 
 let iidx b x y =
   let stride = ylen b in
   (x * stride) + y
 
 let pt' ~ylen:stride idx =
-  Vector2.
-    {
-      x = (Float.of_int @@ (idx / stride)) +. 0.5;
-      y = (Float.of_int @@ (idx mod stride)) +. 0.5;
-    }
+  Vector2.{ x = (Float.of_int @@ (idx / stride)) +. 0.5; y = (Float.of_int @@ (idx mod stride)) +. 0.5 }
 
 let pt b idx = pt' ~ylen:(ylen b) idx
 
@@ -28,11 +23,7 @@ let replicate_is_set repl scene pt =
   let rec loop count pt =
     if count <= 0 then false
     else
-      Float.O.(
-        pt.Vector2.x >= 0.0
-        && pt.x < of_int (xlen scene)
-        && pt.y >= 0.0
-        && pt.y < of_int (ylen scene))
+      Float.O.(pt.Vector2.x >= 0.0 && pt.x < of_int (xlen scene) && pt.y >= 0.0 && pt.y < of_int (ylen scene))
       && getp scene pt
       || loop (count - 1) Vector2.O.(pt + trans)
   in
@@ -41,14 +32,12 @@ let replicate_is_set repl scene pt =
 let init params ~f =
   let bench = P.get params Cad_params.bench in
   let xlen = bench.Cad_bench.input.xmax and ylen = bench.Cad_bench.input.ymax in
-  create ~xlen ~ylen
-  @@ Bitarray.init (xlen * ylen) ~f:(fun i -> f (pt' ~ylen i) i)
+  create ~xlen ~ylen @@ Bitarray.init (xlen * ylen) ~f:(fun i -> f (pt' ~ylen i) i)
 
 let iinit params ~f =
   let bench = P.get params Cad_params.bench in
   let xlen = bench.Cad_bench.input.xmax and ylen = bench.Cad_bench.input.ymax in
-  create ~xlen ~ylen
-  @@ Bitarray.init (xlen * ylen) ~f:(fun i -> f (i / ylen) (i mod ylen))
+  create ~xlen ~ylen @@ Bitarray.init (xlen * ylen) ~f:(fun i -> f (i / ylen) (i mod ylen))
 
 let hamming c c' = Bitarray.hamming_distance (pixels c) (pixels c')
 
@@ -59,6 +48,10 @@ let jaccard c c' =
 
 let dist _ = jaccard
 
+let to_ndarray v =
+  let arr = Bitarray.to_ndarray (pixels v) in
+  Owl.Dense.Ndarray.Generic.reshape arr [| xlen v; ylen v |]
+
 let edges c =
   let to_int x = if x then 1 else 0 in
   let above i =
@@ -66,19 +59,11 @@ let edges c =
     if i' >= 0 then to_int @@ Bitarray.get (pixels c) i' else 0
   and below i =
     let i' = i + ylen c in
-    if i' < Bitarray.length (pixels c) then to_int @@ Bitarray.get (pixels c) i'
-    else 0
-  and left i =
-    if i mod ylen c = 0 then 0 else to_int @@ Bitarray.get (pixels c) (i - 1)
-  and right i =
-    if (i + 1) mod ylen c = 0 then 0
-    else to_int @@ Bitarray.get (pixels c) (i + 1)
-  in
+    if i' < Bitarray.length (pixels c) then to_int @@ Bitarray.get (pixels c) i' else 0
+  and left i = if i mod ylen c = 0 then 0 else to_int @@ Bitarray.get (pixels c) (i - 1)
+  and right i = if (i + 1) mod ylen c = 0 then 0 else to_int @@ Bitarray.get (pixels c) (i + 1) in
   let pixels =
-    Bitarray.init
-      (xlen c * ylen c)
-      ~f:(fun i ->
-        Bitarray.get (pixels c) i && above i + below i + left i + right i < 4)
+    Bitarray.init (xlen c * ylen c) ~f:(fun i -> Bitarray.get (pixels c) i && above i + below i + left i + right i < 4)
   in
   copy c ~pixels
 
@@ -89,19 +74,13 @@ exception Eval_error of Cad_op.t
 let eval_unmemoized params op args =
   fincr (Params.get params eval_calls);
   match (Cad_op.value op, args) with
-  | Cad_op.Inter, [ s; s' ] ->
-      copy s ~pixels:(Bitarray.and_ (pixels s) (pixels s'))
+  | Cad_op.Inter, [ s; s' ] -> copy s ~pixels:(Bitarray.and_ (pixels s) (pixels s'))
   | Union, [ s; s' ] -> copy s ~pixels:(Bitarray.or_ (pixels s) (pixels s'))
-  | Circle c, [] ->
-      init params ~f:(fun pt _ ->
-          Float.(Vector2.(l2_dist c.center pt) <= c.radius))
+  | Circle c, [] -> init params ~f:(fun pt _ -> Float.(Vector2.(l2_dist c.center pt) <= c.radius))
   | Rect r, [] ->
       init params ~f:(fun k _ ->
-          Float.(
-            r.lo_left.x <= k.x && r.lo_left.y <= k.y && r.hi_right.x >= k.x
-            && r.hi_right.y >= k.y))
-  | Replicate repl, [ s ] ->
-      init params ~f:(fun pt _ -> replicate_is_set repl s pt)
+          Float.(r.lo_left.x <= k.x && r.lo_left.y <= k.y && r.hi_right.x >= k.x && r.hi_right.y >= k.y))
+  | Replicate repl, [ s ] -> init params ~f:(fun pt _ -> replicate_is_set repl s pt)
   | _ -> raise (Eval_error op)
 
 let eval =
@@ -128,8 +107,7 @@ let eval =
 let pprint fmt c =
   for y = ylen c - 1 downto 0 do
     for x = 0 to xlen c - 1 do
-      if getp c { x = Float.of_int x; y = Float.of_int y } then Fmt.pf fmt "█"
-      else Fmt.pf fmt "."
+      if getp c { x = Float.of_int x; y = Float.of_int y } then Fmt.pf fmt "█" else Fmt.pf fmt "."
     done;
     Fmt.pf fmt "\n"
   done
@@ -143,13 +121,7 @@ let dummy_params ~xlen ~ylen =
         P
           ( Cad_params.bench,
             Cad_bench.
-              {
-                ops = [];
-                input = { xmax = xlen; ymax = ylen };
-                output = dummy;
-                solution = None;
-                filename = None;
-              } );
+              { ops = []; input = { xmax = xlen; ymax = ylen }; output = dummy; solution = None; filename = None } );
         P (eval_calls, ref Float.nan);
         P (raw_eval_calls, ref Float.nan);
       ])

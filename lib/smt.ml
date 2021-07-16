@@ -12,9 +12,7 @@ let pp_sig fmt (name, n_args) =
   else if n_args = 1 then Fmt.pf fmt "%s (Bool) Bool" name
   else if n_args = 2 then Fmt.pf fmt "%s (Bool Bool) Bool" name
   else
-    let args =
-      List.init n_args ~f:(fun _ -> "Bool") |> String.concat ~sep:" "
-    in
+    let args = List.init n_args ~f:(fun _ -> "Bool") |> String.concat ~sep:" " in
     Fmt.pf fmt "%s (%s) Bool" name args
 
 module Var = String_id
@@ -38,10 +36,7 @@ module Expr = struct
     | Annot of t * string * string
   [@@deriving compare, variants, sexp]
 
-  let pp_binop fmt = function
-    | Implies -> Fmt.pf fmt "=>"
-    | Equals -> Fmt.pf fmt "="
-    | Xor -> Fmt.pf fmt "xor"
+  let pp_binop fmt = function Implies -> Fmt.pf fmt "=>" | Equals -> Fmt.pf fmt "=" | Xor -> Fmt.pf fmt "xor"
 
   let pp_unop fmt = function Not -> Fmt.pf fmt "not"
 
@@ -52,12 +47,10 @@ module Expr = struct
     | Bool false -> Fmt.pf fmt "false"
     | Binop (op, x, x') -> Fmt.pf fmt "(%a %a %a)" pp_binop op pp x pp x'
     | Unop (op, x) -> Fmt.pf fmt "(%a %a)" pp_unop op pp x
-    | Varop (op, xs) ->
-        Fmt.pf fmt "(%a %a)" pp_varop op Fmt.(list ~sep:sp pp) xs
+    | Varop (op, xs) -> Fmt.pf fmt "(%a %a)" pp_varop op Fmt.(list ~sep:sp pp) xs
     | Annot (x, k, v) -> Fmt.pf fmt "(! %a :%s %s)" pp x k v
     | Var v -> String_id.pp fmt v
-    | Let (e, v, e') ->
-        Fmt.pf fmt "(let ((%a %a)) %a)" String_id.pp v pp e pp e'
+    | Let (e, v, e') -> Fmt.pf fmt "(let ((%a %a)) %a)" String_id.pp v pp e pp e'
 
   let var_s x = Var (String_id.of_string x)
 
@@ -91,43 +84,39 @@ module Expr = struct
     | Let (e, x, e') -> eval (Map.set ctx ~key:x ~data:(eval ctx e)) e'
     | Binop (op, e, e') -> (
         let v = eval ctx e and v' = eval ctx e' in
-        match op with
-        | Implies -> (not v) || v'
-        | Equals -> Bool.(v = v')
-        | Xor -> (v || v') && not (v && v') )
+        match op with Implies -> (not v) || v' | Equals -> Bool.(v = v') | Xor -> (v || v') && not (v && v'))
     | Unop (op, e) -> (
         let v = eval ctx e in
-        match (op, v) with Not, v -> not v )
+        match (op, v) with Not, v -> not v)
     | Varop (op, es) -> (
         let vs = List.map es ~f:(eval ctx) in
         match op with
         | And ->
             List.sum
-              ( module struct
+              (module struct
                 type t = bool
 
                 let ( + ) = ( && )
 
                 let zero = true
-              end )
+              end)
               ~f:Fun.id vs
         | Or ->
             List.sum
-              ( module struct
+              (module struct
                 type t = bool
 
                 let ( + ) = ( || )
 
                 let zero = false
-              end )
-              ~f:Fun.id vs )
+              end)
+              ~f:Fun.id vs)
 
   let reduce reduce plus empty = function
     | Bool _ | Var _ -> empty
     | Binop (_, e, e') | Let (e, _, e') -> plus (reduce e) (reduce e')
     | Annot (e, _, _) | Unop (_, e) -> reduce e
-    | Varop (_, es) ->
-        List.fold ~init:empty ~f:(fun acc e -> plus (reduce e) acc) es
+    | Varop (_, es) -> List.fold ~init:empty ~f:(fun acc e -> plus (reduce e) acc) es
 
   let map map = function
     | (Bool _ | Var _) as e -> e
@@ -147,8 +136,7 @@ module Expr = struct
   let expr_vars = vars
 
   let rec expand ctx = function
-    | Var x as e -> (
-        match Map.find ctx x with Some e -> expand ctx e | None -> e )
+    | Var x as e -> ( match Map.find ctx x with Some e -> expand ctx e | None -> e)
     | e -> map (expand ctx) e
 end
 
@@ -177,11 +165,7 @@ let or_ xs =
   or_ [] xs
 
 let and_ xs =
-  let and_simple = function
-    | [] -> true_
-    | [ x ] -> x
-    | xs -> Varop (And, xs)
-  in
+  let and_simple = function [] -> true_ | [ x ] -> x | xs -> Varop (And, xs) in
   let rec and_ acc = function
     | [] -> and_simple (List.rev acc)
     | Bool false :: _ -> false_
@@ -190,10 +174,7 @@ let and_ xs =
   in
   and_ [] xs
 
-let not_ = function
-  | Bool true -> false_
-  | Bool false -> true_
-  | x -> Unop (Not, x)
+let not_ = function Bool true -> false_ | Bool false -> true_ | x -> Unop (Not, x)
 
 let implies x y =
   if is_true x then y
@@ -228,8 +209,7 @@ let at_least_one = or_
 let at_most_one xs =
   let module Seq = Sequence in
   let xs = Array.of_list xs and n = List.length xs in
-  Seq.init n ~f:(fun i ->
-      Seq.range (i + 1) n |> Seq.map ~f:(fun j -> (not xs.(i)) || not xs.(j)))
+  Seq.init n ~f:(fun i -> Seq.range (i + 1) n |> Seq.map ~f:(fun j -> (not xs.(i)) || not xs.(j)))
   |> Seq.concat |> Seq.to_list |> and_
 
 let bool x = if x then true_ else false_
@@ -239,8 +219,7 @@ module Decl = struct
 
   let create ?(n_args = 0) name = { name; n_args }
 
-  let to_smtlib fmt { name; n_args } =
-    Fmt.pf fmt "(declare-fun %a)" pp_sig (name, n_args)
+  let to_smtlib fmt { name; n_args } = Fmt.pf fmt "(declare-fun %a)" pp_sig (name, n_args)
 end
 
 module Defn = struct
@@ -248,8 +227,7 @@ module Defn = struct
 
   let create ?n_args name body = (Decl.create ?n_args name, body)
 
-  let to_smtlib fmt (Decl.{ name; n_args }, body) =
-    Fmt.pf fmt "(define-fun %a %a)" pp_sig (name, n_args) Expr.pp body
+  let to_smtlib fmt (Decl.{ name; n_args }, body) = Fmt.pf fmt "(define-fun %a %a)" pp_sig (name, n_args) Expr.pp body
 end
 
 module Assert = struct
@@ -257,8 +235,7 @@ module Assert = struct
 
   let to_smtlib fmt { body; group } =
     match group with
-    | Some gid ->
-        Fmt.pf fmt "(assert (! %a :interpolation-group g%d))" Expr.pp body gid
+    | Some gid -> Fmt.pf fmt "(assert (! %a :interpolation-group g%d))" Expr.pp body gid
     | None -> Fmt.pf fmt "(assert %a)" Expr.pp body
 end
 
@@ -288,18 +265,9 @@ end = struct
   let filter = List.filter
 end
 
-type stmt =
-  | Decl of Decl.t
-  | Defn of Defn.t
-  | Assert of Assert.t
-  | Comment of string
-  | Newline
+type stmt = Decl of Decl.t | Defn of Defn.t | Assert of Assert.t | Comment of string | Newline
 
-type state = {
-  stmts : (stmt * string) Revlist.t;
-  var_ctr : int;
-  group : int option;
-}
+type state = { stmts : (stmt * string) Revlist.t; var_ctr : int; group : int option }
 
 type 'a t = state -> 'a * state
 
@@ -324,10 +292,7 @@ let eval c = Tuple.T2.get1 @@ run c
 let eval_with_state s c = Tuple.T2.get1 @@ with_state s c
 
 let clear_asserts s =
-  let stmts' =
-    Revlist.filter s.stmts ~f:(fun (stmt, _) ->
-        match stmt with Assert _ -> false | _ -> true)
-  in
+  let stmts' = Revlist.filter s.stmts ~f:(fun (stmt, _) -> match stmt with Assert _ -> false | _ -> true) in
   ((), { s with stmts = stmts' })
 
 open Let_syntax
@@ -336,10 +301,7 @@ let string_of_stmt = function
   | Decl d -> Fmt.str "%a" Decl.to_smtlib d
   | Defn d -> Fmt.str "%a" Defn.to_smtlib d
   | Assert a -> Fmt.str "%a" Assert.to_smtlib a
-  | Comment c ->
-      String.split_lines c
-      |> List.map ~f:(Fmt.str "; %s")
-      |> String.concat ~sep:"\n"
+  | Comment c -> String.split_lines c |> List.map ~f:(Fmt.str "; %s") |> String.concat ~sep:"\n"
   | Newline -> ""
 
 let add_stmt stmt =
@@ -387,20 +349,10 @@ let with_comment_block ~name ?descr body =
   let sep = String.make 80 '*' in
   let header =
     [ Newline; Comment sep; Comment (Fmt.str "Begin: %s" name); Comment sep ]
-    @ ( Option.map descr ~f:(fun d ->
-            [ Comment (Sexp.to_string_hum d); Comment sep ])
-      |> Option.value ~default:[] )
+    @ (Option.map descr ~f:(fun d -> [ Comment (Sexp.to_string_hum d); Comment sep ]) |> Option.value ~default:[])
     @ [ Newline ]
   in
-  let footer =
-    [
-      Newline;
-      Comment sep;
-      Comment (Fmt.str "End: %s" name);
-      Comment sep;
-      Newline;
-    ]
-  in
+  let footer = [ Newline; Comment sep; Comment (Fmt.str "End: %s" name); Comment sep; Newline ] in
 
   let%bind () = add_stmts header in
   let%bind ret = body in
@@ -411,26 +363,18 @@ let annotate key value term = Annot (term, key, value)
 
 let comment = annotate "comment"
 
-let assert_ body s =
-  match body with
-  | Bool true -> ((), s)
-  | body -> add_stmt (Assert { body; group = s.group }) s
+let assert_ body s = match body with Bool true -> ((), s) | body -> add_stmt (Assert { body; group = s.group }) s
 
 let _exactly_one_naive xs = at_least_one xs && at_most_one xs
 
 let exactly_one_bitwise xs =
   or_
-  @@ List.map xs ~f:(fun x ->
-         and_
-         @@ List.map xs ~f:(fun x' ->
-                if [%compare.equal: Expr.t] x x' then x' else not x'))
+  @@ List.map xs ~f:(fun x -> and_ @@ List.map xs ~f:(fun x' -> if [%compare.equal: Expr.t] x x' then x' else not x'))
 
 let at_most_one_bitwise xs =
   or_
   @@ List.map xs ~f:(fun x ->
-         and_
-         @@ List.filter_map xs ~f:(fun x' ->
-                if [%compare.equal: Expr.t] x x' then None else Some (not x')))
+         and_ @@ List.filter_map xs ~f:(fun x' -> if [%compare.equal: Expr.t] x x' then None else Some (not x')))
 
 let exactly_one xs =
   let rec exactly_one xs =
@@ -467,16 +411,13 @@ module Interpolant = struct
     let stmts = s.stmts |> Revlist.to_list in
     let ctx =
       List.filter_map stmts ~f:(fun (stmt, _) ->
-          match stmt with
-          | Defn ({ name; _ }, body) -> Some (name, body)
-          | _ -> None)
+          match stmt with Defn ({ name; _ }, body) -> Some (name, body) | _ -> None)
       |> Map.of_alist_exn (module String_id)
     in
     let k g =
       List.filter_map stmts ~f:(fun (stmt, _) ->
           match stmt with
-          | Assert { group = Some gid; body } when Int.(g = gid) ->
-              Some (expand ctx body |> Expr.vars)
+          | Assert { group = Some gid; body } when Int.(g = gid) -> Some (expand ctx body |> Expr.vars)
           | _ -> None)
       |> Set.union_list (module Var)
     in
@@ -503,8 +444,7 @@ let[@landmark "mathsat"] with_mathsat f =
 
         let[@landmark "with_mathsat.read"] read () =
           let sexp = read_input stdout in
-          Sexp.to_string_hum sexp |> String.split_lines
-          |> List.iter ~f:(Fmt.pf log_fmt "; %s@.");
+          Sexp.to_string_hum sexp |> String.split_lines |> List.iter ~f:(Fmt.pf log_fmt "; %s@.");
           sexp
         in
 
@@ -513,92 +453,50 @@ let[@landmark "mathsat"] with_mathsat f =
   Unix.close_process proc |> Unix.Exit_or_signal.or_error |> Or_error.ok_exn;
   ret
 
-let error sexp =
-  Error.create "Unexpected output" sexp [%sexp_of: Sexp.t] |> Error.raise
+let error sexp = Error.create "Unexpected output" sexp [%sexp_of: Sexp.t] |> Error.raise
 
 let parse_model sexp =
-  let error s =
-    Error.create "Unexpected model" s [%sexp_of: Sexp.t] |> Error.raise
-  in
-  let parse_value = function
-    | Sexp.Atom "true" -> true
-    | Atom "false" -> false
-    | s -> error s
-  in
+  let error s = Error.create "Unexpected model" s [%sexp_of: Sexp.t] |> Error.raise in
+  let parse_value = function Sexp.Atom "true" -> true | Atom "false" -> false | s -> error s in
   match sexp with
   | Sexp.List vals ->
       List.map vals ~f:(fun v ->
-          match v with
-          | List [ Atom name; value ] ->
-              (String_id.of_string name, parse_value value)
-          | s -> error s)
+          match v with List [ Atom name; value ] -> (String_id.of_string name, parse_value value) | s -> error s)
   | s -> error s
 
 let smtlib =
   let%map stmts = get_stmts in
-  Revlist.to_list stmts
-  |> List.map ~f:(fun (_, str) -> str)
-  |> String.concat ~sep:"\n"
+  Revlist.to_list stmts |> List.map ~f:(fun (_, str) -> str) |> String.concat ~sep:"\n"
 
 let get_interpolant_inner groups stmts read write =
   let open Sexp in
-  write
-    ([ "(set-option :produce-interpolants true)" ] @ stmts @ [ "(check-sat)" ]);
-  let is_sat =
-    match read () with
-    | Atom "unsat" -> false
-    | Atom "sat" -> true
-    | x -> error x
-  in
+  write ([ "(set-option :produce-interpolants true)" ] @ stmts @ [ "(check-sat)" ]);
+  let is_sat = match read () with Atom "unsat" -> false | Atom "sat" -> true | x -> error x in
 
   if is_sat then return None
   else (
-    write
-      [
-        Fmt.str "(get-interpolant (%a))"
-          Fmt.(list ~sep:sp Interpolant.Group.pp)
-          groups;
-      ];
-    return (Some (read () |> Expr.parse_exn)) )
+    write [ Fmt.str "(get-interpolant (%a))" Fmt.(list ~sep:sp Interpolant.Group.pp) groups ];
+    return (Some (read () |> Expr.parse_exn)))
 
 let get_interpolant groups =
   let%bind stmts = get_stmts in
-  with_mathsat
-  @@ get_interpolant_inner groups
-  @@ List.map ~f:Tuple.T2.get2 @@ Revlist.to_list stmts
+  with_mathsat @@ get_interpolant_inner groups @@ List.map ~f:Tuple.T2.get2 @@ Revlist.to_list stmts
 
 let get_interpolant_or_model_inner groups stmts read write =
   let open Sexp in
-  write
-    ( [
-        "(set-option :produce-interpolants true)";
-        "(set-option :produce-models true)";
-      ]
-    @ stmts @ [ "(check-sat)" ] );
-  let is_sat =
-    match read () with
-    | Atom "unsat" -> false
-    | Atom "sat" -> true
-    | x -> error x
-  in
+  write ([ "(set-option :produce-interpolants true)"; "(set-option :produce-models true)" ] @ stmts @ [ "(check-sat)" ]);
+  let is_sat = match read () with Atom "unsat" -> false | Atom "sat" -> true | x -> error x in
 
   if is_sat then (
     write [ "(get-model)" ];
-    return (Second (read () |> parse_model)) )
+    return (Second (read () |> parse_model)))
   else (
-    write
-      [
-        Fmt.str "(get-interpolant (%a))"
-          Fmt.(list ~sep:sp Interpolant.Group.pp)
-          groups;
-      ];
-    return (First (read () |> Expr.parse)) )
+    write [ Fmt.str "(get-interpolant (%a))" Fmt.(list ~sep:sp Interpolant.Group.pp) groups ];
+    return (First (read () |> Expr.parse)))
 
 let get_interpolant_or_model groups =
   let%bind stmts = get_stmts in
-  with_mathsat
-  @@ get_interpolant_or_model_inner groups
-  @@ List.map ~f:Tuple.T2.get2 @@ Revlist.to_list stmts
+  with_mathsat @@ get_interpolant_or_model_inner groups @@ List.map ~f:Tuple.T2.get2 @@ Revlist.to_list stmts
 
 let get_model =
   let open Sexp in
@@ -606,16 +504,11 @@ let get_model =
   let stmts = List.map ~f:Tuple.T2.get2 @@ Revlist.to_list stmts in
   with_mathsat @@ fun read write ->
   write ([ "(set-option :produce-models true)" ] @ stmts @ [ "(check-sat)" ]);
-  let is_sat =
-    match read () with
-    | Atom "unsat" -> false
-    | Atom "sat" -> true
-    | x -> error x
-  in
+  let is_sat = match read () with Atom "unsat" -> false | Atom "sat" -> true | x -> error x in
 
   if is_sat then (
     write [ "(get-model)" ];
-    return (read () |> parse_model |> Option.return) )
+    return (read () |> parse_model |> Option.return))
   else return None
 
 let check_sat =
@@ -624,27 +517,15 @@ let check_sat =
   let stmts = List.map ~f:Tuple.T2.get2 @@ Revlist.to_list stmts in
   with_mathsat @@ fun read write ->
   write (stmts @ [ "(check-sat)" ]);
-  return
-    ( match read () with
-    | Atom "unsat" -> false
-    | Atom "sat" -> true
-    | x -> error x )
+  return (match read () with Atom "unsat" -> false | Atom "sat" -> true | x -> error x)
 
 let check_all_sat vars =
   let%bind stmts = get_stmts in
   let stmts = List.map ~f:Tuple.T2.get2 @@ Revlist.to_list stmts in
   with_mathsat @@ fun read write ->
-  write
-    ( stmts
-    @ [
-        sprintf "(check-allsat (%s))"
-        @@ String.concat ~sep:" "
-        @@ List.map ~f:String_id.to_string vars;
-      ] );
+  write (stmts @ [ sprintf "(check-allsat (%s))" @@ String.concat ~sep:" " @@ List.map ~f:String_id.to_string vars ]);
   let rec read_models models =
-    match read () with
-    | Atom "unsat" | Atom "sat" -> models
-    | x -> read_models (parse_model x :: models)
+    match read () with Atom "unsat" | Atom "sat" -> models | x -> read_models (parse_model x :: models)
   in
   return @@ (read_models [] |> List.map ~f:(Map.of_alist_exn (module Var)))
 
@@ -662,8 +543,7 @@ module Model = struct
 
   let models_enum ?vars e =
     let vars = Option.map vars ~f:(Set.inter (Expr.vars e)) in
-    print_s
-      [%message "enumerating models" (vars : Set.M(Var).t option) (e : Expr.t)];
+    print_s [%message "enumerating models" (vars : Set.M(Var).t option) (e : Expr.t)];
     let bit m i = Int.((m lsr i) land 0x1 > 0) in
     let all_vars = expr_vars e |> Set.to_list in
     let post_filter =
@@ -676,27 +556,16 @@ module Model = struct
     in
     List.range 0 (Int.pow 2 (List.length all_vars))
     |> List.filter_map ~f:(fun m ->
-           let ctx =
-             List.mapi all_vars ~f:(fun i v -> (v, bit m i))
-             |> Map.of_alist_exn (module String_id)
-           in
+           let ctx = List.mapi all_vars ~f:(fun i v -> (v, bit m i)) |> Map.of_alist_exn (module String_id) in
            if Expr.eval ctx e then Some ctx else None)
     |> post_filter
 
   let models_solver ?vars e =
     let expr_vars = Expr.vars e in
-    let vars =
-      Option.map vars ~f:(Set.inter expr_vars)
-      |> Option.value ~default:expr_vars
-      |> Set.to_list
-    in
+    let vars = Option.map vars ~f:(Set.inter expr_vars) |> Option.value ~default:expr_vars |> Set.to_list in
 
     let (), smt_ctx =
-      (let%bind _ =
-         Set.to_list expr_vars
-         |> List.map ~f:(fun v -> make_decl (String_id.to_string v))
-         |> all
-       in
+      (let%bind _ = Set.to_list expr_vars |> List.map ~f:(fun v -> make_decl (String_id.to_string v)) |> all in
        assert_ e)
       |> run
     in
@@ -706,36 +575,25 @@ module Model = struct
     List.range 0 (Int.pow 2 (List.length vars))
     |> List.filter_map ~f:(fun m ->
            let is_model =
-             (let%bind () =
-                assert_
-                  (List.mapi vars ~f:(fun i v -> var v = bool (bit m i)) |> and_)
-              in
+             (let%bind () = assert_ (List.mapi vars ~f:(fun i v -> var v = bool (bit m i)) |> and_) in
               check_sat)
              |> eval_with_state smt_ctx
            in
            if is_model then
-             List.mapi vars ~f:(fun i v -> (v, bit m i))
-             |> Map.of_alist_exn (module Var)
-             |> Option.return
+             List.mapi vars ~f:(fun i v -> (v, bit m i)) |> Map.of_alist_exn (module Var) |> Option.return
            else None)
 
-  let _models_hybrid ?vars e =
-    if Set.length @@ Expr.vars e > 5 then models_solver ?vars e
-    else models_enum ?vars e
+  let _models_hybrid ?vars e = if Set.length @@ Expr.vars e > 5 then models_solver ?vars e else models_enum ?vars e
 
   let of_ = models_solver
 
   let%expect_test "" =
-    of_ (varop And [ var_s "x"; var_s "y" ])
-    |> [%sexp_of: bool Map.M(Var).t list] |> print_s;
+    of_ (varop And [ var_s "x"; var_s "y" ]) |> [%sexp_of: bool Map.M(Var).t list] |> print_s;
     [%expect {| (((x true) (y true))) |}]
 
   let%expect_test "" =
-    of_ (varop Or [ var_s "x"; var_s "y" ])
-    |> [%sexp_of: bool Map.M(Var).t list] |> print_s;
-    [%expect
-      {| (((x true) (y false)) ((x false) (y true)) ((x true) (y true))) |}]
+    of_ (varop Or [ var_s "x"; var_s "y" ]) |> [%sexp_of: bool Map.M(Var).t list] |> print_s;
+    [%expect {| (((x true) (y false)) ((x false) (y true)) ((x true) (y true))) |}]
 
-  let to_expr m =
-    Map.to_alist m |> List.map ~f:(fun (k, v) -> var k = bool v) |> and_
+  let to_expr m = Map.to_alist m |> List.map ~f:(fun (k, v) -> var k = bool v) |> and_
 end

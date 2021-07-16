@@ -13,7 +13,7 @@ module T = struct
     let rec iter i =
       if i < r.hi then (
         f i;
-        iter (i + 1) )
+        iter (i + 1))
     in
     iter r.lo
 

@@ -1,18 +1,10 @@
-type circle = { id : int; center : Vector2.t; radius : float }
-[@@deriving compare, equal, hash, sexp]
+type circle = { id : int; center : Vector2.t; radius : float } [@@deriving compare, equal, hash, sexp]
 
-type rect = { id : int; lo_left : Vector2.t; hi_right : Vector2.t }
-[@@deriving compare, equal, hash, sexp]
+type rect = { id : int; lo_left : Vector2.t; hi_right : Vector2.t } [@@deriving compare, equal, hash, sexp]
 
-type replicate = { id : int; count : int; v : Vector2.t }
-[@@deriving compare, equal, hash, sexp]
+type replicate = { id : int; count : int; v : Vector2.t } [@@deriving compare, equal, hash, sexp]
 
-type op =
-  | Union
-  | Inter
-  | Circle of circle
-  | Rect of rect
-  | Replicate of replicate
+type op = Union | Inter | Circle of circle | Rect of rect | Replicate of replicate
 [@@deriving compare, equal, hash, sexp]
 
 module T = Hash_cached.Make (struct
@@ -52,18 +44,11 @@ let replicate ~id ~count ~v = create (Replicate { id; count; v })
 
 let to_string = Fmt.to_to_string pp
 
-let arity x =
-  match value x with
-  | Circle _ | Rect _ -> 0
-  | Replicate _ -> 1
-  | Union | Inter -> 2
+let arity x = match value x with Circle _ | Rect _ -> 0 | Replicate _ -> 1 | Union | Inter -> 2
 
 let ret_type _ = Cad_type.Scene
 
 let args_type x =
-  match value x with
-  | Circle _ | Rect _ -> []
-  | Replicate _ -> [ Cad_type.Scene ]
-  | Union | Inter -> [ Scene; Scene ]
+  match value x with Circle _ | Rect _ -> [] | Replicate _ -> [ Cad_type.Scene ] | Union | Inter -> [ Scene; Scene ]
 
 let type_ x = (args_type x, ret_type x)

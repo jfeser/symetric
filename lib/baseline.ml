@@ -5,8 +5,7 @@ include struct
 
   let synth = Spec.add spec @@ Param.const_str ~name:"synth" "baseline"
 
-  let max_cost =
-    Spec.add spec @@ Param.int ~name:"max-cost" ~doc:" max search cost" ()
+  let max_cost = Spec.add spec @@ Param.int ~name:"max-cost" ~doc:" max search cost" ()
 end
 
 module Make
@@ -22,9 +21,7 @@ struct
 
   let dump_solution_dists = false
 
-  let unsafe_to_list a =
-    List.init (Option_array.length a)
-      ~f:(Option_array.unsafe_get_some_assuming_some a)
+  let unsafe_to_list a = List.init (Option_array.length a) ~f:(Option_array.unsafe_get_some_assuming_some a)
 
   let make_edge params op args = (Value.eval params op args, op, args)
 
@@ -43,9 +40,7 @@ struct
     build_args 0
 
   let generate_states params ss ops cost =
-    if cost = 1 then
-      List.filter ops ~f:(fun op -> Op.arity op = 0)
-      |> List.map ~f:(fun op -> make_edge params op [])
+    if cost = 1 then List.filter ops ~f:(fun op -> Op.arity op = 0) |> List.map ~f:(fun op -> make_edge params op [])
     else if cost > 1 then
       let arg_cost = cost - 1 in
       List.filter ops ~f:(fun op -> Op.arity op > 0)
@@ -59,8 +54,7 @@ struct
 
   let sample_states _ = Fun.id
 
-  let insert_states ss cost states =
-    List.iter states ~f:(fun (state, op, args) -> insert ss cost state op args)
+  let insert_states ss cost states = List.iter states ~f:(fun (state, op, args) -> insert ss cost state op args)
 
   let synth params =
     let max_cost = Params.get params max_cost in
@@ -78,16 +72,14 @@ struct
 
         let solutions =
           List.filter_map new_states ~f:(fun (s, _, _) ->
-              if [%compare.equal: Value.t] s output then Some (program_exn ss s)
-              else None)
+              if [%compare.equal: Value.t] s output then Some (program_exn ss s) else None)
         in
 
         Fmt.epr "Finished cost %d\n%!" cost;
         print_stats ss;
 
         if not (List.is_empty solutions) then (
-          List.iter solutions ~f:(fun p ->
-              eprint_s [%message (p : Op.t Program.t)]);
+          List.iter solutions ~f:(fun p -> eprint_s [%message (p : Op.t Program.t)]);
           raise (Done (List.hd_exn solutions)));
 
         fill (cost + 1)

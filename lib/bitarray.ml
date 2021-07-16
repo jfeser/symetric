@@ -11,9 +11,7 @@ let length t = t.len
 let bits_per_word = 63
 
 let init ~f len =
-  let nwords =
-    (len / bits_per_word) + if len mod bits_per_word > 0 then 1 else 0
-  in
+  let nwords = (len / bits_per_word) + if len mod bits_per_word > 0 then 1 else 0 in
   let buf = Array.create ~len:nwords 0 in
   let idx = ref 0 in
   for w = 0 to nwords - 1 do
@@ -62,3 +60,8 @@ let%expect_test "" =
     let b = init 10 ~f:(fun j -> j < i) in
     [%test_result: int] ~expect:i (hamming_weight b)
   done
+
+let to_ndarray x =
+  let len = length x and bit_get = get in
+  let open Owl.Dense.Ndarray.Generic in
+  init Owl.float32 [| len |] (fun i -> if bit_get x i then 1.0 else 0.0)

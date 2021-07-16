@@ -1,7 +1,5 @@
 let apply2 f args =
-  match args with
-  | [ x; x' ] -> f x x'
-  | _ -> raise_s [%message "Unexpected args" (List.length args : int)]
+  match args with [ x; x' ] -> f x x' | _ -> raise_s [%message "Unexpected args" (List.length args : int)]
 
 let apply6 f args =
   match args with

@@ -24,16 +24,11 @@ module Spec = struct
   let union qs = ref (List.concat_map qs ~f:( ! ))
 
   let cli m =
-    let compare (module S : Param_intf) (module S' : Param_intf) =
-      [%compare: string] S.name S'.name
-    in
+    let compare (module S : Param_intf) (module S' : Param_intf) = [%compare: string] S.name S'.name in
     List.map !m ~f:(fun (module S : Param_intf) ->
-        match S.init with
-        | First p -> p
-        | Second f -> Command.Param.return (Univ_map.Packed.T (S.key, f ())))
+        match S.init with First p -> p | Second f -> Command.Param.return (Univ_map.Packed.T (S.key, f ())))
     |> Command.Param.all
-    |> Command.Param.map ~f:(fun vs ->
-           { spec = List.sort ~compare !m; values = Univ_map.of_alist_exn vs })
+    |> Command.Param.map ~f:(fun vs -> { spec = List.sort ~compare !m; values = Univ_map.of_alist_exn vs })
 end
 
 module Param = struct
@@ -58,16 +53,13 @@ module Param = struct
     let open Command.Param in
     let param =
       match default with
-      | Some d ->
-          flag_optional_with_default_doc name ~doc ~default:d ~aliases arg_type
-            sexp_of_t
+      | Some d -> flag_optional_with_default_doc name ~doc ~default:d ~aliases arg_type sexp_of_t
       | None -> flag name ~aliases ~doc (required arg_type)
     in
     map param ~f:(fun v -> Univ_map.Packed.T (key, v))
 
   let make_init ~name ~doc ?aliases key arg_type sexp_of_t = function
-    | `Cli default ->
-        First (make_param ~name ~doc ?default ?aliases key arg_type sexp_of_t)
+    | `Cli default -> First (make_param ~name ~doc ?default ?aliases key arg_type sexp_of_t)
     | `Default f -> Second f
 
   module Json = struct
@@ -96,8 +88,7 @@ module Param = struct
 
       let to_json = make_to_json csv Json.int
 
-      let init =
-        make_init ~name ~doc ?aliases key Command.Param.int sexp_of_t init
+      let init = make_init ~name ~doc ?aliases key Command.Param.int sexp_of_t init
     end : Param_intf
       with type t = int)
 
@@ -111,8 +102,7 @@ module Param = struct
 
       let to_json = make_to_json csv Json.bool
 
-      let init =
-        make_init ~name ~doc ?aliases key Command.Param.bool sexp_of_t init
+      let init = make_init ~name ~doc ?aliases key Command.Param.bool sexp_of_t init
     end : Param_intf
       with type t = bool)
 
@@ -126,8 +116,7 @@ module Param = struct
 
       let to_json = make_to_json csv Json.float
 
-      let init =
-        make_init ~name ~doc ?aliases key Command.Param.float sexp_of_t init
+      let init = make_init ~name ~doc ?aliases key Command.Param.float sexp_of_t init
     end : Param_intf
       with type t = float)
 
@@ -183,9 +172,7 @@ module Param = struct
 
       let init = Second (fun () -> Queue.create ())
 
-      let to_json =
-        make_to_json csv @@ fun x ->
-        Queue.to_list x |> List.map ~f:Json.float |> Json.list
+      let to_json = make_to_json csv @@ fun x -> Queue.to_list x |> List.map ~f:Json.float |> Json.list
     end : Param_intf
       with type t = float Queue.t)
 
@@ -202,10 +189,7 @@ module Param = struct
       let to_json =
         if csv then
           Option.return @@ fun v ->
-          `List
-            (Queue.to_list v
-            |> List.map ~f:(fun l -> `List (List.map l ~f:(fun x -> `Float x)))
-            )
+          `List (Queue.to_list v |> List.map ~f:(fun l -> `List (List.map l ~f:(fun x -> `Float x))))
         else None
     end : S
       with type t = float list Queue.t)
@@ -239,36 +223,28 @@ module Param = struct
       let init =
         let open Command in
         let arg_type = Arg_type.of_map ids_map in
-        First
-          Param.(
-            flag name ~doc (listed arg_type)
-            |> map ~f:(fun v -> Univ_map.Packed.T (key, v)))
+        First Param.(flag name ~doc (listed arg_type) |> map ~f:(fun v -> Univ_map.Packed.T (key, v)))
 
       let to_json = None
     end : Param_intf
       with type t = t list)
 end
 
-let get (type t) m (module S : Param_intf with type t = t) =
-  Univ_map.find_exn m.values S.key
+let get (type t) m (module S : Param_intf with type t = t) = Univ_map.find_exn m.values S.key
 
-let set (type t) m (module S : Param_intf with type t = t) v =
-  { m with values = Univ_map.set m.values S.key v }
+let set (type t) m (module S : Param_intf with type t = t) v = { m with values = Univ_map.set m.values S.key v }
 
 let json m =
   let elems =
     List.filter_map m.spec ~f:(fun (module P : Param_intf) ->
-        Option.map P.to_json ~f:(fun conv ->
-            (P.name, conv @@ Univ_map.find_exn m.values P.key)))
+        Option.map P.to_json ~f:(fun conv -> (P.name, conv @@ Univ_map.find_exn m.values P.key)))
   in
   `Assoc elems
 
 type pair = P : ('a, Param.bound) Param.t * 'a -> pair
 
 let of_alist_exn l =
-  let cast (type t) (module P : Param.S with type t = t) =
-    (module P : Param.S)
-  in
+  let cast (type t) (module P : Param.S with type t = t) = (module P : Param.S) in
   let to_packed (P ((module P), v)) = Univ_map.Packed.T (P.key, v) in
   let spec = List.map l ~f:(fun (P (k, _)) -> cast k) in
   let values = Univ_map.of_alist_exn (List.map l ~f:to_packed) in

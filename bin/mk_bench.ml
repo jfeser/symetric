@@ -13,9 +13,7 @@ let main () =
 
     let output = "L"
   end in
-  let module DeepSynth =
-    Synth.Make (Sketch) (Code) (Deepcoder.Lang) (Deepcoder.Cache)
-  in
+  let module DeepSynth = Synth.Make (Sketch) (Code) (Deepcoder.Lang) (Deepcoder.Cache) in
   let open DeepSynth in
   let g = search_graph 10 in
   Out_channel.with_file "search.dot" ~f:(fun ch -> G.output_graph ch g);

@@ -5,9 +5,7 @@ module Make (G : GRAPH) = struct
     let next_sep s =
       Set.to_list s
       |> List.concat_map ~f:(fun v ->
-             match List.concat_map (G.succ graph v) ~f:(G.succ graph) with
-             | [] -> [ v ]
-             | vs -> vs)
+             match List.concat_map (G.succ graph v) ~f:(G.succ graph) with [] -> [ v ] | vs -> vs)
       |> Set.of_list (module G.V)
     in
     let rec gen_seps seps =
@@ -27,9 +25,7 @@ module Make (G : GRAPH) = struct
       let no_expand, yes_expand =
         Set.to_list s
         |> List.partition_map ~f:(fun v ->
-               match List.concat_map (G.succ graph v) ~f:(G.succ graph) with
-               | [] -> First v
-               | vs -> Second (v, vs))
+               match List.concat_map (G.succ graph v) ~f:(G.succ graph) with [] -> First v | vs -> Second (v, vs))
       in
 
       let to_expand, not_expand = List.split_n (List.permute yes_expand) k in

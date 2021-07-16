@@ -8,20 +8,16 @@ let weighted_random ?(state = Random.State.default) ~weight n elems =
         -.(Float.log r /. weight v)
       in
       if H.length heap < n then H.add heap (k, v)
-      else
-        match H.pop_if heap (fun (k_max, _) -> Float.O.(k < k_max)) with
-        | Some _ -> H.add heap (k, v)
-        | None -> ());
+      else match H.pop_if heap (fun (k_max, _) -> Float.O.(k < k_max)) with Some _ -> H.add heap (k, v) | None -> ());
   Pairing_heap.to_list heap |> List.map ~f:Tuple.T2.get2
 
 let%expect_test "" =
   for _ = 0 to 10 do
-    weighted_random 5
-      [ 100.0; 10.0; 10.0; 10.0; 10.0; 10.0; 1.0; 1.0; 1.0; 1.0; 1.0 ]
-      ~weight:Fun.id
+    weighted_random 5 [ 100.0; 10.0; 10.0; 10.0; 10.0; 10.0; 1.0; 1.0; 1.0; 1.0; 1.0 ] ~weight:Fun.id
     |> [%sexp_of: float list] |> print_s
   done;
-  [%expect {|
+  [%expect
+    {|
     (10 10 10 100 10)
     (10 10 10 10 100)
     (10 10 10 10 100)

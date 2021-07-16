@@ -1,7 +1,9 @@
 (library
  (name staged_synth)
- (libraries core core_kernel.hash_heap core.bigstring_unix combinat ocamlgraph fmt progress tree_diff yojson owl)
- (preprocess (pps ppx_jane))
+ (libraries core core_kernel.hash_heap core.bigstring_unix combinat
+   ocamlgraph fmt progress tree_diff yojson owl)
+ (preprocess
+  (pps ppx_jane))
  (inline_tests)
  (flags :standard -g -open Core -w -9))
 
@@ -9,4 +11,6 @@
 
 (alias
  (name runtest)
- (deps (glob_files *.cpp) (glob_files *.hpp)))
+ (deps
+  (glob_files *.cpp)
+  (glob_files *.hpp)))

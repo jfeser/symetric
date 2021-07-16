@@ -1,6 +1,7 @@
 (library
  (name tests)
  (libraries staged_synth core base_quickcheck)
- (preprocess (pps ppx_jane))
+ (preprocess
+  (pps ppx_jane))
  (inline_tests)
  (flags :standard -open Core))

@@ -87,20 +87,11 @@ module type S = sig
   with type ctx := t
 
   module G : sig
-    include
-      Graph_ext.LABELED_GRAPH with type vertex = Node.t and type label = int
+    include Graph_ext.LABELED_GRAPH with type vertex = Node.t and type label = int
 
-    include
-      Graph_ext.CHANGED
-        with type graph = t
-         and type vertex = V.t
-         and type edge = E.t
+    include Graph_ext.CHANGED with type graph = t and type vertex = V.t and type edge = E.t
 
-    module Fold :
-      Graph_ext.FOLDS
-        with type graph = t
-         and type vertex = V.t
-         and type edge = E.t
+    module Fold : Graph_ext.FOLDS with type graph = t and type vertex = V.t and type edge = E.t
   end
 
   val create : params -> t

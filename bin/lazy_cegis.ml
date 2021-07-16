@@ -24,8 +24,7 @@ let run_synth synth params () =
   Params.(get params runtime) := Time.diff end_ start;
   if Params.(get params print_json) then print_json @@ Dumb_params.json params
 
-let baseline_cli (type value op)
-    (module Lang : Lang_intf.S with type Value.t = value and type Op.t = op) =
+let baseline_cli (type value op) (module Lang : Lang_intf.S with type Value.t = value and type Op.t = op) =
   let module Validate = struct
     let validate = ignore
   end in
@@ -37,12 +36,9 @@ let baseline_cli (type value op)
        let params = Dumb_params.Spec.cli spec in
        run_synth Synth.synth params]
 
-let diverse_cli (type value op)
-    (module Lang : Lang_intf.S with type Value.t = value and type Op.t = op) =
+let diverse_cli (type value op) (module Lang : Lang_intf.S with type Value.t = value and type Op.t = op) =
   let module Synth = Sampling_diverse.Make (Lang) in
-  let spec =
-    Dumb_params.Spec.union [ Lang.spec; Params.spec; Sampling_diverse.spec ]
-  in
+  let spec = Dumb_params.Spec.union [ Lang.spec; Params.spec; Sampling_diverse.spec ] in
   let open Command.Let_syntax in
   Command.basic
     ~summary:(sprintf "Diversity sampling for %s" Lang.name)
@@ -60,9 +56,7 @@ let cad_sample_naive_cli =
     Params.(get params runtime) := Time.diff end_ start;
     if Params.(get params print_json) then print_json @@ Dumb_params.json params
   in
-  let spec =
-    Dumb_params.Spec.union [ Lang.spec; Params.spec; Sampling_naive.spec ]
-  in
+  let spec = Dumb_params.Spec.union [ Lang.spec; Params.spec; Sampling_naive.spec ] in
   let open Command.Let_syntax in
   Command.basic ~summary:""
     [%map_open
@@ -80,9 +74,7 @@ let cad_sample_naive_ball_cli =
     Params.(get params runtime) := Time.diff end_ start;
     if Params.(get params print_json) then print_json @@ Dumb_params.json params
   in
-  let spec =
-    Dumb_params.Spec.union [ Lang.spec; Params.spec; Sampling_naive_ball.spec ]
-  in
+  let spec = Dumb_params.Spec.union [ Lang.spec; Params.spec; Sampling_naive_ball.spec ] in
   let open Command.Let_syntax in
   Command.basic ~summary:""
     [%map_open

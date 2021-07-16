@@ -4,8 +4,7 @@ let random_int lo hi =
   [%test_pred: int * int] (fun (lo, hi) -> lo < hi) (lo, hi);
   lo + Random.int (hi - lo)
 
-let pixels input conc =
-  Cad_bench.points input |> List.map ~f:(Cad_conc.getp conc)
+let pixels input conc = Cad_bench.points input |> List.map ~f:(Cad_conc.getp conc)
 
 let has_empty_inter params p =
   let exception Empty_inter in
@@ -14,8 +13,7 @@ let has_empty_inter params p =
     let v = Cad_conc.eval params op args in
     if
       [%compare.equal: Cad_op.t] op Cad_op.inter
-      && pixels (Params.get params Cad_params.bench).input v
-         |> List.for_all ~f:(fun x -> not x)
+      && pixels (Params.get params Cad_params.bench).input v |> List.for_all ~f:(fun x -> not x)
     then raise Empty_inter
     else v
   in
@@ -26,10 +24,7 @@ let has_empty_inter params p =
 
 let non_trivial params p =
   let v = eval_program params p in
-  let rec nilops = function
-    | Program.Apply (op, []) -> [ op ]
-    | Apply (_, args) -> List.concat_map ~f:nilops args
-  in
+  let rec nilops = function Program.Apply (op, []) -> [ op ] | Apply (_, args) -> List.concat_map ~f:nilops args in
   let v' =
     nilops p
     |> List.map ~f:(fun op -> Program.Apply (op, []))
@@ -58,13 +53,7 @@ include struct
     Spec.add spec
     @@ Param.ids ~name:"ops" ~doc:" operators to generate"
          (module Op_kind)
-         [
-           ("circle", Circle);
-           ("rectangle", Rect);
-           ("union", Union);
-           ("intersection", Inter);
-           ("replicate", Repl);
-         ]
+         [ ("circle", Circle); ("rectangle", Rect); ("union", Union); ("intersection", Inter); ("replicate", Repl) ]
 
   let xmax = Spec.add spec @@ Param.int ~name:"xmax" ~doc:" x width" ()
 
@@ -81,22 +70,11 @@ let random_ops params =
     | Repl ->
         let v =
           List.random_element_exn
-            [
-              Vector2.{ x = 2.0; y = 2.0 };
-              { x = -2.0; y = 2.0 };
-              { x = 2.0; y = -2.0 };
-              { x = -2.0; y = -2.0 };
-            ]
+            [ Vector2.{ x = 2.0; y = 2.0 }; { x = -2.0; y = 2.0 }; { x = 2.0; y = -2.0 }; { x = -2.0; y = -2.0 } ]
         in
         Cad_op.replicate ~id ~count:(Random.int_incl 1 4) ~v
     | Circle ->
-        let center =
-          Vector2.
-            {
-              x = Random.int xmax |> Float.of_int;
-              y = Random.int ymax |> Float.of_int;
-            }
-        in
+        let center = Vector2.{ x = Random.int xmax |> Float.of_int; y = Random.int ymax |> Float.of_int } in
         let radius = Random.int (Int.min xmax ymax / 2) |> Float.of_int in
         Cad_op.circle ~id ~center ~radius
     | Rect ->
@@ -122,14 +100,7 @@ let random_program params size =
   let params =
     let xmax = Params.get params xmax and ymax = Params.get params ymax in
     Dumb_params.set params Cad_params.bench
-      Cad_bench.
-        {
-          ops = [];
-          input = { xmax; ymax };
-          output = Cad_conc.dummy;
-          solution = None;
-          filename = None;
-        }
+      Cad_bench.{ ops = []; input = { xmax; ymax }; output = Cad_conc.dummy; solution = None; filename = None }
   in
 
   let open Option.Let_syntax in
@@ -155,9 +126,7 @@ let random_program params size =
     else
       let op = List.random_element_exn (unops @ binops) in
       let arity = Cad_op.arity op in
-      if arity = 1 then random_unop op size
-      else if arity = 2 then random_binop op size
-      else failwith ""
+      if arity = 1 then random_unop op size else if arity = 2 then random_binop op size else failwith ""
   in
   let prog = Option.value_exn (random_tree size) in
   if check params prog then return (prog, ops) else None
@@ -218,10 +187,4 @@ let random_program params size =
 
 let to_bench params ops solution output =
   let xmax = Params.get params xmax and ymax = Params.get params ymax in
-  {
-    Cad_bench.ops;
-    input = { xmax; ymax };
-    output;
-    solution = Some solution;
-    filename = None;
-  }
+  { Cad_bench.ops; input = { xmax; ymax }; output; solution = Some solution; filename = None }

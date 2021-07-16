@@ -40,20 +40,14 @@ module Param : sig
 
   val float_seq : name:string -> ?csv:bool -> unit -> (float Queue.t, free) t
 
-  val float_list :
-    name:string -> ?csv:bool -> unit -> (float list Queue.t, free) t
+  val float_list : name:string -> ?csv:bool -> unit -> (float list Queue.t, free) t
 
-  val bool_ref :
-    name:string -> ?default:bool -> ?csv:bool -> unit -> (bool ref, free) t
+  val bool_ref : name:string -> ?default:bool -> ?csv:bool -> unit -> (bool ref, free) t
 
   val const_str : name:string -> ?csv:bool -> string -> (string, free) t
 
   val ids :
-    (module Comparator.S with type t = 't) ->
-    name:string ->
-    doc:string ->
-    (string * 't) list ->
-    ('t list, free) t
+    (module Comparator.S with type t = 't) -> name:string -> doc:string -> (string * 't) list -> ('t list, free) t
 end
 
 type t

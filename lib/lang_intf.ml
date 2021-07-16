@@ -32,14 +32,31 @@ module type S = sig
   val spec : Dumb_params.Spec.t
 end
 
+module type S_with_features = sig
+  include S
+
+  val features : Value.t -> Owl.Dense.Ndarray.S.arr
+  (** Returns an array of features of shape (nfeatures,). *)
+
+  val dist : Params.t -> Owl.Dense.Ndarray.S.arr -> Value.t -> Value.t -> float
+  (** Takes a distance matrix M of shape (nfeatures, nfeatures) and produces a distance. *)
+
+  module Gen : sig
+    val random_program : Params.t -> int -> (Op.t Program.t * Op.t list) option
+
+    val to_bench : Dumb_params.t -> Op.t list -> Op.t Program.t -> Value.t -> Bench.t
+
+    val spec : Dumb_params.Spec.t
+  end
+end
+
 module type S_with_gen = sig
   include S
 
   module Gen : sig
     val random_program : Params.t -> int -> (Op.t Program.t * Op.t list) option
 
-    val to_bench :
-      Dumb_params.t -> Op.t list -> Op.t Program.t -> Value.t -> Bench.t
+    val to_bench : Dumb_params.t -> Op.t list -> Op.t Program.t -> Value.t -> Bench.t
 
     val spec : Dumb_params.Spec.t
   end

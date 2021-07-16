@@ -37,24 +37,14 @@ module Op = struct
   type type_ = Type.t
 
   module T = struct
-    type t =
-      | Id of Tensor.t
-      | Reshape
-      | Permute
-      | Flip
-      | Cons
-      | Vec
-      | Int of int
+    type t = Id of Tensor.t | Reshape | Permute | Flip | Cons | Vec | Int of int
     [@@deriving compare, equal, hash, sexp]
   end
 
   include T
   include Comparator.Make (T)
 
-  let ret_type = function
-    | Id _ | Reshape | Permute | Flip -> Type.Tensor
-    | Cons | Vec -> Vector
-    | Int _ -> Int
+  let ret_type = function Id _ | Reshape | Permute | Flip -> Type.Tensor | Cons | Vec -> Vector | Int _ -> Int
 
   let args_type = function
     | Id _ | Int _ -> []
@@ -84,8 +74,7 @@ module Value = struct
   end
 
   module T = struct
-    type t = Tensor of Tensor.t | Vector of Vector.t | Int of int | Error
-    [@@deriving compare, equal, hash, sexp]
+    type t = Tensor of Tensor.t | Vector of Vector.t | Int of int | Error [@@deriving compare, equal, hash, sexp]
   end
 
   include T
@@ -94,32 +83,26 @@ module Value = struct
   let eval _ op args =
     match (op, args) with
     | Op.Id t, [] -> Tensor t
-    | Reshape, [ Tensor m; Vector v ] -> (
-        try Tensor (Arr.reshape m v) with Invalid_argument _ -> Error)
+    | Reshape, [ Tensor m; Vector v ] -> ( try Tensor (Arr.reshape m v) with Invalid_argument _ -> Error)
     | Permute, [ Tensor m; Vector v ] ->
         let dims = Arr.num_dims m in
         if Array.length v <> dims then Error
         else
           let found = Array.create ~len:dims false in
-          Array.iter v ~f:(fun ax ->
-              if ax >= 0 && ax < dims then found.(ax) <- true);
-          if Array.for_all ~f:Fun.id found then Tensor (Arr.transpose ~axis:v m)
-          else Error
+          Array.iter v ~f:(fun ax -> if ax >= 0 && ax < dims then found.(ax) <- true);
+          if Array.for_all ~f:Fun.id found then Tensor (Arr.transpose ~axis:v m) else Error
     | Flip, [ Tensor m; Int x ] ->
         let dims = Arr.num_dims m in
         if x >= 0 && x < dims then Tensor (Arr.flip ~axis:x m) else Error
-    | Cons, [ Int x; Vector xs ] ->
-        Vector (Array.of_list (x :: Array.to_list xs))
+    | Cons, [ Int x; Vector xs ] -> Vector (Array.of_list (x :: Array.to_list xs))
     | Vec, [ Int x ] -> Vector [| x |]
     | Int x, [] -> Int x
     | (Reshape | Permute | Flip), ([ Error; _ ] | [ _; Error ]) -> Error
-    | op, args ->
-        raise_s [%message "unexpected arguments" (op : Op.t) (args : t list)]
+    | op, args -> raise_s [%message "unexpected arguments" (op : Op.t) (args : t list)]
 
   let dist _ v v' =
     match (v, v') with
-    | Tensor t, Tensor t' ->
-        if Owl.Arr.num_dims t <> Owl.Arr.num_dims t' then 1.0 else 0.0
+    | Tensor t, Tensor t' -> if Owl.Arr.num_dims t <> Owl.Arr.num_dims t' then 1.0 else 0.0
     | _ -> Float.infinity
 end
 
@@ -144,12 +127,9 @@ include struct
 
   let spec = Spec.create ()
 
-  let _ =
-    (Spec.add spec @@ Param.const_str ~name:"lang" name
-      : (string, Param.bound) Param.t)
+  let _ = (Spec.add spec @@ Param.const_str ~name:"lang" name : (string, Param.bound) Param.t)
 
-  let bench =
-    Spec.add spec @@ Param.create @@ Bench.param (module Op) (module Value)
+  let bench = Spec.add spec @@ Param.create @@ Bench.param (module Op) (module Value)
 end
 
 module Bench = Bench0
@@ -166,37 +146,23 @@ module Gen = struct
            (module Op)
            [ ("reshape", Reshape); ("flip", Flip); ("permute", Permute) ]
 
-    let min_dims =
-      Spec.add spec
-      @@ Param.int ~name:"min-dims" ~doc:" min number of dimensions"
-           ~init:(`Cli (Some 1)) ()
+    let min_dims = Spec.add spec @@ Param.int ~name:"min-dims" ~doc:" min number of dimensions" ~init:(`Cli (Some 1)) ()
 
-    let max_dims =
-      Spec.add spec
-      @@ Param.int ~name:"max-dims" ~doc:" max number of dimensions"
-           ~init:(`Cli (Some 3)) ()
+    let max_dims = Spec.add spec @@ Param.int ~name:"max-dims" ~doc:" max number of dimensions" ~init:(`Cli (Some 3)) ()
 
-    let min_len =
-      Spec.add spec
-      @@ Param.int ~name:"min-len" ~doc:" min dimension length"
-           ~init:(`Cli (Some 1)) ()
+    let min_len = Spec.add spec @@ Param.int ~name:"min-len" ~doc:" min dimension length" ~init:(`Cli (Some 1)) ()
 
-    let max_len =
-      Spec.add spec
-      @@ Param.int ~name:"max-len" ~doc:" max dimension length"
-           ~init:(`Cli (Some 5)) ()
+    let max_len = Spec.add spec @@ Param.int ~name:"max-len" ~doc:" max dimension length" ~init:(`Cli (Some 5)) ()
   end
 
-  let factors n =
-    List.init n ~f:(fun i -> i + 1) |> List.filter ~f:(fun m -> n mod m = 0)
+  let factors n = List.init n ~f:(fun i -> i + 1) |> List.filter ~f:(fun m -> n mod m = 0)
 
   let rec k_factors n k =
     if k = 1 then [ [ n ] ]
     else
       List.init n ~f:(fun i -> i + 1)
       |> List.filter ~f:(fun m -> n mod m = 0)
-      |> List.concat_map ~f:(fun m ->
-             List.map (k_factors (n / m) (k - 1)) ~f:(fun ms -> m :: ms))
+      |> List.concat_map ~f:(fun m -> List.map (k_factors (n / m) (k - 1)) ~f:(fun ms -> m :: ms))
 
   let%expect_test "" =
     print_s [%message (k_factors 16 1 : int list list)];
@@ -217,8 +183,7 @@ module Gen = struct
         (2 2 4 1) (2 4 1 2) (2 4 2 1) (2 8 1 1) (4 1 1 4) (4 1 2 2) (4 1 4 1)
         (4 2 1 2) (4 2 2 1) (4 4 1 1) (8 1 1 2) (8 1 2 1) (8 2 1 1) (16 1 1 1))) |}]
 
-  let check params p =
-    match Program.eval (Value.eval params) p with Error -> false | _ -> true
+  let check params p = match Program.eval (Value.eval params) p with Error -> false | _ -> true
 
   let random_program params size =
     let min_dims = Params.get params min_dims
@@ -226,30 +191,24 @@ module Gen = struct
     and min_len = Params.get params min_len
     and max_len = Params.get params max_len in
     let dims = Random.int_incl min_dims max_dims in
-    let dim_lens =
-      Array.init dims ~f:(fun _ -> Random.int_incl min_len max_len)
-    in
+    let dim_lens = Array.init dims ~f:(fun _ -> Random.int_incl min_len max_len) in
 
     let wrap p =
       let t =
         match Program.eval (Value.eval params) p with
         | Tensor t -> t
-        | v ->
-            raise_s [%message "not a tensor" (p : Op.t Program.t) (v : Value.t)]
+        | v -> raise_s [%message "not a tensor" (p : Op.t Program.t) (v : Value.t)]
       in
       let op = List.random_element_exn [ `Reshape; `Permute; `Flip ] in
       match op with
       | `Reshape ->
           let new_dims = Random.int_incl min_dims max_dims in
-          let new_shape =
-            List.random_element_exn (k_factors (Owl.Arr.numel t) new_dims)
-          in
+          let new_shape = List.random_element_exn (k_factors (Owl.Arr.numel t) new_dims) in
           Program.apply Op.Reshape ~args:[ p; Op.vec_of_list new_shape ]
       | `Permute ->
           let dims =
             List.init (Owl.Arr.num_dims t) ~f:Fun.id
-            |> Combinat.permutations |> Combinat.random |> List.hd_exn
-            |> Array.to_list
+            |> Combinat.permutations |> Combinat.random |> List.hd_exn |> Array.to_list
           in
           Program.apply Op.Permute ~args:[ p; Op.vec_of_list dims ]
       | `Flip ->
@@ -258,18 +217,14 @@ module Gen = struct
     in
 
     let generate n =
-      let tensor =
-        Owl.Arr.init_nd dim_lens (fun _ -> Float.of_int @@ Random.int 10)
-      in
+      let tensor = Owl.Arr.init_nd dim_lens (fun _ -> Float.of_int @@ Random.int 10) in
       let p_init = Program.apply (Op.Id tensor) in
       let rec add_ops p = if Program.size p < n then add_ops @@ wrap p else p in
       add_ops p_init
     in
 
     let p_final = generate size in
-    if Program.size p_final = size && check params p_final then
-      Some (p_final, Program.ops p_final)
-    else None
+    if Program.size p_final = size && check params p_final then Some (p_final, Program.ops p_final) else None
 
   let to_bench _ ops solution output = Bench.create ~solution ops output
 end

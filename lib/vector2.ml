@@ -2,8 +2,7 @@ open! Core
 open Base_quickcheck
 
 module T = struct
-  type t = { x : float; y : float }
-  [@@deriving compare, equal, hash, quickcheck, sexp]
+  type t = { x : float; y : float } [@@deriving compare, equal, hash, quickcheck, sexp]
 end
 
 include T
@@ -17,5 +16,4 @@ module O = struct
   let ( ~- ) { x; y } = { x = -.x; y = -.y }
 end
 
-let l2_dist { x; y } { x = x'; y = y' } =
-  Float.(sqrt ((x - x') * (x - x')) + ((y - y') * (y - y')))
+let l2_dist { x; y } { x = x'; y = y' } = Float.(sqrt ((x - x') * (x - x')) + ((y - y') * (y - y')))

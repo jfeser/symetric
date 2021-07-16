@@ -3,24 +3,15 @@ open Types
 module type Deps = sig
   include Sigs.CODE
 
-  module Set :
-    Cstage_set.S with type 'a code := 'a t and type 'a ctype := 'a ctype
+  module Set : Cstage_set.S with type 'a code := 'a t and type 'a ctype := 'a ctype
 
-  module Array :
-    Cstage_array.S with type 'a code := 'a t and type 'a ctype := 'a ctype
+  module Array : Cstage_array.S with type 'a code := 'a t and type 'a ctype := 'a ctype
 
-  module Float :
-    Cstage_float.S with type 'a code := 'a t and type 'a ctype := 'a ctype
+  module Float : Cstage_float.S with type 'a code := 'a t and type 'a ctype := 'a ctype
 
-  module Tuple_3 :
-    Cstage_tuple.Tuple_3.S
-      with type 'a code := 'a t
-       and type 'a ctype := 'a ctype
+  module Tuple_3 : Cstage_tuple.Tuple_3.S with type 'a code := 'a t and type 'a ctype := 'a ctype
 
-  module Tuple_4 :
-    Cstage_tuple.Tuple_4.S
-      with type 'a code := 'a t
-       and type 'a ctype := 'a ctype
+  module Tuple_4 : Cstage_tuple.Tuple_4.S with type 'a code := 'a t and type 'a ctype := 'a ctype
 end
 
 module Make (C : Deps) = struct
@@ -30,16 +21,9 @@ module Make (C : Deps) = struct
 
       type offset_t = C.Int.t * C.Float.t
 
-      type vectors_t =
-        (C.Float.t (* x *), C.Float.t (* y *), C.Float.t (* z *)) C.Tuple_3.t
-        C.Array.t
+      type vectors_t = (C.Float.t (* x *), C.Float.t (* y *), C.Float.t (* z *)) C.Tuple_3.t C.Array.t
 
-      type sphere_t =
-        ( C.Float.t (* x *),
-          C.Float.t (* y *),
-          C.Float.t (* z *),
-          C.Float.t (* r *) )
-        C.Tuple_4.t
+      type sphere_t = (C.Float.t (* x *), C.Float.t (* y *), C.Float.t (* z *), C.Float.t (* r *)) C.Tuple_4.t
 
       type cylinder_t =
         ( int (* id *),
@@ -53,11 +37,7 @@ module Make (C : Deps) = struct
         C.Tuple_3.t
 
       type cuboid_t =
-        ( int (* id *),
-          C.Float.t (* theta_x *),
-          C.Float.t (* theta_y *),
-          C.Float.t (* theta_z *) )
-        C.Tuple_4.t
+        (int (* id *), C.Float.t (* theta_x *), C.Float.t (* theta_y *), C.Float.t (* theta_z *)) C.Tuple_4.t
 
       type t =
         | Examples of bool C.Array.t C.t
@@ -90,18 +70,13 @@ module Make (C : Deps) = struct
 
       let offset_t = C.Tuple.mk_type C.Int.type_ C.Float.type_
 
-      let vectors_t : vectors_t C.ctype =
-        C.Array.mk_type
-        @@ C.Tuple_3.mk_type C.Float.type_ C.Float.type_ C.Float.type_
+      let vectors_t : vectors_t C.ctype = C.Array.mk_type @@ C.Tuple_3.mk_type C.Float.type_ C.Float.type_ C.Float.type_
 
-      let sphere_t : sphere_t C.ctype =
-        C.Tuple_4.mk_type C.Float.type_ C.Float.type_ C.Float.type_
-          C.Float.type_
+      let sphere_t : sphere_t C.ctype = C.Tuple_4.mk_type C.Float.type_ C.Float.type_ C.Float.type_ C.Float.type_
 
       let cylinder_t : cylinder_t C.ctype =
         C.Tuple_3.mk_type C.Int.type_
-          (C.Tuple_4.mk_type C.Float.type_ C.Float.type_ C.Float.type_
-             C.Float.type_)
+          (C.Tuple_4.mk_type C.Float.type_ C.Float.type_ C.Float.type_ C.Float.type_)
           (C.Tuple.mk_type C.Float.type_ C.Float.type_)
 
       let examples x = Examples x
@@ -125,72 +100,42 @@ module Make (C : Deps) = struct
       let to_int = function Int x -> x | x -> err "int" x
 
       let to_offset = function
-        | Cylinder_offset x
-        | Cuboid_x_offset x
-        | Cuboid_y_offset x
-        | Cuboid_z_offset x ->
-            x
+        | Cylinder_offset x | Cuboid_x_offset x | Cuboid_y_offset x | Cuboid_z_offset x -> x
         | x -> err "offset" x
 
       let to_id = function
-        | Cylinder_offset x
-        | Cuboid_x_offset x
-        | Cuboid_y_offset x
-        | Cuboid_z_offset x ->
-            C.Tuple.fst x
+        | Cylinder_offset x | Cuboid_x_offset x | Cuboid_y_offset x | Cuboid_z_offset x -> C.Tuple.fst x
         | Cylinder x -> C.Tuple_3.fst x
         | Cuboid x -> C.Tuple_4.fst x
         | x -> err "has id" x
 
       let sexp_of = function
-        | Sphere x ->
-            C.Tuple_4.sexp_of x C.Float.sexp_of C.Float.sexp_of C.Float.sexp_of
-              C.Float.sexp_of
-        | Vectors x ->
-            C.Array.sexp_of x @@ fun s ->
-            C.Tuple_3.sexp_of s C.Float.sexp_of C.Float.sexp_of C.Float.sexp_of
+        | Sphere x -> C.Tuple_4.sexp_of x C.Float.sexp_of C.Float.sexp_of C.Float.sexp_of C.Float.sexp_of
+        | Vectors x -> C.Array.sexp_of x @@ fun s -> C.Tuple_3.sexp_of s C.Float.sexp_of C.Float.sexp_of C.Float.sexp_of
         | Cylinder x ->
             C.Tuple_3.sexp_of x C.Int.sexp_of
-              (fun s ->
-                C.Tuple_4.sexp_of s C.Float.sexp_of C.Float.sexp_of
-                  C.Float.sexp_of C.Float.sexp_of)
+              (fun s -> C.Tuple_4.sexp_of s C.Float.sexp_of C.Float.sexp_of C.Float.sexp_of C.Float.sexp_of)
               (fun s -> C.Tuple.sexp_of s C.Float.sexp_of C.Float.sexp_of)
-        | Cuboid x ->
-            C.Tuple_4.sexp_of x C.Int.sexp_of C.Float.sexp_of C.Float.sexp_of
-              C.Float.sexp_of
+        | Cuboid x -> C.Tuple_4.sexp_of x C.Int.sexp_of C.Float.sexp_of C.Float.sexp_of C.Float.sexp_of
         | Examples x -> C.Array.sexp_of x C.Bool.sexp_of
-        | Cylinder_offset x
-        | Cuboid_x_offset x
-        | Cuboid_y_offset x
-        | Cuboid_z_offset x ->
+        | Cylinder_offset x | Cuboid_x_offset x | Cuboid_y_offset x | Cuboid_z_offset x ->
             C.Tuple.sexp_of x C.Int.sexp_of C.Float.sexp_of
         | Bool x -> C.Bool.sexp_of x
         | Int x -> C.Int.sexp_of x
 
       let of_sexp sym sexp =
         let examples_of_sexp s = C.Array.of_sexp s C.Bool.of_sexp in
-        let sphere_of_sexp s =
-          C.Tuple_4.of_sexp s C.Float.of_sexp C.Float.of_sexp C.Float.of_sexp
-            C.Float.of_sexp
-        in
+        let sphere_of_sexp s = C.Tuple_4.of_sexp s C.Float.of_sexp C.Float.of_sexp C.Float.of_sexp C.Float.of_sexp in
         let cylinder_of_sexp s =
           C.Tuple_3.of_sexp s C.Int.of_sexp
-            (fun s ->
-              C.Tuple_4.of_sexp s C.Float.of_sexp C.Float.of_sexp
-                C.Float.of_sexp C.Float.of_sexp)
+            (fun s -> C.Tuple_4.of_sexp s C.Float.of_sexp C.Float.of_sexp C.Float.of_sexp C.Float.of_sexp)
             (fun s -> C.Tuple.of_sexp s C.Float.of_sexp C.Float.of_sexp)
         in
-        let cuboid_of_sexp s =
-          C.Tuple_4.of_sexp s C.Int.of_sexp C.Float.of_sexp C.Float.of_sexp
-            C.Float.of_sexp
-        in
+        let cuboid_of_sexp s = C.Tuple_4.of_sexp s C.Int.of_sexp C.Float.of_sexp C.Float.of_sexp C.Float.of_sexp in
         let vectors_of_sexp s =
-          C.Array.of_sexp s @@ fun s ->
-          C.Tuple_3.of_sexp s C.Float.of_sexp C.Float.of_sexp C.Float.of_sexp
+          C.Array.of_sexp s @@ fun s -> C.Tuple_3.of_sexp s C.Float.of_sexp C.Float.of_sexp C.Float.of_sexp
         in
-        let offset_of_sexp s =
-          C.Tuple.of_sexp s C.Int.of_sexp C.Float.of_sexp
-        in
+        let offset_of_sexp s = C.Tuple.of_sexp s C.Int.of_sexp C.Float.of_sexp in
         if Char.(sym.[0] = 'E') then Examples (examples_of_sexp sexp)
         else if String.(sym = "S") then Sphere (sphere_of_sexp sexp)
         else if String.(sym = "V") then Vectors (vectors_of_sexp sexp)
@@ -219,19 +164,14 @@ module Make (C : Deps) = struct
       end
 
       let code_of v =
-        let conv variant value =
-          C.add_annot (C.cast value) Key.key (Key.K variant)
-        in
-        Variants.map ~examples:conv ~vectors:conv ~sphere:conv ~cylinder:conv
-          ~cylinder_offset:conv ~cuboid:conv ~cuboid_x_offset:conv
-          ~cuboid_y_offset:conv ~cuboid_z_offset:conv ~bool:conv ~int:conv v
+        let conv variant value = C.add_annot (C.cast value) Key.key (Key.K variant) in
+        Variants.map ~examples:conv ~vectors:conv ~sphere:conv ~cylinder:conv ~cylinder_offset:conv ~cuboid:conv
+          ~cuboid_x_offset:conv ~cuboid_y_offset:conv ~cuboid_z_offset:conv ~bool:conv ~int:conv v
 
       let of_code c =
         match C.find_annot c Key.key with
         | Some (Key.K v) -> v.Variant.constructor @@ C.cast c
-        | None ->
-            Error.create "Could not convert code to value." c [%sexp_of: _ C.t]
-            |> Error.raise
+        | None -> Error.create "Could not convert code to value." c [%sexp_of: _ C.t] |> Error.raise
     end
 
     open Value
@@ -253,8 +193,7 @@ module Make (C : Deps) = struct
       C.let_ ((-sin (-y') * x1) + (cos (-y') * z1)) @@ fun z2 ->
       let x3 = x2 in
       C.let_ ((cos (-x') * y2) - (sin (-x') * z2)) @@ fun y3 ->
-      C.let_ ((sin (-x') * y2) + (cos (-x') * z2)) @@ fun z3 ->
-      C.Tuple_3.of_tuple (x3, y3, z3)
+      C.let_ ((sin (-x') * y2) + (cos (-x') * z2)) @@ fun z3 -> C.Tuple_3.of_tuple (x3, y3, z3)
 
     module C2 = C.Tuple
     module C3 = C.Tuple_3
@@ -264,27 +203,20 @@ module Make (C : Deps) = struct
       C4.tuple_of cuboid_hint @@ fun (_, theta_x, theta_y, theta_z) ->
       C.Array.map vectors ~f:(fun v ->
           C3.tuple_of v @@ fun (x, y, z) ->
-          C3.tuple_of (inverse_rotate (x, y, z) (theta_x, theta_y, theta_z))
-          @@ fun (rot_x, rot_y, rot_z) ->
+          C3.tuple_of (inverse_rotate (x, y, z) (theta_x, theta_y, theta_z)) @@ fun (rot_x, rot_y, rot_z) ->
           let open C.Float in
           let open C.Bool in
-          rot_x >= x_lo && rot_x <= x_hi && rot_y >= y_lo && rot_y <= y_hi
-          && rot_z >= z_lo && rot_z <= z_hi)
+          rot_x >= x_lo && rot_x <= x_hi && rot_y >= y_lo && rot_y <= y_hi && rot_z >= z_lo && rot_z <= z_hi)
 
     let rec eval ctx = function
       | Grammar.As (t, _) -> eval ctx t
       | App ("sphere", [ s; v ]) ->
-          let sphere = to_sphere (eval ctx s)
-          and vectors = to_vectors (eval ctx v) in
+          let sphere = to_sphere (eval ctx s) and vectors = to_vectors (eval ctx v) in
           examples @@ C4.tuple_of sphere
           @@ fun (x, y, z, r) ->
           C.Array.map vectors ~f:(fun v ->
               C3.tuple_of v @@ fun (x', y', z') ->
-              C.Float.(
-                ((x - x') ** float 2.0)
-                + ((y - y') ** float 2.0)
-                + ((z - z') ** float 2.0)
-                < r ** float 2.0))
+              C.Float.(((x - x') ** float 2.0) + ((y - y') ** float 2.0) + ((z - z') ** float 2.0) < r ** float 2.0))
       | App ("cyl", [ c; lo; hi; v ]) ->
           let cyl = to_cylinder @@ eval ctx c
           and lo = eval_offset ctx lo
@@ -299,20 +231,16 @@ module Make (C : Deps) = struct
               let open C.Float in
               let open C.Bool in
               C3.tuple_of v @@ fun (x, y, z) ->
-              C3.tuple_of (inverse_rotate (x, y, z) (theta_x, theta_y, theta_z))
-              @@ fun (rot_x, rot_y, rot_z) ->
-              C.let_
-                ( ((rot_y - c_y) ** float 2.0) + ((rot_z - c_z) ** float 2.0)
-                < radius ** float 2.0 )
+              C3.tuple_of (inverse_rotate (x, y, z) (theta_x, theta_y, theta_z)) @@ fun (rot_x, rot_y, rot_z) ->
+              C.let_ (((rot_y - c_y) ** float 2.0) + ((rot_z - c_z) ** float 2.0) < radius ** float 2.0)
               @@ fun in_radius ->
-              C.let_ (rot_x >= lo && rot_x <= hi) @@ fun in_height ->
-              in_radius && in_height)
+              C.let_ (rot_x >= lo && rot_x <= hi) @@ fun in_height -> in_radius && in_height)
       | App ("cuboid", [ c; xl; xh; yl; yh; zl; zh; v ]) ->
           examples
           @@ eval_cuboid
                (eval ctx c |> to_cuboid)
-               (eval_offset ctx xl) (eval_offset ctx xh) (eval_offset ctx yl)
-               (eval_offset ctx yh) (eval_offset ctx zl) (eval_offset ctx zh)
+               (eval_offset ctx xl) (eval_offset ctx xh) (eval_offset ctx yl) (eval_offset ctx yh) (eval_offset ctx zl)
+               (eval_offset ctx zh)
                (eval ctx v |> to_vectors)
       | App ("inter", [ e1; e2 ]) ->
           let v1 = eval_examples ctx e1 and v2 = eval_examples ctx e2 in
@@ -327,14 +255,8 @@ module Make (C : Deps) = struct
           match Map.find ctx var with
           | Some x -> x
           | None ->
-              failwith
-              @@ Fmt.str "Unbound %s in %a" var
-                   Fmt.Dump.(list @@ pair string Value.pp)
-                   (Map.to_alist ctx) )
-      | e ->
-          Error.create "Unexpected expression." e
-            [%sexp_of: Grammar.Untyped_term.t]
-          |> Error.raise
+              failwith @@ Fmt.str "Unbound %s in %a" var Fmt.Dump.(list @@ pair string Value.pp) (Map.to_alist ctx))
+      | e -> Error.create "Unexpected expression." e [%sexp_of: Grammar.Untyped_term.t] |> Error.raise
 
     and eval_examples ctx x = eval ctx x |> to_examples
 
@@ -345,8 +267,7 @@ module Make (C : Deps) = struct
       with exn ->
         let open Error in
         let err = of_exn exn in
-        tag_arg err "Evaluation failed" expr [%sexp_of: Grammar.Untyped_term.t]
-        |> raise
+        tag_arg err "Evaluation failed" expr [%sexp_of: Grammar.Untyped_term.t] |> raise
 
     let grammar : (Value.t, bool code) Semantics.t Grammar.t =
       let open Grammar in
@@ -355,8 +276,7 @@ module Make (C : Deps) = struct
 
       let id_matches x y =
         let func ctx =
-          let id = Map.find_exn ctx x |> Value.to_id
-          and id' = Map.find_exn ctx y |> Value.to_id in
+          let id = Map.find_exn ctx x |> Value.to_id and id' = Map.find_exn ctx y |> Value.to_id in
           C.Int.(id = id')
         in
         Semantics.Pred { deps = [ x; y ]; func }
@@ -372,14 +292,9 @@ module Make (C : Deps) = struct
       in
 
       let cylinder_rule =
-        let cylinder = Bind.of_string "cylinder"
-        and lo = Bind.of_string "lo"
-        and hi = Bind.of_string "hi" in
+        let cylinder = Bind.of_string "cylinder" and lo = Bind.of_string "lo" and hi = Bind.of_string "hi" in
         Rule.create "E"
-          (app "cyl"
-             [
-               as_ (nt "C") cylinder; as_ (nt "CO") lo; as_ (nt "CO") hi; nt "V";
-             ])
+          (app "cyl" [ as_ (nt "C") cylinder; as_ (nt "CO") lo; as_ (nt "CO") hi; nt "V" ])
           [ id_matches cylinder lo; id_matches cylinder hi; offset_lt lo hi ]
       and cuboid_rule =
         let cuboid = Bind.of_string "cuboid"
@@ -442,10 +357,8 @@ module Make (C : Deps) = struct
       and ints_t = Array.mk_type @@ Set.mk_type @@ Int.type_ in
       Nonlocal_let.let_ let_ (fun () ->
           Tuple.create
-            (Array.init (Int.int max_size) (fun _ ->
-                 Set.empty (Array.elem_type examples_t)))
-            (Array.init (Int.int max_size) (fun _ ->
-                 Set.empty (Array.elem_type ints_t))))
+            (Array.init (Int.int max_size) (fun _ -> Set.empty (Array.elem_type examples_t)))
+            (Array.init (Int.int max_size) (fun _ -> Set.empty (Array.elem_type ints_t))))
 
     let put ~sym ~size tbl v =
       match sym with
@@ -455,8 +368,7 @@ module Make (C : Deps) = struct
 
     let iter ~sym ~size ~f tbl =
       match sym with
-      | "E" ->
-          Set.iter (Tuple.fst tbl).(size) (fun v -> f @@ Lang.Value.examples v)
+      | "E" -> Set.iter (Tuple.fst tbl).(size) (fun v -> f @@ Lang.Value.examples v)
       | "SI" -> Set.iter (Tuple.snd tbl).(size) (fun v -> f @@ Lang.Value.Int v)
       | _ -> unit
 

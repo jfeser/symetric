@@ -37,8 +37,7 @@ module type CACHE = sig
 
   val put : sym:string -> size:Int.t -> t -> value -> unit code
 
-  val iter :
-    sym:string -> size:int code -> f:(value -> unit code) -> t -> unit code
+  val iter : sym:string -> size:int code -> f:(value -> unit code) -> t -> unit code
 end
 
 module type LANG = sig
@@ -117,20 +116,13 @@ module type CODE = sig
     val func : string -> ('a -> 'b) ctype -> ('a t -> 'b t) -> ('a -> 'b) t
   end
 
-  module Int :
-    Cstage_int.S
-      with type 'a code := 'a t
-       and type 'a ctype := 'a ctype
-       and type t = int
+  module Int : Cstage_int.S with type 'a code := 'a t and type 'a ctype := 'a ctype and type t = int
 
-  module Array :
-    Cstage_array.S with type 'a code := 'a t and type 'a ctype := 'a ctype
+  module Array : Cstage_array.S with type 'a code := 'a t and type 'a ctype := 'a ctype
 
-  module Set :
-    Cstage_set.S with type 'a code := 'a t and type 'a ctype := 'a ctype
+  module Set : Cstage_set.S with type 'a code := 'a t and type 'a ctype := 'a ctype
 
-  module String :
-    Cstage_string.S with type 'a code := 'a t and type 'a ctype := 'a ctype
+  module String : Cstage_string.S with type 'a code := 'a t and type 'a ctype := 'a ctype
 
   (* Tuples *)
   module Tuple : sig

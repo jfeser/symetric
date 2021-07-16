@@ -10,13 +10,9 @@ end
 
 type nonterm = string [@@deriving compare, sexp]
 
-type 'n term =
-  | Nonterm of 'n
-  | App of string * 'n term list
-  | As of 'n term * Bind.t
+type 'n term = Nonterm of 'n | App of string * 'n term list | As of 'n term * Bind.t
 
-val with_holes :
-  ?fresh:Utils.Fresh.t -> 'a term -> nonterm term * ('a * int * string) list
+val with_holes : ?fresh:Utils.Fresh.t -> 'a term -> nonterm term * ('a * int * string) list
 
 module Untyped_term : sig
   type t = nonterm term [@@deriving compare, sexp]
@@ -25,12 +21,7 @@ module Untyped_term : sig
 
   val to_string : t -> string
 
-  val map :
-    ?nonterm:(nonterm -> t) ->
-    ?app:(string -> t list -> t) ->
-    ?as_:(t -> Bind.t -> t) ->
-    t ->
-    t
+  val map : ?nonterm:(nonterm -> t) -> ?app:(string -> t list -> t) -> ?as_:(t -> Bind.t -> t) -> t -> t
 end
 
 module Term : sig
@@ -50,10 +41,7 @@ module Term : sig
 
   val to_string : _ t -> string
 
-  val with_holes :
-    ?fresh:Utils.Fresh.t ->
-    [ `Open | `Closed ] t ->
-    [ `Closed ] t * (nonterm * int * string) list
+  val with_holes : ?fresh:Utils.Fresh.t -> [ `Open | `Closed ] t -> [ `Closed ] t * (nonterm * int * string) list
 
   val bindings : 'a t -> (Bind.t * 'a t) list
 
@@ -90,15 +78,9 @@ val inline : nonterm -> 's t -> 's t
 
 val weighted_random : ?state:Random.State.t -> (float * 'a) list -> 'a
 
-val sample :
-  ?state:Random.State.t -> ?factor:float -> nonterm -> _ t -> [ `Closed ] Term.t
+val sample : ?state:Random.State.t -> ?factor:float -> nonterm -> _ t -> [ `Closed ] Term.t
 
-val sample_seq :
-  ?state:Random.State.t ->
-  ?factor:float ->
-  nonterm ->
-  _ t ->
-  [ `Closed ] Term.t Base.Sequence.t
+val sample_seq : ?state:Random.State.t -> ?factor:float -> nonterm -> _ t -> [ `Closed ] Term.t Base.Sequence.t
 
 val to_preorder : 'a term -> ('a * int) term
 

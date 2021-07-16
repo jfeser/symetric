@@ -7,9 +7,7 @@ end
 let edge_relation vrel =
   let open One_to_many in
   let forward (v, x, v') =
-    vrel.forward v
-    |> Sequence.concat_map ~f:(fun w ->
-           vrel.forward v' |> Sequence.map ~f:(fun w' -> (w, x, w')))
+    vrel.forward v |> Sequence.concat_map ~f:(fun w -> vrel.forward v' |> Sequence.map ~f:(fun w' -> (w, x, w')))
   in
   let backward (w, x, w') = (vrel.backward w, x, vrel.backward w') in
   { forward; backward }
@@ -21,8 +19,7 @@ module Make
 struct
   module V_ref = struct
     module T = struct
-      type t = { id : int; node : (G.V.t[@ignore]) }
-      [@@deriving compare, equal, hash, sexp_of]
+      type t = { id : int; node : (G.V.t[@ignore]) } [@@deriving compare, equal, hash, sexp_of]
     end
 
     include T
@@ -67,26 +64,15 @@ struct
 
     let g_replicated = G_replicated.create () in
 
-    let work =
-      Hash_queue.create
-        {
-          hash = G.V.hash;
-          compare = G.V.compare;
-          sexp_of_t = [%sexp_of: G.V.t];
-        }
-    in
+    let work = Hash_queue.create { hash = G.V.hash; compare = G.V.compare; sexp_of_t = [%sexp_of: G.V.t] } in
 
     let update q key ~f =
       let data' = Hash_queue.lookup q key |> f in
-      match Hash_queue.replace q key data' with
-      | `Ok -> ()
-      | `No_such_key -> Hash_queue.enqueue_back_exn q key data'
+      match Hash_queue.replace q key data' with `Ok -> () | `No_such_key -> Hash_queue.enqueue_back_exn q key data'
     in
 
     let add_ancestor ancestors port =
-      match K.kind port.Port.node.node with
-      | `Args -> Set.add ancestors port
-      | `State -> ancestors
+      match K.kind port.Port.node.node with `Args -> Set.add ancestors port | `State -> ancestors
     in
 
     let exists_common_ancestor =
@@ -95,8 +81,7 @@ struct
         ~f:(fun ancestor_ports Port.{ node; port } ->
           match Map.find ancestor_ports node with
           | None -> Continue (Map.set ancestor_ports ~key:node ~data:port)
-          | Some port' ->
-              if port = port' then Continue ancestor_ports else Stop true)
+          | Some port' -> if port = port' then Continue ancestor_ports else Stop true)
         ~finish:(fun _ -> false)
     in
 
@@ -119,28 +104,20 @@ struct
             G.succ_e g vertex
             |> List.iter ~f:(fun (_, idx', child) ->
                    let port_ref = Port.{ node = this_ref; port = idx' } in
-                   let child_in_edge =
-                     (port_ref, add_ancestor (Set.empty (module Port)) port_ref)
-                   in
-                   update work child ~f:(fun edges ->
-                       child_in_edge :: Option.value edges ~default:[])) )
+                   let child_in_edge = (port_ref, add_ancestor (Set.empty (module Port)) port_ref) in
+                   update work child ~f:(fun edges -> child_in_edge :: Option.value edges ~default:[])))
           else if not any_overlap then (
             let this_ref = create vertex in
-            List.iter in_edges
-              ~f:(fun (Port.{ node = parent; port = idx }, _) ->
+            List.iter in_edges ~f:(fun (Port.{ node = parent; port = idx }, _) ->
                 G_replicated.add_edge_e g_replicated (parent, idx, this_ref));
 
             G.succ_e g vertex
             |> List.iter ~f:(fun (_, idx', child) ->
                    let this_port = Port.{ node = this_ref; port = idx' } in
-                   let child_in_edge =
-                     (this_port, add_ancestor ancestors this_port)
-                   in
-                   update work child ~f:(fun edges ->
-                       child_in_edge :: Option.value edges ~default:[])) )
+                   let child_in_edge = (this_port, add_ancestor ancestors this_port) in
+                   update work child ~f:(fun edges -> child_in_edge :: Option.value edges ~default:[])))
           else
-            List.iter in_edges
-              ~f:(fun (Port.{ node = parent; port = idx }, ancestors) ->
+            List.iter in_edges ~f:(fun (Port.{ node = parent; port = idx }, ancestors) ->
                 let this_ref = create vertex in
 
                 G_replicated.add_edge_e g_replicated (parent, idx, this_ref);
@@ -148,31 +125,24 @@ struct
                 G.succ_e g vertex
                 |> List.iter ~f:(fun (_, idx', child) ->
                        let this_port = Port.{ node = this_ref; port = idx' } in
-                       let child_in_edge =
-                         (this_port, add_ancestor ancestors this_port)
-                       in
-                       update work child ~f:(fun edges ->
-                           child_in_edge :: Option.value edges ~default:[])));
+                       let child_in_edge = (this_port, add_ancestor ancestors this_port) in
+                       update work child ~f:(fun edges -> child_in_edge :: Option.value edges ~default:[])));
           loop ()
       | None -> ()
     in
 
-    G.iter_vertex
-      (fun v ->
-        if G.in_degree g v = 0 then Hash_queue.enqueue_back_exn work v [])
-      g;
+    G.iter_vertex (fun v -> if G.in_degree g v = 0 then Hash_queue.enqueue_back_exn work v []) g;
     loop ();
 
     let rel =
-      let forward v = Map.find_exn !vrefs v |> Sequence.of_list
-      and backward = V_ref.vertex in
+      let forward v = Map.find_exn !vrefs v |> Sequence.of_list and backward = V_ref.vertex in
       One_to_many.{ forward; backward }
     in
     (g_replicated, rel)
 end
 
 let%test_module "unshare" =
-  ( module struct
+  (module struct
     module G =
       Graph_ext.Make
         (Int)
@@ -191,9 +161,7 @@ let%test_module "unshare" =
 
     let pp fmt g =
       let pp_vertex = U.V_ref.pp Int.pp in
-      U.G_replicated.iter_edges
-        (fun v v' -> Fmt.pf fmt "%a -> %a@." pp_vertex v pp_vertex v')
-        g
+      U.G_replicated.iter_edges (fun v v' -> Fmt.pf fmt "%a -> %a@." pp_vertex v pp_vertex v') g
 
     let%expect_test "" =
       let g = G.create () in
@@ -219,8 +187,7 @@ let%test_module "unshare" =
       G.add_edge g 3 6;
       let g', _ = U.unshare g in
       Fmt.pr "%a" pp g';
-      [%expect
-        {|
+      [%expect {|
 0@1 -> 3@2
 0@1 -> 1@3
 3@2 -> 6@4
@@ -235,8 +202,7 @@ let%test_module "unshare" =
       G.add_edge g 1 4;
       let g', _ = U.unshare g in
       Fmt.pr "%a" pp g';
-      [%expect
-        {|
+      [%expect {|
            0@1 -> 1@2
            1@2 -> 4@3
            1@2 -> 2@4 |}]
@@ -319,4 +285,4 @@ let%test_module "unshare" =
            0@3 -> 3@5
            6@6 -> 9@8
            6@6 -> 9@9 |}]
-  end )
+  end)

@@ -7,9 +7,7 @@ module T = struct
 
   let fold x ~init ~f =
     let end_ = x.start + x.len in
-    let rec fold acc i =
-      if i >= end_ then acc else fold (f acc x.arr.(i)) (i + 1)
-    in
+    let rec fold acc i = if i >= end_ then acc else fold (f acc x.arr.(i)) (i + 1) in
     fold init x.start
 
   let iter x ~f =

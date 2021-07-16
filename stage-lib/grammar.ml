@@ -14,11 +14,7 @@ end
 
 type nonterm = string [@@deriving compare, hash, sexp]
 
-type 'n term =
-  | Nonterm of 'n
-  | App of string * 'n term list
-  | As of 'n term * Bind.t
-[@@deriving compare, hash, sexp]
+type 'n term = Nonterm of 'n | App of string * 'n term list | As of 'n term * Bind.t [@@deriving compare, hash, sexp]
 
 let to_preorder t =
   let i = ref (-1) in
@@ -49,14 +45,8 @@ let rec non_terminals = function
 let with_holes ?fresh term =
   let fresh = Option.value fresh ~default:(Fresh.create ()) in
   let term = to_preorder term in
-  let holes =
-    non_terminals term
-    |> List.map ~f:(fun (sym, idx) -> (sym, idx, Fresh.name fresh "x%d"))
-  in
-  let holes_ctx =
-    List.map holes ~f:(fun (_, idx, id) -> (idx, App (id, [])))
-    |> Map.of_alist_exn (module Int)
-  in
+  let holes = non_terminals term |> List.map ~f:(fun (sym, idx) -> (sym, idx, Fresh.name fresh "x%d")) in
+  let holes_ctx = List.map holes ~f:(fun (_, idx, id) -> (idx, App (id, []))) |> Map.of_alist_exn (module Int) in
   let rec rename = function
     | Nonterm (_, idx) -> Map.find_exn holes_ctx idx
     | App (f, ts) -> App (f, List.map ts ~f:rename)
@@ -79,23 +69,17 @@ module Untyped_term = struct
 
   and pp_args args = Fmt.(iter ~sep:comma (fun f l -> List.iter ~f l) pp args)
 
-  let rec size = function
-    | Nonterm _ -> 1
-    | App (_, ts) -> 1 + List.sum (module Int) ~f:size ts
-    | As (t, _) -> size t
+  let rec size = function Nonterm _ -> 1 | App (_, ts) -> 1 + List.sum (module Int) ~f:size ts | As (t, _) -> size t
 
   let n_holes t = non_terminals t |> List.length
 
   let rec to_string = function
     | Nonterm x -> x
     | App (f, []) -> f
-    | App (f, xs) ->
-        List.map xs ~f:to_string |> String.concat ~sep:", "
-        |> sprintf "%s(%s)" f
+    | App (f, xs) -> List.map xs ~f:to_string |> String.concat ~sep:", " |> sprintf "%s(%s)" f
     | As (t, n) -> sprintf "%s as %s" (to_string t) n
 
-  let rec map ?(nonterm = fun x -> Nonterm x) ?(app = fun n ts -> App (n, ts))
-      ?(as_ = fun t n -> As (t, n)) = function
+  let rec map ?(nonterm = fun x -> Nonterm x) ?(app = fun n ts -> App (n, ts)) ?(as_ = fun t n -> As (t, n)) = function
     | Nonterm t -> nonterm t
     | App (n, ts) ->
         let ts = List.map ts ~f:(map ~nonterm ~app ~as_) in
@@ -135,15 +119,9 @@ module Term = struct
 end
 
 module Rule = struct
-  type 's t = {
-    lhs : nonterm;
-    rhs : Untyped_term.t;
-    sem : 's list; [@sexp.omit_nil]
-  }
-  [@@deriving compare, hash, sexp]
+  type 's t = { lhs : nonterm; rhs : Untyped_term.t; sem : 's list [@sexp.omit_nil] } [@@deriving compare, hash, sexp]
 
-  let pp fmt { lhs; rhs; _ } =
-    Fmt.fmt "@[<hov 2>@[%s@]@ ->@ @[%a@]@]" fmt lhs Untyped_term.pp rhs
+  let pp fmt { lhs; rhs; _ } = Fmt.fmt "@[<hov 2>@[%s@]@ ->@ @[%a@]@]" fmt lhs Untyped_term.pp rhs
 
   let lhs { lhs; _ } = lhs
 
@@ -160,40 +138,28 @@ type 's t = 's Rule.t list [@@deriving compare, sexp]
 
 let of_list = List.map ~f:Rule.of_tuple
 
-let rhs g s =
-  List.filter_map g ~f:(fun r ->
-      if String.(s = Rule.lhs r) then Some (Rule.rhs r) else None)
+let rhs g s = List.filter_map g ~f:(fun r -> if String.(s = Rule.lhs r) then Some (Rule.rhs r) else None)
 
-let lhs g =
-  List.map g ~f:Rule.lhs |> List.dedup_and_sort ~compare:[%compare: nonterm]
+let lhs g = List.map g ~f:Rule.lhs |> List.dedup_and_sort ~compare:[%compare: nonterm]
 
 let rec product = function
   | [] -> []
   | [ s ] -> List.map ~f:(fun x -> [ x ]) s
-  | s :: ss ->
-      product ss
-      |> List.concat_map ~f:(fun xs -> List.map s ~f:(fun x -> x :: xs))
+  | s :: ss -> product ss |> List.concat_map ~f:(fun xs -> List.map s ~f:(fun x -> x :: xs))
 
 let inline sym g =
   let rh_sides = rhs g sym in
   let rec subst_all = function
-    | Nonterm x as t ->
-        if [%compare.equal: nonterm] sym x then rh_sides else [ t ]
+    | Nonterm x as t -> if [%compare.equal: nonterm] sym x then rh_sides else [ t ]
     | App (_, []) as t -> [ t ]
-    | App (f, ts) ->
-        List.map ts ~f:subst_all |> product
-        |> List.map ~f:(fun ts -> App (f, ts))
+    | App (f, ts) -> List.map ts ~f:subst_all |> product |> List.map ~f:(fun ts -> App (f, ts))
     | As (t, n) -> List.map (subst_all t) ~f:(fun t' -> As (t', n))
   in
-  List.concat_map g ~f:(fun r ->
-      subst_all r.rhs |> List.map ~f:(fun rhs -> { r with rhs }))
+  List.concat_map g ~f:(fun r -> subst_all r.rhs |> List.map ~f:(fun rhs -> { r with rhs }))
 
 let weighted_random ?(state = Random.State.default) l =
   if List.length l <= 0 then failwith "Selecting from an empty list";
-  let x =
-    Random.State.float state 1.0
-    *. List.sum (module Float) l ~f:(fun (w, _) -> w)
-  in
+  let x = Random.State.float state 1.0 *. List.sum (module Float) l ~f:(fun (w, _) -> w) in
   let rec loop x = function
     | [] -> failwith "BUG: Weight did not decrease enough"
     | (w, e) :: ws ->
@@ -208,21 +174,14 @@ let sample ?(state = Random.State.default) ?(factor = 0.01) symbol g =
     let random_prod =
       rhs g sym
       |> List.map ~f:(fun p ->
-             let w =
-               Map.find pcount p
-               |> Option.map ~f:(fun c -> factor *. float c)
-               |> Option.value ~default:1.0
-             in
+             let w = Map.find pcount p |> Option.map ~f:(fun c -> factor *. float c) |> Option.value ~default:1.0 in
              (w, p))
       |> weighted_random ~state
     in
-    let pcount =
-      Map.update pcount random_prod ~f:(function Some c -> c + 1 | None -> 1)
-    in
+    let pcount = Map.update pcount random_prod ~f:(function Some c -> c + 1 | None -> 1) in
     Term.map random_prod ~nonterm:(sample pcount)
   in
   sample (Map.empty (module Untyped_term)) symbol
 
 let sample_seq ?state ?factor symbol g =
-  Sequence.unfold ~init:() ~f:(fun () ->
-      Some (sample ?state ?factor symbol g, ()))
+  Sequence.unfold ~init:() ~f:(fun () -> Some (sample ?state ?factor symbol g, ()))

@@ -45,8 +45,8 @@ let main () =
   let synth =
     enumerate
       ~k:(fun () ->
-        Cad.Cache.iter ~sym:"E" ~size:(C.Int.int 1) (cache.value ())
-          ~f:(fun v -> Cad.Lang.Value.sexp_of v |> C.Sexp.print))
+        Cad.Cache.iter ~sym:"E" ~size:(C.Int.int 1) (cache.value ()) ~f:(fun v ->
+            Cad.Lang.Value.sexp_of v |> C.Sexp.print))
       1
   in
   print_endline (Code.to_string synth)

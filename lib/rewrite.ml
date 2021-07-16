@@ -26,18 +26,14 @@ module Make (Lang_op : Op_intf.S) = struct
 
     let replace ?order p i p' =
       let pa = P.annotate ?order p in
-      let rec replace (P.Apply ((j, op), args)) =
-        if i = j then p' else P.apply op ~args:(List.map ~f:replace args)
-      in
+      let rec replace (P.Apply ((j, op), args)) = if i = j then p' else P.apply op ~args:(List.map ~f:replace args) in
       replace pa
 
     let unannotate = P.map ~f:(fun (_, op) -> op)
 
     let nth_annot ?order p i =
       let pa = P.annotate ?order p in
-      let rec nth (P.Apply ((j, _), args) as p') =
-        if i = j then Some p' else List.find_map args ~f:nth
-      in
+      let rec nth (P.Apply ((j, _), args) as p') = if i = j then Some p' else List.find_map args ~f:nth in
       nth pa
 
     let nth ?order p i = nth_annot ?order p i |> Option.map ~f:unannotate
@@ -45,33 +41,23 @@ module Make (Lang_op : Op_intf.S) = struct
     let eval _ op args =
       match (op, args) with
       | Op.Id p, [] -> p
-      | Rename x, [ t ] ->
-          P.mapi ~f:(fun i op -> if i = x.node then x.op else op) t
+      | Rename x, [ t ] -> P.mapi ~f:(fun i op -> if i = x.node then x.op else op) t
       | Insert x, [ t ] ->
-          let args =
-            List.map x.children ~f:(fun i ->
-                Option.value_exn (nth ~order:`Post t i))
-          in
+          let args = List.map x.children ~f:(fun i -> Option.value_exn (nth ~order:`Post t i)) in
           replace t x.node (P.apply x.op ~args)
       | Delete x, [ t ] ->
           let rec delete (P.Apply ((id, op), args)) =
-            if id = x.node then List.nth_exn args x.child
-            else P.apply (id, op) ~args:(List.map args ~f:delete)
+            if id = x.node then List.nth_exn args x.child else P.apply (id, op) ~args:(List.map args ~f:delete)
           in
           P.annotate t |> delete |> unannotate
-      | op, args ->
-          raise_s [%message "unexpected arguments" (op : Op.t) (args : t list)]
+      | op, args -> raise_s [%message "unexpected arguments" (op : Op.t) (args : t list)]
   end
 
-  type ctx = {
-    ops : Lang_op.t list;
-    ops_by_arity : Lang_op.t list Hashtbl.M(Int).t;
-  }
+  type ctx = { ops : Lang_op.t list; ops_by_arity : Lang_op.t list Hashtbl.M(Int).t }
 
   let sample_id v = Random.int (Program.size v)
 
-  let sample_op_arity ctx arity =
-    Hashtbl.find_exn ctx.ops_by_arity arity |> List.random_element_exn
+  let sample_op_arity ctx arity = Hashtbl.find_exn ctx.ops_by_arity arity |> List.random_element_exn
 
   let sample_op ctx = List.random_element_exn ctx.ops
 
@@ -88,8 +74,7 @@ module Make (Lang_op : Op_intf.S) = struct
 
   let sample_delete v =
     let rec nodes_with_children (Program.Apply (op, args)) =
-      if List.is_empty args then []
-      else (op, args) :: List.concat_map args ~f:nodes_with_children
+      if List.is_empty args then [] else (op, args) :: List.concat_map args ~f:nodes_with_children
     in
     nodes_with_children @@ Program.annotate v
     |> List.random_element
@@ -116,12 +101,7 @@ module Make (Lang_op : Op_intf.S) = struct
       (Apply (op, [ p ]), v')
 
   let mk_ctx ops =
-    {
-      ops;
-      ops_by_arity =
-        Hashtbl.of_alist_multi (module Int)
-        @@ List.map ops ~f:(fun op -> (Lang_op.arity op, op));
-    }
+    { ops; ops_by_arity = Hashtbl.of_alist_multi (module Int) @@ List.map ops ~f:(fun op -> (Lang_op.arity op, op)) }
 
   let sample ops =
     let ctx = mk_ctx ops in

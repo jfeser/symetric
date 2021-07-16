@@ -16,18 +16,13 @@ let clang_build ?(args = "-std=c++17 -Wall -Wextra -c") src =
   ignore (Unix.close_process (read, write) : _ result);
   ret
 
-let clang_exec
-    ?(args = "-Wall -Wextra -fsanitize=undefined -fsanitize=address -std=c++17")
-    ?input src =
+let clang_exec ?(args = "-Wall -Wextra -fsanitize=undefined -fsanitize=address -std=c++17") ?input src =
   let main = "main.cpp" in
   Out_channel.with_file main ~f:(fun ch -> Out_channel.output_string ch src);
 
   let exe = Filename.temp_file "test" ".exe" in
   let compiler_output =
-    let read, write =
-      Unix.open_process
-        (sprintf "clang++-9 %s -Ietc sexp.cpp %s -o %s" args main exe)
-    in
+    let read, write = Unix.open_process (sprintf "clang++-9 %s -Ietc sexp.cpp %s -o %s" args main exe) in
     Out_channel.output_string write src;
     Out_channel.close write;
     let out = In_channel.input_all read in
@@ -56,8 +51,7 @@ module Cont = struct
 
     let return a = { runCont = (fun k -> k a) }
 
-    let bind { runCont = g } ~f =
-      { runCont = (fun k -> g (fun a -> (f a).runCont k)) }
+    let bind { runCont = g } ~f = { runCont = (fun k -> g (fun a -> (f a).runCont k)) }
 
     let map = `Define_using_bind
   end
@@ -82,13 +76,12 @@ module OneShot = struct
             if !has_run then raise MultipleRuns
             else (
               has_run := true;
-              c k ));
+              c k));
       }
 
     let return a = { runCont = (fun k -> k a) }
 
-    let bind { runCont = g } ~f =
-      { runCont = (fun k -> g (fun a -> (f a).runCont k)) }
+    let bind { runCont = g } ~f = { runCont = (fun k -> g (fun a -> (f a).runCont k)) }
 
     let map = `Define_using_bind
   end
@@ -101,23 +94,17 @@ end
 
 let input_sketch ch =
   let inputs, output = Sexp.input_sexp ch |> [%of_sexp: string list * string] in
-  let input, background =
-    match List.rev inputs with [] -> assert false | x :: xs -> (x, List.rev xs)
-  in
-  ( module struct
+  let input, background = match List.rev inputs with [] -> assert false | x :: xs -> (x, List.rev xs) in
+  (module struct
     let background = background
 
     let input = input
 
     let output = output
-  end : Sigs.SKETCH )
+  end : Sigs.SKETCH)
 
 let apply2 f args =
-  match args with
-  | [ x; x' ] -> f x x'
-  | _ -> raise_s [%message "Unexpected args" (List.length args : int)]
+  match args with [ x; x' ] -> f x x' | _ -> raise_s [%message "Unexpected args" (List.length args : int)]
 
 let apply6 f args =
-  match args with
-  | [ x1; x2; x3; x4; x5; x6 ] -> f x1 x2 x3 x4 x5 x6
-  | _ -> failwith "Unexpected args"
+  match args with [ x1; x2; x3; x4; x5; x6 ] -> f x1 x2 x3 x4 x5 x6 | _ -> failwith "Unexpected args"

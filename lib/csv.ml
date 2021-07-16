@@ -15,9 +15,7 @@ let rec field_to_string (Field (t, x)) =
   | Float -> sprintf "%f" x
   | String -> if String.contains x ',' then sprintf "\"%s\"" x else x
   | Span -> sprintf "%f" @@ Time.Span.to_ms x
-  | Opt t' ->
-      Option.map x ~f:(fun x' -> field_to_string (Field (t', x')))
-      |> Option.value ~default:""
+  | Opt t' -> Option.map x ~f:(fun x' -> field_to_string (Field (t', x'))) |> Option.value ~default:""
 
 let to_string l = List.map l ~f:field_to_string |> String.concat ~sep:","
 

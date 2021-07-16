@@ -7,9 +7,7 @@ module Make (L : Lattice_intf.S) = struct
 
   let quickcheck_generator_leq_default _ = Generator.return L.bot
 
-  let quickcheck_generator_leq =
-    Option.value L.quickcheck_generator_leq
-      ~default:quickcheck_generator_leq_default
+  let quickcheck_generator_leq = Option.value L.quickcheck_generator_leq ~default:quickcheck_generator_leq_default
 
   module Leq2 = struct
     type t = L.t * L.t [@@deriving compare, sexp, quickcheck]

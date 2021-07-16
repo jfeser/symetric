@@ -9,7 +9,7 @@ let reserve a n =
   if old_len < new_len then (
     let a' = A.create ~len:new_len in
     A.blit ~src:!a ~src_pos:0 ~len:old_len ~dst:a' ~dst_pos:0;
-    a := a' )
+    a := a')
 
 let get_some_exn a = A.get_some_exn !a
 

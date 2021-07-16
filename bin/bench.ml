@@ -22,18 +22,12 @@ end
 module Bench (Dsl : LANG with type 'a code = 'a Mlstage.Code.t) = struct
   module Code = Mlstage.Code
 
-  type t = {
-    min : int;
-    max : int;
-    examples : int;
-    sketch : (module Sigs.SKETCH);
-  }
+  type t = { min : int; max : int; examples : int; sketch : (module Sigs.SKETCH) }
 
   let generate_bench ?(state = Random.State.default) spec =
     let module Sketch = (val spec.sketch) in
     let grammar =
-      List.mapi Sketch.background ~f:(fun i kind ->
-          Grammar.(Rule.of_tuple (kind, Term.app (sprintf "input%d" i) [])))
+      List.mapi Sketch.background ~f:(fun i kind -> Grammar.(Rule.of_tuple (kind, Term.app (sprintf "input%d" i) [])))
       @ Dsl.grammar
     in
 
@@ -41,8 +35,7 @@ module Bench (Dsl : LANG with type 'a code = 'a Mlstage.Code.t) = struct
     |> Sequence.filter_map ~f:(fun t ->
            try
              let inputs =
-               List.mapi Sketch.background ~f:(fun i kind ->
-                   (sprintf "input%d" i, Dsl.Value.random ~state kind 5))
+               List.mapi Sketch.background ~f:(fun i kind -> (sprintf "input%d" i, Dsl.Value.random ~state kind 5))
              in
              let ctx = Map.of_alist_exn (module String) inputs in
              let output = Dsl.eval ctx t in
@@ -56,20 +49,12 @@ end
 
 let main ~seed ~sketch ~min ~max ~examples ~no_identity =
   let sketch = In_channel.with_file sketch ~f:Util.input_sketch in
-  let state =
-    match seed with
-    | Some s -> Random.State.make [| s |]
-    | None -> Random.State.make_self_init ()
-  in
+  let state = match seed with Some s -> Random.State.make [| s |] | None -> Random.State.make_self_init () in
   let module Deepcoder = Deepcoder.Make (Mlstage.Code.Array) (Mlstage.Code) in
   let module Bench = Bench (Deepcoder.Lang) in
   Bench.generate_bench ~state { min; max; examples; sketch }
   |> Sequence.filter ~f:(fun sexps ->
-         if no_identity then
-           match sexps with
-           | [ s1; s2 ] -> not ([%compare.equal: Sexp.t] s1 s2)
-           | _ -> true
-         else true)
+         if no_identity then match sexps with [ s1; s2 ] -> not ([%compare.equal: Sexp.t] s1 s2) | _ -> true else true)
   |> Sequence.hd_exn |> List.iter ~f:print_s
 
 let () =
@@ -78,16 +63,10 @@ let () =
     [%map_open
       let () = Log.param
       and seed = flag "-seed" (optional int) ~doc:" seed for the rng"
-      and min =
-        flag "-min" (optional_with_default 1 int) ~doc:" minimum term size"
-      and max =
-        flag "-max" (optional_with_default 10 int) ~doc:" maximum term size"
-      and examples =
-        flag "-examples"
-          (optional_with_default 5 int)
-          ~doc:" number of examples"
-      and no_identity =
-        flag "-no-identity" no_arg ~doc:" forbid the identity function"
+      and min = flag "-min" (optional_with_default 1 int) ~doc:" minimum term size"
+      and max = flag "-max" (optional_with_default 10 int) ~doc:" maximum term size"
+      and examples = flag "-examples" (optional_with_default 5 int) ~doc:" number of examples"
+      and no_identity = flag "-no-identity" no_arg ~doc:" forbid the identity function"
       and sketch = anon ("SKETCH" %: string) in
       fun () -> main ~seed ~sketch ~min ~max ~examples ~no_identity]
   |> Command.run

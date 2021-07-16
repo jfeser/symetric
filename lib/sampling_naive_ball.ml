@@ -17,20 +17,13 @@ include struct
 
   let thresh =
     Spec.add spec
-    @@ Param.float ~name:"thresh" ~aliases:[ "d" ]
-         ~doc:" exhaustive search threshold" ~init:(`Cli (Some 1.0)) ()
+    @@ Param.float ~name:"thresh" ~aliases:[ "d" ] ~doc:" exhaustive search threshold" ~init:(`Cli (Some 1.0)) ()
 
   let ball_width =
-    Spec.add spec
-    @@ Param.int ~name:"width" ~aliases:[ "w" ] ~doc:" exhaustive search width"
-         ~init:(`Cli (Some 2)) ()
+    Spec.add spec @@ Param.int ~name:"width" ~aliases:[ "w" ] ~doc:" exhaustive search width" ~init:(`Cli (Some 2)) ()
 end
 
-module Make
-    (Lang : Lang_intf.S
-              with type Value.t = Cad.Value.t
-               and type Bench.t = Cad.Bench.t) =
-struct
+module Make (Lang : Lang_intf.S with type Value.t = Cad.Value.t and type Bench.t = Cad.Bench.t) = struct
   open Lang
   module Search_state = Search_state_append.Make (Lang)
 
@@ -57,13 +50,10 @@ struct
       n_iters := 0.0;
       while true do
         n_iters := !n_iters +. 1.0;
-        if Float.to_int !n_iters mod 100 = 0 then
-          Fmt.epr "Iter %f...\n%!" !n_iters;
+        if Float.to_int !n_iters mod 100 = 0 then Fmt.epr "Iter %f...\n%!" !n_iters;
 
         let op = List.random_element_exn non_nil_ops in
-        let args =
-          List.init (Op.arity op) ~f:(fun _ -> List.random_element_exn !states)
-        in
+        let args = List.init (Op.arity op) ~f:(fun _ -> List.random_element_exn !states) in
         let value = Value.eval params op args in
         if not @@ Search_state.mem search_state value then (
           Search_state.insert search_state 0 value op args;

@@ -16,11 +16,7 @@ include struct
   let synth = Spec.add spec @@ Param.const_str ~name:"synth" "sampling-naive"
 end
 
-module Make
-    (Lang : Lang_intf.S
-              with type Value.t = Cad.Value.t
-               and type Bench.t = Cad.Bench.t) =
-struct
+module Make (Lang : Lang_intf.S with type Value.t = Cad.Value.t and type Bench.t = Cad.Bench.t) = struct
   open Lang
 
   module State_set = struct
@@ -34,8 +30,7 @@ struct
 
     let to_list x = Set.to_list !x
 
-    let random_element_exn x =
-      Option.value_exn (Set.nth !x (Random.int @@ length x))
+    let random_element_exn x = Option.value_exn (Set.nth !x (Random.int @@ length x))
   end
 
   let eval = Value.eval
@@ -66,10 +61,7 @@ struct
         n_iters := !n_iters +. 1.0;
 
         let op = List.random_element_exn non_nil_ops in
-        let args =
-          List.init (Op.arity op) ~f:(fun _ ->
-              State_set.random_element_exn states)
-        in
+        let args = List.init (Op.arity op) ~f:(fun _ -> State_set.random_element_exn states) in
         let out = eval params op args in
 
         (match !best with
@@ -83,8 +75,7 @@ struct
               best := Some out));
 
         if Float.to_int !n_iters mod 10000 = 0 then
-          eprint_s
-            [%message (!best_dist : float) (State_set.length states : int)];
+          eprint_s [%message (!best_dist : float) (State_set.length states : int)];
 
         if [%compare.equal: Value.t] out output then (
           found_program := true;

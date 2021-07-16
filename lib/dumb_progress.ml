@@ -1,9 +1,5 @@
 module Bar = struct
-  type 'a bar = {
-    id : int;
-    update : 'a -> unit; [@ignore]
-    render : Bigstring.t -> unit; [@ignore]
-  }
+  type 'a bar = { id : int; update : 'a -> unit; [@ignore] render : Bigstring.t -> unit [@ignore] }
   [@@deriving compare, hash, sexp]
 
   type t = Bar : 'a bar -> t
@@ -22,8 +18,7 @@ module Display = struct
     mutable last_render : Time.t;
   }
 
-  let create ?(width = 80) ?(render_interval = Time.Span.of_ms 100.0)
-      ?(ch = Out_channel.stderr) () =
+  let create ?(width = 80) ?(render_interval = Time.Span.of_ms 100.0) ?(ch = Out_channel.stderr) () =
     {
       ch;
       width;
@@ -40,8 +35,7 @@ end
 let add ?(display = Display.default) bar = Queue.enqueue display.bars (Bar bar)
 
 let remove ?(display = Display.default) bar =
-  Queue.filter_inplace display.bars ~f:(fun bar' ->
-      not ([%compare.equal: Bar.t] (Bar bar) bar'))
+  Queue.filter_inplace display.bars ~f:(fun bar' -> not ([%compare.equal: Bar.t] (Bar bar) bar'))
 
 module Ansi = struct
   let show_cursor = "\x1b[?25h"
@@ -54,17 +48,13 @@ module Ansi = struct
 
   let move_up ch = function 0 -> () | n -> Out_channel.fprintf ch "\x1b[%dA" n
 
-  let move_down ch = function
-    | 0 -> ()
-    | n -> Out_channel.fprintf ch "\x1b[%dB" n
+  let move_down ch = function 0 -> () | n -> Out_channel.fprintf ch "\x1b[%dB" n
 end
 
 let render_all (display : Display.t) =
   let now = Time.now () in
-  if Time.Span.(Time.diff now display.last_render > display.render_interval)
-  then (
-    if Time.(display.last_render > Time.epoch) then
-      Ansi.move_up display.ch (Queue.length display.bars)
+  if Time.Span.(Time.diff now display.last_render > display.render_interval) then (
+    if Time.(display.last_render > Time.epoch) then Ansi.move_up display.ch (Queue.length display.bars)
     else Out_channel.print_string "\n";
     display.last_render <- now;
     Queue.iter display.Display.bars ~f:(fun (Bar b) ->
@@ -77,10 +67,7 @@ let update ?(display = Display.default) bar state =
   bar.Bar.update state;
   render_all display
 
-let format_counter ?tot ~n () =
-  match tot with
-  | Some tot -> sprintf "%d/%dit" n tot
-  | None -> sprintf "%dit" n
+let format_counter ?tot ~n () = match tot with Some tot -> sprintf "%d/%dit" n tot | None -> sprintf "%dit" n
 
 let format_iters = sprintf "%0.2fit/s"
 
@@ -95,21 +82,14 @@ let draw_progress buf p =
   buf.{width - 1} <- ']'
 
 let draw_basic ?per_sec ?name ~tot ~n buf =
-  let ips =
-    Option.map per_sec ~f:format_iters
-    |> Option.map ~f:(fun s -> " " ^ s)
-    |> Option.value ~default:""
-  in
+  let ips = Option.map per_sec ~f:format_iters |> Option.map ~f:(fun s -> " " ^ s) |> Option.value ~default:"" in
   let counter = format_counter ~tot ~n () in
   let tail = " " ^ counter ^ ips in
-  let head =
-    Option.map name ~f:(fun n -> n ^ " ") |> Option.value ~default:""
-  in
+  let head = Option.map name ~f:(fun n -> n ^ " ") |> Option.value ~default:"" in
   let head_width = String.length head in
   let body_width = Bigstring.length buf - String.length tail - head_width in
   Bigstring.From_string.blito ~src:head ~dst:buf ();
-  Bigstring.From_string.blito ~src:tail ~dst:buf
-    ~dst_pos:(head_width + body_width) ();
+  Bigstring.From_string.blito ~src:tail ~dst:buf ~dst_pos:(head_width + body_width) ();
   let head_buf = Bigstring.sub_shared ~pos:head_width ~len:body_width buf in
   let prog = Float.(of_int n / of_int tot) in
   draw_progress head_buf prog
@@ -118,8 +98,7 @@ let%expect_test "" =
   let buf = Bigstring.create 80 in
   draw_basic ~per_sec:3320.60 ~name:"sampling" ~tot:100 ~n:45 buf;
   printf "%S\n" @@ Bigstring.to_string buf;
-  [%expect
-    {| "sampling [######################                          ] 45/100it 3320.60it/s" |}]
+  [%expect {| "sampling [######################                          ] 45/100it 3320.60it/s" |}]
 
 let basic_bar ?(display = Display.default) ?name tot =
   let id = Fresh.int display.fresh in
@@ -132,8 +111,7 @@ let basic_bar ?(display = Display.default) ?name tot =
   let render buf =
     let per_sec =
       Option.map !start_time ~f:(fun start_time ->
-          Float.of_int !state
-          /. (Time.diff (Time.now ()) start_time |> Time.Span.to_sec))
+          Float.of_int !state /. (Time.diff (Time.now ()) start_time |> Time.Span.to_sec))
     in
     draw_basic ?per_sec ?name ~tot ~n:!state buf
   in

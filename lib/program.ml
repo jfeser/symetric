@@ -30,8 +30,7 @@ let rec map_postorder ~f (Apply (op, args)) =
   let op' = f op in
   Apply (op', args')
 
-let map ?(order = `Pre) =
-  match order with `Pre -> map_preorder | `Post -> map_postorder
+let map ?(order = `Pre) = match order with `Pre -> map_preorder | `Post -> map_postorder
 
 let rec iter_preorder ~f (Apply (op, args)) =
   f op;
@@ -41,8 +40,7 @@ let rec iter_postorder ~f (Apply (op, args)) =
   List.iter args ~f:(iter_postorder ~f);
   f op
 
-let iter ?(order = `Pre) =
-  match order with `Pre -> iter_preorder | `Post -> iter_postorder
+let iter ?(order = `Pre) = match order with `Pre -> iter_preorder | `Post -> iter_postorder
 
 let mapi ?(order = `Pre) ~f p =
   let idx = ref 0 in
@@ -69,14 +67,11 @@ let test_mapi_iteri p =
   iteri p' ~f:(fun i j -> [%test_result: int] ~expect:i j)
 
 let%expect_test "" =
-  test_mapi_iteri
-    (Apply ((), [ Apply ((), []); Apply ((), [ Apply ((), []) ]) ]));
+  test_mapi_iteri (Apply ((), [ Apply ((), []); Apply ((), [ Apply ((), []) ]) ]));
   [%expect {| (Apply 0 ((Apply 1 ()) (Apply 2 ((Apply 3 ()))))) |}]
 
 let%expect_test "" =
-  test_mapi_iteri
-    (apply ()
-       ~args:[ apply () ~args:[ apply () ~args:[ apply () ] ]; apply () ]);
+  test_mapi_iteri (apply () ~args:[ apply () ~args:[ apply () ~args:[ apply () ] ]; apply () ]);
   [%expect {| (Apply 0 ((Apply 1 ((Apply 2 ((Apply 3 ()))))) (Apply 4 ()))) |}]
 
 module Make (Op : sig

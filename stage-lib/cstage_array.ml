@@ -24,8 +24,7 @@ module type S = sig
 
   val length : 'a t code -> int code
 
-  val fold :
-    'a t code -> init:'b code -> f:('b code -> 'a code -> 'b code) -> 'b code
+  val fold : 'a t code -> init:'b code -> f:('b code -> 'a code -> 'b code) -> 'b code
 
   val iter : 'a t code -> f:('a code -> unit code) -> unit code
 
@@ -35,8 +34,7 @@ module type S = sig
 
   val map : 'a t code -> f:('a code -> 'b code) -> 'b t code
 
-  val map2 :
-    'a t code -> 'b t code -> f:('a code -> 'b code -> 'c code) -> 'c t code
+  val map2 : 'a t code -> 'b t code -> f:('a code -> 'b code -> 'c code) -> 'c t code
 
   val of_sexp : sexp code -> (sexp code -> 'a code) -> 'a t code
 
@@ -99,9 +97,7 @@ module type S_ = sig
   val elem_type : typ -> typ
 end
 
-module Derived
-    (C : Cstage_core.S)
-    (B : Base with type expr = C.expr and type typ = C.typ) :
+module Derived (C : Cstage_core.S) (B : Base with type expr = C.expr and type typ = C.typ) :
   Derived with type typ := C.typ and type expr := C.expr = struct
   module Int = Cstage_int.Int (C)
   open C
@@ -117,18 +113,12 @@ module Derived
 
   let init len f =
     let t = mk_type @@ type_of @@ f (Int.int 0) in
-    ( let_ (create t len) @@ fun a ->
-      sseq
-        [
-          for_ (Int.int 0) (Int.int 1) len (fun i -> set a i (genlet (f i))); a;
-        ] )
+    (let_ (create t len) @@ fun a -> sseq [ for_ (Int.int 0) (Int.int 1) len (fun i -> set a i (genlet (f i))); a ])
     |> no_effect |> with_comment "Array.init"
 
   let map arr ~f = init (length arr) (fun i -> let_ (get arr i) f)
 
-  let map2 a1 a2 ~f =
-    let_ (Int.min (length a1) (length a2)) @@ fun n ->
-    init n (fun i -> f (get a1 i) (get a2 i))
+  let map2 a1 a2 ~f = let_ (Int.min (length a1) (length a2)) @@ fun n -> init n (fun i -> f (get a1 i) (get a2 i))
 
   let sub a start len =
     let open Int in
@@ -143,26 +133,19 @@ module Derived
       sseq
         [
           ( let_ (length arr) @@ fun len ->
-            for_ (Int.int 0) (Int.int 1) len (fun i ->
-                assign (f acc (get arr i)) ~to_:acc) );
+            for_ (Int.int 0) (Int.int 1) len (fun i -> assign (f acc (get arr i)) ~to_:acc) );
           acc;
         ] )
     |> with_comment "Array.fold"
 
   let iter arr ~f =
-    sseq
-      [
-        ( let_ (length arr) @@ fun len ->
-          for_ (Int.int 0) (Int.int 1) len (fun i -> f (get arr i)) );
-      ]
+    sseq [ (let_ (length arr) @@ fun len -> for_ (Int.int 0) (Int.int 1) len (fun i -> f (get arr i))) ]
     |> with_comment "Array.iter"
 
   let of_sexp x elem_of_sexp =
-    let_ (Sexp.to_list x) @@ fun l ->
-    init (Sexp.List.length l) (fun i -> elem_of_sexp (Sexp.List.get l i))
+    let_ (Sexp.to_list x) @@ fun l -> init (Sexp.List.length l) (fun i -> elem_of_sexp (Sexp.List.get l i))
 
-  let sexp_of x sexp_of_elem =
-    Sexp.List.init (length x) @@ fun i -> sexp_of_elem @@ get x i
+  let sexp_of x sexp_of_elem = Sexp.List.init (length x) @@ fun i -> sexp_of_elem @@ get x i
 
   module O = struct
     let ( = ) a a' = binop "(%s == %s)" Bool.type_ a a'
@@ -193,20 +176,15 @@ module Array (C : Cstage_core.S) = struct
 
     type expr = C.expr
 
-    let mk_type e =
-      Type.create ~name:(sprintf "std::vector<%s>" (Type.name e))
-      |> Type.add_exn ~key:elem_t ~data:e
+    let mk_type e = Type.create ~name:(sprintf "std::vector<%s>" (Type.name e)) |> Type.add_exn ~key:elem_t ~data:e
 
     let create t n = fresh_decl ~init:n t
 
     let length x = unop "((int)((%s).size()))" Int.type_ x
 
-    let set a i x =
-      eformat ~has_effect:true "0" unit_t "$(a)[$(i)] = $(x);"
-        [ ("a", C a); ("i", C i); ("x", C x) ]
+    let set a i x = eformat ~has_effect:true "0" unit_t "$(a)[$(i)] = $(x);" [ ("a", C a); ("i", C i); ("x", C x) ]
 
-    let get a x =
-      eformat "($(a)[$(x)])" (elem_type a.etype) "" [ ("a", C a); ("x", C x) ]
+    let get a x = eformat "($(a)[$(x)])" (elem_type a.etype) "" [ ("a", C a); ("x", C x) ]
   end
 
   include (Base : Base with type typ := C.typ and type expr := C.expr)
@@ -250,36 +228,22 @@ module ArenaArray (C : Cstage_core.S) = struct
     type expr = C.expr
 
     let mk_type e =
-      let arena_type =
-        Type.create
-          ~name:(sprintf "std::array<%s, %d>" (Type.name e) default_size)
-      in
+      let arena_type = Type.create ~name:(sprintf "std::array<%s, %d>" (Type.name e) default_size) in
       Type.create ~name:(sprintf "span<%s>" (Type.name e))
       |> Type.add_exn ~key:elem_k ~data:e
       |> Type.add_exn ~key:arena_k ~data:(fresh_global arena_type)
       |> Type.add_exn ~key:arena_offset_k ~data:(fresh_global Int.type_)
 
     let create t l =
-      let ctx =
-        [
-          ("arena", C (arena t));
-          ("len", C l);
-          ("type", S (Type.name t));
-          ("offset", C (arena_offset t));
-        ]
-      in
-      let_ (eformat "($(type)){($(arena)).data() + $(offset), $(len)}" t "" ctx)
-      @@ fun arr -> sseq [ eformat "0" unit_t "$(offset) += $(len);" ctx; arr ]
+      let ctx = [ ("arena", C (arena t)); ("len", C l); ("type", S (Type.name t)); ("offset", C (arena_offset t)) ] in
+      let_ (eformat "($(type)){($(arena)).data() + $(offset), $(len)}" t "" ctx) @@ fun arr ->
+      sseq [ eformat "0" unit_t "$(offset) += $(len);" ctx; arr ]
 
     let length x = unop "((int)((%s).len))" Int.type_ x
 
-    let set a i x =
-      eformat ~has_effect:true "0" unit_t "$(a).ptr[$(i)] = $(x);"
-        [ ("a", C a); ("i", C i); ("x", C x) ]
+    let set a i x = eformat ~has_effect:true "0" unit_t "$(a).ptr[$(i)] = $(x);" [ ("a", C a); ("i", C i); ("x", C x) ]
 
-    let get a x =
-      eformat "($(a).ptr[$(x)])" (elem_type a.etype) ""
-        [ ("a", C a); ("x", C x) ]
+    let get a x = eformat "($(a).ptr[$(x)])" (elem_type a.etype) "" [ ("a", C a); ("x", C x) ]
   end
 
   include (Base : Base with type typ := C.typ and type expr := C.expr)
@@ -295,18 +259,10 @@ module ArenaArray (C : Cstage_core.S) = struct
     let_ (end_ - start) @@ fun len ->
     let t = type_of a in
     eformat "($(type)){$(span).ptr + $(start), $(span).len + $(len)}" t ""
-      [
-        ("type", S (Type.name t));
-        ("span", C a);
-        ("len", C len);
-        ("start", C start);
-      ]
+      [ ("type", S (Type.name t)); ("span", C a); ("len", C len); ("start", C start) ]
 end
 
-module ReversibleArray
-    (C : Cstage_core.S)
-    (A : S_ with type expr = C.expr and type typ = C.typ) =
-struct
+module ReversibleArray (C : Cstage_core.S) (A : S_ with type expr = C.expr and type typ = C.typ) = struct
   module Int = Cstage_int.Int (C)
   module Tuple = Cstage_tuple.Tuple (C)
   open C
@@ -338,15 +294,11 @@ struct
 
     let set a i x =
       C.let_ (Tuple.fst a) @@ fun arr ->
-      C.ite (Tuple.snd a)
-        (fun () -> A.set arr Int.(A.length arr - i - int 1) x)
-        (fun () -> A.set arr i x)
+      C.ite (Tuple.snd a) (fun () -> A.set arr Int.(A.length arr - i - int 1) x) (fun () -> A.set arr i x)
 
     let get a i =
       C.let_ (Tuple.fst a) @@ fun arr ->
-      C.ite (Tuple.snd a)
-        (fun () -> A.get arr Int.(A.length arr - i - int 1))
-        (fun () -> A.get arr i)
+      C.ite (Tuple.snd a) (fun () -> A.get arr Int.(A.length arr - i - int 1)) (fun () -> A.get arr i)
   end
 
   include (Base : Base with type typ := C.typ and type expr := C.expr)

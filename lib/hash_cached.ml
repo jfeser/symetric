@@ -14,8 +14,7 @@ struct
 
   let compare x x' = [%compare: T.t] (value x) (value x')
 
-  let equal x x' =
-    hash x = hash x' && [%compare.equal: T.t] (value x) (value x')
+  let equal x x' = hash x = hash x' && [%compare.equal: T.t] (value x) (value x')
 
   let sexp_of_t x = [%sexp_of: T.t] (value x)
 

@@ -27,10 +27,7 @@ module Array = struct
   (* <=> List.partition *)
   let partition p a =
     let ok, ko =
-      fold_right
-        (fun x (ok_acc, ko_acc) ->
-          if p x then (x :: ok_acc, ko_acc) else (ok_acc, x :: ko_acc))
-        a ([], [])
+      fold_right (fun x (ok_acc, ko_acc) -> if p x then (x :: ok_acc, ko_acc) else (ok_acc, x :: ko_acc)) a ([], [])
     in
     (of_list ok, of_list ko)
 
@@ -108,18 +105,7 @@ module Make (P : Point) = struct
   let length = function Empty -> 0 | Node v -> v.length
 
   let new_node vp lb_low lb_high middle rb_low rb_high left right =
-    Node
-      {
-        vp;
-        lb_low;
-        lb_high;
-        middle;
-        rb_low;
-        rb_high;
-        left;
-        right;
-        length = length left + length right + 1;
-      }
+    Node { vp; lb_low; lb_high; middle; rb_low; rb_high; left; right; length = length left + length right + 1 }
 
   type open_itv = { lbound : float; rbound : float }
 
@@ -141,8 +127,7 @@ module Make (P : Point) = struct
 
   let square (x : float) : float = x *. x
 
-  let float_compare (x : float) (y : float) : int =
-    if x < y then -1 else if x > y then 1 else 0
+  let float_compare (x : float) (y : float) : int = if x < y then -1 else if x > y then 1 else 0
   (* x = y *)
 
   let median (xs : float array) : float =
@@ -150,8 +135,7 @@ module Make (P : Point) = struct
     let n = Array.length xs in
     if n mod 2 = 1 then xs.(n / 2) else 0.5 *. (xs.(n / 2) +. xs.((n / 2) - 1))
 
-  let variance (mu : float) (xs : float array) : float =
-    Array.fold_left (fun acc x -> acc +. square (x -. mu)) 0.0 xs
+  let variance (mu : float) (xs : float array) : float = Array.fold_left (fun acc x -> acc +. square (x -. mu)) 0.0 xs
 
   (* compute distance of point at index 'q_i' to all other points *)
   let distances (q_i : int) (points : P.t array) : float array =
@@ -240,16 +224,10 @@ module Make (P : Point) = struct
       let lb_low, lb_high = Array.min_max_def ldists (0., 0.) in
       let rb_low, rb_high = Array.min_max_def rdists (0., 0.) in
       let middle = (lb_high +. rb_low) *. 0.5 in
-      new_node vp lb_low lb_high middle rb_low rb_high
-        (create' select_vp lpoints)
-        (create' select_vp rpoints)
+      new_node vp lb_low lb_high middle rb_low rb_high (create' select_vp lpoints) (create' select_vp rpoints)
 
   let create ?state quality points =
-    let state =
-      Option.value_lazy
-        ~default:(lazy (Base.Random.State.make_self_init ()))
-        state
-    in
+    let state = Option.value_lazy ~default:(lazy (Base.Random.State.make_self_init ())) state in
     let select_vp =
       match quality with
       | Optimal -> select_best_vp
@@ -268,8 +246,7 @@ module Make (P : Point) = struct
           let tau, acc' =
             match acc with
             | None -> (x, Some (x, vp))
-            | Some (tau, best) ->
-                if x < tau then (x, Some (x, vp)) else (tau, Some (tau, best))
+            | Some (tau, best) -> if x < tau then (x, Some (x, vp)) else (tau, Some (tau, best))
           in
           let il = new_open_itv (lb_low -. tau) (lb_high +. tau) in
           let ir = new_open_itv (rb_low -. tau) (rb_high +. tau) in
@@ -286,9 +263,7 @@ module Make (P : Point) = struct
                 | Some (tau, best) -> (
                     match find_nearest acc' query right with
                     | None -> Some (tau, best)
-                    | Some (tau', best') ->
-                        if tau' < tau then Some (tau', best')
-                        else Some (tau, best)))
+                    | Some (tau', best') -> if tau' < tau then Some (tau', best') else Some (tau, best)))
           else
             (* x >= middle *)
             match (in_ir, in_il) with
@@ -301,14 +276,9 @@ module Make (P : Point) = struct
                 | Some (tau, best) -> (
                     match find_nearest acc' query left with
                     | None -> Some (tau, best)
-                    | Some (tau', best') ->
-                        if tau' < tau then Some (tau', best')
-                        else Some (tau, best))))
+                    | Some (tau', best') -> if tau' < tau then Some (tau', best') else Some (tau, best))))
 
-  let nearest_neighbor query tree =
-    match find_nearest None query tree with
-    | Some x -> x
-    | None -> raise Not_found
+  let nearest_neighbor query tree = match find_nearest None query tree with Some x -> x | None -> raise Not_found
 
   let rec to_list_loop acc = function
     | Empty -> acc
@@ -333,18 +303,15 @@ module Make (P : Point) = struct
             let itv_left = new_open_itv lb_low lb_high in
             if itv_overlap itv itv_left then
               (* further calls to P.dist needed? *)
-              if d +. lb_high <= tol then
-                (* all descendants are included *)
-                to_list_loop acc' left
-              else loop acc' left
+              if d +. lb_high <= tol then (* all descendants are included *)
+                to_list_loop acc' left else loop acc' left
             else acc'
           in
           (* should we inspect the right? *)
           let itv_right = new_open_itv rb_low rb_high in
           if itv_overlap itv itv_right then
             (* further calls to P.dist needed? *)
-            if d +. rb_high <= tol then to_list_loop lmatches right
-            else loop lmatches right
+            if d +. rb_high <= tol then to_list_loop lmatches right else loop lmatches right
           else lmatches
     in
     loop [] tree
@@ -375,9 +342,7 @@ module Make (P : Point) = struct
       | Empty -> ()
       | Node { vp; middle; left; right } ->
           let d = P.dist vp query in
-          if d = 0.0 then raise (Found vp)
-          else if d < middle then loop left
-          else loop right
+          if d = 0.0 then raise (Found vp) else if d < middle then loop left else loop right
     in
     try
       loop tree;

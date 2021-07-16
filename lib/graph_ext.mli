@@ -25,8 +25,7 @@ module type LABELED_GRAPH = sig
 
   type label
 
-  include
-    GRAPH with type vertex := vertex and type edge = vertex * label * vertex
+  include GRAPH with type vertex := vertex and type edge = vertex * label * vertex
 end
 
 module Make (V' : sig
@@ -60,15 +59,12 @@ module type FOLDS = sig
     val filter : graph -> f:(vertex -> bool) -> vertex list
   end
 
-  module Pred :
-    Container.S0 with type t := graph * vertex and type elt := vertex
+  module Pred : Container.S0 with type t := graph * vertex and type elt := vertex
 
-  module Succ :
-    Container.S0 with type t := graph * vertex and type elt := vertex
+  module Succ : Container.S0 with type t := graph * vertex and type elt := vertex
 end
 
-module Folds (G : GRAPH) :
-  FOLDS with type graph = G.t and type vertex = G.V.t and type edge = G.E.t
+module Folds (G : GRAPH) : FOLDS with type graph = G.t and type vertex = G.V.t and type edge = G.E.t
 
 module type CHANGED = sig
   type graph
@@ -94,5 +90,4 @@ module type CHANGED = sig
   val reset_changed : unit -> unit
 end
 
-module Changed (G : GRAPH) () :
-  CHANGED with type graph = G.t and type vertex = G.V.t and type edge = G.E.t
+module Changed (G : GRAPH) () : CHANGED with type graph = G.t and type vertex = G.V.t and type edge = G.E.t

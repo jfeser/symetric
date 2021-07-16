@@ -32,9 +32,7 @@ struct
      (c,true), the request was satisfied and c is the let-bound identifier. If the
      response is (c,false), the let-binding was unsuccessful and c is the original
      code from the request. *)
-  type genlet_req =
-    | Done : genlet_req
-    | Req : 'a C.t * ('a C.t * bool -> genlet_req) -> genlet_req
+  type genlet_req = Done : genlet_req | Req : 'a C.t * ('a C.t * bool -> genlet_req) -> genlet_req
 
   (* The single prompt for let-insertion *)
   let p = new_prompt ()
@@ -43,17 +41,14 @@ struct
      If the prompt is not set, just return (c,false)
   *)
 
-  let send_req c =
-    if is_prompt_set p then shift0 p (fun k -> Req (c, k)) else (c, false)
+  let send_req c = if is_prompt_set p then shift0 p (fun k -> Req (c, k)) else (c, false)
 
   let genlet c =
     let orig_c = c in
     let code, success = send_req c in
     if not success then
       Log.debug (fun m ->
-          m "Generating let %s for: %s"
-            (if success then "succeeded" else "failed")
-            (C.to_string orig_c));
+          m "Generating let %s for: %s" (if success then "succeeded" else "failed") (C.to_string orig_c));
     code
 
   (* We often use mutable variables as `communication channel', to appease
@@ -75,7 +70,7 @@ struct
      it, we check if the request can be fulfilled by a handler
      upstream.
      That is, we try to insert let `as high as possible'.
-   *)
+  *)
   let let_locus body =
     let r = ref None in
     let rec loop = function
@@ -87,11 +82,10 @@ struct
             match send_req c with
             | c, false ->
                 let ret = C.let_ c (fun t -> loop (k (t, true))) in
-                Log.debug (fun m ->
-                    m "Let insertion generated %s" (C.to_string ret));
+                Log.debug (fun m -> m "Let insertion generated %s" (C.to_string ret));
                 ret
             (* .<let t = .~c in .~(loop (k (.<t>.,true)))>. *)
-            | x -> loop (k x) (* c is a variable, inserted higher *) )
+            | x -> loop (k x) (* c is a variable, inserted higher *))
     in
     loop @@ push_prompt p
     @@ fun () ->
