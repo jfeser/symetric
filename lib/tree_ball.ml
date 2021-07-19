@@ -13,7 +13,8 @@ module Rename_only = struct
 
     (* Select ops that are valid at every program location *)
     let valid_ops = Array.create ~len:n [] in
-    Program.iteri t ~f:(fun i op -> valid_ops.(i) <- List.filter ops ~f:(fun op' -> Op.arity op = Op.arity op'));
+    Program.iteri t ~f:(fun i op ->
+        valid_ops.(i) <- List.filter ops ~f:(fun op' -> Op.arity op = Op.arity op' && Op.arity op = 0));
 
     for k = 1 to Int.min n d do
       Combinat.combinations (List.init n ~f:Fun.id) ~k @@ fun loc ->

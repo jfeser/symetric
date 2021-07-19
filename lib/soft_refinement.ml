@@ -69,7 +69,7 @@ include struct
   let local_search = Spec.add spec @@ Param.create @@ local_search_param ~name:"local" ()
 end
 
-module Make (Lang : Lang_intf.S_with_features) = struct
+module Make (Lang : Lang_intf.S_with_features with type Op.t = Cad_op.t and type Value.t = Cad_conc.t) = struct
   open Lang
   module Search_state = Search_state_append.Make (Lang)
   open Search_state
@@ -133,18 +133,19 @@ module Make (Lang : Lang_intf.S_with_features) = struct
     List.iter states ~f:(fun (_, state, op, args) -> insert ss cost state op args);
     Params.get params bank_size := Float.of_int @@ Search_state.length ss
 
-  let search_stochastic ?(sample_k = 3) params ops center output f =
+  let search_stochastic ?(sample_k = 15) params ops center output f =
     let open Sample.Incremental in
-    let sample = reservoir sample_k in
+    let sample = reservoir_unique (module Value) sample_k in
     try
-      Tree_ball.Rename_insert_delete.stochastic
+      Tree_ball.Rename_only.ball
         (module Op)
-        ~score:(fun p -> 1.0 -. (Value.dist params output @@ Program.eval (Value.eval params) p))
-        ops center
-        (fun p s ->
+        ops center (Params.get params ball_width)
+        (fun p ->
           let v = Program.eval (Value.eval params) p in
+          let is_trivial = Cad_gen.non_trivial params p in
+          Fmt.epr "Program:\n%a\nNon-trivial: %b\n%a\n\n" (Program.pp Cad_op.pp) p is_trivial Cad_conc.pprint v;
           sample.add v;
-          if Float.(s = 1.0) then if [%compare.equal: Value.t] v output then f p);
+          if [%compare.equal: Value.t] v output then f p);
       sample.get_sample ()
     with Program.Eval_error e -> raise @@ Program.Eval_error [%message (center : Op.t Program.t) (e : Sexp.t)]
 

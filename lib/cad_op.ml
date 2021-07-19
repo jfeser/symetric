@@ -28,9 +28,9 @@ let pp fmt =
   match_
     ~union:(fun () -> Fmt.pf fmt "or")
     ~inter:(fun () -> Fmt.pf fmt "and")
-    ~circle:(fun x -> Fmt.pf fmt "circle%d" x.id)
-    ~rect:(fun x -> Fmt.pf fmt "rect%d" x.id)
-    ~replicate:(fun x -> Fmt.pf fmt "replicate%d" x.id)
+    ~circle:(fun x -> Fmt.pf fmt "circle<%.1f, %.1f, %.1f>" x.center.x x.center.y x.radius)
+    ~rect:(fun x -> Fmt.pf fmt "rect<%.1f, %.1f, %.1f, %.1f>" x.lo_left.x x.lo_left.y x.hi_right.x x.hi_right.y)
+    ~replicate:(fun x -> Fmt.pf fmt "replicate<%d, %.1f, %.1f>" x.count x.v.x x.v.y)
 
 let union = create Union
 

@@ -2,6 +2,10 @@ exception Eval_error of Sexp.t [@@deriving sexp]
 
 type 'o t = Apply of 'o * 'o t list [@@deriving compare, equal, hash, sexp]
 
+let rec pp pp_op fmt (Apply (op, args)) =
+  if List.is_empty args then pp_op fmt op
+  else Fmt.pf fmt "@[<hov 2>%a(@,%a@,)@]" pp_op op Fmt.(list ~sep:comma @@ pp pp_op) args
+
 let apply ?(args = []) op = Apply (op, args)
 
 let rec eval oeval (Apply (op, args)) = oeval op (List.map args ~f:(eval oeval))

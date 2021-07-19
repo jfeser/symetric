@@ -53,4 +53,15 @@ module Incremental = struct
     let wr = weighted_reservoir ~state n in
     let add v = wr.add v 1.0 and get_sample = wr.get_sample in
     { add; get_sample }
+
+  let reservoir_unique ?(state = Random.State.default) cmp n =
+    let sample = ref (Set.empty cmp) and idx = ref 0 in
+    let add v =
+      (if !idx < n then sample := Set.add !sample v
+      else
+        let j = Random.State.int_incl state 1 !idx in
+        if j <= n then sample := Set.add (Set.remove_index !sample j) v);
+      incr idx
+    and get_sample () = Set.to_list !sample in
+    { add; get_sample }
 end
