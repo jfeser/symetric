@@ -35,11 +35,11 @@ include struct
 
   let synth = Spec.add spec @@ Param.const_str ~name:"synth" "sampling-diverse"
 
-  let value_dist = Spec.add spec @@ Param.float_list ~csv:false ~name:"value-dist" ()
+  let value_dist = Spec.add spec @@ Param.float_list ~json:false ~name:"value-dist" ()
 
   let max_cost = Spec.add spec @@ Param.int ~name:"max-cost" ~doc:" max search cost" ()
 
-  let local_search_param ~name ?(csv = true) () =
+  let local_search_param ~name ?(json = true) () =
     (module struct
       type t = [ `Bounded | `Stochastic ] [@@deriving sexp_of]
 
@@ -64,7 +64,7 @@ include struct
           in
           map param ~f:(fun v -> Univ_map.Packed.T (key, v)))
 
-      let to_json = if csv then Option.return @@ fun v -> `String (to_string v) else None
+      let to_json = if json then Option.return @@ fun v -> `String (to_string v) else None
     end : Param.S
       with type t = [ `Bounded | `Stochastic ])
 
@@ -75,35 +75,9 @@ module Make (Lang : Lang_intf.S) = struct
   open Lang
   module Search_state = Search_state_append.Make (Lang)
   open Search_state
+  include Synth_utils.Generate_list (Lang)
 
-  let unsafe_to_list a = List.init (Option_array.length a) ~f:(Option_array.unsafe_get_some_assuming_some a)
-
-  let make_edge params op args = (Value.eval params op args, op, args)
-
-  let generate_args params ss op costs =
-    let arity = Op.arity op in
-    let types_ = Op.args_type op |> Array.of_list in
-    let args = Option_array.create ~len:arity in
-    let rec build_args arg_idx =
-      if arg_idx >= arity then [ make_edge params op @@ unsafe_to_list args ]
-      else
-        search ss ~cost:costs.(arg_idx) ~type_:types_.(arg_idx)
-        |> List.concat_map ~f:(fun v ->
-               Option_array.set_some args arg_idx v;
-               build_args (arg_idx + 1))
-    in
-    build_args 0
-
-  let generate_states params ss ops cost =
-    if cost = 1 then List.filter ops ~f:(fun op -> Op.arity op = 0) |> List.map ~f:(fun op -> make_edge params op [])
-    else if cost > 1 then
-      let arg_cost = cost - 1 in
-      List.filter ops ~f:(fun op -> Op.arity op > 0)
-      |> List.concat_map ~f:(fun op ->
-             Combinat.compositions ~n:arg_cost ~k:(Op.arity op)
-             |> Combinat.to_list
-             |> List.concat_map ~f:(generate_args params ss op))
-    else []
+  let generate_states = generate_states Search_state.search
 
   exception Done of Op.t Program.t
 
