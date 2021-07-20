@@ -43,4 +43,8 @@ module Make (Lang : Lang_intf.S) = struct
     Program.Apply (op, List.map args ~f:(program_exn ctx))
 
   let program_of_op_args_exn ctx op args = Program.Apply (op, List.map args ~f:(program_exn ctx))
+
+  let cost_of ctx v =
+    Hashtbl.to_alist ctx.values
+    |> List.find_map ~f:(fun (k, vs) -> if Queue.mem vs v ~equal:[%compare.equal: Value.t] then Some k.cost else None)
 end

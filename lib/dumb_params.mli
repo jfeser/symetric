@@ -21,7 +21,7 @@ module Param : sig
     name:string ->
     doc:string ->
     ?init:[ `Cli of 'a option | `Default of unit -> 'a ] ->
-    ?csv:bool ->
+    ?json:bool ->
     ?aliases:string list ->
     unit ->
     ('a, free) t
@@ -34,17 +34,21 @@ module Param : sig
 
   val float : float mk
 
-  val span_ref : name:string -> ?csv:bool -> unit -> (Time.Span.t ref, free) t
+  val string : string mk
 
-  val float_ref : name:string -> ?csv:bool -> unit -> (float ref, free) t
+  val mut : ('a, free) t -> ('a ref, free) t
 
-  val float_seq : name:string -> ?csv:bool -> unit -> (float Queue.t, free) t
+  val span_ref : name:string -> ?json:bool -> unit -> (Time.Span.t ref, free) t
 
-  val float_list : name:string -> ?csv:bool -> unit -> (float list Queue.t, free) t
+  val float_ref : name:string -> ?json:bool -> unit -> (float ref, free) t
 
-  val bool_ref : name:string -> ?default:bool -> ?csv:bool -> unit -> (bool ref, free) t
+  val float_seq : name:string -> ?json:bool -> unit -> (float Queue.t, free) t
 
-  val const_str : name:string -> ?csv:bool -> string -> (string, free) t
+  val float_list : name:string -> ?json:bool -> unit -> (float list Queue.t, free) t
+
+  val bool_ref : name:string -> ?default:bool -> ?json:bool -> unit -> (bool ref, free) t
+
+  val const_str : name:string -> ?json:bool -> string -> (string, free) t
 
   val ids :
     (module Comparator.S with type t = 't) -> name:string -> doc:string -> (string * 't) list -> ('t list, free) t

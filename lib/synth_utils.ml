@@ -68,3 +68,22 @@ module Generate_queue (Lang : Lang_intf.S) = struct
   let generate_states search params ss ops cost queue =
     Iter.generate_states search params ss ops cost (Queue.enqueue queue)
 end
+
+let timed f =
+  let start = Time.now () in
+  f ();
+  let end_ = Time.now () in
+  Time.diff end_ start
+
+exception Break
+
+let break _ = raise Break
+
+let () = Caml.Sys.(set_signal sigint (Signal_handle break))
+
+let print_json = Yojson.Basic.to_channel Out_channel.stdout
+
+let run_synth synth params () =
+  Random.set_state @@ Random.State.make [| Params.(get params seed) |];
+  Params.(get params runtime) := timed (fun () -> try synth params with Break -> ());
+  if Params.(get params print_json) then print_json @@ Dumb_params.json params

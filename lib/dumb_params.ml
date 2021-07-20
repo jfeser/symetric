@@ -44,7 +44,7 @@ module Param = struct
     name:string ->
     doc:string ->
     ?init:[ `Cli of 'a option | `Default of unit -> 'a ] ->
-    ?csv:bool ->
+    ?json:bool ->
     ?aliases:string list ->
     unit ->
     ('a, free) t
@@ -74,11 +74,13 @@ module Param = struct
     let list x = `List x
   end
 
-  let make_to_json csv f = if csv then Some f else None
+  let mk_to_json json f = if json then Some f else None
 
   let create = Fun.id
 
-  let int ~name ~doc ?(init = `Cli None) ?(csv = true) ?aliases () =
+  let const_default x = `Default (Fun.const x)
+
+  let int ~name ~doc ?(init = `Cli None) ?(json = true) ?aliases () =
     (module struct
       type t = int [@@deriving sexp_of]
 
@@ -86,13 +88,13 @@ module Param = struct
 
       let name = name
 
-      let to_json = make_to_json csv Json.int
+      let to_json = mk_to_json json Json.int
 
       let init = make_init ~name ~doc ?aliases key Command.Param.int sexp_of_t init
     end : Param_intf
       with type t = int)
 
-  let bool ~name ~doc ?(init = `Cli None) ?(csv = true) ?aliases () =
+  let bool ~name ~doc ?(init = `Cli None) ?(json = true) ?aliases () =
     (module struct
       type t = bool [@@deriving sexp_of]
 
@@ -100,13 +102,13 @@ module Param = struct
 
       let name = name
 
-      let to_json = make_to_json csv Json.bool
+      let to_json = mk_to_json json Json.bool
 
       let init = make_init ~name ~doc ?aliases key Command.Param.bool sexp_of_t init
     end : Param_intf
       with type t = bool)
 
-  let float ~name ~doc ?(init = `Cli None) ?(csv = true) ?aliases () =
+  let float ~name ~doc ?(init = `Cli None) ?(json = true) ?aliases () =
     (module struct
       type t = float [@@deriving sexp_of]
 
@@ -114,55 +116,63 @@ module Param = struct
 
       let name = name
 
-      let to_json = make_to_json csv Json.float
+      let to_json = mk_to_json json Json.float
 
       let init = make_init ~name ~doc ?aliases key Command.Param.float sexp_of_t init
     end : Param_intf
       with type t = float)
 
-  let float_ref ~name ?(csv = true) () =
+  let span ~name ~doc ?(init = `Cli None) ?(json = true) ?aliases () =
     (module struct
-      type t = float ref [@@deriving sexp_of]
+      type t = Time.Span.t [@@deriving sexp_of]
 
       let key = Univ_map.Key.create ~name [%sexp_of: t]
 
       let name = name
 
-      let init = Second (fun () -> ref Float.nan)
+      let init = make_init ~name ~doc ?aliases key Command.(Arg_type.map Param.float ~f:Time.Span.of_ms) sexp_of_t init
 
-      let to_json = make_to_json csv @@ fun x -> `Float !x
+      let to_json = mk_to_json json @@ fun x -> Json.float (Time.Span.to_ms x)
     end : Param_intf
-      with type t = float ref)
+      with type t = Time.Span.t)
 
-  let bool_ref ~name ?(default = false) ?(csv = true) () =
+  let string ~name ~doc ?(init = `Cli None) ?(json = true) ?aliases () =
     (module struct
-      type t = bool ref [@@deriving sexp_of]
+      type t = string [@@deriving sexp_of]
 
       let key = Univ_map.Key.create ~name [%sexp_of: t]
 
       let name = name
 
-      let init = Second (fun () -> ref default)
+      let init = make_init ~name ~doc ?aliases key Command.Param.string sexp_of_t init
 
-      let to_json = make_to_json csv @@ fun x -> `Bool !x
+      let to_json = mk_to_json json Json.string
     end : Param_intf
-      with type t = bool ref)
+      with type t = string)
 
-  let span_ref ~name ?(csv = true) () =
+  let mut (type t) (module P : Param_intf with type t = t) =
     (module struct
-      type t = Time.Span.t ref [@@deriving sexp_of]
+      type t = P.t ref [@@deriving sexp_of]
 
-      let key = Univ_map.Key.create ~name [%sexp_of: t]
+      let key = Univ_map.Key.create ~name:P.name [%sexp_of: P.t ref]
 
-      let name = name
+      let name = P.name
 
-      let init = Second (fun () -> ref (Time.Span.of_ms Float.nan))
+      let to_json = Option.map P.to_json ~f:(fun p_to_json x -> p_to_json !x)
 
-      let to_json = make_to_json csv @@ fun x -> `Float (Time.Span.to_ms !x)
+      let init = Either.map P.init ~first:(fun _ -> failwith "") ~second:(fun mk_default () -> ref (mk_default ()))
     end : Param_intf
-      with type t = Time.Span.t ref)
+      with type t = P.t ref)
 
-  let float_seq ~name ?(csv = true) () =
+  let float_ref ~name ?(json = true) () = mut (float ~doc:"" ~name ~json ~init:(const_default Float.nan) ())
+
+  let bool_ref ~name ?(default = false) ?(json = true) () =
+    mut (bool ~doc:"" ~name ~json ~init:(const_default default) ())
+
+  let span_ref ~name ?(json = true) () =
+    mut (span ~doc:"" ~name ~json ~init:(const_default @@ Time.Span.of_ms Float.nan) ())
+
+  let float_seq ~name ?(json = true) () =
     (module struct
       type t = float Queue.t [@@deriving sexp_of]
 
@@ -172,11 +182,11 @@ module Param = struct
 
       let init = Second (fun () -> Queue.create ())
 
-      let to_json = make_to_json csv @@ fun x -> Queue.to_list x |> List.map ~f:Json.float |> Json.list
+      let to_json = mk_to_json json @@ fun x -> Queue.to_list x |> List.map ~f:Json.float |> Json.list
     end : Param_intf
       with type t = float Queue.t)
 
-  let float_list ~name ?(csv = true) () =
+  let float_list ~name ?(json = true) () =
     (module struct
       type t = float list Queue.t [@@deriving sexp_of]
 
@@ -187,26 +197,14 @@ module Param = struct
       let init = Second (fun () -> Queue.create ())
 
       let to_json =
-        if csv then
+        if json then
           Option.return @@ fun v ->
-          `List (Queue.to_list v |> List.map ~f:(fun l -> `List (List.map l ~f:(fun x -> `Float x))))
+          Json.list @@ (Queue.to_list v |> List.map ~f:(fun l -> Json.list @@ List.map l ~f:Json.float))
         else None
     end : S
       with type t = float list Queue.t)
 
-  let const_str ~name ?(csv = true) v =
-    (module struct
-      type t = string [@@deriving sexp_of]
-
-      let key = Univ_map.Key.create ~name [%sexp_of: t]
-
-      let name = name
-
-      let init = Second (fun () -> v)
-
-      let to_json = make_to_json csv Json.string
-    end : Param_intf
-      with type t = string)
+  let const_str ~name ?(json = true) v = string ~name ~doc:"" ~init:(const_default v) ~json ()
 
   let ids (type t) (module Cmp : Comparator.S with type t = t) ~name ~doc ids =
     (module struct

@@ -51,3 +51,12 @@ module Make (Lang : Lang_intf.S) = struct
     let rec fill_ params = fill fill_ params in
     try fill_ params ss ops max_cost output 0 with Done p -> eprint_s [%message (p : Op.t Program.t)]
 end
+
+let cli (type value op) (module Lang : Lang_intf.S with type Value.t = value and type Op.t = op) =
+  let module Synth = Make (Lang) in
+  let spec = Dumb_params.Spec.union [ Lang.spec; Params.spec; spec ] in
+  let open Command.Let_syntax in
+  Command.basic ~summary:(sprintf "Enumerative baseline for %s" Lang.name)
+  @@ [%map_open
+       let params = Dumb_params.Spec.cli spec in
+       Synth_utils.run_synth Synth.synth params]

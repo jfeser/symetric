@@ -193,3 +193,13 @@ module Make (Lang : Lang_intf.S) = struct
    *    |> List.min_elt ~compare:[%compare: float]
    *    |> Option.value_exn *)
 end
+
+let cli (type value op) (module Lang : Lang_intf.S with type Value.t = value and type Op.t = op) =
+  let module Synth = Make (Lang) in
+  let spec = Dumb_params.Spec.union [ Lang.spec; Params.spec; spec ] in
+  let open Command.Let_syntax in
+  Command.basic
+    ~summary:(sprintf "Diversity sampling for %s" Lang.name)
+    [%map_open
+      let params = Dumb_params.Spec.cli spec in
+      Synth_utils.run_synth Synth.synth params]
