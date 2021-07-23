@@ -3,13 +3,14 @@ include struct
 
   let spec = Spec.create ()
 
-  let per_cost =
+  let retain_thresh =
     Spec.add spec
-    @@ Param.int ~name:"per-cost" ~aliases:[ "p" ] ~doc:" programs stored per cost level" ~init:(`Cli (Some 100)) ()
+    @@ Param.float ~name:"retain-thresh" ~aliases:[ "r" ]
+         ~doc:" retain points that are at least r away from their closest neighbor" ~init:(`Cli (Some 0.0)) ()
 
-  let thresh =
+  let search_thresh =
     Spec.add spec
-    @@ Param.float ~name:"thresh" ~aliases:[ "d" ] ~doc:" exhaustive search threshold" ~init:(`Cli (Some 1.0)) ()
+    @@ Param.float ~name:"search-thresh" ~aliases:[ "d" ] ~doc:" exhaustive search threshold" ~init:(`Cli (Some 1.0)) ()
 
   let ball_width =
     Spec.add spec @@ Param.int ~name:"width" ~aliases:[ "w" ] ~doc:" exhaustive search width" ~init:(`Cli (Some 2)) ()
@@ -86,38 +87,36 @@ module Make (Lang : Lang_intf.S) = struct
     |> List.filter ~f:(fun (s, _, _) -> not (mem ss s))
     |> List.dedup_and_sort ~compare:(fun (s, _, _) (s', _, _) -> [%compare: Value.t] s s')
 
-  let sample_diverse params ss new_states =
-    let states =
-      Dumb_progress.List.map ~name:"sampling" new_states ~f:(fun ((_, new_state, _, _) as x) ->
-          let min_dist =
-            List.map (states ss) ~f:(fun old_state -> Value.dist params old_state new_state)
-            |> List.min_elt ~compare:[%compare: float]
-            |> Option.value ~default:Float.infinity
-          in
-          (min_dist, x))
-      |> List.sort ~compare:(fun (d, _) (d', _) -> -[%compare: float] d d')
-    in
-    Sample.weighted_random (Params.get params per_cost) states ~weight:(fun (w, _) -> w) |> List.map ~f:Tuple.T2.get2
+  let sample_diverse params ss min_dist new_states =
+    Dumb_progress.List.map ~name:"sampling" new_states ~f:(fun ((_, new_state, _, _) as x) ->
+        let min_dist =
+          List.map (states ss) ~f:(fun old_state -> Value.dist params old_state new_state)
+          |> List.min_elt ~compare:[%compare: float]
+          |> Option.value ~default:Float.infinity
+        in
+        (min_dist, x))
+    |> List.filter ~f:(fun (d, _) -> Float.(d >= min_dist))
+    |> List.map ~f:Tuple.T2.get2
 
-  let sample_naive params new_states =
-    let states = List.permute new_states in
-    List.take states (Params.get params per_cost)
+  let sample_naive _ new_states = new_states
 
-  let sample_states params ss = if Params.get params diversity then sample_diverse params ss else sample_naive params
+  let sample_states params ss = if Params.get params diversity then sample_diverse params ss else sample_naive
 
   let insert_states params ss cost states =
     List.iter states ~f:(fun (_, state, op, args) -> insert ss cost state op args);
     Params.get params bank_size := Float.of_int @@ Search_state.length ss
 
-  let search_bounded params ball_width ops center output f =
+  let search_bounded params ball_width ops center output cost f =
     let check_program p =
-      let v = Program.eval (Value.eval params) p in
-      if Value.equal v output then f p
+      if Program.size p >= cost then
+        let v = Program.eval (Value.eval params) p in
+        if Value.equal v output then f p
     in
+
     try Tree_ball.Rename_insert_delete.ball (module Op) ops center ball_width check_program
     with Program.Eval_error e -> raise @@ Program.Eval_error [%message (center : Op.t Program.t) (e : Sexp.t)]
 
-  let search_stochastic params ops center output f =
+  let search_stochastic params ops center output _ f =
     try
       Tree_ball.Rename_insert_delete.stochastic
         (module Op)
@@ -138,22 +137,16 @@ module Make (Lang : Lang_intf.S) = struct
     let max_cost = Params.get params max_cost in
     let ss = Search_state.create max_cost in
     let bench = Params.get params bench in
-    let ops = Bench.ops bench and output = Bench.output bench (* and solution = Bench.solution_exn bench *) in
+    let ops = Bench.ops bench and output = Bench.output bench in
 
-    let thresh = Params.get params thresh
+    let search_thresh = Params.get params search_thresh
+    and retain_thresh = Params.get params retain_thresh
     and final_value_dist = Params.get params final_value_dist
     and final_program_dist = Params.get params final_program_dist
     and program_cost = Params.get params program_cost
     and found_program = Params.get params found_program
-    (* and have_parts = Params.get params have_parts
-     * and total_parts = Params.get params total_parts *)
     and value_dist = Params.get params value_dist in
 
-    (* let solution_parts =
-     *   Program.eval_parts (Value.eval params) solution
-     *   |> List.dedup_and_sort ~compare:[%compare: Value.t]
-     * in
-     * total_parts := Float.of_int @@ List.length solution_parts; *)
     let search_neighbors = search_neighbors params in
     try
       for cost = 0 to max_cost do
@@ -165,17 +158,18 @@ module Make (Lang : Lang_intf.S) = struct
 
         (* Check neighbors around new states *)
         List.iter new_states ~f:(fun (d, _, op, args) ->
-            if Float.(d <= thresh) then
+            if Float.(d <= search_thresh) then (
               let center = program_of_op_args_exn ss op args in
 
-              search_neighbors ops center output (fun p ->
+              search_neighbors ops center output cost (fun p ->
                   final_value_dist := d;
                   final_program_dist := Float.of_int @@ Tree_dist.zhang_sasha ~eq:[%compare.equal: Op.t] center p;
                   program_cost := Float.of_int cost;
                   found_program := true;
-                  raise (Done p)));
+                  raise (Done p));
+              print_s [%message "search failed"]));
 
-        let new_states = sample_states params ss new_states in
+        let new_states = sample_states params ss retain_thresh new_states in
         insert_states params ss cost new_states;
 
         (* have_parts := Float.of_int @@ List.count solution_parts ~f:(mem ss); *)
