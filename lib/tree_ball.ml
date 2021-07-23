@@ -51,36 +51,18 @@ module Rename_only = struct
     print_ball 1;
     [%expect
       {|
-    ((p (Apply y ((Apply b ()) (Apply c ((Apply d ()))))))
-     ("dist ~compare:([%compare : string]) p init" 1))
     ((p (Apply a ((Apply z ()) (Apply c ((Apply d ()))))))
-     ("dist ~compare:([%compare : string]) p init" 1))
-    ((p (Apply a ((Apply b ()) (Apply x ((Apply d ()))))))
      ("dist ~compare:([%compare : string]) p init" 1))
     ((p (Apply a ((Apply b ()) (Apply c ((Apply z ()))))))
      ("dist ~compare:([%compare : string]) p init" 1)) |}];
     print_ball 2;
     [%expect
       {|
-    ((p (Apply y ((Apply b ()) (Apply c ((Apply d ()))))))
-     ("dist ~compare:([%compare : string]) p init" 1))
     ((p (Apply a ((Apply z ()) (Apply c ((Apply d ()))))))
-     ("dist ~compare:([%compare : string]) p init" 1))
-    ((p (Apply a ((Apply b ()) (Apply x ((Apply d ()))))))
      ("dist ~compare:([%compare : string]) p init" 1))
     ((p (Apply a ((Apply b ()) (Apply c ((Apply z ()))))))
      ("dist ~compare:([%compare : string]) p init" 1))
-    ((p (Apply y ((Apply z ()) (Apply c ((Apply d ()))))))
-     ("dist ~compare:([%compare : string]) p init" 2))
-    ((p (Apply y ((Apply b ()) (Apply x ((Apply d ()))))))
-     ("dist ~compare:([%compare : string]) p init" 2))
-    ((p (Apply a ((Apply z ()) (Apply x ((Apply d ()))))))
-     ("dist ~compare:([%compare : string]) p init" 2))
-    ((p (Apply y ((Apply b ()) (Apply c ((Apply z ()))))))
-     ("dist ~compare:([%compare : string]) p init" 2))
     ((p (Apply a ((Apply z ()) (Apply c ((Apply z ()))))))
-     ("dist ~compare:([%compare : string]) p init" 2))
-    ((p (Apply a ((Apply b ()) (Apply x ((Apply z ()))))))
      ("dist ~compare:([%compare : string]) p init" 2)) |}]
 end
 
