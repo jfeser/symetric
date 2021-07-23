@@ -172,20 +172,12 @@ module Make (Lang : Lang_intf.S) = struct
         let new_states = sample_states params ss retain_thresh new_states in
         insert_states params ss cost new_states;
 
-        (* have_parts := Float.of_int @@ List.count solution_parts ~f:(mem ss); *)
         Fmt.epr "Finished cost %d\n%!" cost;
         print_stats ss
       done
     with Done p ->
       assert (Value.equal (Program.eval (Value.eval params) p) output);
       eprint_s [%message (p : Op.t Program.t)]
-
-  (* Params.get params closest_program
-   * := List.map (states ss) ~f:(fun s ->
-   *        let p = program_exn ss s in
-   *        Dist.program solution p)
-   *    |> List.min_elt ~compare:[%compare: float]
-   *    |> Option.value_exn *)
 end
 
 let cli (type value op) (module Lang : Lang_intf.S with type Value.t = value and type Op.t = op) =
