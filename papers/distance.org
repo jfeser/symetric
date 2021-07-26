@@ -36,11 +36,13 @@ of a given length.
 *** Empirical evaluation
 
 We sample a set of 50 programs from our CAD DSL. We sample programs at random
-and only consider programs with seven operators. For each sample $t_c$, we
-collect a neighborhood of 500 programs within 2 edits of $t_c$.  We treat each
-ball as a separate class and attempt to learn a k-nearest-neighbors
-classifier. The resulting classifier has a test accuracy of 0.11 (a random
-classifier would have an accuracy of 0.02).
+and only consider programs with 8 operators. These programs will form the center
+of our classes. For each sample $t_c$, we collect a neighborhood of 500 programs
+within 2 edits of $t_c$. We ensure that every program in the ball has at least 8
+operators (since the rewrites can remove operators). We treat each ball as a
+separate class and attempt to learn a k-nearest-neighbors classifier. The
+resulting classifier has a test accuracy of 0.226 (a random classifier would
+have an accuracy of 0.02).
 
 This might sound ok, because we haven't learned a distance function yet. We're
 using the Euclidean distance in the KNN classifier, and we know that the
@@ -50,8 +52,9 @@ will allow us to separate the classes effectively. This plot shows the pairwise
 class overlap. Brighter colors mean more values are present in multiple
 classes. The neighborhoods that we have collected have large areas of overlap.
 
-#+DOWNLOADED: screenshot @ 2021-07-21 18:45:00
-[[file:Learning_Program_Distance_Metrics/2021-07-21_18-45-00_screenshot.png]]
+
+#+DOWNLOADED: screenshot @ 2021-07-22 12:21:39
+[[file:Learning_Program_Distance_Metrics/2021-07-22_12-21-39_screenshot.png]]
 
 ** A hypothesis about program space
 
@@ -79,11 +82,12 @@ the smallest program that produces a value $v$. If we filter our neighborhoods
 to only contain values $v$ such that $C(v) \geq C(v_{center})$, we find that
 most of the overlap disappears.
 
-#+DOWNLOADED: screenshot @ 2021-07-21 19:03:33
-[[file:Learning_Program_Distance_Metrics/2021-07-21_19-03-33_screenshot.png]]
+
+#+DOWNLOADED: screenshot @ 2021-07-22 12:21:49
+[[file:Learning_Program_Distance_Metrics/2021-07-22_12-21-49_screenshot.png]]
 
 If we train a classifier on this filtered dataset we get an improved accuracy of
-0.32.
+0.465.
 
 The values in our neighborhood are upper bounded by $C(v_{center}) + \delta$, so
 we won't see arbitrarily large values of $C$. However, it seems that making

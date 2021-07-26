@@ -133,6 +133,36 @@ module Make (Lang : Lang_intf.S) = struct
     | `Bounded -> search_bounded params (Params.get params ball_width)
     | `Stochastic -> search_stochastic params
 
+  let fill params ss ops output value_dist search_neighbors search_thresh retain_thresh cost =
+    let new_states = generate_states params ss ops cost |> dedup_states ss in
+
+    let new_states = List.map new_states ~f:(fun (s, op, args) -> (Value.dist params output s, s, op, args)) in
+
+    Queue.enqueue value_dist @@ List.map new_states ~f:(fun (d, _, _, _) -> d);
+
+    (* Check neighbors around new states *)
+    List.iter new_states ~f:(fun (d, _, op, args) ->
+        if Float.(d <= search_thresh) then
+          let center = program_of_op_args_exn ss op args in
+
+          search_neighbors ops center output cost (fun p ->
+              let final_value_dist = Params.get params final_value_dist
+              and final_program_dist = Params.get params final_program_dist
+              and program_cost = Params.get params program_cost
+              and found_program = Params.get params found_program in
+
+              final_value_dist := d;
+              final_program_dist := Float.of_int @@ Tree_dist.zhang_sasha ~eq:[%compare.equal: Op.t] center p;
+              program_cost := Float.of_int cost;
+              found_program := true;
+              raise (Done p)));
+
+    let new_states = sample_states params ss retain_thresh new_states in
+    insert_states params ss cost new_states;
+
+    Fmt.epr "Finished cost %d\n%!" cost;
+    print_stats ss
+
   let synth params =
     let max_cost = Params.get params max_cost in
     let ss = Search_state.create max_cost in
@@ -141,40 +171,18 @@ module Make (Lang : Lang_intf.S) = struct
 
     let search_thresh = Params.get params search_thresh
     and retain_thresh = Params.get params retain_thresh
-    and final_value_dist = Params.get params final_value_dist
-    and final_program_dist = Params.get params final_program_dist
-    and program_cost = Params.get params program_cost
-    and found_program = Params.get params found_program
     and value_dist = Params.get params value_dist in
 
     let search_neighbors = search_neighbors params in
     try
-      for cost = 0 to max_cost do
-        let new_states = generate_states params ss ops cost |> dedup_states ss in
-
-        let new_states = List.map new_states ~f:(fun (s, op, args) -> (Value.dist params output s, s, op, args)) in
-
-        Queue.enqueue value_dist @@ List.map new_states ~f:(fun (d, _, _, _) -> d);
-
-        (* Check neighbors around new states *)
-        List.iter new_states ~f:(fun (d, _, op, args) ->
-            if Float.(d <= search_thresh) then (
-              let center = program_of_op_args_exn ss op args in
-
-              search_neighbors ops center output cost (fun p ->
-                  final_value_dist := d;
-                  final_program_dist := Float.of_int @@ Tree_dist.zhang_sasha ~eq:[%compare.equal: Op.t] center p;
-                  program_cost := Float.of_int cost;
-                  found_program := true;
-                  raise (Done p));
-              print_s [%message "search failed"]));
-
-        let new_states = sample_states params ss retain_thresh new_states in
-        insert_states params ss cost new_states;
-
-        Fmt.epr "Finished cost %d\n%!" cost;
-        print_stats ss
-      done
+      let rec reduce_retain_thresh retain_thresh =
+        for cost = 0 to max_cost do
+          fill params ss ops output value_dist search_neighbors search_thresh retain_thresh cost
+        done;
+        (* TODO: Should we clear the search space here? *)
+        reduce_retain_thresh (retain_thresh /. 2.0)
+      in
+      reduce_retain_thresh retain_thresh
     with Done p ->
       assert (Value.equal (Program.eval (Value.eval params) p) output);
       eprint_s [%message (p : Op.t Program.t)]
