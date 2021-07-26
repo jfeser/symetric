@@ -331,3 +331,4 @@ TSWLatexianTemp*
 *.pdf
 profiler.dat*
 duniverse/
+/*.npy
