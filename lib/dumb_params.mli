@@ -67,7 +67,9 @@ module Spec : sig
 
   type values
 
-  val create : unit -> t
+  val create : ?name:string -> unit -> t
+
+  val inherit_ : t -> string -> t
 
   val add : t -> ('a, Param.free) Param.t -> ('a, Param.bound) Param.t
 

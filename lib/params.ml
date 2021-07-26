@@ -2,7 +2,7 @@ open Dumb_params
 
 type t = Dumb_params.t
 
-let spec = Spec.create ()
+let spec = Spec.create ~name:"global" ()
 
 let seed = Spec.add spec @@ Param.int ~name:"seed" ~doc:" random seed" ~init:(`Cli (Some 0)) ()
 

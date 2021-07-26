@@ -47,7 +47,7 @@ end
 include struct
   open Dumb_params
 
-  let spec = Spec.create ()
+  let spec = Spec.create ~name:"cad-gen" ()
 
   let ops =
     Spec.add spec

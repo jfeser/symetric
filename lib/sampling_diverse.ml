@@ -1,7 +1,7 @@
 include struct
   open Dumb_params
 
-  let spec = Spec.create ()
+  let spec = Spec.inherit_ Baseline.spec "sampling-diverse"
 
   let retain_thresh =
     Spec.add spec
@@ -37,8 +37,6 @@ include struct
   let synth = Spec.add spec @@ Param.const_str ~name:"synth" "sampling-diverse"
 
   let value_dist = Spec.add spec @@ Param.float_list ~json:false ~name:"value-dist" ()
-
-  let max_cost = Spec.add spec @@ Param.int ~name:"max-cost" ~doc:" max search cost" ()
 
   let local_search_param ~name ?(json = true) () =
     (module struct
@@ -76,76 +74,62 @@ module Make (Lang : Lang_intf.S) = struct
   open Lang
   module Search_state = Search_state_append.Make (Lang)
   open Search_state
-  include Synth_utils.Generate_list (Lang)
+  module Gen = Synth_utils.Generate_list (Lang)
+  module Baseline = Baseline.Make (Lang)
 
-  let generate_states = generate_states Search_state.search
+  class synthesizer params =
+    object (self)
+      inherit Baseline.synthesizer params as super
 
-  exception Done of Op.t Program.t
+      val bank_size = Params.get params bank_size
 
-  let dedup_states ss states =
-    states
-    |> List.filter ~f:(fun (s, _, _) -> not (mem ss s))
-    |> List.dedup_and_sort ~compare:(fun (s, _, _) (s', _, _) -> [%compare: Value.t] s s')
+      val search_thresh = Params.get params search_thresh
 
-  let sample_diverse params ss min_dist new_states =
-    Dumb_progress.List.map ~name:"sampling" new_states ~f:(fun ((_, new_state, _, _) as x) ->
-        let min_dist =
-          List.map (states ss) ~f:(fun old_state -> Value.dist params old_state new_state)
-          |> List.min_elt ~compare:[%compare: float]
-          |> Option.value ~default:Float.infinity
-        in
-        (min_dist, x))
-    |> List.filter ~f:(fun (d, _) -> Float.(d >= min_dist))
-    |> List.map ~f:Tuple.T2.get2
+      val diversity = Params.get params diversity
 
-  let sample_naive _ new_states = new_states
+      val ball_width = Params.get params ball_width
 
-  let sample_states params ss = if Params.get params diversity then sample_diverse params ss else sample_naive
+      val mutable retain_thresh = Params.get params retain_thresh
 
-  let insert_states params ss cost states =
-    List.iter states ~f:(fun (_, state, op, args) -> insert ss cost state op args);
-    Params.get params bank_size := Float.of_int @@ Search_state.length ss
+      method dist = Value.dist params
 
-  let search_bounded params ball_width ops center output cost f =
-    let check_program p =
-      if Program.size p >= cost then
-        let v = Program.eval (Value.eval params) p in
-        if Value.equal v output then f p
-    in
+      method! insert_states cost states =
+        super#insert_states cost states;
+        bank_size := Float.of_int @@ Search_state.length search_state
 
-    try Tree_ball.Rename_insert_delete.ball (module Op) ops center ball_width check_program
-    with Program.Eval_error e -> raise @@ Program.Eval_error [%message (center : Op.t Program.t) (e : Sexp.t)]
+      method dedup_states states =
+        states
+        |> List.filter ~f:(fun (s, _, _) -> not (Search_state.mem search_state s))
+        |> List.dedup_and_sort ~compare:(fun (s, _, _) (s', _, _) -> [%compare: Value.t] s s')
 
-  let search_stochastic params ops center output _ f =
-    try
-      Tree_ball.Rename_insert_delete.stochastic
-        (module Op)
-        ~score:(fun p -> 1.0 -. (Value.dist params output @@ Program.eval (Value.eval params) p))
-        ops center
-        (fun p s ->
-          if Float.(s = 1.0) then
-            let v = Program.eval (Value.eval params) p in
-            if [%compare.equal: Value.t] v output then f p)
-    with Program.Eval_error e -> raise @@ Program.Eval_error [%message (center : Op.t Program.t) (e : Sexp.t)]
+      method search_neighbors ?(view = ignore) center found =
+        match Params.get params local_search with
+        | `Bounded -> (
+            let check_program p =
+              let v = Program.eval (Value.eval params) p in
+              view v;
+              if Value.equal v output then found p
+            in
+            try Tree_ball.Rename_insert_delete.ball (module Op) ops center ball_width check_program
+            with Program.Eval_error e -> raise @@ Program.Eval_error [%message (center : Op.t Program.t) (e : Sexp.t)])
+        | `Stochastic -> (
+            try
+              Tree_ball.Rename_insert_delete.stochastic
+                (module Op)
+                ~score:(fun p -> 1.0 -. (self#dist output @@ Program.eval (Value.eval params) p))
+                ops center
+                (fun p _ ->
+                  let v = Program.eval (Value.eval params) p in
+                  view v;
+                  if [%compare.equal: Value.t] v output then found p)
+            with Program.Eval_error e -> raise @@ Program.Eval_error [%message (center : Op.t Program.t) (e : Sexp.t)])
 
-  let search_neighbors params =
-    match Params.get params local_search with
-    | `Bounded -> search_bounded params (Params.get params ball_width)
-    | `Stochastic -> search_stochastic params
+      method check_states cost new_states =
+        List.iter new_states ~f:(fun (d, _, op, args) ->
+            if Float.(d <= search_thresh) then (
+              let center = program_of_op_args_exn search_state op args in
 
-  let fill params ss ops output value_dist search_neighbors search_thresh retain_thresh cost =
-    let new_states = generate_states params ss ops cost |> dedup_states ss in
-
-    let new_states = List.map new_states ~f:(fun (s, op, args) -> (Value.dist params output s, s, op, args)) in
-
-    Queue.enqueue value_dist @@ List.map new_states ~f:(fun (d, _, _, _) -> d);
-
-    (* Check neighbors around new states *)
-    List.iter new_states ~f:(fun (d, _, op, args) ->
-        if Float.(d <= search_thresh) then
-          let center = program_of_op_args_exn ss op args in
-
-          search_neighbors ops center output cost (fun p ->
+              self#search_neighbors center @@ fun p ->
               let final_value_dist = Params.get params final_value_dist
               and final_program_dist = Params.get params final_program_dist
               and program_cost = Params.get params program_cost
@@ -155,37 +139,44 @@ module Make (Lang : Lang_intf.S) = struct
               final_program_dist := Float.of_int @@ Tree_dist.zhang_sasha ~eq:[%compare.equal: Op.t] center p;
               program_cost := Float.of_int cost;
               found_program := true;
-              raise (Done p)));
+              raise (Baseline.Done p)))
+      (** Check neighbors around new states *)
 
-    let new_states = sample_states params ss retain_thresh new_states in
-    insert_states params ss cost new_states;
+      method sample_states new_states =
+        let sample_diverse new_states =
+          Dumb_progress.List.map ~name:"sampling" new_states ~f:(fun ((_, new_state, _, _) as x) ->
+              let min_dist =
+                List.map (states search_state) ~f:(self#dist new_state)
+                |> List.min_elt ~compare:[%compare: float]
+                |> Option.value ~default:Float.infinity
+              in
+              (min_dist, x))
+          |> List.filter ~f:(fun (d, _) -> Float.(d >= retain_thresh))
+          |> List.map ~f:Tuple.T2.get2
+        in
+        if diversity then sample_diverse new_states else new_states
 
-    Fmt.epr "Finished cost %d\n%!" cost;
-    print_stats ss
+      method! generate_states cost =
+        let new_states =
+          super#generate_states cost |> self#dedup_states
+          |> List.map ~f:(fun (s, op, args) -> (self#dist output s, s, op, args))
+        in
+        self#check_states cost new_states;
+        self#sample_states new_states |> List.map ~f:(fun (_, x, y, z) -> (x, y, z))
 
-  let synth params =
-    let max_cost = Params.get params max_cost in
-    let ss = Search_state.create max_cost in
-    let bench = Params.get params bench in
-    let ops = Bench.ops bench and output = Bench.output bench in
+      method! run =
+        let rec reduce_retain_thresh () =
+          match super#run with
+          | Some p -> Some p
+          | None ->
+              (* TODO: Should we clear the search space here? *)
+              retain_thresh <- retain_thresh /. 2.0;
+              reduce_retain_thresh ()
+        in
+        reduce_retain_thresh ()
+    end
 
-    let search_thresh = Params.get params search_thresh
-    and retain_thresh = Params.get params retain_thresh
-    and value_dist = Params.get params value_dist in
-
-    let search_neighbors = search_neighbors params in
-    try
-      let rec reduce_retain_thresh retain_thresh =
-        for cost = 0 to max_cost do
-          fill params ss ops output value_dist search_neighbors search_thresh retain_thresh cost
-        done;
-        (* TODO: Should we clear the search space here? *)
-        reduce_retain_thresh (retain_thresh /. 2.0)
-      in
-      reduce_retain_thresh retain_thresh
-    with Done p ->
-      assert (Value.equal (Program.eval (Value.eval params) p) output);
-      eprint_s [%message (p : Op.t Program.t)]
+  let synth params = Option.iter (new synthesizer params)#run ~f:(fun p -> eprint_s [%message (p : Op.t Program.t)])
 end
 
 let cli (type value op) (module Lang : Lang_intf.S with type Value.t = value and type Op.t = op) =

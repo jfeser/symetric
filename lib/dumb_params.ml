@@ -13,22 +13,32 @@ end
 type t = { spec : (module Param_intf) list; values : Univ_map.t }
 
 module Spec = struct
-  type t = (module Param_intf) list ref
+  type t = { name : string; elems : (module Param_intf) Hashtbl.M(String).t }
 
-  let create () = ref []
+  let create ?(name = "") () = { name; elems = Hashtbl.create (module String) }
+
+  let inherit_ t n = { name = t.name ^ "." ^ n; elems = Hashtbl.copy t.elems }
 
   let add (type t) q ((module S : Param_intf with type t = t) as p) =
-    q := (module S : Param_intf) :: !q;
+    Hashtbl.set q.elems ~key:S.name ~data:(module S : Param_intf);
     p
 
-  let union qs = ref (List.concat_map qs ~f:( ! ))
+  let union qs =
+    let elems = Hashtbl.create (module String) in
+    let name = List.map qs ~f:(fun s -> s.name) |> String.concat ~sep:" & " in
+    List.iter qs ~f:(fun s ->
+        Hashtbl.merge_into ~src:s.elems ~dst:elems ~f:(fun ~key v -> function
+          | Some _ -> raise_s [%message "multiple values" (s.name : string) (key : string)]
+          | None -> Hashtbl.Merge_into_action.Set_to v));
+    { name; elems }
 
   let cli m =
-    let compare (module S : Param_intf) (module S' : Param_intf) = [%compare: string] S.name S'.name in
-    List.map !m ~f:(fun (module S : Param_intf) ->
+    let compare (n, _) (n', _) = [%compare: string] n n' in
+    let bindings = Hashtbl.to_alist m.elems |> List.sort ~compare |> List.map ~f:Tuple.T2.get2 in
+    List.map bindings ~f:(fun (module S : Param_intf) ->
         match S.init with First p -> p | Second f -> Command.Param.return (Univ_map.Packed.T (S.key, f ())))
     |> Command.Param.all
-    |> Command.Param.map ~f:(fun vs -> { spec = List.sort ~compare !m; values = Univ_map.of_alist_exn vs })
+    |> Command.Param.map ~f:(fun vs -> { spec = bindings; values = Univ_map.of_alist_exn vs })
 end
 
 module Param = struct

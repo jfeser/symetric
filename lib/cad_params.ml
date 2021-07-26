@@ -18,6 +18,6 @@ let bench =
   end : Param.S
     with type t = Cad_bench.t)
 
-let spec = Spec.create ()
+let spec = Spec.create ~name:"cad-params" ()
 
 let bench = Spec.add spec @@ Param.create bench

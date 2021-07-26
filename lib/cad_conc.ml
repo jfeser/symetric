@@ -1,7 +1,7 @@
 include Cad_conc0
 module P = Dumb_params
 
-let spec = P.Spec.create ()
+let spec = P.Spec.create ~name:"cad-value" ()
 
 let eval_calls = P.Spec.add spec @@ P.Param.float_ref ~name:"eval-calls" ()
 
