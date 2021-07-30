@@ -32,12 +32,12 @@
 ;  (modes (byte exe))
 ;  (preprocess (pps ppx_let)))
 
-(executable
- (name dump_bench)
- (modules dump_bench)
- (libraries core progress staged_synth combinat)
- (preprocess
-  (pps ppx_jane)))
+; (executable
+;  (name dump_bench)
+;  (modules dump_bench)
+;  (libraries core progress staged_synth combinat)
+;  (preprocess
+;   (pps ppx_jane)))
 
 (executable
  (name print_bench)

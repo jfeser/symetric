@@ -124,7 +124,7 @@ module Make (Lang : Lang_intf.S) = struct
                   if [%compare.equal: Value.t] v output then found p)
             with Program.Eval_error e -> raise @@ Program.Eval_error [%message (center : Op.t Program.t) (e : Sexp.t)])
 
-      method check_states cost new_states =
+      method search_close_states cost new_states =
         List.iter new_states ~f:(fun (d, _, op, args) ->
             if Float.(d <= search_thresh) then (
               let center = program_of_op_args_exn search_state op args in
@@ -161,7 +161,7 @@ module Make (Lang : Lang_intf.S) = struct
           super#generate_states cost |> self#dedup_states
           |> List.map ~f:(fun (s, op, args) -> (self#dist output s, s, op, args))
         in
-        self#check_states cost new_states;
+        self#search_close_states cost new_states;
         self#sample_states new_states |> List.map ~f:(fun (_, x, y, z) -> (x, y, z))
 
       method! run =

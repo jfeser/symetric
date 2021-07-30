@@ -11,7 +11,7 @@ let iters f =
 
 let no_total_counter ?message ?pp ?width ?(sampling_interval = 1) () =
   let open Progress in
-  let open Segment in
+  let open Line in
   let box = match width with Some width -> box_fixed width | None -> box_winsize ~fallback:80 in
   list ((Option.map message ~f:const |> Option.to_list) @ (Option.map pp ~f:(fun f -> f of_pp) |> Option.to_list))
   |> box |> periodic sampling_interval |> accumulator Int64.( + ) 0L |> make ~init:0L

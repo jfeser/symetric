@@ -28,26 +28,29 @@ module Make (Lang : Lang_intf.S) = struct
 
       val search_state = Search_state.create _max_cost
 
+      method get_search_state = search_state
+
       method generate_states = Gen.generate_states Search_state.search params search_state ops
 
       method insert_states cost states =
         List.iter states ~f:(fun (state, op, args) -> Search_state.insert search_state cost state op args)
 
-      method fill cost =
-        let new_states = self#generate_states cost in
-        self#insert_states cost new_states;
-
+      method check_states states =
         let solutions =
-          List.filter_map new_states ~f:(fun (s, _, _) ->
+          List.filter_map states ~f:(fun (s, _, _) ->
               if [%compare.equal: Value.t] s output then Some (Search_state.program_exn search_state s) else None)
         in
-
-        Fmt.epr "Finished cost %d\n%!" cost;
-        Search_state.print_stats search_state;
 
         if not (List.is_empty solutions) then (
           List.iter solutions ~f:(fun p -> eprint_s [%message (p : Op.t Program.t)]);
           raise (Done (List.hd_exn solutions)))
+
+      method fill cost =
+        let new_states = self#generate_states cost in
+        self#insert_states cost new_states;
+        self#check_states new_states;
+        Fmt.epr "Finished cost %d\n%!" cost;
+        Search_state.print_stats search_state
 
       method run =
         try
