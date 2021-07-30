@@ -138,7 +138,7 @@ def main():
             'epoch': epoch + 1,
             'state_dict': tnet.state_dict(),
             'best_prec1': best_acc,
-        }, is_best)
+        }, tnet, is_best)
 
 def train(train_loader, tnet, criterion, optimizer, epoch):
     losses = AverageMeter()
@@ -218,7 +218,7 @@ def test(test_loader, tnet, criterion, epoch):
     plotter.plot('loss', 'test', epoch, losses.avg)
     return accs.avg
 
-def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
+def save_checkpoint(state, model, is_best, filename='checkpoint.pth.tar'):
     """Saves checkpoint to disk"""
     directory = "runs/%s/"%(args.name)
     if not os.path.exists(directory):
@@ -226,6 +226,12 @@ def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
     filename = directory + filename
     torch.save(state, filename)
     if is_best:
+        encoder = model.embeddingnet
+        dummy_input = torch.randn(1, 1, 30, 30)
+                                  # , device='cuda')
+        encoder.eval()
+        traced = torch.jit.trace(encoder, dummy_input)
+        traced.save('runs/%s/'%(args.name) + 'encoder_best.pt.tar')
         shutil.copyfile(filename, 'runs/%s/'%(args.name) + 'model_best.pth.tar')
 
 class VisdomLinePlotter(object):

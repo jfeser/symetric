@@ -22,15 +22,19 @@ module Make (Lang : Lang_intf.S) = struct
 
       val bench = _bench
 
-      val ops = Bench.ops _bench
+      val _ops = Bench.ops _bench
 
-      val output = Bench.output _bench
+      val _output = Bench.output _bench
 
       val search_state = Search_state.create _max_cost
 
+      method ops = _ops
+
+      method output = _output
+
       method get_search_state = search_state
 
-      method generate_states = Gen.generate_states Search_state.search params search_state ops
+      method generate_states = Gen.generate_states Search_state.search params search_state _ops
 
       method insert_states cost states =
         List.iter states ~f:(fun (state, op, args) -> Search_state.insert search_state cost state op args)
@@ -38,7 +42,7 @@ module Make (Lang : Lang_intf.S) = struct
       method check_states states =
         let solutions =
           List.filter_map states ~f:(fun (s, _, _) ->
-              if [%compare.equal: Value.t] s output then Some (Search_state.program_exn search_state s) else None)
+              if [%compare.equal: Value.t] s _output then Some (Search_state.program_exn search_state s) else None)
         in
 
         if not (List.is_empty solutions) then (
@@ -59,7 +63,7 @@ module Make (Lang : Lang_intf.S) = struct
           done;
           None
         with Done p ->
-          assert (Value.equal (Program.eval (Value.eval params) p) output);
+          assert (Value.equal (Program.eval (Value.eval params) p) _output);
           Some p
     end
 

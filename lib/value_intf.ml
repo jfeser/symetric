@@ -8,4 +8,6 @@ module type S = sig
   val eval : Params.t -> op -> t list -> t
 
   val dist : Params.t -> t -> t -> float
+
+  val features : Params.t -> t -> Torch.Tensor.t
 end

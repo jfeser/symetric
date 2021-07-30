@@ -52,6 +52,8 @@ module Param : sig
 
   val ids :
     (module Comparator.S with type t = 't) -> name:string -> doc:string -> (string * 't) list -> ('t list, free) t
+
+  val symbol : name:string -> doc:string -> ?default:'a -> ?json:bool -> ('a * string) list -> ('a, free) t
 end
 
 type t

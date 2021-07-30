@@ -50,6 +50,8 @@ let dist _ = jaccard
 
 let to_ndarray v = Bitarray.to_ndarray (pixels v)
 
+let features _ v = Torch.Tensor.reshape (Bitarray.to_torch (pixels v)) ~shape:[ 1; 1; 30; 30 ]
+
 let edges c =
   let to_int x = if x then 1 else 0 in
   let above i =

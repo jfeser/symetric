@@ -8,6 +8,8 @@ module Value = struct
     let eval = Program.eval (Cad.Value.eval params) in
     let v = eval p and v' = eval p' in
     Float.of_int @@ Cad_conc.hamming v v'
+
+  let features params p = Program.eval (Cad.Value.eval params) p |> Cad.Value.features params
 end
 
 module Bench = struct

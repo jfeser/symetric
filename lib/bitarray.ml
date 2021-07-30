@@ -64,3 +64,7 @@ let%expect_test "" =
 let to_ndarray x =
   let len = length x and bit_get = get in
   Owl.Arr.init [| len |] (fun i -> if bit_get x i then 1.0 else 0.0)
+
+let to_torch x =
+  let len = length x and bit_get = get in
+  Torch.Tensor.of_float1 ~device:Torch_core.Device.Cpu @@ Array.init len ~f:(fun i -> if bit_get x i then 1.0 else 0.0)

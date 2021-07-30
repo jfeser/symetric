@@ -38,36 +38,17 @@ include struct
 
   let value_dist = Spec.add spec @@ Param.float_list ~json:false ~name:"value-dist" ()
 
-  let local_search_param ~name ?(json = true) () =
-    (module struct
-      type t = [ `Bounded | `Stochastic ] [@@deriving sexp_of]
+  let local_search =
+    Spec.add spec
+    @@ Param.symbol ~name:"local" ~doc:" kind of local search" ~default:`Bounded
+         [ (`Bounded, "bounded"); (`Stochastic, "stochastic") ]
 
-      let key = Univ_map.Key.create ~name [%sexp_of: t]
+  let distance =
+    Spec.add spec
+    @@ Param.symbol ~name:"distance" ~doc:" kind of distance function" ~default:`Jaccard
+         [ (`Jaccard, "jaccard"); (`Nn, "nn") ]
 
-      let name = name
-
-      let of_string = function
-        | "bounded" -> `Bounded
-        | "stochastic" -> `Stochastic
-        | kind -> raise_s [%message "unexpected" (kind : string)]
-
-      let to_string = function `Bounded -> "bounded" | `Stochastic -> "stochastic"
-
-      let arg_type = Command.Arg_type.create of_string
-
-      let init =
-        First
-          (let open Command.Param in
-          let param =
-            flag_optional_with_default_doc name ~doc:" kind of local search" ~default:`Bounded arg_type sexp_of_t
-          in
-          map param ~f:(fun v -> Univ_map.Packed.T (key, v)))
-
-      let to_json = if json then Option.return @@ fun v -> `String (to_string v) else None
-    end : Param.S
-      with type t = [ `Bounded | `Stochastic ])
-
-  let local_search = Spec.add spec @@ Param.create @@ local_search_param ~name:"local" ()
+  let distance_fn = Spec.add spec @@ Param.(string) ~name:"distance-file" ~doc:" file containing neural network" ()
 end
 
 module Make (Lang : Lang_intf.S) = struct
@@ -77,7 +58,39 @@ module Make (Lang : Lang_intf.S) = struct
   module Gen = Synth_utils.Generate_list (Lang)
   module Baseline = Baseline.Make (Lang)
 
-  class synthesizer params =
+  let bounded_search params bench width =
+    let ops = Bench.ops bench in
+
+    let output = Bench.output bench in
+
+    let search ?(view = ignore) _ center k =
+      let check_program p =
+        let v = Program.eval (Value.eval params) p in
+        view v;
+        if Value.equal v output then k p
+      in
+      try Tree_ball.Rename_insert_delete.ball (module Op) ops center width check_program
+      with Program.Eval_error e -> raise @@ Program.Eval_error [%message (center : Op.t Program.t) (e : Sexp.t)]
+    in
+    search
+
+  let stochastic_search params bench =
+    let ops = Bench.ops bench and output = Bench.output bench in
+    let search ?(view = ignore) synth center k =
+      try
+        Tree_ball.Rename_insert_delete.stochastic
+          (module Op)
+          ~score:(fun p -> 1.0 -. (synth#distance output @@ Program.eval (Value.eval params) p))
+          ops center
+          (fun p _ ->
+            let v = Program.eval (Value.eval params) p in
+            view v;
+            if [%compare.equal: Value.t] v output then k p)
+      with Program.Eval_error e -> raise @@ Program.Eval_error [%message (center : Op.t Program.t) (e : Sexp.t)]
+    in
+    search
+
+  class synthesizer params search_neighbors dist =
     object (self)
       inherit Baseline.synthesizer params as super
 
@@ -87,11 +100,9 @@ module Make (Lang : Lang_intf.S) = struct
 
       val diversity = Params.get params diversity
 
-      val ball_width = Params.get params ball_width
-
       val mutable retain_thresh = Params.get params retain_thresh
 
-      method dist = Value.dist params
+      method distance = dist
 
       method! insert_states cost states =
         super#insert_states cost states;
@@ -102,34 +113,13 @@ module Make (Lang : Lang_intf.S) = struct
         |> List.filter ~f:(fun (s, _, _) -> not (Search_state.mem search_state s))
         |> List.dedup_and_sort ~compare:(fun (s, _, _) (s', _, _) -> [%compare: Value.t] s s')
 
-      method search_neighbors ?(view = ignore) center found =
-        match Params.get params local_search with
-        | `Bounded -> (
-            let check_program p =
-              let v = Program.eval (Value.eval params) p in
-              view v;
-              if Value.equal v output then found p
-            in
-            try Tree_ball.Rename_insert_delete.ball (module Op) ops center ball_width check_program
-            with Program.Eval_error e -> raise @@ Program.Eval_error [%message (center : Op.t Program.t) (e : Sexp.t)])
-        | `Stochastic -> (
-            try
-              Tree_ball.Rename_insert_delete.stochastic
-                (module Op)
-                ~score:(fun p -> 1.0 -. (self#dist output @@ Program.eval (Value.eval params) p))
-                ops center
-                (fun p _ ->
-                  let v = Program.eval (Value.eval params) p in
-                  view v;
-                  if [%compare.equal: Value.t] v output then found p)
-            with Program.Eval_error e -> raise @@ Program.Eval_error [%message (center : Op.t Program.t) (e : Sexp.t)])
-
       method search_close_states cost new_states =
         List.iter new_states ~f:(fun (d, _, op, args) ->
             if Float.(d <= search_thresh) then (
+              print_s [%message "searching"];
               let center = program_of_op_args_exn search_state op args in
 
-              self#search_neighbors center @@ fun p ->
+              search_neighbors self center @@ fun p ->
               let final_value_dist = Params.get params final_value_dist
               and final_program_dist = Params.get params final_program_dist
               and program_cost = Params.get params program_cost
@@ -146,7 +136,7 @@ module Make (Lang : Lang_intf.S) = struct
         let sample_diverse new_states =
           Dumb_progress.List.map ~name:"sampling" new_states ~f:(fun ((_, new_state, _, _) as x) ->
               let min_dist =
-                List.map (states search_state) ~f:(self#dist new_state)
+                List.map (states search_state) ~f:(self#distance new_state)
                 |> List.min_elt ~compare:[%compare: float]
                 |> Option.value ~default:Float.infinity
               in
@@ -159,7 +149,7 @@ module Make (Lang : Lang_intf.S) = struct
       method! generate_states cost =
         let new_states =
           super#generate_states cost |> self#dedup_states
-          |> List.map ~f:(fun (s, op, args) -> (self#dist output s, s, op, args))
+          |> List.map ~f:(fun (s, op, args) -> (self#distance _output s, s, op, args))
         in
         self#search_close_states cost new_states;
         self#sample_states new_states |> List.map ~f:(fun (_, x, y, z) -> (x, y, z))
@@ -176,7 +166,22 @@ module Make (Lang : Lang_intf.S) = struct
         reduce_retain_thresh ()
     end
 
-  let synth params = Option.iter (new synthesizer params)#run ~f:(fun p -> eprint_s [%message (p : Op.t Program.t)])
+  let synth params =
+    let bench = Params.get params bench in
+    let neighbor_search =
+      match Params.get params local_search with
+      | `Bounded -> bounded_search params bench (Params.get params ball_width)
+      | `Stochastic -> stochastic_search params bench
+    in
+    let distance =
+      match Params.get params distance with
+      | `Jaccard -> Value.dist params
+      | `Nn ->
+          let fn = Params.get params distance_fn in
+          Torch_dist.dist fn (Value.features params)
+    in
+    Option.iter (new synthesizer params neighbor_search distance)#run ~f:(fun p ->
+        eprint_s [%message (p : Op.t Program.t)])
 end
 
 let cli (type value op) (module Lang : Lang_intf.S with type Value.t = value and type Op.t = op) =

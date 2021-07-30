@@ -236,6 +236,36 @@ module Param = struct
       let to_json = None
     end : Param_intf
       with type t = t list)
+
+  let symbol (type t) ~name ~doc ?default ?(json = true) (syms : (t * string) list) =
+    (module struct
+      type nonrec t = t
+
+      let to_string x = List.find_map_exn syms ~f:(fun (s, n) -> if Poly.(x = s) then Some n else None)
+
+      let sexp_of_t x = [%sexp_of: string] @@ to_string x
+
+      let key = Univ_map.Key.create ~name [%sexp_of: t]
+
+      let name = name
+
+      let of_string x = List.find_map_exn syms ~f:(fun (s, n) -> if Poly.(x = n) then Some s else None)
+
+      let arg_type = Command.Arg_type.create of_string
+
+      let init =
+        First
+          (let open Command.Param in
+          let param =
+            match default with
+            | Some d -> flag_optional_with_default_doc name ~doc ~default:d arg_type sexp_of_t
+            | None -> flag name ~doc (required arg_type)
+          in
+          map param ~f:(fun v -> Univ_map.Packed.T (key, v)))
+
+      let to_json = if json then Option.return @@ fun v -> `String (to_string v) else None
+    end : Param_intf
+      with type t = t)
 end
 
 let get (type t) m (module S : Param_intf with type t = t) = Univ_map.find_exn m.values S.key
