@@ -227,11 +227,11 @@ def save_checkpoint(state, model, is_best, filename='checkpoint.pth.tar'):
     torch.save(state, filename)
     if is_best:
         encoder = model.embeddingnet
-        dummy_input = torch.randn(1, 1, 30, 30)
-                                  # , device='cuda')
+        dummy_input = torch.randn(1, 1, 30, 30, device='cuda')
         encoder.eval()
         traced = torch.jit.trace(encoder, dummy_input)
         traced.save('runs/%s/'%(args.name) + 'encoder_best.pt.tar')
+        encoder.train()
         shutil.copyfile(filename, 'runs/%s/'%(args.name) + 'model_best.pth.tar')
 
 class VisdomLinePlotter(object):

@@ -18,45 +18,22 @@ include struct
   let diversity =
     Spec.add spec @@ Param.bool ~name:"diversity" ~doc:" use diversity sampling" ~init:(`Cli (Some true)) ()
 
-  let bank_size = Spec.add spec @@ Param.float_ref ~name:"bank-size" ()
-
   let final_value_dist = Spec.add spec @@ Param.float_ref ~name:"final-value-dist" ()
 
   let final_program_dist = Spec.add spec @@ Param.float_ref ~name:"final-program-dist" ()
 
-  let program_cost = Spec.add spec @@ Param.float_ref ~name:"program-cost" ()
-
-  let found_program = Spec.add spec @@ Param.bool_ref ~name:"found-program" ()
-
-  let closest_program = Spec.add spec @@ Param.float_ref ~name:"closest-program" ()
-
-  let have_parts = Spec.add spec @@ Param.float_ref ~name:"have-parts" ()
-
-  let total_parts = Spec.add spec @@ Param.float_ref ~name:"total-parts" ()
-
   let synth = Spec.add spec @@ Param.const_str ~name:"synth" "sampling-diverse"
-
-  let value_dist = Spec.add spec @@ Param.float_list ~json:false ~name:"value-dist" ()
 
   let local_search =
     Spec.add spec
     @@ Param.symbol ~name:"local" ~doc:" kind of local search" ~default:`Bounded
          [ (`Bounded, "bounded"); (`Stochastic, "stochastic") ]
-
-  let distance =
-    Spec.add spec
-    @@ Param.symbol ~name:"distance" ~doc:" kind of distance function" ~default:`Jaccard
-         [ (`Jaccard, "jaccard"); (`Nn, "nn") ]
-
-  let distance_fn = Spec.add spec @@ Param.(string) ~name:"distance-file" ~doc:" file containing neural network" ()
 end
 
 module Make (Lang : Lang_intf.S) = struct
   open Lang
-  module Search_state = Search_state_append.Make (Lang)
-  open Search_state
-  module Gen = Synth_utils.Generate_list (Lang)
-  module Baseline = Baseline.Make (Lang)
+  module Parent = Baseline.Make (Lang)
+  module Search_state = Parent.Search_state
 
   let bounded_search params bench width =
     let ops = Bench.ops bench in
@@ -90,11 +67,21 @@ module Make (Lang : Lang_intf.S) = struct
     in
     search
 
-  class synthesizer params search_neighbors dist =
-    object (self)
-      inherit Baseline.synthesizer params as super
+  let sample_pairwise dist retain_thresh states old new_ =
+    Dumb_progress.List.map ~name:"sampling" new_ ~f:(fun new_idx ->
+        let min_dist =
+          List.map old ~f:(fun old_idx -> dist states.(old_idx) states.(new_idx))
+          |> List.min_elt ~compare:[%compare: float]
+          |> Option.value ~default:Float.infinity
+        in
+        (min_dist, new_idx))
+    |> List.filter ~f:(fun (d, _) -> Float.(d >= retain_thresh))
+    |> List.map ~f:Tuple.T2.get2
 
-      val bank_size = Params.get params bank_size
+  class synthesizer params =
+    let _bench = Params.get params bench in
+    object (self)
+      inherit Parent.synthesizer params as super
 
       val search_thresh = Params.get params search_thresh
 
@@ -102,57 +89,54 @@ module Make (Lang : Lang_intf.S) = struct
 
       val mutable retain_thresh = Params.get params retain_thresh
 
-      method distance = dist
+      val search_neighbors =
+        match Params.get params local_search with
+        | `Bounded -> bounded_search params _bench (Params.get params ball_width)
+        | `Stochastic -> stochastic_search params _bench
 
-      method! insert_states cost states =
-        super#insert_states cost states;
-        bank_size := Float.of_int @@ Search_state.length search_state
+      method distance = Value.dist params
 
       method dedup_states states =
         states
         |> List.filter ~f:(fun (s, _, _) -> not (Search_state.mem search_state s))
         |> List.dedup_and_sort ~compare:(fun (s, _, _) (s', _, _) -> [%compare: Value.t] s s')
 
-      method search_close_states cost new_states =
-        List.iter new_states ~f:(fun (d, _, op, args) ->
-            if Float.(d <= search_thresh) then (
-              print_s [%message "searching"];
-              let center = program_of_op_args_exn search_state op args in
+      method find_close_states new_states =
+        List.filter_map new_states ~f:(fun (v, op, args) ->
+            let d = self#distance v _output in
+            if Float.(d <= search_thresh) then Some (d, v, op, args) else None)
 
-              search_neighbors self center @@ fun p ->
-              let final_value_dist = Params.get params final_value_dist
-              and final_program_dist = Params.get params final_program_dist
-              and program_cost = Params.get params program_cost
-              and found_program = Params.get params found_program in
+      method search_close_states new_states =
+        self#find_close_states new_states
+        |> List.iter ~f:(fun (d, _, op, args) ->
+               print_s [%message "searching"];
+               let center = Search_state.program_of_op_args_exn search_state op args in
 
-              final_value_dist := d;
-              final_program_dist := Float.of_int @@ Tree_dist.zhang_sasha ~eq:[%compare.equal: Op.t] center p;
-              program_cost := Float.of_int cost;
-              found_program := true;
-              raise (Baseline.Done p)))
+               search_neighbors self center @@ fun p ->
+               let final_value_dist = Params.get params final_value_dist
+               and final_program_dist = Params.get params final_program_dist in
+               final_value_dist := d;
+               final_program_dist := Float.of_int @@ Tree_dist.zhang_sasha ~eq:[%compare.equal: Op.t] center p;
+               raise (Parent.Done p))
       (** Check neighbors around new states *)
 
-      method sample_states new_states =
-        let sample_diverse new_states =
-          Dumb_progress.List.map ~name:"sampling" new_states ~f:(fun ((_, new_state, _, _) as x) ->
-              let min_dist =
-                List.map (states search_state) ~f:(self#distance new_state)
-                |> List.min_elt ~compare:[%compare: float]
-                |> Option.value ~default:Float.infinity
-              in
-              (min_dist, x))
-          |> List.filter ~f:(fun (d, _) -> Float.(d >= retain_thresh))
-          |> List.map ~f:Tuple.T2.get2
+      method sample_diverse_states new_states =
+        let new_states_a = Array.of_list new_states in
+        let all_states =
+          Array.of_list @@ List.map new_states ~f:(fun (v, _, _) -> v) @ Search_state.states search_state
         in
-        if diversity then sample_diverse new_states else new_states
+        let old = List.range (List.length new_states) (Array.length all_states)
+        and new_ = List.range 0 (List.length new_states) in
+        sample_pairwise self#distance retain_thresh all_states old new_ |> List.map ~f:(fun i -> new_states_a.(i))
+
+      method sample_states new_states =
+        let sample = self#sample_diverse_states new_states in
+        if diversity then sample else List.take (List.permute new_states) (List.length sample)
 
       method! generate_states cost =
-        let new_states =
-          super#generate_states cost |> self#dedup_states
-          |> List.map ~f:(fun (s, op, args) -> (self#distance _output s, s, op, args))
-        in
-        self#search_close_states cost new_states;
-        self#sample_states new_states |> List.map ~f:(fun (_, x, y, z) -> (x, y, z))
+        let new_states = super#generate_states cost |> self#dedup_states in
+        self#search_close_states new_states;
+        self#sample_states new_states
 
       method! run =
         let rec reduce_retain_thresh () =
@@ -160,28 +144,14 @@ module Make (Lang : Lang_intf.S) = struct
           | Some p -> Some p
           | None ->
               (* TODO: Should we clear the search space here? *)
+              Search_state.clear search_state;
               retain_thresh <- retain_thresh /. 2.0;
               reduce_retain_thresh ()
         in
         reduce_retain_thresh ()
     end
 
-  let synth params =
-    let bench = Params.get params bench in
-    let neighbor_search =
-      match Params.get params local_search with
-      | `Bounded -> bounded_search params bench (Params.get params ball_width)
-      | `Stochastic -> stochastic_search params bench
-    in
-    let distance =
-      match Params.get params distance with
-      | `Jaccard -> Value.dist params
-      | `Nn ->
-          let fn = Params.get params distance_fn in
-          Torch_dist.dist fn (Value.features params)
-    in
-    Option.iter (new synthesizer params neighbor_search distance)#run ~f:(fun p ->
-        eprint_s [%message (p : Op.t Program.t)])
+  let synth params = Option.iter (new synthesizer params)#run ~f:(fun p -> eprint_s [%message (p : Op.t Program.t)])
 end
 
 let cli (type value op) (module Lang : Lang_intf.S with type Value.t = value and type Op.t = op) =

@@ -1,11 +1,17 @@
 include Cad_conc0
-module P = Dumb_params
 
-let spec = P.Spec.create ~name:"cad-value" ()
+include struct
+  open Dumb_params
 
-let eval_calls = P.Spec.add spec @@ P.Param.float_ref ~name:"eval-calls" ()
+  let spec = Spec.create ~name:"cad-value" ()
 
-let raw_eval_calls = P.Spec.add spec @@ P.Param.float_ref ~name:"raw-eval-calls" ()
+  let eval_calls = Spec.add spec @@ Param.float_ref ~name:"eval-calls" ()
+
+  let raw_eval_calls = Spec.add spec @@ Param.float_ref ~name:"raw-eval-calls" ()
+
+  let embed_fn =
+    Spec.add spec @@ Param.(string) ~name:"embed-file" ~doc:" file containing neural network for embedding" ()
+end
 
 let iidx b x y =
   let stride = ylen b in
@@ -30,12 +36,12 @@ let replicate_is_set repl scene pt =
   loop repl.count pt
 
 let init params ~f =
-  let bench = P.get params Cad_params.bench in
+  let bench = Params.get params Cad_params.bench in
   let xlen = bench.Cad_bench.input.xmax and ylen = bench.Cad_bench.input.ymax in
   create ~xlen ~ylen @@ Bitarray.init (xlen * ylen) ~f:(fun i -> f (pt' ~ylen i) i)
 
 let iinit params ~f =
-  let bench = P.get params Cad_params.bench in
+  let bench = Params.get params Cad_params.bench in
   let xlen = bench.Cad_bench.input.xmax and ylen = bench.Cad_bench.input.ymax in
   create ~xlen ~ylen @@ Bitarray.init (xlen * ylen) ~f:(fun i -> f (i / ylen) (i mod ylen))
 
@@ -50,7 +56,16 @@ let dist _ = jaccard
 
 let to_ndarray v = Bitarray.to_ndarray (pixels v)
 
-let features _ v = Torch.Tensor.reshape (Bitarray.to_torch (pixels v)) ~shape:[ 1; 1; 30; 30 ]
+let embed params =
+  let open Torch in
+  let model = Module.load @@ Params.get params embed_fn in
+  fun vs ->
+    let input =
+      Tensor.to_device ~device:(Device.Cuda 0)
+      @@ Tensor.stack ~dim:0
+      @@ List.map vs ~f:(fun v -> Tensor.reshape ~shape:[ 1; 30; 30 ] @@ Bitarray.to_torch (pixels v))
+    in
+    Module.forward model [ input ]
 
 let edges c =
   let to_int x = if x then 1 else 0 in
@@ -115,16 +130,16 @@ let pprint fmt c =
 let dummy = create ~xlen:(-1) ~ylen:(-1) @@ Bitarray.init 0 ~f:(fun _ -> false)
 
 let dummy_params ~xlen ~ylen =
-  P.(
-    of_alist_exn
-      [
-        P
-          ( Cad_params.bench,
-            Cad_bench.
-              { ops = []; input = { xmax = xlen; ymax = ylen }; output = dummy; solution = None; filename = None } );
-        P (eval_calls, ref Float.nan);
-        P (raw_eval_calls, ref Float.nan);
-      ])
+  let open Dumb_params in
+  of_alist_exn
+    [
+      P
+        ( Cad_params.bench,
+          Cad_bench.{ ops = []; input = { xmax = xlen; ymax = ylen }; output = dummy; solution = None; filename = None }
+        );
+      P (eval_calls, ref Float.nan);
+      P (raw_eval_calls, ref Float.nan);
+    ]
 
 module Prog = struct
   type t = Cad_op.t Program.t [@@deriving compare, hash, sexp]

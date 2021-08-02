@@ -9,7 +9,7 @@ module Value = struct
     let v = eval p and v' = eval p' in
     Float.of_int @@ Cad_conc.hamming v v'
 
-  let features params p = Program.eval (Cad.Value.eval params) p |> Cad.Value.features params
+  let embed _ = failwith "unimplemented"
 end
 
 module Bench = struct

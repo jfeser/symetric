@@ -164,7 +164,7 @@ module Param = struct
     (module struct
       type t = P.t ref [@@deriving sexp_of]
 
-      let key = Univ_map.Key.create ~name:P.name [%sexp_of: P.t ref]
+      let key = Univ_map.Key.create ~name:P.name [%sexp_of: t]
 
       let name = P.name
 

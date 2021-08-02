@@ -1,0 +1,91 @@
+include struct
+  open Dumb_params
+
+  let spec = Spec.inherit_ Sampling_diverse.spec "sampling-diverse"
+end
+
+open Sampling_diverse
+
+module Make (Lang : Lang_intf.S) = struct
+  module Parent = Sampling_diverse.Make (Lang)
+  module Search_state = Parent.Search_state
+  open Lang
+
+  let sample_batched embed retain_thresh states old new_ =
+    let open Torch in
+    if List.is_empty old || List.is_empty new_ then new_
+    else
+      let device = Device.Cuda 0 in
+      let to_tensor s =
+        Tensor.to_device ~device @@ Tensor.unsqueeze ~dim:0 @@ Tensor.squeeze @@ embed
+        @@ List.map s ~f:(fun i -> states.(i))
+      in
+      let old_tensor = to_tensor old and new_tensor = to_tensor new_ in
+      let dists = Tensor.squeeze @@ Tensor.cdist ~x1:old_tensor ~x2:new_tensor ~p:2.0 ~compute_mode:0 in
+      let mask = Tensor.ge (Tensor.amin dists ~dim:[ 0 ] ~keepdim:false) @@ Scalar.f retain_thresh in
+      let indices =
+        Tensor.range ~start:(Scalar.i 0)
+          ~end_:(Scalar.i @@ (List.length new_ - 1))
+          ~options:(Torch_core.Kind.T Int, device)
+      in
+      let retained_indices = Tensor.masked_select indices ~mask in
+      Tensor.to_int1_exn retained_indices |> Array.to_list
+
+  let find_close_states embed search_thresh output states new_ =
+    let open Torch in
+    if List.is_empty new_ then []
+    else
+      let device = Device.Cuda 0 in
+      let e_states =
+        Tensor.to_device ~device @@ Tensor.unsqueeze ~dim:0 @@ embed @@ List.map ~f:(fun i -> states.(i)) new_
+      and e_output = Tensor.to_device ~device @@ Tensor.unsqueeze ~dim:0 @@ embed [ output ] in
+
+      let dists = Tensor.squeeze @@ Tensor.cdist ~x1:e_output ~x2:e_states ~p:2.0 ~compute_mode:0 in
+      Tensor.print dists;
+      let mask = Tensor.le (Tensor.amin dists ~dim:[ 0 ] ~keepdim:false) @@ Scalar.f search_thresh in
+      let indices =
+        Tensor.range ~start:(Scalar.i 0)
+          ~end_:(Scalar.i @@ (List.length new_ - 1))
+          ~options:(Torch_core.Kind.T Int, device)
+      in
+      let retained_indices = Tensor.masked_select indices ~mask in
+      print_s
+        [%message (search_thresh : float) (Tensor.shape dists : int list) (Tensor.shape retained_indices : int list)];
+      Tensor.to_int1_exn retained_indices |> Array.to_list |> List.map ~f:(fun i -> (0.0, i))
+
+  class synthesizer params =
+    object
+      inherit Parent.synthesizer params
+
+      val embed = Value.embed params
+
+      method! find_close_states new_states =
+        let new_states_a = Array.of_list new_states in
+        let states = Array.of_list @@ List.map ~f:(fun (v, _, _) -> v) new_states in
+        find_close_states embed search_thresh _output states (List.range 0 (List.length new_states))
+        |> List.map ~f:(fun (d, i) ->
+               let v, op, args = new_states_a.(i) in
+               (d, v, op, args))
+
+      method! sample_diverse_states new_states =
+        let new_states_a = Array.of_list new_states in
+        let all_states =
+          Array.of_list @@ List.map new_states ~f:(fun (v, _, _) -> v) @ Search_state.states search_state
+        in
+        let old = List.range (List.length new_states) (Array.length all_states)
+        and new_ = List.range 0 (List.length new_states) in
+        sample_batched embed retain_thresh all_states old new_ |> List.map ~f:(fun i -> new_states_a.(i))
+    end
+
+  let synth params = Option.iter (new synthesizer params)#run ~f:(fun p -> eprint_s [%message (p : Op.t Program.t)])
+end
+
+let cli (type value op) (module Lang : Lang_intf.S with type Value.t = value and type Op.t = op) =
+  let module Synth = Make (Lang) in
+  let spec = Dumb_params.Spec.union [ Lang.spec; Params.spec; spec ] in
+  let open Command.Let_syntax in
+  Command.basic
+    ~summary:(sprintf "Diversity sampling (with neural networks) for %s" Lang.name)
+    [%map_open
+      let params = Dumb_params.Spec.cli spec in
+      Synth_utils.run_synth Synth.synth params]

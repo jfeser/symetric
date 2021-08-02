@@ -6,6 +6,12 @@ include struct
   let synth = Spec.add spec @@ Param.const_str ~name:"synth" "baseline"
 
   let max_cost = Spec.add spec @@ Param.int ~name:"max-cost" ~doc:" max search cost" ()
+
+  let bank_size = Spec.add spec @@ Param.float_ref ~name:"bank-size" ()
+
+  let found_program = Spec.add spec @@ Param.bool_ref ~name:"found-program" ()
+
+  let program_cost = Spec.add spec @@ Param.float_ref ~name:"program-cost" ()
 end
 
 module Make (Lang : Lang_intf.S) = struct
@@ -28,6 +34,8 @@ module Make (Lang : Lang_intf.S) = struct
 
       val search_state = Search_state.create _max_cost
 
+      val bank_size = Params.get params bank_size
+
       method ops = _ops
 
       method output = _output
@@ -37,7 +45,8 @@ module Make (Lang : Lang_intf.S) = struct
       method generate_states = Gen.generate_states Search_state.search params search_state _ops
 
       method insert_states cost states =
-        List.iter states ~f:(fun (state, op, args) -> Search_state.insert search_state cost state op args)
+        List.iter states ~f:(fun (state, op, args) -> Search_state.insert search_state cost state op args);
+        bank_size := Float.of_int @@ Search_state.length search_state
 
       method check_states states =
         let solutions =
@@ -63,6 +72,8 @@ module Make (Lang : Lang_intf.S) = struct
           done;
           None
         with Done p ->
+          Params.get params found_program := true;
+          Params.get params program_cost := Float.of_int @@ Program.size p;
           assert (Value.equal (Program.eval (Value.eval params) p) _output);
           Some p
     end

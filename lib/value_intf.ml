@@ -9,5 +9,5 @@ module type S = sig
 
   val dist : Params.t -> t -> t -> float
 
-  val features : Params.t -> t -> Torch.Tensor.t
+  val embed : Params.t -> t list -> Torch.Tensor.t
 end
