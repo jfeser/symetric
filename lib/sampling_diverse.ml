@@ -109,7 +109,6 @@ module Make (Lang : Lang_intf.S) = struct
       method search_close_states new_states =
         self#find_close_states new_states
         |> List.iter ~f:(fun (d, _, op, args) ->
-               print_s [%message "searching"];
                let center = Search_state.program_of_op_args_exn search_state op args in
 
                search_neighbors self center @@ fun p ->
@@ -158,8 +157,10 @@ let cli (type value op) (module Lang : Lang_intf.S with type Value.t = value and
   let module Synth = Make (Lang) in
   let spec = Dumb_params.Spec.union [ Lang.spec; Params.spec; spec ] in
   let open Command.Let_syntax in
-  Command.basic
-    ~summary:(sprintf "Diversity sampling for %s" Lang.name)
-    [%map_open
-      let params = Dumb_params.Spec.cli spec in
-      Synth_utils.run_synth Synth.synth params]
+  Command.basic ~summary:(sprintf "Diversity sampling for %s" Lang.name)
+  @@ [%map_open
+       let params = Dumb_params.Spec.cli spec in
+       Synth_utils.run_synth
+         (fun params -> new Synth.synthesizer params)
+         params
+         (Option.iter ~f:(fun p -> eprint_s [%message (p : Lang.Op.t Program.t)]))]

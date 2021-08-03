@@ -77,8 +77,6 @@ module Make (Lang : Lang_intf.S) = struct
           assert (Value.equal (Program.eval (Value.eval params) p) _output);
           Some p
     end
-
-  let synth params = Option.iter (new synthesizer params)#run ~f:(fun p -> eprint_s [%message (p : Op.t Program.t)])
 end
 
 let cli (type value op) (module Lang : Lang_intf.S with type Value.t = value and type Op.t = op) =
@@ -88,4 +86,7 @@ let cli (type value op) (module Lang : Lang_intf.S with type Value.t = value and
   Command.basic ~summary:(sprintf "Enumerative baseline for %s" Lang.name)
   @@ [%map_open
        let params = Dumb_params.Spec.cli spec in
-       Synth_utils.run_synth Synth.synth params]
+       Synth_utils.run_synth
+         (fun params -> new Synth.synthesizer params)
+         params
+         (Option.iter ~f:(fun p -> eprint_s [%message (p : Lang.Op.t Program.t)]))]

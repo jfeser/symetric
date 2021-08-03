@@ -126,10 +126,12 @@ class synthesizer params =
 let synth params = Option.iter (new synthesizer params)#run ~f:(fun p -> eprint_s [%message (p : Lang.Op.t Program.t)])
 
 let cli =
-  let spec = Dumb_params.Spec.union [ Cad.spec; Params.spec; spec ] in
+  let spec = Dumb_params.Spec.union [ Lang.spec; Params.spec; spec ] in
   let open Command.Let_syntax in
-  Command.basic
-    ~summary:(sprintf "Diversity sampling for %s" Lang.name)
-    [%map_open
-      let params = Dumb_params.Spec.cli spec in
-      Synth_utils.run_synth synth params]
+  Command.basic ~summary:(sprintf "Diversity sampling (with neural networks) for %s" Lang.name)
+  @@ [%map_open
+       let params = Dumb_params.Spec.cli spec in
+       Synth_utils.run_synth
+         (fun params -> new synthesizer params)
+         params
+         (Option.iter ~f:(fun p -> eprint_s [%message (p : Lang.Op.t Program.t)]))]
