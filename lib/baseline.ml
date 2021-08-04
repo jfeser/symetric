@@ -16,7 +16,7 @@ end
 
 module Make (Lang : Lang_intf.S) = struct
   open Lang
-  module Search_state = Search_state_append.Make (Lang)
+  module Search_state = Search_state_all.Make (Lang)
   module Gen = Synth_utils.Generate_list (Lang)
 
   exception Done of Op.t Program.t
@@ -49,14 +49,9 @@ module Make (Lang : Lang_intf.S) = struct
         bank_size := Float.of_int @@ Search_state.length search_state
 
       method check_states states =
-        let solutions =
-          List.filter_map states ~f:(fun (s, _, _) ->
-              if [%compare.equal: Value.t] s _output then Some (Search_state.program_exn search_state s) else None)
-        in
-
-        if not (List.is_empty solutions) then (
-          List.iter solutions ~f:(fun p -> eprint_s [%message (p : Op.t Program.t)]);
-          raise (Done (List.hd_exn solutions)))
+        List.find_map states ~f:(fun (s, _, _) ->
+            if [%compare.equal: Value.t] s _output then Some (Search_state.program_exn search_state s) else None)
+        |> Option.iter ~f:(fun p -> raise (Done p))
 
       method fill cost =
         let new_states = self#generate_states cost in
@@ -89,4 +84,4 @@ let cli (type value op) (module Lang : Lang_intf.S with type Value.t = value and
        Synth_utils.run_synth
          (fun params -> new Synth.synthesizer params)
          params
-         (Option.iter ~f:(fun p -> eprint_s [%message (p : Lang.Op.t Program.t)]))]
+         (Option.iter ~f:(fun p -> eprint_s ([%sexp_of: Lang.Op.t Program.t] p)))]

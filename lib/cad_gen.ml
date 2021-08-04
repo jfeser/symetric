@@ -131,60 +131,6 @@ let random_program params size =
   let prog = Option.value_exn (random_tree size) in
   if check params prog then return (prog, ops) else None
 
-(* let random_program params size =
- *   let open Option.Let_syntax in
- *   let ops =
- *     match !gen_ops with
- *     | None ->
- *         let ops = random_ops params in
- *         gen_ops := Some ops;
- *         ops
- *     | Some ops -> ops
- *   in
- *   let params =
- *     let xmax = Params.get params xmax and ymax = Params.get params ymax in
- *     Dumb_params.set params Cad_params.bench
- *       Cad_bench.
- *         {
- *           ops = [];
- *           input = { xmax; ymax };
- *           output = Cad_conc.dummy;
- *           solution = None;
- *           filename = None;
- *         }
- *   in
- * 
- *   let random_op type_ min_args max_args =
- *     List.filter ops ~f:(fun op ->
- *         let arity = Cad_op.arity op in
- *         [%compare.equal: Cad_type.t] type_ (Cad_op.ret_type op)
- *         && min_args <= arity && arity <= max_args)
- *     |> List.random_element
- *   in
- * 
- *   let random_args random_tree op size =
- *     Combinat.(compositions ~n:size ~k:(Cad_op.arity op) |> to_list)
- *     |> List.permute
- *     |> List.find_map ~f:(fun ss ->
- *            List.map2_exn (Cad_op.args_type op) (Array.to_list ss) ~f:random_tree
- *            |> Option.all)
- *   in
- * 
- *   let rec random_tree type_ size =
- *     [%test_pred: int] (fun size -> size > 0) size;
- * 
- *     let%bind op =
- *       random_op type_
- *         (if size = 1 then 0 else 1)
- *         (if size = 1 then 0 else size - 1)
- *     in
- *     let%bind args = random_args random_tree op (size - 1) in
- *     let p = Program.Apply (op, args) in
- *     if check params p then return p else None
- *   in
- * 
- *   Option.map (random_tree Cad_type.output size) ~f:(fun prog -> (prog, ops)) *)
-
 let to_bench params ops solution output =
   let xmax = Params.get params xmax and ymax = Params.get params ymax in
   { Cad_bench.ops; input = { xmax; ymax }; output; solution = Some solution; filename = None }

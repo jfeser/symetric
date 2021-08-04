@@ -89,6 +89,8 @@ module Make (Lang : Lang_intf.S) = struct
 
       val mutable retain_thresh = Params.get params retain_thresh
 
+      val mutable retain_power = 1
+
       val search_neighbors =
         match Params.get params local_search with
         | `Bounded -> bounded_search params _bench (Params.get params ball_width)
@@ -117,7 +119,6 @@ module Make (Lang : Lang_intf.S) = struct
                final_value_dist := d;
                final_program_dist := Float.of_int @@ Tree_dist.zhang_sasha ~eq:[%compare.equal: Op.t] center p;
                raise (Parent.Done p))
-      (** Check neighbors around new states *)
 
       method sample_diverse_states new_states =
         let new_states_a = Array.of_list new_states in
@@ -128,14 +129,16 @@ module Make (Lang : Lang_intf.S) = struct
         and new_ = List.range 0 (List.length new_states) in
         sample_pairwise self#distance retain_thresh all_states old new_ |> List.map ~f:(fun i -> new_states_a.(i))
 
-      method sample_states new_states =
-        let sample = self#sample_diverse_states new_states in
-        if diversity then sample else List.take (List.permute new_states) (List.length sample)
+      method sample_states cost new_states =
+        if diversity then self#sample_diverse_states new_states
+        else
+          let to_keep = Int.pow cost retain_power + 5 in
+          List.take (List.permute new_states) to_keep
 
       method! generate_states cost =
         let new_states = super#generate_states cost |> self#dedup_states in
         self#search_close_states new_states;
-        self#sample_states new_states
+        self#sample_states cost new_states
 
       method! run =
         let rec reduce_retain_thresh () =
@@ -145,6 +148,7 @@ module Make (Lang : Lang_intf.S) = struct
               (* TODO: Should we clear the search space here? *)
               Search_state.clear search_state;
               retain_thresh <- retain_thresh /. 2.0;
+              retain_power <- retain_power + 1;
               reduce_retain_thresh ()
         in
         reduce_retain_thresh ()
