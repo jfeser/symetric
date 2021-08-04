@@ -42,6 +42,11 @@ module Make (Lang : Lang_intf.S) = struct
     let op, args = Queue.peek_exn @@ Hashtbl.find_exn ctx.paths state in
     Program.Apply (op, List.map args ~f:(program_exn ctx))
 
+  let rec random_program_exn ctx state =
+    let q = Hashtbl.find_exn ctx.paths state in
+    let op, args = Queue.get q (Random.int @@ Queue.length q) in
+    Program.Apply (op, List.map args ~f:(random_program_exn ctx))
+
   let program_of_op_args_exn ctx op args = Program.Apply (op, List.map args ~f:(program_exn ctx))
 
   let clear { values; paths } =

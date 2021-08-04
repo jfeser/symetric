@@ -7,6 +7,8 @@ include struct
 
   let max_cost = Spec.add spec @@ Param.int ~name:"max-cost" ~doc:" max search cost" ()
 
+  let verbose = Spec.add spec @@ Param.bool ~init:(`Cli (Some false)) ~name:"verbose" ~doc:" verbose output" ()
+
   let bank_size = Spec.add spec @@ Param.float_ref ~name:"bank-size" ()
 
   let found_program = Spec.add spec @@ Param.bool_ref ~name:"found-program" ()
@@ -31,6 +33,8 @@ module Make (Lang : Lang_intf.S) = struct
       val _ops = Bench.ops _bench
 
       val _output = Bench.output _bench
+
+      val verbose = Params.get params verbose
 
       val search_state = Search_state.create _max_cost
 
@@ -57,8 +61,10 @@ module Make (Lang : Lang_intf.S) = struct
         let new_states = self#generate_states cost in
         self#insert_states cost new_states;
         self#check_states new_states;
-        Fmt.epr "Finished cost %d\n%!" cost;
-        Search_state.print_stats search_state
+
+        if verbose then (
+          Fmt.epr "Finished cost %d\n%!" cost;
+          Search_state.print_stats search_state)
 
       method run =
         try
