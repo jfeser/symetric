@@ -114,3 +114,34 @@ let mk_dataset params =
     checkpoint all_states @@ Params.get params output_filename;
     Fmt.epr "Finished %d classes\n%!" (class_ + 1)
   done
+
+let mk_bench params =
+  let size = Params.get params Baseline.max_cost
+  and xmax = Params.get params xmax
+  and ymax = Params.get params ymax
+  and output_fn = Params.get params output_filename in
+  let all_shapes = shapes xmax ymax and other_ops = replicates @ [ Cad_op.union; Cad_op.inter ] in
+  let all_ops = all_shapes @ other_ops in
+  let all_states = Hashtbl.create (module Cad_conc) in
+
+  let add_state c s = Hashtbl.set all_states ~key:c ~data:s in
+
+  for class_ = 0 to Params.get params centers do
+    let ops = List.take (List.permute all_shapes) 4 @ other_ops in
+    let params =
+      Dumb_params.set params Cad_params.bench
+        { ops; input = { xmax; ymax }; output = Cad_conc.dummy; solution = None; filename = None }
+    in
+
+    let filler = new filler params in
+    let search_state = filler#build_search_state in
+
+    let output = List.hd_exn @@ List.permute @@ B.Search_state.search ~cost:size ~type_:Cad_type.output search_state in
+    let solution = B.Search_state.random_program_exn search_state output in
+    if not (Hashtbl.mem all_states output) then (
+      add_state output class_;
+      let bench =
+        { Cad.Bench.ops = all_ops; input = { xmax; ymax }; output; solution = Some solution; filename = None }
+      in
+      Cad.Bench.save [%string "%{output_fn}/scene_%{class_#Int}.sexp"] bench)
+  done

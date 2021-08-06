@@ -10,7 +10,7 @@ from datasets import BalancedBatchSampler, NumpyDataset
 from losses import OnlineTripletLoss
 # Strategies for selecting triplets within a minibatch
 from utils import AllTripletSelector, HardestNegativeTripletSelector, RandomNegativeTripletSelector, SemihardNegativeTripletSelector 
-from metrics import AverageNonzeroTripletsMetric
+from metrics import AccumulatedAccuracyMetric, AverageNonzeroTripletsMetric
 from trainer import fit
 
 # Training settings
@@ -56,7 +56,7 @@ class EmbeddingNet(nn.Module):
         x = F.relu(self.fc1(x))
         x = F.dropout(x, training=self.training)
         return self.fc2(x)
-
+    
 def main():
     args = parser.parse_args()
     args.cuda = not args.no_cuda and torch.cuda.is_available()

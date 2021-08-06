@@ -109,16 +109,17 @@ module Make (Lang : Lang_intf.S) = struct
             if Float.(d <= search_thresh) then Some (d, v, op, args) else None)
 
       method search_close_states new_states =
-        self#find_close_states new_states
-        |> List.iter ~f:(fun (d, _, op, args) ->
-               let center = Search_state.program_of_op_args_exn search_state op args in
+        let close_states = self#find_close_states new_states in
+        Fmt.epr "Searching %d/%d neighborhoods\n%!" (List.length close_states) (List.length new_states);
+        List.iter close_states ~f:(fun (d, _, op, args) ->
+            let center = Search_state.program_of_op_args_exn search_state op args in
 
-               search_neighbors self center @@ fun p ->
-               let final_value_dist = Params.get params final_value_dist
-               and final_program_dist = Params.get params final_program_dist in
-               final_value_dist := d;
-               final_program_dist := Float.of_int @@ Tree_dist.zhang_sasha ~eq:[%compare.equal: Op.t] center p;
-               raise (Parent.Done p))
+            search_neighbors self center @@ fun p ->
+            let final_value_dist = Params.get params final_value_dist
+            and final_program_dist = Params.get params final_program_dist in
+            final_value_dist := d;
+            final_program_dist := Float.of_int @@ Tree_dist.zhang_sasha ~eq:[%compare.equal: Op.t] center p;
+            raise (Parent.Done p))
 
       method sample_diverse_states new_states =
         let new_states_a = Array.of_list new_states in

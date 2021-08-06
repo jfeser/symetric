@@ -15,6 +15,7 @@ from triplet_numpy_loader import TripletNumpyLoader
 from tripletnet import Tripletnet
 import numpy as np
 
+
 # Training settings
 parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
 parser.add_argument('--batch-size', type=int, default=64, metavar='N',
@@ -42,6 +43,7 @@ parser.add_argument('--name', default='TripletNet', type=str,
 parser.add_argument('--features', type=str, metavar='F')
 parser.add_argument('--triplets', type=str, metavar='F')
 
+
 best_acc = 0
 
 
@@ -64,20 +66,6 @@ def main():
         batch_size = args.batch_size, shuffle=True, **kwargs)
     test_loader = torch.utils.data.DataLoader(test_data,
         batch_size = args.batch_size, shuffle=True, **kwargs)
-
-    # torch.utils.data.DataLoader(
-    #     MNIST_t('../data', train=True, download=True,
-    #                    transform=transforms.Compose([
-    #                        transforms.ToTensor(),
-    #                        transforms.Normalize((0.1307,), (0.3081,))
-    #                    ])),
-    #     batch_size=args.batch_size, shuffle=True, **kwargs)
-    # test_loader = torch.utils.data.DataLoader(
-    #     MNIST_t('../data', train=False, transform=transforms.Compose([
-    #                        transforms.ToTensor(),
-    #                        transforms.Normalize((0.1307,), (0.3081,))
-    #                    ])),
-    #     batch_size=args.batch_size, shuffle=True, **kwargs)
 
     class Net(nn.Module):
         def __init__(self):
@@ -136,6 +124,7 @@ def main():
             'state_dict': tnet.state_dict(),
             'best_prec1': best_acc,
         }, tnet, is_best)
+        
 
 def train(train_loader, tnet, criterion, optimizer, epoch):
     losses = AverageMeter()
@@ -181,6 +170,7 @@ def train(train_loader, tnet, criterion, optimizer, epoch):
                 losses.val, losses.avg, 
                 100. * accs.val, 100. * accs.avg, emb_norms.val, emb_norms.avg))
 
+            
 def test(test_loader, tnet, criterion, epoch):
     losses = AverageMeter()
     accs = AverageMeter()
@@ -198,7 +188,7 @@ def test(test_loader, tnet, criterion, epoch):
         if args.cuda:
             target = target.cuda()
         target = Variable(target)
-        test_loss =  criterion(dista, distb, target).data
+        test_loss = criterion(dista, distb, target).data
 
         # measure accuracy and record loss
         acc = accuracy(dista, distb)
@@ -208,6 +198,7 @@ def test(test_loader, tnet, criterion, epoch):
     print('\nTest set: Average loss: {:.4f}, Accuracy: {:.2f}%\n'.format(
         losses.avg, 100. * accs.avg))
     return accs.avg
+
 
 def save_checkpoint(state, model, is_best, filename='checkpoint.pth.tar'):
     """Saves checkpoint to disk"""
@@ -225,6 +216,7 @@ def save_checkpoint(state, model, is_best, filename='checkpoint.pth.tar'):
         encoder.train()
         shutil.copyfile(filename, 'runs/%s/'%(args.name) + 'model_best.pth.tar')
 
+        
 class AverageMeter(object):
     """Computes and stores the average and current value"""
     def __init__(self):
@@ -241,11 +233,124 @@ class AverageMeter(object):
         self.sum += val * n
         self.count += n
         self.avg = self.sum / self.count
+        
 
+def hardest_negative(loss_values):
+    hard_negative = np.argmax(loss_values)
+    return hard_negative if loss_values[hard_negative] > 0 else None
+
+
+def random_hard_negative(loss_values):
+    hard_negatives = np.where(loss_values > 0)[0]
+    return np.random.choice(hard_negatives) if len(hard_negatives) > 0 else None
+
+
+def semihard_negative(loss_values, margin):
+    semihard_negatives = np.where(np.logical_and(loss_values < margin, loss_values > 0))[0]
+    return np.random.choice(semihard_negatives) if len(semihard_negatives) > 0 else None
+
+
+class FunctionNegativeTripletSelector(TripletSelector):
+    """
+    For each positive pair, takes the hardest negative sample (with the greatest triplet loss value) to create a triplet
+    Margin should match the margin used in triplet loss.
+    negative_selection_fn should take array of loss_values for a given anchor-positive pair and all negative samples
+    and return a negative index for that pair
+
+    https://github.com/adambielski/siamese-triplet/blob/99f7b0ccc40bb58223b26b1a9a24f0fce63e44d8/utils.py
+    """
+
+    def __init__(self, margin, negative_selection_fn, cpu=True):
+        super(FunctionNegativeTripletSelector, self).__init__()
+        self.cpu = cpu
+        self.margin = margin
+        self.negative_selection_fn = negative_selection_fn
+
+    def get_triplets(self, embeddings, labels):
+        if self.cpu:
+            embeddings = embeddings.cpu()
+        distance_matrix = pdist(embeddings)
+        distance_matrix = distance_matrix.cpu()
+
+        labels = labels.cpu().data.numpy()
+        triplets = []
+
+        for label in set(labels):
+            label_mask = (labels == label)
+            label_indices = np.where(label_mask)[0]
+            if len(label_indices) < 2:
+                continue
+            negative_indices = np.where(np.logical_not(label_mask))[0]
+            anchor_positives = list(combinations(label_indices, 2))  # All anchor-positive pairs
+            anchor_positives = np.array(anchor_positives)
+
+            ap_distances = distance_matrix[anchor_positives[:, 0], anchor_positives[:, 1]] + self.margin
+            idxs = np.ix_(anchor_positives[:, 0], negative_indices)
+            loss_values = ap_distances.unsqueeze(dim=1) - distance_matrix[idxs]
+            loss_values = loss_values.data.cpu().numpy()
+            for i, loss_val in enumerate(loss_values):
+                hard_negative = self.negative_selection_fn(loss_val)
+                if hard_negative is not None:
+                    hard_negative = negative_indices[hard_negative]
+                    triplets.append([anchor_positives[i][0], anchor_positives[i][1], hard_negative])
+
+        if len(triplets) == 0:
+            triplets.append([anchor_positives[-1][0], anchor_positives[-1][1], negative_indices[0]])
+
+        return torch.LongTensor(triplets)
+
+
+def HardestNegativeTripletSelector(margin, cpu=False):
+    return FunctionNegativeTripletSelector(margin=margin,
+                                           negative_selection_fn=hardest_negative,
+                                           cpu=cpu)
+
+
+def RandomNegativeTripletSelector(margin, cpu=False):
+    return FunctionNegativeTripletSelector(margin=margin,
+                                           negative_selection_fn=random_hard_negative,
+                                           cpu=cpu)
+
+
+def SemihardNegativeTripletSelector(margin, cpu=False):
+    return FunctionNegativeTripletSelector(margin=margin,
+                                           negative_selection_fn=lambda x: semihard_negative(x, margin),
+                                           cpu=cpu)
+
+class OnlineTripletLoss(nn.Module):
+    """
+    Online Triplets loss
+    Takes a batch of embeddings and corresponding labels.
+    Triplets are generated using triplet_selector object that take embeddings and targets and return indices of
+    triplets
+
+    https://github.com/adambielski/siamese-triplet/blob/master/losses.py
+    """
+
+    def __init__(self, margin, triplet_selector):
+        super(OnlineTripletLoss, self).__init__()
+        self.margin = margin
+        self.triplet_selector = triplet_selector
+
+    def forward(self, embeddings, target):
+
+        triplets = self.triplet_selector.get_triplets(embeddings, target)
+
+        if embeddings.is_cuda:
+            triplets = triplets.cuda()
+
+        ap_distances = (embeddings[triplets[:, 0]] - embeddings[triplets[:, 1]]).pow(2).sum(1)  # .pow(.5)
+        an_distances = (embeddings[triplets[:, 0]] - embeddings[triplets[:, 2]]).pow(2).sum(1)  # .pow(.5)
+        losses = F.relu(ap_distances - an_distances + self.margin)
+
+        return losses.mean(), len(triplets)
+
+    
 def accuracy(dista, distb):
     margin = 0
     pred = (dista - distb - margin).cpu().data
     return (pred > 0).sum()*1.0/dista.size()[0]
+
 
 if __name__ == '__main__':
     main()    

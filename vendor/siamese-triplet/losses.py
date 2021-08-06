@@ -89,3 +89,4 @@ class OnlineTripletLoss(nn.Module):
         losses = F.relu(ap_distances - an_distances + self.margin)
 
         return losses.mean(), len(triplets)
+

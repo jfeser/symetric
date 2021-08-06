@@ -1,7 +1,27 @@
 import torch
 import numpy as np
+from utils import AverageMeter
+from utils import AllTripletSelector, HardestNegativeTripletSelector, RandomNegativeTripletSelector, SemihardNegativeTripletSelector 
 
+def accuracy(embeddings, target, margin = 1.0, triplet_selector = RandomNegativeTripletSelector):
+    triplets = triplet_selector(margin).get_triplets(embeddings, target)
+        
+    if embeddings.is_cuda:
+        triplets = triplets.cuda()
 
+    ap_distances = (embeddings[triplets[:, 0]] - embeddings[triplets[:, 1]]).pow(2).sum(1).pow(.5)
+    an_distances = (embeddings[triplets[:, 0]] - embeddings[triplets[:, 2]]).pow(2).sum(1).pow(.5)
+    acc = (100 * (an_distances - margin / 2 > ap_distances).sum().item() / len(triplets))
+    print('Accuracy: %f' % acc)
+    return acc
+
+def save_checkpoint(model):
+    """Saves checkpoint to disk"""
+    dummy_input = torch.randn(1, 1, 30, 30, device='cuda')
+    model.eval()
+    traced = torch.jit.trace(model, dummy_input)
+    traced.save('encoder_best.pt.tar')
+        
 def fit(train_loader, val_loader, model, loss_fn, optimizer, scheduler, n_epochs, cuda, log_interval, metrics=[],
         start_epoch=0):
     """
@@ -16,6 +36,7 @@ def fit(train_loader, val_loader, model, loss_fn, optimizer, scheduler, n_epochs
     for epoch in range(0, start_epoch):
         scheduler.step()
 
+    best_acc = 0
     for epoch in range(start_epoch, n_epochs):
         scheduler.step()
 
@@ -26,8 +47,12 @@ def fit(train_loader, val_loader, model, loss_fn, optimizer, scheduler, n_epochs
         for metric in metrics:
             message += '\t{}: {}'.format(metric.name(), metric.value())
 
-        val_loss, metrics = test_epoch(val_loader, model, loss_fn, cuda, metrics)
+        val_loss, avg_acc, metrics = test_epoch(val_loader, model, loss_fn, cuda, metrics)
         val_loss /= len(val_loader)
+
+        if avg_acc > best_acc:
+            best_acc = avg_acc
+            save_checkpoint(model)
 
         message += '\nEpoch: {}/{}. Validation set: Average loss: {:.4f}'.format(epoch + 1, n_epochs,
                                                                                  val_loss)
@@ -95,7 +120,10 @@ def test_epoch(val_loader, model, loss_fn, cuda, metrics):
         for metric in metrics:
             metric.reset()
         model.eval()
+
         val_loss = 0
+        num_acc = 0
+        dem_acc = 0
         for batch_idx, (data, target) in enumerate(val_loader):
             target = target if len(target) > 0 else None
             if not type(data) in (tuple, list):
@@ -107,6 +135,9 @@ def test_epoch(val_loader, model, loss_fn, cuda, metrics):
 
             outputs = model(*data)
 
+            num_acc += accuracy(outputs, target)
+            dem_acc += 1
+            
             if type(outputs) not in (tuple, list):
                 outputs = (outputs,)
             loss_inputs = outputs
@@ -121,4 +152,5 @@ def test_epoch(val_loader, model, loss_fn, cuda, metrics):
             for metric in metrics:
                 metric(outputs, target, loss_outputs)
 
-    return val_loss, metrics
+    avg_acc = num_acc / dem_acc
+    return val_loss, avg_acc, metrics
