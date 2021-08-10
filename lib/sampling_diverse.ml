@@ -22,15 +22,16 @@ include struct
 
   let final_program_dist = Spec.add spec @@ Param.float_ref ~name:"final-program-dist" ()
 
-  let synth = Spec.add spec @@ Param.const_str ~name:"synth" "sampling-diverse"
+  let (_ : _) = Spec.add spec @@ Param.const_str ~name:"synth" "sampling-diverse"
 
   let local_search =
     Spec.add spec
     @@ Param.symbol ~name:"local" ~doc:" kind of local search" ~default:`Bounded
-         [ (`Bounded, "bounded"); (`Stochastic, "stochastic") ]
+         [ (`Bounded, "bounded"); (`Stochastic, "stochastic"); (`Leaf, "leaf") ]
 end
 
-module Make (Lang : Lang_intf.S) = struct
+include struct
+  module Lang = Cad
   open Lang
   module Parent = Baseline.Make (Lang)
   module Search_state = Parent.Search_state
@@ -67,6 +68,25 @@ module Make (Lang : Lang_intf.S) = struct
     in
     search
 
+  let leaf_search params bench =
+    let module Op = Cad_op in
+    let module Value = Cad_conc in
+    let module F = Flat_program.Make (Op) in
+    let eval = F.eval (Value.eval params) in
+    let output = Bench.output bench in
+    let search ?(view = ignore) _ center k =
+      try
+        Tree_ball.Rename_leaves.sample
+          (module Op)
+          Cad_gen_pattern.rename center ~n:1000 ~d:2
+          (fun p ->
+            let v = eval p in
+            view v;
+            if [%compare.equal: Value.t] v output then k @@ F.to_program p)
+      with Program.Eval_error e -> raise @@ Program.Eval_error [%message (center : Op.t Program.t) (e : Sexp.t)]
+    in
+    search
+
   let sample_pairwise dist retain_thresh states old new_ =
     Dumb_progress.List.map ~name:"sampling" new_ ~f:(fun new_idx ->
         let min_dist =
@@ -95,6 +115,7 @@ module Make (Lang : Lang_intf.S) = struct
         match Params.get params local_search with
         | `Bounded -> bounded_search params _bench (Params.get params ball_width)
         | `Stochastic -> stochastic_search params _bench
+        | `Leaf -> leaf_search params _bench
 
       method distance = Value.dist params
 
@@ -131,7 +152,10 @@ module Make (Lang : Lang_intf.S) = struct
         sample_pairwise self#distance retain_thresh all_states old new_ |> List.map ~f:(fun i -> new_states_a.(i))
 
       method sample_states cost new_states =
-        if diversity then self#sample_diverse_states new_states
+        if diversity then (
+          let sample = self#sample_diverse_states new_states in
+          Fmt.epr "Retained %d/%d new states\n%!" (List.length sample) (List.length new_states);
+          sample)
         else
           let to_keep = Int.pow cost retain_power + 5 in
           List.take (List.permute new_states) to_keep
@@ -158,14 +182,13 @@ module Make (Lang : Lang_intf.S) = struct
   let synth params = Option.iter (new synthesizer params)#run ~f:(fun p -> eprint_s [%message (p : Op.t Program.t)])
 end
 
-let cli (type value op) (module Lang : Lang_intf.S with type Value.t = value and type Op.t = op) =
-  let module Synth = Make (Lang) in
+let cli =
   let spec = Dumb_params.Spec.union [ Lang.spec; Params.spec; spec ] in
   let open Command.Let_syntax in
   Command.basic ~summary:(sprintf "Diversity sampling for %s" Lang.name)
   @@ [%map_open
        let params = Dumb_params.Spec.cli spec in
        Synth_utils.run_synth
-         (fun params -> new Synth.synthesizer params)
+         (fun params -> new synthesizer params)
          params
          (Option.iter ~f:(fun p -> eprint_s [%message (p : Lang.Op.t Program.t)]))]

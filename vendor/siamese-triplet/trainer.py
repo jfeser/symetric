@@ -11,7 +11,7 @@ def accuracy(embeddings, target, margin = 1.0, triplet_selector = RandomNegative
 
     ap_distances = (embeddings[triplets[:, 0]] - embeddings[triplets[:, 1]]).pow(2).sum(1).pow(.5)
     an_distances = (embeddings[triplets[:, 0]] - embeddings[triplets[:, 2]]).pow(2).sum(1).pow(.5)
-    acc = (100 * (an_distances - margin / 2 > ap_distances).sum().item() / len(triplets))
+    acc = (100 * (an_distances > ap_distances).sum().item() / len(triplets))
     print('Accuracy: %f' % acc)
     return acc
 

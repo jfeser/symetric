@@ -66,6 +66,25 @@ module Rename_only = struct
      ("dist ~compare:([%compare : string]) p init" 2)) |}]
 end
 
+module Rename_leaves = struct
+  let sample (type op) (module Op : Op_intf.S with type t = op) (rename : op -> op) t ~n ~d k =
+    let module F = Flat_program.Make (Op) in
+    let t = F.of_program t in
+
+    let leaves = F.leaves t in
+    let n_leaves = Array.length leaves in
+
+    for _ = 0 to n do
+      let t' = Array.copy t in
+      for _ = 0 to d do
+        let l = Random.int n_leaves in
+        let i = leaves.(l) in
+        t'.(i) <- rename t'.(i)
+      done;
+      k t'
+    done
+end
+
 module Rename_insert_delete = struct
   let ball (type op type_) (module Op : Op_intf.S with type t = op and type type_ = type_) (ops : op list) ?(n = 500) t
       d f =

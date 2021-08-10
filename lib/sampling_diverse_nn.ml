@@ -6,8 +6,9 @@ include struct
   let synth = Spec.add spec @@ Param.const_str ~name:"synth" "sampling-diverse-nn"
 end
 
-module Make (Lang : Lang_intf.S) = struct
-  module Parent = Sampling_diverse.Make (Lang)
+include struct
+  module Lang = Cad
+  module Parent = Sampling_diverse
   module Search_state = Parent.Search_state
   open Lang
 
@@ -76,14 +77,13 @@ module Make (Lang : Lang_intf.S) = struct
     end
 end
 
-let cli (type value op) (module Lang : Lang_intf.S with type Value.t = value and type Op.t = op) =
-  let module Synth = Make (Lang) in
+let cli =
   let spec = Dumb_params.Spec.union [ Lang.spec; Params.spec; spec ] in
   let open Command.Let_syntax in
   Command.basic ~summary:(sprintf "Diversity sampling (with neural networks) for %s" Lang.name)
   @@ [%map_open
        let params = Dumb_params.Spec.cli spec in
        Synth_utils.run_synth
-         (fun params -> new Synth.synthesizer params)
+         (fun params -> new synthesizer params)
          params
          (Option.iter ~f:(fun p -> eprint_s [%message (p : Lang.Op.t Program.t)]))]

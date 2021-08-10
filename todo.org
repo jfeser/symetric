@@ -1,5 +1,5 @@
 * DONE Vectorize pairwise distance calculation (cnorm)
 * DONE Figure out why vectorized embedding & search threshold is behaving weird
 * TODO Figure out how to compare quality of learned distance w/ jaccard
-* TODO Learn a distance function with a larger training set
-* TODO Use online triplet selection to deal with collapsing model
+* DONE Learn a distance function with a larger training set
+* DONE Use online triplet selection to deal with collapsing model
