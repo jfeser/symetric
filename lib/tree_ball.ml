@@ -83,6 +83,32 @@ module Rename_leaves = struct
       done;
       k t'
     done
+
+  let stochastic (type op type_) (module Op : Op_intf.S with type t = op and type type_ = type_) ?(n = 5) ~score
+      (rename : op -> op) t f =
+    let module F = Flat_program.Make (Op) in
+    let t = F.of_program t in
+    let t' = Array.copy t in
+
+    let leaves = F.leaves t in
+    let n_leaves = Array.length leaves in
+
+    let rec loop i v =
+      if i < n then (
+        f t v;
+
+        Array.blito ~src:t ~dst:t' ();
+        let l = Random.int n_leaves in
+        let li = leaves.(l) in
+        t'.(li) <- rename t'.(li);
+
+        let v' = score t' in
+        let ratio = v /. v' in
+        let accept = Random.float 1.0 in
+        if Float.(accept < ratio) then Array.blito ~src:t' ~dst:t ();
+        loop (i + 1) v')
+    in
+    loop 0 (score t)
 end
 
 module Rename_insert_delete = struct

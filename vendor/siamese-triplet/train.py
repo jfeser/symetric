@@ -47,7 +47,7 @@ class EmbeddingNet(nn.Module):
         self.conv2 = nn.Conv2d(10, 20, kernel_size=5)
         self.conv2_drop = nn.Dropout2d()
         self.fc1 = nn.Linear(320, 50)
-        self.fc2 = nn.Linear(50, 10)
+        self.fc2 = nn.Linear(50, 3)
 
     def forward(self, x):
         x = F.relu(F.max_pool2d(self.conv1(x), 2))
@@ -77,8 +77,7 @@ def main():
     online_test_loader = torch.utils.data.DataLoader(test_dataset, batch_sampler=test_batch_sampler, **kwargs)
 
     margin = args.margin
-    embedding_net = EmbeddingNet()
-    model = embedding_net
+    model = EmbeddingNet()
     if args.cuda:
         model.cuda()
         

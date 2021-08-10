@@ -52,8 +52,6 @@ let jaccard c c' =
   let l = Bitarray.length (pixels c) in
   Float.(of_int h / of_int l)
 
-let dist _ = jaccard
-
 let to_ndarray v = Bitarray.to_ndarray (pixels v)
 
 let embed params =
@@ -66,6 +64,10 @@ let embed params =
       @@ List.map vs ~f:(fun v -> Tensor.reshape ~shape:[ 1; 30; 30 ] @@ Bitarray.to_torch (pixels v))
     in
     Module.forward model [ input ]
+
+let dist params =
+  let embed = embed params in
+  fun v v' -> Torch.Tensor.(to_float0_exn @@ norm (embed [ v ] - embed [ v' ]))
 
 let edges c =
   let to_int x = if x then 1 else 0 in

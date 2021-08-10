@@ -59,8 +59,8 @@ let render_all (display : Display.t) =
     display.last_render <- now;
     Queue.iter display.Display.bars ~f:(fun (Bar b) ->
         b.render display.buf;
-        Bigstring_unix.really_output display.ch display.buf;
-        Out_channel.output_string display.ch "\n");
+        Out_channel.output_string display.ch "\n";
+        Bigstring_unix.really_output display.ch display.buf);
     Out_channel.flush display.ch)
 
 let update ?(display = Display.default) bar state =

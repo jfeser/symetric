@@ -23,7 +23,8 @@ include struct
       in
       let old_tensor = to_tensor old and new_tensor = to_tensor new_ in
       let dists = Tensor.squeeze @@ Tensor.cdist ~x1:old_tensor ~x2:new_tensor ~p:2.0 ~compute_mode:0 in
-      let mask = Tensor.ge (Tensor.amin dists ~dim:[ 0 ] ~keepdim:false) @@ Scalar.f retain_thresh in
+      let min_dists = Tensor.amin dists ~dim:[ 0 ] ~keepdim:false in
+      let mask = Tensor.ge min_dists @@ Scalar.f retain_thresh in
       let indices =
         Tensor.range ~start:(Scalar.i 0)
           ~end_:(Scalar.i @@ (List.length new_ - 1))
@@ -42,14 +43,17 @@ include struct
       and e_output = Tensor.to_device ~device @@ Tensor.unsqueeze ~dim:0 @@ embed [ output ] in
 
       let dists = Tensor.squeeze @@ Tensor.cdist ~x1:e_output ~x2:e_states ~p:2.0 ~compute_mode:0 in
-      let mask = Tensor.le (Tensor.amin dists ~dim:[ 0 ] ~keepdim:false) @@ Scalar.f search_thresh in
+      let mask = Tensor.le dists @@ Scalar.f search_thresh in
       let indices =
         Tensor.range ~start:(Scalar.i 0)
           ~end_:(Scalar.i @@ (List.length new_ - 1))
           ~options:(Torch_core.Kind.T Int, device)
       in
-      let retained_indices = Tensor.masked_select indices ~mask in
-      Tensor.to_int1_exn retained_indices |> Array.to_list |> List.map ~f:(fun i -> (0.0, i))
+      let retained_indices = Tensor.masked_select indices ~mask |> Tensor.to_int1_exn |> Array.to_list in
+      let retained_dists = Tensor.masked_select dists ~mask |> Tensor.to_float1_exn |> Array.to_list in
+      let ret = List.zip_exn retained_dists retained_indices in
+      print_s [%message (ret : (float * int) list)];
+      ret
 
   class synthesizer params =
     object
@@ -73,7 +77,8 @@ include struct
         in
         let old = List.range (List.length new_states) (Array.length all_states)
         and new_ = List.range 0 (List.length new_states) in
-        sample_batched embed retain_thresh all_states old new_ |> List.map ~f:(fun i -> new_states_a.(i))
+        let idxs = sample_batched embed retain_thresh all_states old new_ in
+        List.map idxs ~f:(fun i -> new_states_a.(i))
     end
 end
 

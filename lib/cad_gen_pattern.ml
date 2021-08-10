@@ -103,23 +103,54 @@ let ops = shapes @ replicates @ [ Cad_op.union; Cad_op.inter ]
 
 let checkpoint states fn =
   let open Owl in
-  let features, classes = Hashtbl.to_alist states |> List.unzip in
+  let features, classes =
+    Hashtbl.to_alist states
+    |> List.concat_map ~f:(fun (feat, classes) -> Set.to_list classes |> List.map ~f:(fun c -> (feat, Float.of_int c)))
+    |> List.unzip
+  in
+
   let to_features v = Arr.expand (Cad_conc.to_ndarray v) 2 in
   Npy.write (Mat.of_rows @@ Array.of_list @@ List.map features ~f:to_features) @@ sprintf "%s-features.npy" fn;
-  Npy.write (Arr.of_array (Array.of_list @@ List.map classes ~f:Float.of_int) [| List.length classes |])
-  @@ sprintf "%s-classes.npy" fn
+  Npy.write (Arr.of_array (Array.of_list classes) [| List.length classes |]) @@ sprintf "%s-classes.npy" fn
+
+let print_overlap states =
+  let n_states = Hashtbl.length states in
+  let n_overlap = Hashtbl.count states ~f:(fun l -> Set.length l > 1) in
+  Fmt.epr "Overlapping %d/%d states\n%!" n_overlap n_states
+
+let print_example of_class =
+  let n_classes = Hashtbl.length of_class in
+  let cls = Random.int n_classes in
+  match Hashtbl.find_exn of_class cls with
+  | center :: close :: _ -> (
+      let next_class = (cls + 1) mod n_classes in
+      if next_class <> cls then
+        match Hashtbl.find_exn of_class next_class with
+        | far :: _ ->
+            Fmt.epr "Center:\n%a\n\nClose:\n%a\n\nFar:\n%a\n\n%!" Cad_conc.pprint center Cad_conc.pprint close
+              Cad_conc.pprint far
+        | _ -> ())
+  | _ -> ()
 
 let mk_dataset params =
   let max_cost = Params.get params Baseline.max_cost in
   let other_ops = replicates @ [ Cad_op.union; Cad_op.inter ] in
   let all_states = Hashtbl.create (module Cad_conc) in
+  let of_class = Hashtbl.create (module Int) in
 
   let add_state c s =
-    match Hashtbl.find all_states c with Some _ -> () | None -> Hashtbl.set all_states ~key:c ~data:s
+    Hashtbl.update all_states c ~f:(function
+      | Some ss ->
+          if not (Set.mem ss s) then Hashtbl.add_multi of_class ~key:s ~data:c;
+          Set.add ss s
+      | None ->
+          Hashtbl.add_multi of_class ~key:s ~data:c;
+          Set.singleton (module Int) s)
   in
 
   let module F = Flat_program.Make (Cad_op) in
-  for class_ = 0 to Params.get params centers do
+  let n_classes = Params.get params centers in
+  for class_ = 0 to n_classes - 1 do
     let ops = List.take (List.permute shapes) 4 @ other_ops in
     let params =
       Dumb_params.set params Cad_params.bench
@@ -145,6 +176,8 @@ let mk_dataset params =
              done)
     done;
 
+    print_overlap all_states;
+    print_example of_class;
     checkpoint all_states @@ Params.get params output_filename;
     Fmt.epr "Finished %d classes\n%!" (class_ + 1)
   done

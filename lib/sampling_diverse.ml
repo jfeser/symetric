@@ -76,10 +76,11 @@ include struct
     let output = Bench.output bench in
     let search ?(view = ignore) _ center k =
       try
-        Tree_ball.Rename_leaves.sample
+        Tree_ball.Rename_leaves.stochastic
           (module Op)
-          Cad_gen_pattern.rename center ~n:1000 ~d:2
-          (fun p ->
+          Cad_gen_pattern.rename center ~n:100
+          ~score:(fun p -> Cad_conc.jaccard output @@ eval p)
+          (fun p _ ->
             let v = eval p in
             view v;
             if [%compare.equal: Value.t] v output then k @@ F.to_program p)
@@ -88,15 +89,18 @@ include struct
     search
 
   let sample_pairwise dist retain_thresh states old new_ =
-    Dumb_progress.List.map ~name:"sampling" new_ ~f:(fun new_idx ->
-        let min_dist =
-          List.map old ~f:(fun old_idx -> dist states.(old_idx) states.(new_idx))
-          |> List.min_elt ~compare:[%compare: float]
-          |> Option.value ~default:Float.infinity
-        in
-        (min_dist, new_idx))
-    |> List.filter ~f:(fun (d, _) -> Float.(d >= retain_thresh))
-    |> List.map ~f:Tuple.T2.get2
+    let min_dists =
+      Dumb_progress.List.map ~name:"sampling" new_ ~f:(fun new_idx ->
+          let min_dist =
+            List.map old ~f:(fun old_idx -> dist states.(old_idx) states.(new_idx))
+            |> List.min_elt ~compare:[%compare: float]
+            |> Option.value ~default:Float.infinity
+          in
+          (min_dist, new_idx))
+    in
+    let min_dists_l, _ = List.unzip min_dists in
+    print_s [%message "pairwise" (min_dists_l : float list)];
+    List.filter min_dists ~f:(fun (d, _) -> Float.(d >= retain_thresh)) |> List.map ~f:Tuple.T2.get2
 
   class synthesizer params =
     let _bench = Params.get params bench in
@@ -132,15 +136,35 @@ include struct
       method search_close_states new_states =
         let close_states = self#find_close_states new_states in
         Fmt.epr "Searching %d/%d neighborhoods\n%!" (List.length close_states) (List.length new_states);
-        List.iter close_states ~f:(fun (d, _, op, args) ->
-            let center = Search_state.program_of_op_args_exn search_state op args in
 
-            search_neighbors self center @@ fun p ->
+        let closest = ref None in
+        let closest_dist = ref Float.infinity in
+
+        List.iter close_states ~f:(fun (d, v, op, args) ->
+            Fmt.epr "Center:\n%a\n%!" Cad_conc.pprint v;
+
+            let center = Search_state.program_of_op_args_exn search_state op args in
+            if Float.(d < !closest_dist) then (
+              closest_dist := d;
+              closest := Some (Program.eval (Value.eval params) center));
+            let rename_dist = Tree_ball.Rename_only.dist center (Bench.solution_exn _bench) ~compare:[%compare: Op.t] in
+            if Float.(rename_dist < infinity) then Fmt.epr "Tree distance: %f\n" rename_dist;
+
+            search_neighbors
+              ~view:(fun v ->
+                let d = Cad_conc.jaccard _output v in
+                if Float.(d < !closest_dist) then (
+                  closest_dist := d;
+                  closest := Some (Program.eval (Value.eval params) center)))
+              self center
+            @@ fun p ->
             let final_value_dist = Params.get params final_value_dist
             and final_program_dist = Params.get params final_program_dist in
             final_value_dist := d;
             final_program_dist := Float.of_int @@ Tree_dist.zhang_sasha ~eq:[%compare.equal: Op.t] center p;
-            raise (Parent.Done p))
+            raise (Parent.Done p));
+
+        Option.iter !closest ~f:(Fmt.epr "Goal:\n%a\nClosest:\n%a\n%!" Cad_conc.pprint _output Cad_conc.pprint)
 
       method sample_diverse_states new_states =
         let new_states_a = Array.of_list new_states in
