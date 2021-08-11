@@ -78,7 +78,7 @@ include struct
       try
         Tree_ball.Rename_leaves.stochastic
           (module Op)
-          Cad_gen_pattern.rename center ~n:100
+          Cad_gen_pattern.rename center ~n:10
           ~score:(fun p -> Cad_conc.jaccard output @@ eval p)
           (fun p _ ->
             let v = eval p in
@@ -98,8 +98,6 @@ include struct
           in
           (min_dist, new_idx))
     in
-    let min_dists_l, _ = List.unzip min_dists in
-    print_s [%message "pairwise" (min_dists_l : float list)];
     List.filter min_dists ~f:(fun (d, _) -> Float.(d >= retain_thresh)) |> List.map ~f:Tuple.T2.get2
 
   class synthesizer params =
@@ -121,7 +119,7 @@ include struct
         | `Stochastic -> stochastic_search params _bench
         | `Leaf -> leaf_search params _bench
 
-      method distance = Value.dist params
+      method distance = Cad_conc.jaccard
 
       method dedup_states states =
         states
@@ -140,9 +138,7 @@ include struct
         let closest = ref None in
         let closest_dist = ref Float.infinity in
 
-        List.iter close_states ~f:(fun (d, v, op, args) ->
-            Fmt.epr "Center:\n%a\n%!" Cad_conc.pprint v;
-
+        List.iter close_states ~f:(fun (d, _, op, args) ->
             let center = Search_state.program_of_op_args_exn search_state op args in
             if Float.(d < !closest_dist) then (
               closest_dist := d;

@@ -58,21 +58,14 @@ let xmax = 30
 
 let ymax = 30
 
-let small_circles = grid xmax ymax 3 (Cad_op.circle ~id:0 ~center:Vector2.zero ~radius:3.0)
+let tall_rects = grid xmax ymax 3 (Cad_op.rect ~id:0 ~lo_left:Vector2.zero ~hi_right:Vector2.{ x = 1.0; y = 3.0 })
 
-let small_rects = grid xmax ymax 3 (Cad_op.rect ~id:0 ~lo_left:Vector2.zero ~hi_right:Vector2.{ x = 3.0; y = 3.0 })
+let wide_rects = grid xmax ymax 3 (Cad_op.rect ~id:0 ~lo_left:Vector2.zero ~hi_right:Vector2.{ x = 3.0; y = 1.0 })
 
-let big_circles = grid xmax ymax 3 (Cad_op.circle ~id:0 ~center:Vector2.zero ~radius:6.0)
-
-let big_rects = grid xmax ymax 3 (Cad_op.rect ~id:0 ~lo_left:Vector2.zero ~hi_right:Vector2.{ x = 6.0; y = 6.0 })
-
-let shapes = small_circles @ small_rects @ big_circles @ big_rects
+let shapes = tall_rects @ wide_rects
 
 let feat_of_shape =
-  List.mapi small_circles ~f:(fun i op -> (op, (i, 0)))
-  @ List.mapi small_rects ~f:(fun i op -> (op, (i, 1)))
-  @ List.mapi big_circles ~f:(fun i op -> (op, (i, 2)))
-  @ List.mapi big_rects ~f:(fun i op -> (op, (i, 3)))
+  List.mapi tall_rects ~f:(fun i op -> (op, (i, 0))) @ List.mapi wide_rects ~f:(fun i op -> (op, (i, 1)))
 
 let shape_of_feat = List.map feat_of_shape ~f:Tuple.T2.swap
 
@@ -89,9 +82,13 @@ end
 
 let shape_of_feat = Hashtbl.of_alist_exn (module I2) shape_of_feat
 
+let all_renames op =
+  let p, _ = Hashtbl.find_exn feat_of_shape op in
+  List.init 2 ~f:(fun f -> Hashtbl.find_exn shape_of_feat (p, f))
+
 let rename op =
   let p, _ = Hashtbl.find_exn feat_of_shape op in
-  let k' = Random.int 4 in
+  let k' = Random.int 2 in
   Hashtbl.find_exn shape_of_feat (p, k')
 
 let replicates =
@@ -186,13 +183,13 @@ let mk_bench params =
   let size = Params.get params Baseline.max_cost in
   let output_fn = Params.get params output_filename in
   let other_ops = replicates @ [ Cad_op.union; Cad_op.inter ] in
-  let all_ops = shapes @ other_ops in
   let all_states = Hashtbl.create (module Cad_conc) in
 
   let add_state c s = Hashtbl.set all_states ~key:c ~data:s in
 
   for class_ = 0 to Params.get params centers do
-    let ops = List.take (List.permute shapes) 4 @ other_ops in
+    let shape_ops = List.take (List.permute shapes) 4 in
+    let ops = shape_ops @ other_ops in
     let params =
       Dumb_params.set params Cad_params.bench
         { ops; input = { xmax; ymax }; output = Cad_conc.dummy; solution = None; filename = None }
@@ -205,8 +202,9 @@ let mk_bench params =
     let solution = B.Search_state.random_program_exn search_state output in
     if not (Hashtbl.mem all_states output) then (
       add_state output class_;
+      let solution_ops = List.concat_map shape_ops ~f:all_renames @ other_ops in
       let bench =
-        { Cad.Bench.ops = all_ops; input = { xmax; ymax }; output; solution = Some solution; filename = None }
+        { Cad.Bench.ops = solution_ops; input = { xmax; ymax }; output; solution = Some solution; filename = None }
       in
       Cad.Bench.save [%string "%{output_fn}/scene_%{class_#Int}.sexp"] bench)
   done
