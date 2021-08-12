@@ -6,54 +6,67 @@ include struct
   let synth = Spec.add spec @@ Param.const_str ~name:"synth" "sampling-diverse-nn"
 end
 
+let (_ : bool) = Torch.Tensor.grad_set_enabled false
+
 include struct
   module Lang = Cad
   module Parent = Sampling_diverse
   module Search_state = Parent.Search_state
   open Lang
 
-  let sample_batched embed retain_thresh states old new_ =
+  let rec batched n l =
+    let b, bs = List.split_n l n in
+    if List.is_empty bs then [ b ] else b :: batched n bs
+
+  let sample_batched ?(batch_size = 1024) embed retain_thresh states old new_ =
     let open Torch in
     if List.is_empty old || List.is_empty new_ then new_
     else
-      let device = Device.Cuda 0 in
-      let to_tensor s =
-        Tensor.to_device ~device @@ Tensor.unsqueeze ~dim:0 @@ Tensor.squeeze @@ embed
-        @@ List.map s ~f:(fun i -> states.(i))
-      in
-      let old_tensor = to_tensor old and new_tensor = to_tensor new_ in
-      let dists = Tensor.squeeze @@ Tensor.cdist ~x1:old_tensor ~x2:new_tensor ~p:2.0 ~compute_mode:0 in
-      let min_dists = Tensor.amin dists ~dim:[ 0 ] ~keepdim:false in
-      let mask = Tensor.ge min_dists @@ Scalar.f retain_thresh in
-      let indices =
-        Tensor.range ~start:(Scalar.i 0)
-          ~end_:(Scalar.i @@ (List.length new_ - 1))
-          ~options:(Torch_core.Kind.T Int, device)
-      in
-      let retained_indices = Tensor.masked_select indices ~mask in
-      Tensor.to_int1_exn retained_indices |> Array.to_list
+      batched batch_size new_
+      |> List.concat_map ~f:(fun new_ ->
+             let device = Device.Cuda 0 in
+             let to_tensor s =
+               Tensor.to_device ~device @@ Tensor.unsqueeze ~dim:0 @@ Tensor.squeeze @@ embed
+               @@ List.map s ~f:(fun i -> states.(i))
+             in
+             let old_tensor = to_tensor old and new_tensor = to_tensor new_ in
+             let dists = Tensor.squeeze @@ Tensor.cdist ~x1:old_tensor ~x2:new_tensor ~p:1.0 ~compute_mode:0 in
+             let min_dists = Tensor.amin dists ~dim:[ 0 ] ~keepdim:false in
+             let mask = Tensor.ge min_dists @@ Scalar.f retain_thresh in
+             let indices =
+               Tensor.range ~start:(Scalar.i 0)
+                 ~end_:(Scalar.i @@ (List.length new_ - 1))
+                 ~options:(Torch_core.Kind.T Int, device)
+             in
+             let retained_indices = Tensor.masked_select indices ~mask in
+             Tensor.to_int1_exn retained_indices |> Array.to_list)
 
-  let find_close_states embed search_thresh output states new_ =
+  let find_close_states ?(batch_size = 2048) embed search_thresh output states new_ =
     let open Torch in
     if List.is_empty new_ then []
     else
-      let device = Device.Cuda 0 in
-      let e_states =
-        Tensor.to_device ~device @@ Tensor.unsqueeze ~dim:0 @@ embed @@ List.map ~f:(fun i -> states.(i)) new_
-      and e_output = Tensor.to_device ~device @@ Tensor.unsqueeze ~dim:0 @@ embed [ output ] in
+      batched batch_size new_
+      |> List.concat_map ~f:(fun new_ ->
+             let device = Device.Cuda 0 in
+             let e_states =
+               Tensor.to_device ~device @@ Tensor.unsqueeze ~dim:0 @@ embed @@ List.map ~f:(fun i -> states.(i)) new_
+             and e_output = Tensor.to_device ~device @@ Tensor.unsqueeze ~dim:0 @@ embed [ output ] in
 
-      let dists = Tensor.squeeze @@ Tensor.cdist ~x1:e_output ~x2:e_states ~p:2.0 ~compute_mode:0 in
-      let mask = Tensor.le dists @@ Scalar.f search_thresh in
-      let indices =
-        Tensor.range ~start:(Scalar.i 0)
-          ~end_:(Scalar.i @@ (List.length new_ - 1))
-          ~options:(Torch_core.Kind.T Int, device)
-      in
-      let retained_indices = Tensor.masked_select indices ~mask |> Tensor.to_int1_exn |> Array.to_list in
-      let retained_dists = Tensor.masked_select dists ~mask |> Tensor.to_float1_exn |> Array.to_list in
-      let ret = List.zip_exn retained_dists retained_indices in
-      print_s [%message (ret : (float * int) list)];
-      ret
+             let dists = Tensor.squeeze @@ Tensor.cdist ~x1:e_output ~x2:e_states ~p:1.0 ~compute_mode:0 in
+
+             let min_dist = Tensor.minimum dists |> Tensor.to_float0_exn in
+             let max_dist = Tensor.maximum dists |> Tensor.to_float0_exn in
+             print_s [%message (min_dist : float) (max_dist : float)];
+             let mask = Tensor.le dists @@ Scalar.f search_thresh in
+             let indices =
+               Tensor.range ~start:(Scalar.i 0)
+                 ~end_:(Scalar.i @@ (List.length new_ - 1))
+                 ~options:(Torch_core.Kind.T Int, device)
+             in
+             let retained_indices = Tensor.masked_select indices ~mask |> Tensor.to_int1_exn |> Array.to_list in
+             let retained_dists = Tensor.masked_select dists ~mask |> Tensor.to_float1_exn |> Array.to_list in
+             let ret = List.zip_exn retained_dists retained_indices in
+             ret)
 
   class synthesizer params =
     object

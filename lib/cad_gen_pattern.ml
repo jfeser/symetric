@@ -159,7 +159,7 @@ let mk_dataset params =
 
     for cost = 3 to max_cost do
       let outputs = List.permute @@ B.Search_state.search ~cost ~type_:Cad_type.output search_state in
-      List.take outputs 1
+      List.take outputs 10
       |> List.iter ~f:(fun output ->
              add_state output class_;
              for _ = 0 to 10 do

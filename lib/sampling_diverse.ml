@@ -74,12 +74,12 @@ include struct
     let module F = Flat_program.Make (Op) in
     let eval = F.eval (Value.eval params) in
     let output = Bench.output bench in
-    let search ?(view = ignore) _ center k =
+    let search ?(view = ignore) synth center k =
       try
         Tree_ball.Rename_leaves.stochastic
           (module Op)
-          Cad_gen_pattern.rename center ~n:10
-          ~score:(fun p -> Cad_conc.jaccard output @@ eval p)
+          Cad_gen_pattern.rename center ~n:100
+          ~score:(fun p -> synth#distance output @@ eval p)
           (fun p _ ->
             let v = eval p in
             view v;
@@ -102,6 +102,7 @@ include struct
 
   class synthesizer params =
     let _bench = Params.get params bench in
+    let _dist = Cad_conc.dist params in
     object (self)
       inherit Parent.synthesizer params as super
 
@@ -119,7 +120,7 @@ include struct
         | `Stochastic -> stochastic_search params _bench
         | `Leaf -> leaf_search params _bench
 
-      method distance = Cad_conc.jaccard
+      method distance = _dist
 
       method dedup_states states =
         states
@@ -140,18 +141,19 @@ include struct
 
         List.iter close_states ~f:(fun (d, _, op, args) ->
             let center = Search_state.program_of_op_args_exn search_state op args in
-            if Float.(d < !closest_dist) then (
-              closest_dist := d;
+            let center_value = Program.eval (Value.eval params) center in
+            let center_dist = self#distance center_value _output in
+
+            if Float.(center_dist < !closest_dist) then (
+              closest_dist := center_dist;
               closest := Some (Program.eval (Value.eval params) center));
-            let rename_dist = Tree_ball.Rename_only.dist center (Bench.solution_exn _bench) ~compare:[%compare: Op.t] in
-            if Float.(rename_dist < infinity) then Fmt.epr "Tree distance: %f\n" rename_dist;
 
             search_neighbors
               ~view:(fun v ->
-                let d = Cad_conc.jaccard _output v in
+                let d = self#distance _output v in
                 if Float.(d < !closest_dist) then (
                   closest_dist := d;
-                  closest := Some (Program.eval (Value.eval params) center)))
+                  closest := Some v))
               self center
             @@ fun p ->
             let final_value_dist = Params.get params final_value_dist
@@ -172,6 +174,7 @@ include struct
         sample_pairwise self#distance retain_thresh all_states old new_ |> List.map ~f:(fun i -> new_states_a.(i))
 
       method sample_states cost new_states =
+        (* test *)
         if diversity then (
           let sample = self#sample_diverse_states new_states in
           Fmt.epr "Retained %d/%d new states\n%!" (List.length sample) (List.length new_states);

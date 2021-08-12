@@ -54,20 +54,35 @@ let jaccard c c' =
 
 let to_ndarray v = Bitarray.to_ndarray (pixels v)
 
-let embed params =
+let normalize vecs =
   let open Torch in
-  let model = Module.load @@ Params.get params embed_fn in
-  fun vs ->
-    let input =
-      Tensor.to_device ~device:(Device.Cuda 0)
-      @@ Tensor.stack ~dim:0
-      @@ List.map vs ~f:(fun v -> Tensor.reshape ~shape:[ 1; 30; 30 ] @@ Bitarray.to_torch (pixels v))
-    in
-    Module.forward model [ input ]
+  let lengths = Tensor.(clamp_min ~min:(Scalar.f 1e-12) @@ norm_except_dim ~v:vecs ~pow:1 ~dim:0) in
+  Tensor.(vecs / lengths)
+
+(* let embed params =
+ *   let open Torch in
+ *   let model = Module.load @@ Params.get params embed_fn in
+ *   fun vs ->
+ *     let input =
+ *       Tensor.to_device ~device:(Device.Cuda 0)
+ *       @@ Tensor.stack ~dim:0
+ *       @@ List.map vs ~f:(fun v -> Tensor.reshape ~shape:[ 1; 30; 30 ] @@ Bitarray.to_torch (pixels v))
+ *     in
+ *     let vecs = Module.forward model [ input ] in
+ *     let lengths = Tensor.(clamp_min ~min:(Scalar.f 1e-12) @@ norm_except_dim ~v:vecs ~pow:2 ~dim:0) in
+ *     let vecs = Tensor.(vecs / lengths) in
+ *     vecs *)
+
+let embed _ vs =
+  let open Torch in
+  normalize
+  @@ Tensor.to_device ~device:(Device.Cuda 0)
+  @@ Tensor.stack ~dim:0
+  @@ List.map vs ~f:(fun v -> Bitarray.to_torch (pixels v))
 
 let dist params =
   let embed = embed params in
-  fun v v' -> Torch.Tensor.(to_float0_exn @@ norm (embed [ v ] - embed [ v' ]))
+  fun v v' -> Torch.Tensor.(to_float0_exn @@ norm_except_dim ~dim:0 ~pow:1 ~v:(embed [ v ] - embed [ v' ]))
 
 let edges c =
   let to_int x = if x then 1 else 0 in
