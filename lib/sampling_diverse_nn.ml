@@ -41,7 +41,7 @@ include struct
              let retained_indices = Tensor.masked_select indices ~mask in
              Tensor.to_int1_exn retained_indices |> Array.to_list)
 
-  let find_close_states ?(batch_size = 2048) embed search_thresh output states new_ =
+  let find_close_states ?(batch_size = 4096) embed search_thresh output states new_ =
     let open Torch in
     if List.is_empty new_ then []
     else
@@ -74,7 +74,7 @@ include struct
 
       val embed = Value.embed params
 
-      method! find_close_states new_states =
+      method! find_close_states _ new_states =
         let new_states_a = Array.of_list new_states in
         let states = Array.of_list @@ List.map ~f:(fun (v, _, _) -> v) new_states in
         List.range 0 (List.length new_states)

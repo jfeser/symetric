@@ -67,6 +67,76 @@ module Rename_only = struct
 end
 
 module Rename_leaves = struct
+  let enumerate_d1 (type op) (module Op : Op_intf.S with type t = op) (all_renames : op -> op list) p k =
+    let module F = Flat_program.Make (Op) in
+    let t = F.of_program p in
+
+    let leaves = F.leaves t in
+    let n_leaves = Array.length leaves in
+
+    for l = 0 to n_leaves - 1 do
+      let i = leaves.(l) in
+      List.iter
+        (all_renames t.(i))
+        ~f:(fun op ->
+          t.(i) <- op;
+          k t)
+    done
+
+  let enumerate_d2 (type op) (module Op : Op_intf.S with type t = op) (all_renames : op -> op list) p k =
+    let module F = Flat_program.Make (Op) in
+    let t = F.of_program p in
+
+    let leaves = F.leaves t in
+    let n_leaves = Array.length leaves in
+
+    if n_leaves < 2 then enumerate_d1 (module Op) all_renames p k
+    else
+      for l1 = 0 to n_leaves - 1 do
+        for l2 = l1 + 1 to n_leaves - 1 do
+          let i1 = leaves.(l1) and i2 = leaves.(l2) and t' = Array.copy t in
+          List.iter
+            (all_renames t'.(i1))
+            ~f:(fun op1 ->
+              List.iter
+                (all_renames t'.(i2))
+                ~f:(fun op2 ->
+                  t'.(i1) <- op1;
+                  t'.(i2) <- op2;
+                  k t'))
+        done
+      done
+
+  let enumerate_d3 (type op) (module Op : Op_intf.S with type t = op) (all_renames : op -> op list) p k =
+    let module F = Flat_program.Make (Op) in
+    let t = F.of_program p in
+
+    let leaves = F.leaves t in
+    let n_leaves = Array.length leaves in
+
+    if n_leaves < 3 then enumerate_d2 (module Op) all_renames p k
+    else
+      for l1 = 0 to n_leaves - 1 do
+        for l2 = l1 + 1 to n_leaves - 1 do
+          for l3 = l2 + 1 to n_leaves - 1 do
+            let i1 = leaves.(l1) and i2 = leaves.(l2) and i3 = leaves.(l3) and t' = Array.copy t in
+            List.iter
+              (all_renames t'.(i1))
+              ~f:(fun op1 ->
+                List.iter
+                  (all_renames t'.(i2))
+                  ~f:(fun op2 ->
+                    List.iter
+                      (all_renames t'.(i3))
+                      ~f:(fun op3 ->
+                        t'.(i1) <- op1;
+                        t'.(i2) <- op2;
+                        t'.(i3) <- op3;
+                        k t')))
+          done
+        done
+      done
+
   let sample (type op) (module Op : Op_intf.S with type t = op) (rename : op -> op) t ~n ~d k =
     let module F = Flat_program.Make (Op) in
     let t = F.of_program t in

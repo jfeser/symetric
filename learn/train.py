@@ -147,10 +147,11 @@ def main():
     best_acc = 0
     for epoch in range(1, args.epochs + 1):
         train(model, loss_func, miner, device, train_loader, optimizer, epoch)
-        acc = test(train_dataset, test_dataset, model, accuracy_calculator)['precision_at_1']
-        if acc > best_acc:
-            best_acc = acc
-            checkpoint(model)
+        if epoch % 10 == 0:
+            acc = test(train_dataset, test_dataset, model, accuracy_calculator)['precision_at_1']
+            if acc > best_acc:
+                best_acc = acc
+                checkpoint(model)
 
 if __name__ == '__main__':
     main()

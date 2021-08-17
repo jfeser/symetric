@@ -9,8 +9,11 @@ include struct
 
   let raw_eval_calls = Spec.add spec @@ Param.float_ref ~name:"raw-eval-calls" ()
 
+  let embed = Spec.add spec @@ Param.bool ~name:"embed" ~init:(`Cli (Some true)) ~doc:" embed or not" ()
+
   let embed_fn =
-    Spec.add spec @@ Param.(string) ~name:"embed-file" ~doc:" file containing neural network for embedding" ()
+    Spec.add spec
+    @@ Param.string ~name:"embed-file" ~init:(`Cli (Some "")) ~doc:" file containing neural network for embedding" ()
 end
 
 let iidx b x y =
@@ -59,26 +62,28 @@ let normalize vecs =
   let lengths = Tensor.(clamp_min ~min:(Scalar.f 1e-12) @@ norm_except_dim ~v:vecs ~pow:1 ~dim:0) in
   Tensor.(vecs / lengths)
 
-(* let embed params =
- *   let open Torch in
- *   let model = Module.load @@ Params.get params embed_fn in
- *   fun vs ->
- *     let input =
- *       Tensor.to_device ~device:(Device.Cuda 0)
- *       @@ Tensor.stack ~dim:0
- *       @@ List.map vs ~f:(fun v -> Tensor.reshape ~shape:[ 1; 30; 30 ] @@ Bitarray.to_torch (pixels v))
- *     in
- *     let vecs = Module.forward model [ input ] in
- *     let lengths = Tensor.(clamp_min ~min:(Scalar.f 1e-12) @@ norm_except_dim ~v:vecs ~pow:2 ~dim:0) in
- *     let vecs = Tensor.(vecs / lengths) in
- *     vecs *)
+let nn_embed params =
+  let open Torch in
+  let model = Module.load @@ Params.get params embed_fn in
+  fun vs ->
+    let input =
+      Tensor.to_device ~device:(Device.Cuda 0)
+      @@ Tensor.stack ~dim:0
+      @@ List.map vs ~f:(fun v -> Tensor.reshape ~shape:[ 1; 30; 30 ] @@ Bitarray.to_torch (pixels v))
+    in
+    let vecs = Module.forward model [ input ] in
+    let lengths = Tensor.(clamp_min ~min:(Scalar.f 1e-12) @@ norm_except_dim ~v:vecs ~pow:2 ~dim:0) in
+    let vecs = Tensor.(vecs / lengths) in
+    vecs
 
-let embed _ vs =
+let no_embed vs =
   let open Torch in
   normalize
   @@ Tensor.to_device ~device:(Device.Cuda 0)
   @@ Tensor.stack ~dim:0
   @@ List.map vs ~f:(fun v -> Bitarray.to_torch (pixels v))
+
+let embed params = if Params.get params embed then nn_embed params else no_embed
 
 let dist params =
   let embed = embed params in
