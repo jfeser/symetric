@@ -140,6 +140,15 @@ module List = struct
     in
     Exn.protectx ~f:(List.mapi ~f) ~finally:(fun _ -> remove bar) l
 
+  let filter ?name l ~f =
+    let bar = basic_bar ?name @@ List.length l in
+    add bar;
+    let f i x =
+      update bar i;
+      f x
+    in
+    Exn.protectx ~f:(List.filteri ~f) ~finally:(fun _ -> remove bar) l
+
   let concat_map ?name l ~f =
     let bar = basic_bar ?name @@ List.length l in
     add bar;

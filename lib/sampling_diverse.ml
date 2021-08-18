@@ -74,12 +74,12 @@ include struct
     let module F = Flat_program.Make (Op) in
     let eval = F.eval (Value.eval params) in
     let output = Bench.output bench in
-    let search ?(view = ignore) synth center k =
+    let search ?(view = ignore) _synth center k =
       try
         Tree_ball.Rename_leaves.stochastic
           (module Op)
           Cad_gen_pattern.rename center ~n:100
-          ~score:(fun p -> synth#distance output @@ eval p)
+          ~score:(fun p -> Cad_conc.jaccard output @@ eval p)
           (fun p _ ->
             let v = eval p in
             view v;
@@ -89,16 +89,17 @@ include struct
     search
 
   let sample_pairwise dist retain_thresh states old new_ =
-    let min_dists =
-      Dumb_progress.List.map ~name:"sampling" new_ ~f:(fun new_idx ->
-          let min_dist =
-            List.map old ~f:(fun old_idx -> dist states.(old_idx) states.(new_idx))
-            |> List.min_elt ~compare:[%compare: float]
-            |> Option.value ~default:Float.infinity
-          in
-          (min_dist, new_idx))
+    Dumb_progress.List.filter ~name:"sampling" new_ ~f:(fun new_idx ->
+        List.for_all old ~f:(fun old_idx -> Float.(dist states.(old_idx) states.(new_idx) >= retain_thresh)))
+
+  let sample_incr dist retain_thresh states _ new_ =
+    let rec select in_ out =
+      let next_state =
+        List.find out ~f:(fun i -> List.for_all in_ ~f:(fun j -> Float.(dist states.(i) states.(j) >= retain_thresh)))
+      in
+      match next_state with Some v -> select (v :: in_) (List.filter out ~f:(fun i -> i <> v)) | None -> in_
     in
-    List.filter min_dists ~f:(fun (d, _) -> Float.(d >= retain_thresh)) |> List.map ~f:Tuple.T2.get2
+    select [] new_
 
   type stat = { mutable size : int }
 
@@ -188,10 +189,15 @@ include struct
 
       method print_stats =
         let hit_rate = Array.fold component_table ~f:(fun r s -> r + if s.hit_count > 0 then 1 else 0) ~init:0 in
+        let hit_max = Array.fold component_table ~f:(fun r s -> max r s.hit_count) ~init:0 in
         let keep_rate = Array.fold component_table ~f:(fun r s -> r + if s.keep_count > 0 then 1 else 0) ~init:0 in
+        let keep_max = Array.fold component_table ~f:(fun r s -> max r s.keep_count) ~init:0 in
         let states_seen = Array.fold component_table ~f:(fun r s -> r + s.hit_count) ~init:0 in
-        Fmt.epr "Hit coverage: %d/%d\nKeep coverage: %d/%d\nStates seen: %d\n" hit_rate (Array.length component_table)
-          keep_rate (Array.length component_table) states_seen
+        let hit_target = component_table.(component _output).hit_count > 0 in
+        Fmt.epr
+          "Hit coverage: %d/%d\nHit max: %d\nKeep coverage: %d/%d\nKeep max: %d\nStates seen: %d\nHit target: %b\n"
+          hit_rate (Array.length component_table) hit_max keep_rate (Array.length component_table) keep_max states_seen
+          hit_target
 
       method hit_state v =
         let stats = self#get_stats v in
@@ -201,7 +207,7 @@ include struct
         let stats = self#get_stats v in
         stats.keep_count <- stats.keep_count + 1
 
-      method distance = _dist
+      method distance v v' = if component v = component v' then 0.0 else Float.infinity
 
       method dedup_states states =
         states
@@ -253,7 +259,7 @@ include struct
         in
         let old = List.range (List.length new_states) (Array.length all_states)
         and new_ = List.range 0 (List.length new_states) in
-        sample_pairwise self#distance retain_thresh all_states old new_ |> List.map ~f:(fun i -> new_states_a.(i))
+        sample_incr self#distance retain_thresh all_states old new_ |> List.map ~f:(fun i -> new_states_a.(i))
 
       method sample_states cost new_states =
         let to_keep =
