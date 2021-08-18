@@ -36,70 +36,19 @@ include struct
   module Parent = Baseline.Make (Lang)
   module Search_state = Parent.Search_state
 
-  let bounded_search params bench width =
-    let ops = Bench.ops bench in
-
-    let output = Bench.output bench in
-
-    let search ?(view = ignore) _ center k =
-      let check_program p =
-        let v = Program.eval (Value.eval params) p in
-        view v;
-        if Value.equal v output then k p
-      in
-      try Tree_ball.Rename_insert_delete.ball (module Op) ops center width check_program
-      with Program.Eval_error e -> raise @@ Program.Eval_error [%message (center : Op.t Program.t) (e : Sexp.t)]
-    in
-    search
-
-  let stochastic_search params bench =
-    let ops = Bench.ops bench and output = Bench.output bench in
-    let search ?(view = ignore) synth center k =
-      try
-        Tree_ball.Rename_insert_delete.stochastic
-          (module Op)
-          ~score:(fun p -> 1.0 -. (synth#distance output @@ Program.eval (Value.eval params) p))
-          ops center
-          (fun p _ ->
-            let v = Program.eval (Value.eval params) p in
-            view v;
-            if [%compare.equal: Value.t] v output then k p)
-      with Program.Eval_error e -> raise @@ Program.Eval_error [%message (center : Op.t Program.t) (e : Sexp.t)]
-    in
-    search
-
-  let leaf_search params bench =
-    let module Op = Cad_op in
-    let module Value = Cad_conc in
-    let module F = Flat_program.Make (Op) in
-    let eval = F.eval (Value.eval params) in
-    let output = Bench.output bench in
-    let search ?(view = ignore) _synth center k =
-      try
-        Tree_ball.Rename_leaves.stochastic
-          (module Op)
-          Cad_gen_pattern.rename center ~n:100
-          ~score:(fun p -> Cad_conc.jaccard output @@ eval p)
-          (fun p _ ->
-            let v = eval p in
-            view v;
-            if [%compare.equal: Value.t] v output then k @@ F.to_program p)
-      with Program.Eval_error e -> raise @@ Program.Eval_error [%message (center : Op.t Program.t) (e : Sexp.t)]
-    in
-    search
-
   let sample_pairwise dist retain_thresh states old new_ =
     Dumb_progress.List.filter ~name:"sampling" new_ ~f:(fun new_idx ->
         List.for_all old ~f:(fun old_idx -> Float.(dist states.(old_idx) states.(new_idx) >= retain_thresh)))
 
-  let sample_incr dist retain_thresh states _ new_ =
+  let sample_incr dist retain_thresh states _old new_ =
+    let gt_thresh i j = Float.(dist states.(i) states.(j) >= retain_thresh) in
     let rec select in_ out =
       let next_state =
-        List.find out ~f:(fun i -> List.for_all in_ ~f:(fun j -> Float.(dist states.(i) states.(j) >= retain_thresh)))
+        List.find out ~f:(fun i -> List.for_all in_ ~f:(gt_thresh i) (* && Range.for_all old ~f:(gt_thresh i) *))
       in
       match next_state with Some v -> select (v :: in_) (List.filter out ~f:(fun i -> i <> v)) | None -> in_
     in
-    select [] new_
+    select [] @@ Range.to_list new_
 
   type stat = { mutable size : int }
 
@@ -130,7 +79,7 @@ include struct
    *     stats.size <- stats.size + 1);
    * Fmt.epr "States: %d, Classes: %d\n" (Hashtbl.length classes) (Hashtbl.length class_stats) *)
 
-  let local_search_equivalent params =
+  let local_search_equivalent ?(k = 1) params =
     let enum = new Parent.synthesizer params in
     let (_ : _) = enum#run in
     let ss = enum#get_search_state in
@@ -143,19 +92,19 @@ include struct
     let states = Search_state.states ss in
     Dumb_progress.with_bar (Dumb_progress.basic_bar @@ List.length states) @@ fun bar ->
     List.iteri states ~f:(fun i v ->
-        let _cost = Option.value_exn (Search_state.cost_of ss v) in
         Dumb_progress.update bar i;
-        let p = Search_state.program_exn ss v in
+        for _ = 0 to k do
+          let p = Search_state.random_program_exn ss v in
 
-        let n_ball = ref 0 in
-        Tree_ball.Rename_leaves.enumerate_d3
-          (module Op)
-          Cad_gen_pattern.all_renames p
-          (fun p' ->
-            incr n_ball;
-            let v' = F.eval (Value.eval params) p' in
-            let _cost' = Option.value_exn (Search_state.cost_of ss v') in
-            (* if cost = cost' then *) G.add_edge g v v'));
+          let n_ball = ref 0 in
+          Tree_ball.Rename_leaves.enumerate_d3
+            (module Op)
+            Cad_gen_pattern.all_renames p
+            (fun p' ->
+              incr n_ball;
+              let v' = F.eval (Value.eval params) p' in
+              (* if cost = cost' then *) G.add_edge g v v')
+        done);
     let n_components, comp_of = C.scc g in
     print_s [%message (List.length states : int) (n_components : int)];
     (n_components, comp_of)
@@ -181,9 +130,9 @@ include struct
 
       val search_neighbors =
         match Params.get params local_search with
-        | `Bounded -> bounded_search params _bench (Params.get params ball_width)
-        | `Stochastic -> stochastic_search params _bench
-        | `Leaf -> leaf_search params _bench
+        | `Bounded -> Local_search.bounded params _bench (Params.get params ball_width)
+        | `Stochastic -> Local_search.stochastic params _bench
+        | `Leaf -> Local_search.leaf params _bench
 
       method get_stats v = component_table.(component v)
 
@@ -241,7 +190,7 @@ include struct
                 if Float.(d < !closest_dist) then (
                   closest_dist := d;
                   closest := Some v))
-              self center
+              self#distance center
             @@ fun p ->
             let final_value_dist = Params.get params final_value_dist
             and final_program_dist = Params.get params final_program_dist in
@@ -257,8 +206,8 @@ include struct
         let all_states =
           Array.of_list @@ List.map new_states ~f:(fun (v, _, _) -> v) @ Search_state.states search_state
         in
-        let old = List.range (List.length new_states) (Array.length all_states)
-        and new_ = List.range 0 (List.length new_states) in
+        let old = Range.create (List.length new_states) (Array.length all_states)
+        and new_ = Range.create 0 (List.length new_states) in
         sample_incr self#distance retain_thresh all_states old new_ |> List.map ~f:(fun i -> new_states_a.(i))
 
       method sample_states cost new_states =
@@ -274,16 +223,19 @@ include struct
             let n_keep = Int.pow cost retain_power + 5 in
             List.take states n_keep |> List.map ~f:Tuple.T2.get2
         in
-        Fmt.epr "Retained %d/%d new states\n%!" (List.length to_keep) (List.length new_states);
+        Fmt.epr "Retained %d/%d new states\n\n%!" (List.length to_keep) (List.length new_states);
+        if cost = 1 then (
+          List.iter to_keep ~f:(fun (v, _, _) -> Fmt.epr "Kept:\n%a\n" Cad_conc.pprint v);
+          List.iter new_states ~f:(fun (v, _, _) -> Fmt.epr "State:\n%a\n" Cad_conc.pprint v));
         to_keep
 
       method! generate_states cost =
         let new_states = super#generate_states cost |> self#dedup_states in
         List.iter new_states ~f:(fun (v, _, _) -> self#hit_state v);
-        self#print_stats;
-        self#search_close_states new_states;
         let sampled_states = self#sample_states cost new_states in
         List.iter new_states ~f:(fun (v, _, _) -> self#keep_state v);
+        self#print_stats;
+        self#search_close_states new_states;
         sampled_states
 
       method! run =

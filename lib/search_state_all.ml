@@ -11,7 +11,7 @@ module Make (Lang : Lang_intf.S) = struct
   type t = {
     max_cost : int;
     values : Lang.Value.t Queue.t Hashtbl.M(Attr).t;
-    paths : (Lang.Op.t * Lang.Value.t list) Queue.t Hashtbl.M(Lang.Value).t;
+    paths : (int * Lang.Op.t * Lang.Value.t list) Queue.t Hashtbl.M(Lang.Value).t;
   }
 
   let create max_cost = { max_cost; values = Hashtbl.create (module Attr); paths = Hashtbl.create (module Lang.Value) }
@@ -24,13 +24,13 @@ module Make (Lang : Lang_intf.S) = struct
   let mem ctx = Hashtbl.mem ctx.paths
 
   let insert ctx cost state op inputs =
-    if not (mem ctx state) then (
-      let type_ = Lang.Op.ret_type op in
-      let q = Hashtbl.find_or_add ctx.values { cost; type_ } ~default:Queue.create in
-      Queue.enqueue q state;
+    (if not (mem ctx state) then
+     let type_ = Lang.Op.ret_type op in
+     let q = Hashtbl.find_or_add ctx.values { cost; type_ } ~default:Queue.create in
+     Queue.enqueue q state);
 
-      let paths = Hashtbl.find_or_add ctx.paths state ~default:Queue.create in
-      Queue.enqueue paths (op, inputs))
+    let paths = Hashtbl.find_or_add ctx.paths state ~default:Queue.create in
+    Queue.enqueue paths (cost, op, inputs)
 
   let states ctx = Hashtbl.keys ctx.paths
 
@@ -39,13 +39,13 @@ module Make (Lang : Lang_intf.S) = struct
   let print_stats ctx = Fmt.epr "Total: %d\n%!" (length ctx)
 
   let rec program_exn ctx state =
-    let op, args = Queue.peek_exn @@ Hashtbl.find_exn ctx.paths state in
+    let _, op, args = Queue.peek_exn @@ Hashtbl.find_exn ctx.paths state in
     Program.Apply (op, List.map args ~f:(program_exn ctx))
 
-  let rec random_program_exn ctx state =
-    let q = Hashtbl.find_exn ctx.paths state in
-    let op, args = Queue.get q (Random.int @@ Queue.length q) in
-    Program.Apply (op, List.map args ~f:(random_program_exn ctx))
+  let rec random_program_exn ctx max_cost state =
+    let q = Hashtbl.find_exn ctx.paths state |> Queue.filter ~f:(fun (c, _, _) -> c <= max_cost) in
+    let c, op, args = Queue.get q (Random.int @@ Queue.length q) in
+    Program.Apply (op, List.map args ~f:(random_program_exn ctx (c - 1)))
 
   let program_of_op_args_exn ctx op args = Program.Apply (op, List.map args ~f:(program_exn ctx))
 
@@ -57,4 +57,6 @@ module Make (Lang : Lang_intf.S) = struct
     Hashtbl.to_alist ctx.values
     |> List.find_map ~f:(fun (k, vs) ->
            if Queue.mem vs v ~equal:[%compare.equal: Lang.Value.t] then Some k.cost else None)
+
+  let random_program_exn ctx state = random_program_exn ctx Int.max_value state
 end

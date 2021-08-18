@@ -45,14 +45,18 @@ let move_to x y s =
   Cad_op.create op'
 
 let grid xmax ymax n shape =
-  List.range 0 n
-  |> List.map ~f:(fun x ->
-         List.range 0 n
-         |> List.map ~f:(fun y ->
-                let x = Float.(round @@ (of_int x * of_int xmax / of_int n))
-                and y = Float.(round @@ (of_int y * of_int ymax / of_int n)) in
-                move_to x y shape))
-  |> List.concat
+  let ret =
+    List.range 0 n
+    |> List.map ~f:(fun x ->
+           List.range 0 n
+           |> List.map ~f:(fun y ->
+                  let x = Float.(round @@ (of_int x * of_int xmax / of_int n))
+                  and y = Float.(round @@ (of_int y * of_int ymax / of_int n)) in
+                  move_to x y shape))
+    |> List.concat
+  in
+  [%test_result: int] ~expect:(n * n) (List.length ret);
+  ret
 
 let xmax = 30
 
@@ -202,7 +206,7 @@ let mk_bench params =
     let solution = B.Search_state.random_program_exn search_state output in
     if not (Hashtbl.mem all_states output) then (
       add_state output class_;
-      let solution_ops = List.concat_map shape_ops ~f:all_renames @ other_ops in
+      let solution_ops = shapes @ other_ops in
       let bench =
         { Cad.Bench.ops = solution_ops; input = { xmax; ymax }; output; solution = Some solution; filename = None }
       in
