@@ -203,16 +203,9 @@ module Rename_insert_delete = struct
           R.Value.eval () op [ t ]
         in
         let v' = score t' in
-        let ratio = v' /. v in
+        let ratio = v /. v' in
         let accept = Random.float 1.0 in
         if Float.(accept < ratio) then loop (i + 1) t' v' else loop (i + 1) t v
     in
     loop 0 t (score t)
-
-  let stochastic (type op type_) (module Op : Op_intf.S with type t = op and type type_ = type_) (ops : op list) ?n
-      ?(k = 10000) ~score t f =
-    let module R = Rewrite.Make (Op) in
-    for _ = 0 to k do
-      stochastic (module Op) ?n ops ~score t f
-    done
 end

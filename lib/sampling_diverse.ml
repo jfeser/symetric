@@ -26,8 +26,8 @@ include struct
 
   let local_search =
     Spec.add spec
-    @@ Param.symbol ~name:"local" ~doc:" kind of local search" ~default:`Bounded
-         [ (`Bounded, "bounded"); (`Stochastic, "stochastic"); (`Leaf, "leaf") ]
+    @@ Param.symbol ~name:"local" ~doc:" kind of local search" ~default:`Stochastic
+         [ (`Stochastic, "stochastic"); (`Leaf, "leaf") ]
 end
 
 include struct
@@ -130,9 +130,8 @@ include struct
 
       val search_neighbors =
         match Params.get params local_search with
-        | `Bounded -> Local_search.bounded params _bench (Params.get params ball_width)
-        | `Stochastic -> Local_search.stochastic params _bench
-        | `Leaf -> Local_search.leaf params _bench
+        | `Stochastic -> Local_search.full ~target:(Bench.output _bench) params
+        | `Leaf -> Local_search.leaf ~target:(Bench.output _bench) params
 
       method get_stats v = component_table.(component v)
 
@@ -175,7 +174,7 @@ include struct
         let closest = ref None in
         let closest_dist = ref Float.infinity in
 
-        List.iter close_states ~f:(fun (d, _, op, args) ->
+        List.iter close_states ~f:(fun (_, _, op, args) ->
             let center = Search_state.program_of_op_args_exn search_state op args in
             let center_value = Program.eval (Value.eval params) center in
             let center_dist = self#distance center_value _output in
@@ -184,19 +183,19 @@ include struct
               closest_dist := center_dist;
               closest := Some (Program.eval (Value.eval params) center));
 
-            search_neighbors
-              ~view:(fun v ->
-                let d = self#distance _output v in
+            search_neighbors center (fun p d ->
+                let v = Program.eval (Value.eval params) p in
+
                 if Float.(d < !closest_dist) then (
                   closest_dist := d;
-                  closest := Some v))
-              self#distance center
-            @@ fun p ->
-            let final_value_dist = Params.get params final_value_dist
-            and final_program_dist = Params.get params final_program_dist in
-            final_value_dist := d;
-            final_program_dist := Float.of_int @@ Tree_dist.zhang_sasha ~eq:[%compare.equal: Op.t] center p;
-            raise @@ Parent.Done p);
+                  closest := Some v);
+
+                if [%compare.equal: Value.t] v _output then (
+                  let final_value_dist = Params.get params final_value_dist
+                  and final_program_dist = Params.get params final_program_dist in
+                  final_value_dist := d;
+                  final_program_dist := Float.of_int @@ Tree_dist.zhang_sasha ~eq:[%compare.equal: Op.t] center p;
+                  raise @@ Parent.Done p)));
 
         Option.iter !closest
           ~f:(Fmt.epr "Goal:\n%a\nClosest (%f):\n%a\n%!" Cad_conc.pprint _output !closest_dist Cad_conc.pprint)

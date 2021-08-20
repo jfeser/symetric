@@ -6,9 +6,15 @@ EXE=bin/lazy_cegis.exe
 FULL_EXE=$BUILD_DIR/$EXE
 
 dune build --profile=release "$EXE"
-rm -f results.csv jobs
-find random_pat_size_9/ > $WORKDIR/jobs
-parallel --jobs 2 --eta --joblog "$WORKDIR/joblog" --timeout 600 --colsep ' ' \
-         "$FULL_EXE cad-diverse-nn -max-cost 10 -w 2 -d 0.1 -r 0.1 -local bounded -print-json true -diversity false -embed-file encoder_best.pt.tar {1} 2> /dev/null" \
+rm -f jobs
+find bench/random_small_pat_size_8_leaf_only -type f > $WORKDIR/jobs
+
+parallel --eta --joblog "$WORKDIR/joblog" --timeout 600 --colsep ' ' \
+         "$FULL_EXE cad-baseline -max-cost 8 -print-json true {1} 2> /dev/null" \
          :::: $WORKDIR/jobs \
-    >> "$WORKDIR/results.csv"
+    >> "$WORKDIR/baseline_results"
+
+# parallel --eta --joblog "$WORKDIR/joblog" --timeout 600 --colsep ' ' \
+#          "$FULL_EXE cad-local -max-cost 8 -print-json true {1} 2> /dev/null" \
+#          :::: $WORKDIR/jobs \
+#     >> "$WORKDIR/local_results"
