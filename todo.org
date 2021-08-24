@@ -3,3 +3,8 @@
 * TODO Figure out how to compare quality of learned distance w/ jaccard
 * DONE Learn a distance function with a larger training set
 * DONE Use online triplet selection to deal with collapsing model
+
+* TODO Implement renaming rewriter
+* TODO Implement push-pull rewriter
+* TODO Split rewriters into collections of rewrite rules
+* TODO Implement test for local rewriters (random walk, then try to get back)

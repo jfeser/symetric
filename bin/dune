@@ -52,3 +52,10 @@
  (libraries core staged_synth)
  (preprocess
   (pps ppx_jane)))
+
+(executable
+ (name rewrite)
+ (modules rewrite)
+ (libraries core iter staged_synth)
+ (preprocess
+  (pps ppx_jane)))

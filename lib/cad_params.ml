@@ -1,6 +1,6 @@
 open Dumb_params
 
-let bench =
+let bench_param =
   (module struct
     type t = Cad_bench.t [@@deriving sexp_of]
 
@@ -20,4 +20,4 @@ let bench =
 
 let spec = Spec.create ~name:"cad-params" ()
 
-let bench = Spec.add spec @@ Param.create bench
+let bench = Spec.add spec @@ Param.create bench_param

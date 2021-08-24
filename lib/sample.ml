@@ -64,4 +64,8 @@ module Incremental = struct
       incr idx
     and get_sample () = Set.to_list !sample in
     { add; get_sample }
+
+  let of_iter sampler iter =
+    iter sampler.add;
+    sampler.get_sample ()
 end

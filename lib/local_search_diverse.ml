@@ -3,6 +3,12 @@ include struct
 
   let spec = Spec.inherit_ Baseline.spec "local-search-diverse"
 
+  let search_close_states_time =
+    Spec.add spec @@ Param.(mut @@ float ~name:"search-close-states-time" ~doc:"" ~init:(`Default (Fun.const 0.0)) ())
+
+  let sample_states_time =
+    Spec.add spec @@ Param.(mut @@ float ~name:"sample-states-time" ~doc:"" ~init:(`Default (Fun.const 0.0)) ())
+
   let (_ : _) = Spec.add spec @@ Param.const_str ~name:"synth" "local-search-diverse"
 end
 
@@ -14,8 +20,18 @@ include struct
 
   let local_search = Local_search.full
 
+  let with_time t f =
+    let start_time = Time.now () in
+    let ret = f () in
+    let end_time = Time.now () in
+    (t := !t +. Time.Span.(to_ms Time.(diff end_time start_time)));
+    ret
+
   class synthesizer params =
-    let _bench = Params.get params bench and _search_width = 100 in
+    let _bench = Params.get params bench
+    and _search_width = 100
+    and _search_close_states_time = Params.get params search_close_states_time
+    and _sample_states_time = Params.get params sample_states_time in
     object (self)
       inherit Parent.synthesizer params as super
 
@@ -29,6 +45,7 @@ include struct
         |> List.dedup_and_sort ~compare:(fun (s, _, _) (s', _, _) -> [%compare: Value.t] s s')
 
       method search_close_states new_states =
+        with_time _search_close_states_time @@ fun () ->
         let search_states = List.filter new_states ~f:(fun (v, _, _) -> Float.(Cad_conc.jaccard _output v < 0.05)) in
         Fmt.epr "Searching %d/%d neighborhoods\n%!" (List.length search_states) (List.length new_states);
 
@@ -38,6 +55,7 @@ include struct
             if [%compare.equal: Value.t] (Program.eval (Value.eval params) p) _output then raise @@ Parent.Done p)
 
       method sample_diverse_states new_states =
+        with_time _sample_states_time @@ fun () ->
         let new_states_a = Array.of_list new_states in
         let classes =
           List.mapi new_states ~f:(fun i ((v, _, _) as x) -> (v, (i, x, Union_find.create i)))
@@ -46,12 +64,14 @@ include struct
         let module F = Flat_program.Make (Op) in
         Hashtbl.iteri classes ~f:(fun ~key:_ ~data:(i, (_, op, args), c) ->
             if Union_find.get c = i then
-              let p = Search_state.program_of_op_args_exn search_state op args in
-              local_search ~n:sample_width params p (fun p _ ->
-                  let v' = Program.eval (Value.eval params) p in
+              for _ = 0 to 2 do
+                let p = Search_state.program_of_op_args_exn search_state op args in
+                local_search ~n:sample_width params p (fun p _ ->
+                    let v' = Program.eval (Value.eval params) p in
 
-                  (* if [%compare.equal: Value.t] v' _output then raise @@ Parent.Done p; *)
-                  match Hashtbl.find classes v' with Some (_, _, c') -> Union_find.union c c' | None -> ()));
+                    (* if [%compare.equal: Value.t] v' _output then raise @@ Parent.Done p; *)
+                    match Hashtbl.find classes v' with Some (_, _, c') -> Union_find.union c c' | None -> ())
+              done);
 
         let to_keep =
           Hashtbl.data classes |> List.map ~f:Tuple.T3.get3 |> List.map ~f:Union_find.get
@@ -62,9 +82,9 @@ include struct
         to_keep
 
       method! generate_states cost =
-        let new_states = super#generate_states cost |> self#dedup_states |> self#sample_diverse_states in
+        let new_states = super#generate_states cost |> self#dedup_states in
         self#search_close_states new_states;
-        new_states
+        self#sample_diverse_states new_states
 
       method! run =
         let rec reduce_sample_width () =
@@ -72,7 +92,7 @@ include struct
           | Some p -> Some p
           | None ->
               Search_state.clear search_state;
-              sample_width <- Int.max (sample_width / 2) 1;
+              sample_width <- sample_width / 2;
               reduce_sample_width ()
         in
         reduce_sample_width ()
