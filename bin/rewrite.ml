@@ -6,8 +6,6 @@ include struct
   open Dumb_params
 
   let spec = Spec.create ~name:"rewrite" ()
-
-  let bench = Spec.add spec @@ Param.create Cad_params.bench_param
 end
 
 let stochastic ?(n = 5) ~score ~propose t f =
@@ -58,41 +56,79 @@ module Rule = struct
   type pat = (Op.t, int) Local_search.Pattern.t [@@deriving compare, sexp]
 
   type t = pat * pat [@@deriving compare, sexp]
+
+  let apply x y = Local_search.Pattern.Apply (x, y)
 end
 
-let mean iter =
-  let num = ref 0.0 and den = ref 0.0 in
-  iter (fun x ->
-      num := !num +. x;
-      den := !den +. 1.0);
-  !num /. !den
+let mean ~n iter = Iter.sumf iter /. n
 
-let run params benchs =
-  let benchs = List.map benchs ~f:Bench.load in
-  let bench = List.hd_exn benchs in
-  let ops = Bench.ops bench in
-  let eval = Program.eval (Value.eval params) in
+let std ~n ~u iter =
+  let sum = Iter.map (fun x -> Float.square (x -. u)) iter |> Iter.sumf in
+  Float.(sqrt (1.0 /. (n -. 1.0) *. sum))
 
-  let avg_dist =
-    Local_search.Pattern.rename_patterns ops
-    |> List.map ~f:(fun (r, r') -> if [%compare: Rule.pat] r r' <= 0 then (r, r') else (r', r))
-    |> List.dedup_and_sort ~compare:[%compare: Rule.t]
-    |> List.map ~f:(fun rule ->
-           let avg =
-             Iter.of_list benchs
-             |> Iter.map (fun b ->
-                    let solution = Cad.Bench.solution_exn b in
-                    let target = Bench.output b in
-                    Iter.forever (fun () ->
-                        Option.map (sample_step rule solution) ~f:(fun t' -> Cad_conc.jaccard target (eval t')))
-                    |> Iter.take 100 |> Iter.filter_map Fun.id)
-             |> Iter.concat |> mean
-           in
-           (rule, avg))
-    |> List.sort ~compare:(fun (_, d) (_, d') -> [%compare: float] d d')
+let push_pull_replicate ops =
+  let repls = List.filter ops ~f:(fun op -> match Op.value op with Op.Replicate _ -> true | _ -> false) in
+  let open Rule in
+  List.concat_map [ Op.union; Op.inter ] ~f:(fun binary ->
+      List.concat_map repls ~f:(fun r ->
+          [
+            (apply binary [ apply r [ Var 0 ]; Var 1 ], apply r [ apply binary [ Var 0; Var 1 ] ]);
+            (apply binary [ Var 0; apply r [ Var 1 ] ], apply r [ apply binary [ Var 0; Var 1 ] ]);
+          ]))
+
+let mk_hard_term params size =
+  let open Cad_gen_pattern in
+  let other_ops = replicates @ [ Cad_op.union; Cad_op.inter ] in
+  let shape_ops = List.take (List.permute shapes) 4 in
+  let ops = shape_ops @ other_ops in
+  let params =
+    Dumb_params.set params Cad_params.bench
+      { ops; input = { xmax; ymax }; output = Cad_conc.dummy; solution = None; filename = None }
   in
 
-  print_s [%message (avg_dist : (Rule.t * float) list)]
+  let filler = new filler params in
+  let search_state = filler#build_search_state in
+
+  let value = List.hd_exn @@ List.permute @@ B.Search_state.search ~cost:size ~type_:Cad_type.output search_state in
+  let term = B.Search_state.random_program_exn search_state value in
+  (term, value)
+
+let of_queue q f = Queue.iter q ~f
+
+let update_distances eval patterns term target =
+  let target_dist t' = Cad_conc.jaccard target (eval t') in
+  List.iter patterns ~f:(fun (rule, distances) ->
+      Iter.forever (fun () -> sample_step rule term)
+      |> Iter.take 100 |> Iter.filter_map Fun.id
+      |> Iter.iter (fun t' -> Queue.enqueue distances @@ target_dist t'))
+
+let run ?(size = 6) ?(n_terms = 100) params =
+  let params = Dumb_params.set params Baseline.max_cost size in
+  let ops = Cad_gen_pattern.ops in
+  let eval = Program.eval (Value.eval params) in
+
+  let patterns =
+    Local_search.Pattern.rename_patterns ops @ push_pull_replicate ops
+    |> List.map ~f:(fun (r, r') -> if [%compare: Rule.pat] r r' <= 0 then (r, r') else (r', r))
+    |> List.dedup_and_sort ~compare:[%compare: Rule.t]
+  in
+
+  let distances = List.map patterns ~f:(fun p -> (p, Queue.create ())) in
+  for _ = 0 to n_terms do
+    let term, value = mk_hard_term params size in
+    update_distances eval distances term value
+  done;
+
+  let distances_summary =
+    List.map distances ~f:(fun (p, dists) ->
+        let n = Float.of_int @@ Queue.length dists in
+        let mean = mean ~n @@ of_queue dists in
+        let std = std ~u:mean ~n @@ of_queue dists in
+        (p, mean, std, n))
+    |> List.sort ~compare:(fun (_, d, _, _) (_, d', _, _) -> [%compare: float] d d')
+  in
+
+  print_s [%message (distances_summary : (Rule.t * float * float * float) list)]
 
 (* let min_found = 400 in
  * let all_rules =
@@ -123,8 +159,7 @@ let cli =
   let open Command.Let_syntax in
   Command.basic ~summary:""
   @@ [%map_open
-       let params = Dumb_params.Spec.(cli @@ union [ Cad_conc.spec; spec ])
-       and benchs = anon @@ sequence ("benchs" %: string) in
-       fun () -> run params benchs]
+       let params = Dumb_params.Spec.(cli @@ union [ Cad_conc.spec; spec ]) in
+       fun () -> run params]
 
 let () = Command.run cli

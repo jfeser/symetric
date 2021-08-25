@@ -4,7 +4,9 @@
 * DONE Learn a distance function with a larger training set
 * DONE Use online triplet selection to deal with collapsing model
 
-* TODO Implement renaming rewriter
-* TODO Implement push-pull rewriter
-* TODO Split rewriters into collections of rewrite rules
+* DONE Implement renaming rewriter
+* DONE Implement push-pull rewriter
+* DONE Split rewriters into collections of rewrite rules
 * TODO Implement test for local rewriters (random walk, then try to get back)
+** TODO Sample programs, apply all rewrites, record distances, repeat 
+** TODO Save rules with distances and use as weighted rewriter
