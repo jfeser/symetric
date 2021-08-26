@@ -1,3 +1,4 @@
+open Std
 include Cad_conc0
 
 include struct
@@ -9,11 +10,42 @@ include struct
 
   let raw_eval_calls = Spec.add spec @@ Param.float_ref ~name:"raw-eval-calls" ()
 
-  let embed = Spec.add spec @@ Param.bool ~name:"embed" ~init:(`Cli (Some true)) ~doc:" embed or not" ()
-
   let embed_fn =
     Spec.add spec
     @@ Param.string ~name:"embed-file" ~init:(`Cli (Some "")) ~doc:" file containing neural network for embedding" ()
+end
+
+module Ctx = struct
+  type t = {
+    xlen : int;
+    ylen : int;
+    embedder : Torch.Module.t option;
+    eval_calls : float ref;
+    raw_eval_calls : float ref;
+  }
+
+  let create ?stats ?embed_file ~xlen ~ylen () =
+    let stats = Option.value_lazy stats ~default:(lazy (Stats.create ())) in
+    {
+      xlen;
+      ylen;
+      embedder = Option.map embed_file ~f:Torch.Module.load;
+      eval_calls = Stats.add_probe_exn stats "eval-calls";
+      raw_eval_calls = Stats.add_probe_exn stats "raw-eval-calls";
+    }
+
+  let of_params params =
+    let bench = Params.get params Cad_params.bench in
+    let xlen = bench.Cad_bench.input.xmax and ylen = bench.Cad_bench.input.ymax in
+    let embed_fn = Params.get params embed_fn in
+    let embedder = Option.map ~f:Torch.Module.load @@ Option.some_if String.(embed_fn = "") embed_fn in
+    {
+      xlen;
+      ylen;
+      embedder;
+      eval_calls = Params.get params eval_calls;
+      raw_eval_calls = Params.get params raw_eval_calls;
+    }
 end
 
 let iidx b x y =
@@ -38,14 +70,12 @@ let replicate_is_set repl scene pt =
   in
   loop repl.count pt
 
-let init params ~f =
-  let bench = Params.get params Cad_params.bench in
-  let xlen = bench.Cad_bench.input.xmax and ylen = bench.Cad_bench.input.ymax in
+let init (ctx : Ctx.t) ~f =
+  let xlen = ctx.xlen and ylen = ctx.ylen in
   create ~xlen ~ylen @@ Bitarray.init (xlen * ylen) ~f:(fun i -> f (pt' ~ylen i) i)
 
-let iinit params ~f =
-  let bench = Params.get params Cad_params.bench in
-  let xlen = bench.Cad_bench.input.xmax and ylen = bench.Cad_bench.input.ymax in
+let iinit (ctx : Ctx.t) ~f =
+  let xlen = ctx.xlen and ylen = ctx.ylen in
   create ~xlen ~ylen @@ Bitarray.init (xlen * ylen) ~f:(fun i -> f (i / ylen) (i mod ylen))
 
 let hamming c c' = Bitarray.hamming_distance (pixels c) (pixels c')
@@ -62,19 +92,17 @@ let normalize vecs =
   let lengths = Tensor.(clamp_min ~min:(Scalar.f 1e-12) @@ norm_except_dim ~v:vecs ~pow:1 ~dim:0) in
   Tensor.(vecs / lengths)
 
-let nn_embed params =
+let nn_embed model vs =
   let open Torch in
-  let model = Module.load @@ Params.get params embed_fn in
-  fun vs ->
-    let input =
-      Tensor.to_device ~device:(Device.Cuda 0)
-      @@ Tensor.stack ~dim:0
-      @@ List.map vs ~f:(fun v -> Tensor.reshape ~shape:[ 1; 30; 30 ] @@ Bitarray.to_torch (pixels v))
-    in
-    let vecs = Module.forward model [ input ] in
-    let lengths = Tensor.(clamp_min ~min:(Scalar.f 1e-12) @@ norm_except_dim ~v:vecs ~pow:2 ~dim:0) in
-    let vecs = Tensor.(vecs / lengths) in
-    vecs
+  let input =
+    Tensor.to_device ~device:(Device.Cuda 0)
+    @@ Tensor.stack ~dim:0
+    @@ List.map vs ~f:(fun v -> Tensor.reshape ~shape:[ 1; 30; 30 ] @@ Bitarray.to_torch (pixels v))
+  in
+  let vecs = Module.forward model [ input ] in
+  let lengths = Tensor.(clamp_min ~min:(Scalar.f 1e-12) @@ norm_except_dim ~v:vecs ~pow:2 ~dim:0) in
+  let vecs = Tensor.(vecs / lengths) in
+  vecs
 
 let no_embed vs =
   let open Torch in
@@ -83,10 +111,10 @@ let no_embed vs =
   @@ Tensor.stack ~dim:0
   @@ List.map vs ~f:(fun v -> Bitarray.to_torch (pixels v))
 
-let embed params = if Params.get params embed then nn_embed params else no_embed
+let embed (ctx : Ctx.t) = match ctx.embedder with Some model -> nn_embed model | None -> no_embed
 
-let dist params =
-  let embed = embed params in
+let dist ctx =
+  let embed = embed ctx in
   fun v v' -> Torch.Tensor.(to_float0_exn @@ norm_except_dim ~dim:0 ~pow:1 ~v:(embed [ v ] - embed [ v' ]))
 
 let edges c =
@@ -108,16 +136,16 @@ let fincr r = if Float.is_nan !r then r := 1.0 else r := !r +. 1.0
 
 exception Eval_error of Cad_op.t
 
-let eval_unmemoized params op args =
-  fincr (Params.get params eval_calls);
+let eval_unmemoized (ctx : Ctx.t) op args =
+  fincr ctx.eval_calls;
   match (Cad_op.value op, args) with
   | Cad_op.Inter, [ s; s' ] -> copy s ~pixels:(Bitarray.and_ (pixels s) (pixels s'))
   | Union, [ s; s' ] -> copy s ~pixels:(Bitarray.or_ (pixels s) (pixels s'))
-  | Circle c, [] -> init params ~f:(fun pt _ -> Float.(Vector2.(l2_dist c.center pt) <= c.radius))
+  | Circle c, [] -> init ctx ~f:(fun pt _ -> Float.(Vector2.(l2_dist c.center pt) <= c.radius))
   | Rect r, [] ->
-      init params ~f:(fun k _ ->
+      init ctx ~f:(fun k _ ->
           Float.(r.lo_left.x <= k.x && r.lo_left.y <= k.y && r.hi_right.x >= k.x && r.hi_right.y >= k.y))
-  | Replicate repl, [ s ] -> init params ~f:(fun pt _ -> replicate_is_set repl s pt)
+  | Replicate repl, [ s ] -> init ctx ~f:(fun pt _ -> replicate_is_set repl s pt)
   | _ -> raise (Eval_error op)
 
 let eval =
@@ -130,12 +158,12 @@ let eval =
     include Comparable.Make (T)
   end in
   let tbl = Hashtbl.create (module Key) in
-  let find_or_eval params op args =
-    fincr (Params.get params raw_eval_calls);
+  let find_or_eval (ctx : Ctx.t) op args =
+    fincr ctx.raw_eval_calls;
     match Hashtbl.find tbl (op, args) with
     | Some v -> v
     | None ->
-        let v = eval_unmemoized params op args in
+        let v = eval_unmemoized ctx op args in
         Hashtbl.set tbl ~key:(op, args) ~data:v;
         v
   in

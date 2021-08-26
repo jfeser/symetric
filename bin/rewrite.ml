@@ -34,6 +34,10 @@ let sample_step ((lhs, rhs) as rule) t =
   Local_search.Pattern.rewrite_all (rhs, lhs) t sampler.add;
   List.hd @@ sampler.get_sample ()
 
+let all_rewrites ((lhs, rhs) as rule) t k =
+  Local_search.Pattern.rewrite_all rule t k;
+  Local_search.Pattern.rewrite_all (rhs, lhs) t k
+
 let propose rules t =
   match List.permute rules |> List.find_map ~f:(fun r -> sample_step r t) with
   | Some t' -> t'
@@ -76,17 +80,26 @@ let push_pull_replicate ops =
             (apply binary [ Var 0; apply r [ Var 1 ] ], apply r [ apply binary [ Var 0; Var 1 ] ]);
           ]))
 
-let mk_hard_term params size =
-  let open Cad_gen_pattern in
-  let other_ops = replicates @ [ Cad_op.union; Cad_op.inter ] in
-  let shape_ops = List.take (List.permute shapes) 4 in
-  let ops = shape_ops @ other_ops in
-  let params =
-    Dumb_params.set params Cad_params.bench
-      { ops; input = { xmax; ymax }; output = Cad_conc.dummy; solution = None; filename = None }
-  in
+module B = Baseline.Make (Cad)
 
-  let filler = new filler params in
+class filler ctx =
+  object (self)
+    inherit B.synthesizer ctx
+
+    method build_search_state =
+      for cost = 0 to max_cost do
+        self#fill cost
+      done;
+      search_state
+  end
+
+let mk_hard_term ectx size =
+  let module Cgp = Cad_gen_pattern in
+  let other_ops = Cgp.replicates @ [ Cad_op.union; Cad_op.inter ] in
+  let shape_ops = List.take (List.permute Cgp.shapes) 4 in
+  let ops = shape_ops @ other_ops in
+
+  let filler = new filler (B.Ctx.create ~max_cost:size ectx ops Cad_conc.dummy ()) in
   let search_state = filler#build_search_state in
 
   let value = List.hd_exn @@ List.permute @@ B.Search_state.search ~cost:size ~type_:Cad_type.output search_state in
@@ -98,14 +111,21 @@ let of_queue q f = Queue.iter q ~f
 let update_distances eval patterns term target =
   let target_dist t' = Cad_conc.jaccard target (eval t') in
   List.iter patterns ~f:(fun (rule, distances) ->
-      Iter.forever (fun () -> sample_step rule term)
-      |> Iter.take 100 |> Iter.filter_map Fun.id
-      |> Iter.iter (fun t' -> Queue.enqueue distances @@ target_dist t'))
+      all_rewrites rule term
+      (* |> Iter.map (fun t' ->
+       *        let v' = eval t' in
+       *        if Float.(Random.float 1.0 < 0.01) then
+       *          Fmt.epr "Orig:\n%a\nTransformed:\n%a\n\n%!" Cad_conc.pprint target Cad_conc.pprint v';
+       *        t') *)
+      |> Iter.map target_dist
+      |> Iter.filter (fun d -> Float.(d > 0.0))
+      |> Iter.max ~lt:Float.( < )
+      |> Option.iter ~f:(Queue.enqueue distances))
 
-let run ?(size = 6) ?(n_terms = 100) params =
-  let params = Dumb_params.set params Baseline.max_cost size in
+let run ?(size = 6) ?(n_terms = 10000) () =
   let ops = Cad_gen_pattern.ops in
-  let eval = Program.eval (Value.eval params) in
+  let ectx = Value.Ctx.create ~xlen:Cad_gen_pattern.xmax ~ylen:Cad_gen_pattern.ymax () in
+  let eval = Program.eval (Value.eval ectx) in
 
   let patterns =
     Local_search.Pattern.rename_patterns ops @ push_pull_replicate ops
@@ -114,8 +134,9 @@ let run ?(size = 6) ?(n_terms = 100) params =
   in
 
   let distances = List.map patterns ~f:(fun p -> (p, Queue.create ())) in
-  for _ = 0 to n_terms do
-    let term, value = mk_hard_term params size in
+  for i = 1 to n_terms do
+    Fmt.epr "Term %d/%d\n%!" i n_terms;
+    let term, value = mk_hard_term ectx size in
     update_distances eval distances term value
   done;
 
@@ -130,36 +151,4 @@ let run ?(size = 6) ?(n_terms = 100) params =
 
   print_s [%message (distances_summary : (Rule.t * float * float * float) list)]
 
-(* let min_found = 400 in
- * let all_rules =
- *   Queue.of_list @@ List.permute
- *   @@ List.dedup_and_sort ~compare:[%compare: Rule.t]
- *   @@ List.map ~f:(fun (r, r') -> if [%compare: Rule.pat] r r' <= 0 then (r, r') else (r', r))
- *   @@ Local_search.Pattern.rename_patterns ops
- * in
- * let rec choose_rules last_found rules =
- *   match Queue.dequeue all_rules with
- *   | Some new_rule -> (
- *       try
- *         let found = ref 0 and tries = 1_000 in
- *         for _ = 0 to tries do
- *           let random = Option.value_exn (random_walk ~n:3 rules solution) in
- *           found := !found + if hill_climb ~n:100 rules target eval random then 1 else 0
- *         done;
- *         print_s
- *           [%message (last_found : int) (!found : int) (tries : int) (List.length rules : int) (new_rule : Rule.t)];
- * 
- *         if !found >= min_found then choose_rules !found (new_rule :: rules) else choose_rules last_found rules
- *       with No_proposal -> choose_rules last_found (new_rule :: rules))
- *   | None -> rules
- * in
- * ignore (choose_rules 0 [] : _) *)
-
-let cli =
-  let open Command.Let_syntax in
-  Command.basic ~summary:""
-  @@ [%map_open
-       let params = Dumb_params.Spec.(cli @@ union [ Cad_conc.spec; spec ]) in
-       fun () -> run params]
-
-let () = Command.run cli
+let () = run ()

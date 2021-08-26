@@ -80,7 +80,8 @@ include struct
    * Fmt.epr "States: %d, Classes: %d\n" (Hashtbl.length classes) (Hashtbl.length class_stats) *)
 
   let local_search_equivalent ?(k = 1) params =
-    let enum = new Parent.synthesizer params in
+    let enum = new Parent.synthesizer (Parent.Ctx.of_params params) in
+    let ectx = Value.Ctx.of_params params in
     let (_ : _) = enum#run in
     let ss = enum#get_search_state in
 
@@ -102,7 +103,7 @@ include struct
             Cad_gen_pattern.all_renames p
             (fun p' ->
               incr n_ball;
-              let v' = F.eval (Value.eval params) p' in
+              let v' = F.eval (Value.eval ectx) p' in
               (* if cost = cost' then *) G.add_edge g v v')
         done);
     let n_components, comp_of = C.scc g in
@@ -112,11 +113,10 @@ include struct
   type component_stat = { mutable hit_count : int; mutable keep_count : int }
 
   class synthesizer params =
-    let _bench = Params.get params bench in
-    let _dist = Cad_conc.dist params in
+    let _local_search = Params.get params local_search in
     let n_components, component = local_search_equivalent params in
     object (self)
-      inherit Parent.synthesizer params as super
+      inherit Parent.synthesizer (Parent.Ctx.of_params params) as super
 
       val search_thresh = Params.get params search_thresh
 
@@ -128,10 +128,12 @@ include struct
 
       val component_table = Array.init n_components ~f:(fun _ -> { hit_count = 0; keep_count = 0 })
 
-      val search_neighbors =
-        match Params.get params local_search with
-        | `Stochastic -> Local_search.full ~target:(Bench.output _bench) params
-        | `Leaf -> Local_search.leaf ~target:(Bench.output _bench) params
+      method dist = Cad_conc.dist eval_ctx
+
+      method local_search =
+        match _local_search with
+        | `Stochastic -> Local_search.full ~target:output ops eval_ctx
+        | `Leaf -> Local_search.leaf ~target:output eval_ctx
 
       method get_stats v = component_table.(component v)
 
@@ -141,7 +143,7 @@ include struct
         let keep_rate = Array.fold component_table ~f:(fun r s -> r + if s.keep_count > 0 then 1 else 0) ~init:0 in
         let keep_max = Array.fold component_table ~f:(fun r s -> max r s.keep_count) ~init:0 in
         let states_seen = Array.fold component_table ~f:(fun r s -> r + s.hit_count) ~init:0 in
-        let hit_target = component_table.(component _output).hit_count > 0 in
+        let hit_target = component_table.(component output).hit_count > 0 in
         Fmt.epr
           "Hit coverage: %d/%d\nHit max: %d\nKeep coverage: %d/%d\nKeep max: %d\nStates seen: %d\nHit target: %b\n"
           hit_rate (Array.length component_table) hit_max keep_rate (Array.length component_table) keep_max states_seen
@@ -164,7 +166,7 @@ include struct
 
       method find_close_states search_thresh new_states =
         List.filter_map new_states ~f:(fun (v, op, args) ->
-            let d = self#distance v _output in
+            let d = self#distance v output in
             if Float.(d <= search_thresh) then Some (d, v, op, args) else None)
 
       method search_close_states new_states =
@@ -176,21 +178,21 @@ include struct
 
         List.iter close_states ~f:(fun (_, _, op, args) ->
             let center = Search_state.program_of_op_args_exn search_state op args in
-            let center_value = Program.eval (Value.eval params) center in
-            let center_dist = self#distance center_value _output in
+            let center_value = Program.eval (Value.eval eval_ctx) center in
+            let center_dist = self#distance center_value output in
 
             if Float.(center_dist < !closest_dist) then (
               closest_dist := center_dist;
-              closest := Some (Program.eval (Value.eval params) center));
+              closest := Some (Program.eval (Value.eval eval_ctx) center));
 
-            search_neighbors center (fun p d ->
-                let v = Program.eval (Value.eval params) p in
+            self#local_search center (fun p d ->
+                let v = Program.eval (Value.eval eval_ctx) p in
 
                 if Float.(d < !closest_dist) then (
                   closest_dist := d;
                   closest := Some v);
 
-                if [%compare.equal: Value.t] v _output then (
+                if [%compare.equal: Value.t] v output then (
                   let final_value_dist = Params.get params final_value_dist
                   and final_program_dist = Params.get params final_program_dist in
                   final_value_dist := d;
@@ -198,7 +200,7 @@ include struct
                   raise @@ Parent.Done p)));
 
         Option.iter !closest
-          ~f:(Fmt.epr "Goal:\n%a\nClosest (%f):\n%a\n%!" Cad_conc.pprint _output !closest_dist Cad_conc.pprint)
+          ~f:(Fmt.epr "Goal:\n%a\nClosest (%f):\n%a\n%!" Cad_conc.pprint output !closest_dist Cad_conc.pprint)
 
       method sample_diverse_states new_states =
         let new_states_a = Array.of_list new_states in
@@ -215,7 +217,7 @@ include struct
           else
             let states =
               List.map new_states ~f:(fun (v, op, args) ->
-                  let d = self#distance v _output in
+                  let d = self#distance v output in
                   (d, (v, op, args)))
               |> List.sort ~compare:(fun (d, _) (d', _) -> [%compare: float] d d')
             in

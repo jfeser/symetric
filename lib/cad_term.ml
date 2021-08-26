@@ -3,9 +3,10 @@ module Type = Cad_type
 
 module Value = struct
   include Term_value.Make (Op)
+  module Ctx = Cad.Value.Ctx
 
-  let dist params p p' =
-    let eval = Program.eval (Cad.Value.eval params) in
+  let dist ctx p p' =
+    let eval = Program.eval (Cad.Value.eval ctx) in
     let v = eval p and v' = eval p' in
     Float.of_int @@ Cad_conc.hamming v v'
 

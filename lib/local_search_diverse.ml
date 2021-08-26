@@ -18,8 +18,6 @@ include struct
   module Parent = Baseline.Make (Lang)
   module Search_state = Parent.Search_state
 
-  let local_search = Local_search.full
-
   let with_time t f =
     let start_time = Time.now () in
     let ret = f () in
@@ -28,16 +26,17 @@ include struct
     ret
 
   class synthesizer params =
-    let _bench = Params.get params bench
-    and _search_width = 100
+    let _search_width = 100
     and _search_close_states_time = Params.get params search_close_states_time
     and _sample_states_time = Params.get params sample_states_time in
     object (self)
-      inherit Parent.synthesizer params as super
+      inherit Parent.synthesizer (Parent.Ctx.of_params params) as super
 
       val search_width = _search_width
 
       val mutable sample_width = _search_width
+
+      method local_search ?n ?target = Local_search.full ?n ?target ops eval_ctx
 
       method dedup_states states =
         states
@@ -46,13 +45,13 @@ include struct
 
       method search_close_states new_states =
         with_time _search_close_states_time @@ fun () ->
-        let search_states = List.filter new_states ~f:(fun (v, _, _) -> Float.(Cad_conc.jaccard _output v < 0.05)) in
+        let search_states = List.filter new_states ~f:(fun (v, _, _) -> Float.(Cad_conc.jaccard output v < 0.05)) in
         Fmt.epr "Searching %d/%d neighborhoods\n%!" (List.length search_states) (List.length new_states);
 
         List.iter search_states ~f:(fun (_, op, args) ->
             let center = Search_state.program_of_op_args_exn search_state op args in
-            local_search ~n:search_width ~target:_output params center @@ fun p _ ->
-            if [%compare.equal: Value.t] (Program.eval (Value.eval params) p) _output then raise @@ Parent.Done p)
+            self#local_search ~n:search_width ~target:output center @@ fun p _ ->
+            if [%compare.equal: Value.t] (Program.eval (Value.eval eval_ctx) p) output then raise @@ Parent.Done p)
 
       method sample_diverse_states new_states =
         with_time _sample_states_time @@ fun () ->
@@ -66,8 +65,8 @@ include struct
             if Union_find.get c = i then
               for _ = 0 to 2 do
                 let p = Search_state.program_of_op_args_exn search_state op args in
-                local_search ~n:sample_width params p (fun p _ ->
-                    let v' = Program.eval (Value.eval params) p in
+                self#local_search ~n:sample_width p (fun p _ ->
+                    let v' = Program.eval (Value.eval eval_ctx) p in
 
                     (* if [%compare.equal: Value.t] v' _output then raise @@ Parent.Done p; *)
                     match Hashtbl.find classes v' with Some (_, _, c') -> Union_find.union c c' | None -> ())

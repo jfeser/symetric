@@ -10,7 +10,7 @@ module B = Baseline.Make (Cad)
 
 class filler params =
   object (self)
-    inherit B.synthesizer params
+    inherit B.synthesizer (B.Ctx.of_params params)
 
     method build_search_state =
       for cost = 0 to max_cost do
@@ -135,6 +135,7 @@ let print_example of_class =
 
 let mk_dataset params =
   let max_cost = Params.get params Baseline.max_cost in
+  let eval_ctx = Cad_conc.Ctx.of_params params in
   let other_ops = replicates @ [ Cad_op.union; Cad_op.inter ] in
   let all_states = Hashtbl.create (module Cad_conc) in
   let of_class = Hashtbl.create (module Int) in
@@ -169,7 +170,7 @@ let mk_dataset params =
              for _ = 0 to 10 do
                let center = B.Search_state.random_program_exn search_state output in
                Tree_ball.Rename_leaves.sample ~n:100 ~d:2 (module Cad_op) rename center @@ fun p' ->
-               let output' = F.eval (Cad_conc.eval params) p' in
+               let output' = F.eval (Cad_conc.eval eval_ctx) p' in
                if
                  Option.map (B.Search_state.cost_of search_state output') ~f:(fun c -> c >= cost)
                  |> Option.value ~default:true

@@ -9,7 +9,6 @@ let () =
       ("cad-local", Local_search_diverse.cli);
       (* ("cad-learn", Learned_cost.cli); *)
       ("cad-baseline", Baseline.cli (module Cad));
-      ("cad-dump", Dump_states.cli);
       ("cad-term-baseline", Baseline.cli (module Cad_term));
     ]
   |> Command.run

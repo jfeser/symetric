@@ -69,16 +69,16 @@ include struct
              ret)
 
   class synthesizer params =
-    object
+    object (self)
       inherit Parent.synthesizer params
 
-      val embed = Value.embed params
+      method embed = Value.embed eval_ctx
 
       method! find_close_states _ new_states =
         let new_states_a = Array.of_list new_states in
         let states = Array.of_list @@ List.map ~f:(fun (v, _, _) -> v) new_states in
         List.range 0 (List.length new_states)
-        |> find_close_states embed search_thresh _output states
+        |> find_close_states self#embed search_thresh output states
         |> List.map ~f:(fun (d, i) ->
                let v, op, args = new_states_a.(i) in
                (d, v, op, args))
@@ -90,7 +90,7 @@ include struct
         in
         let old = List.range (List.length new_states) (Array.length all_states)
         and new_ = List.range 0 (List.length new_states) in
-        let idxs = sample_batched embed retain_thresh all_states old new_ in
+        let idxs = sample_batched self#embed retain_thresh all_states old new_ in
         List.map idxs ~f:(fun i -> new_states_a.(i))
     end
 end

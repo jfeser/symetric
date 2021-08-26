@@ -1,3 +1,5 @@
+open Std
+
 include struct
   open Dumb_params
 
@@ -23,45 +25,76 @@ module Make (Lang : Lang_intf.S) = struct
 
   exception Done of Op.t Program.t
 
-  class synthesizer params =
-    let _max_cost = Params.get params max_cost and _bench = Params.get params Lang.bench in
+  module Ctx = struct
+    type t = {
+      max_cost : int;
+      verbose : bool;
+      ectx : Value.Ctx.t;
+      ops : Op.t list;
+      output : Value.t;
+      bank_size : float ref;
+      found_program : bool ref;
+      program_cost : float ref;
+    }
+
+    let create ?stats ?(verbose = false) ~max_cost ectx ops output () =
+      let stats = Option.value_lazy stats ~default:(lazy (Stats.create ())) in
+      {
+        max_cost;
+        verbose;
+        ectx;
+        ops;
+        output;
+        bank_size = Stats.add_probe_exn stats "bank-size";
+        found_program = ref false;
+        program_cost = Stats.add_probe_exn stats "program-cost";
+      }
+
+    let of_params params =
+      let bench = Params.get params bench in
+      {
+        max_cost = Params.get params max_cost;
+        verbose = Params.get params verbose;
+        ectx = Value.Ctx.of_params params;
+        ops = Bench.ops bench;
+        output = Bench.output bench;
+        bank_size = Params.get params bank_size;
+        found_program = Params.get params found_program;
+        program_cost = Params.get params program_cost;
+      }
+  end
+
+  class synthesizer (ctx : Ctx.t) =
     object (self : 'self)
-      val max_cost = _max_cost
+      val max_cost = ctx.max_cost
 
-      val bench = _bench
+      val verbose = ctx.verbose
 
-      val _ops = Bench.ops _bench
+      val search_state = Search_state.create ctx.max_cost
 
-      val _output = Bench.output _bench
+      val eval_ctx = ctx.ectx
 
-      val verbose = Params.get params verbose
+      val ops = ctx.ops
 
-      val search_state = Search_state.create _max_cost
-
-      val bank_size = Params.get params bank_size
-
-      method ops = _ops
-
-      method output = _output
+      val output = ctx.output
 
       method get_search_state = search_state
 
-      method generate_states = Gen.generate_states Search_state.search params search_state _ops
+      method generate_states cost = Gen.generate_states Search_state.search eval_ctx search_state ops cost
 
       method insert_states cost states =
         List.iter states ~f:(fun (state, op, args) -> Search_state.insert search_state cost state op args);
-        bank_size := Float.of_int @@ Search_state.length search_state
+        ctx.bank_size := Float.of_int @@ Search_state.length search_state
 
       method check_states states =
         List.find_map states ~f:(fun (s, _, _) ->
-            if [%compare.equal: Value.t] s _output then Some (Search_state.program_exn search_state s) else None)
+            if [%compare.equal: Value.t] s output then Some (Search_state.program_exn search_state s) else None)
         |> Option.iter ~f:(fun p -> raise (Done p))
 
       method fill cost =
         let new_states = self#generate_states cost in
         self#insert_states cost new_states;
         self#check_states new_states;
-
         if verbose then (
           Fmt.epr "Finished cost %d\n%!" cost;
           Search_state.print_stats search_state)
@@ -73,9 +106,9 @@ module Make (Lang : Lang_intf.S) = struct
           done;
           None
         with Done p ->
-          Params.get params found_program := true;
-          Params.get params program_cost := Float.of_int @@ Program.size p;
-          assert (Value.equal (Program.eval (Value.eval params) p) _output);
+          ctx.found_program := true;
+          ctx.program_cost := Float.of_int @@ Program.size p;
+          assert (Value.equal (Program.eval (Value.eval eval_ctx) p) output);
           Some p
     end
 end
@@ -88,6 +121,6 @@ let cli (type value op) (module Lang : Lang_intf.S with type Value.t = value and
   @@ [%map_open
        let params = Dumb_params.Spec.cli spec in
        Synth_utils.run_synth
-         (fun params -> new Synth.synthesizer params)
+         (fun params -> new Synth.synthesizer @@ Synth.Ctx.of_params params)
          params
          (Option.iter ~f:(fun p -> eprint_s ([%sexp_of: Lang.Op.t Program.t] p)))]

@@ -8,5 +8,6 @@
 * DONE Implement push-pull rewriter
 * DONE Split rewriters into collections of rewrite rules
 * TODO Implement test for local rewriters (random walk, then try to get back)
-** TODO Sample programs, apply all rewrites, record distances, repeat 
+** DONE Sample programs, apply all rewrites, record distances, repeat 
 ** TODO Save rules with distances and use as weighted rewriter
+* TODO Try rotation/mirror invariant distances
