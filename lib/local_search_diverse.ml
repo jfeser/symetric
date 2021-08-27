@@ -9,6 +9,8 @@ include struct
   let sample_states_time =
     Spec.add spec @@ Param.(mut @@ float ~name:"sample-states-time" ~doc:"" ~init:(`Default (Fun.const 0.0)) ())
 
+  let rules_fn = Spec.add spec @@ Param.string ~name:"rules-file" ~init:(`Cli (Some "")) ~doc:"" ()
+
   let (_ : _) = Spec.add spec @@ Param.const_str ~name:"synth" "local-search-diverse"
 end
 
@@ -28,15 +30,43 @@ include struct
   class synthesizer params =
     let _search_width = 100
     and _search_close_states_time = Params.get params search_close_states_time
-    and _sample_states_time = Params.get params sample_states_time in
+    and _sample_states_time = Params.get params sample_states_time
+    and _max_cost = Params.get params Baseline.max_cost
+    and _ops = Bench.ops @@ Params.get params bench
+    and _rules =
+      let fn = Params.get params rules_fn in
+      if String.(fn = "") then None
+      else
+        let rules =
+          Sexp.load_sexp_conv_exn fn [%of_sexp: (Local_search.Rule.t * float * float * float) list]
+          |> List.map ~f:(fun (r, _, _, _) -> r)
+        in
+        let rules = List.take rules 100 in
+
+        Some rules
+    in
     object (self)
       inherit Parent.synthesizer (Parent.Ctx.of_params params) as super
 
       val search_width = _search_width
 
-      val mutable sample_width = _search_width
+      val sample_width = Array.create ~len:(_max_cost + 1) 2
 
-      method local_search ?n ?target = Local_search.full ?n ?target ops eval_ctx
+      val pats = Option.value _rules ~default:Local_search.Pattern.(rename_patterns _ops @ push_pull_replicate _ops)
+
+      method local_search ?n ?target =
+        Local_search.of_rules_root_only ?n ?target pats (Program.eval (Value.eval eval_ctx))
+
+      method local_search_diverse ~n term k =
+        let k' t' =
+          k t';
+          self#local_search_diverse ~n:(n - 1) term k
+        in
+        if n > 0 then
+          let open Local_search in
+          List.iter pats ~f:(fun rule ->
+              Option.iter ~f:k' @@ Pattern.rewrite_root rule term;
+              Option.iter ~f:k' @@ Pattern.rewrite_root (Rule.flip rule) term)
 
       method dedup_states states =
         states
@@ -50,40 +80,38 @@ include struct
 
         List.iter search_states ~f:(fun (_, op, args) ->
             let center = Search_state.program_of_op_args_exn search_state op args in
-            self#local_search ~n:search_width ~target:output center @@ fun p _ ->
+            self#local_search ~n:search_width ~target:output center @@ fun (p, _) ->
             if [%compare.equal: Value.t] (Program.eval (Value.eval eval_ctx) p) output then raise @@ Parent.Done p)
 
-      method sample_diverse_states new_states =
+      method sample_diverse_states cost new_states =
         with_time _sample_states_time @@ fun () ->
-        let new_states_a = Array.of_list new_states in
-        let classes =
-          List.mapi new_states ~f:(fun i ((v, _, _) as x) -> (v, (i, x, Union_find.create i)))
-          |> Hashtbl.of_alist_exn (module Value)
-        in
-        let module F = Flat_program.Make (Op) in
-        Hashtbl.iteri classes ~f:(fun ~key:_ ~data:(i, (_, op, args), c) ->
-            if Union_find.get c = i then
-              for _ = 0 to 2 do
-                let p = Search_state.program_of_op_args_exn search_state op args in
-                self#local_search ~n:sample_width p (fun p _ ->
-                    let v' = Program.eval (Value.eval eval_ctx) p in
+        let width = sample_width.(cost) in
+        if width > 0 then (
+          let new_states_a = Array.of_list new_states in
+          let classes =
+            List.mapi new_states ~f:(fun i ((v, _, _) as x) -> (v, (x, Union_find.create i)))
+            |> Hashtbl.of_alist_exn (module Value)
+          in
+          let module F = Flat_program.Make (Op) in
+          Hashtbl.iter classes ~f:(fun ((_, op, args), class_) ->
+              let p = Search_state.program_of_op_args_exn search_state op args in
+              self#local_search_diverse ~n:width p (fun p ->
+                  Program.eval (Value.eval eval_ctx) p
+                  |> Hashtbl.find classes
+                  |> Option.iter ~f:(fun (_, class_') -> Union_find.union class_ class_')));
 
-                    (* if [%compare.equal: Value.t] v' _output then raise @@ Parent.Done p; *)
-                    match Hashtbl.find classes v' with Some (_, _, c') -> Union_find.union c c' | None -> ())
-              done);
-
-        let to_keep =
-          Hashtbl.data classes |> List.map ~f:Tuple.T3.get3 |> List.map ~f:Union_find.get
-          |> List.dedup_and_sort ~compare
-          |> List.map ~f:(fun i -> new_states_a.(i))
-        in
-        Fmt.epr "Retained %d/%d new states\n\n%!" (List.length to_keep) (List.length new_states);
-        to_keep
+          let to_keep =
+            Hashtbl.data classes |> List.map ~f:Tuple.T2.get2 |> List.map ~f:Union_find.get
+            |> List.dedup_and_sort ~compare
+          in
+          Fmt.epr "Retained %d/%d new states\n%!" (List.length to_keep) (List.length new_states);
+          List.map to_keep ~f:(fun i -> new_states_a.(i)))
+        else new_states
 
       method! generate_states cost =
         let new_states = super#generate_states cost |> self#dedup_states in
         self#search_close_states new_states;
-        self#sample_diverse_states new_states
+        self#sample_diverse_states cost new_states
 
       method! run =
         let rec reduce_sample_width () =
@@ -91,7 +119,8 @@ include struct
           | Some p -> Some p
           | None ->
               Search_state.clear search_state;
-              sample_width <- sample_width / 2;
+              let idx, _ = Array.findi_exn sample_width ~f:(fun _ v -> v > 0) in
+              sample_width.(idx) <- 0;
               reduce_sample_width ()
         in
         reduce_sample_width ()

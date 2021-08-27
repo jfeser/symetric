@@ -56,29 +56,11 @@ let hill_climb ?n rules target eval t =
     false
   with Done -> true
 
-module Rule = struct
-  type pat = (Op.t, int) Local_search.Pattern.t [@@deriving compare, sexp]
-
-  type t = pat * pat [@@deriving compare, sexp]
-
-  let apply x y = Local_search.Pattern.Apply (x, y)
-end
-
 let mean ~n iter = Iter.sumf iter /. n
 
 let std ~n ~u iter =
   let sum = Iter.map (fun x -> Float.square (x -. u)) iter |> Iter.sumf in
   Float.(sqrt (1.0 /. (n -. 1.0) *. sum))
-
-let push_pull_replicate ops =
-  let repls = List.filter ops ~f:(fun op -> match Op.value op with Op.Replicate _ -> true | _ -> false) in
-  let open Rule in
-  List.concat_map [ Op.union; Op.inter ] ~f:(fun binary ->
-      List.concat_map repls ~f:(fun r ->
-          [
-            (apply binary [ apply r [ Var 0 ]; Var 1 ], apply r [ apply binary [ Var 0; Var 1 ] ]);
-            (apply binary [ Var 0; apply r [ Var 1 ] ], apply r [ apply binary [ Var 0; Var 1 ] ]);
-          ]))
 
 module B = Baseline.Make (Cad)
 
@@ -128,7 +110,8 @@ let run ?(size = 6) ?(n_terms = 10000) () =
   let eval = Program.eval (Value.eval ectx) in
 
   let patterns =
-    Local_search.Pattern.rename_patterns ops @ push_pull_replicate ops
+    let open Local_search in
+    Pattern.(rename_patterns ops @ push_pull_replicate ops)
     |> List.map ~f:(fun (r, r') -> if [%compare: Rule.pat] r r' <= 0 then (r, r') else (r', r))
     |> List.dedup_and_sort ~compare:[%compare: Rule.t]
   in
@@ -149,6 +132,6 @@ let run ?(size = 6) ?(n_terms = 10000) () =
     |> List.sort ~compare:(fun (_, d, _, _) (_, d', _, _) -> [%compare: float] d d')
   in
 
-  print_s [%message (distances_summary : (Rule.t * float * float * float) list)]
+  print_s @@ [%sexp_of: (Local_search.Rule.t * float * float * float) list] distances_summary
 
 let () = run ()

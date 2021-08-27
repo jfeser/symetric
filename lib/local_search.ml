@@ -23,6 +23,8 @@ let leaf ?(n = 10) ?target ectx =
 module Pattern = struct
   type ('o, 'v) t = Apply of ('o * ('o, 'v) t list) | Var of 'v [@@deriving compare, sexp]
 
+  let apply x y = Apply (x, y)
+
   let rec of_program Program.(Apply (op, args)) = Apply (op, List.map args ~f:of_program)
 
   let leaf_patterns ops =
@@ -32,13 +34,23 @@ module Pattern = struct
         List.filter_map leaf_ops ~f:(fun op2 ->
             Option.some_if (not ([%compare.equal: Op.t] op1 op2)) (Apply (op1, []), Apply (op2, []))))
 
-  let rename_patterns ops =
+  let rename_patterns ?(max_arity = Int.max_value) ops =
     let module Op = Cad_op in
+    let ops = List.filter ops ~f:(fun op -> Op.arity op <= max_arity) in
     List.concat_map ops ~f:(fun op1 ->
         List.filter ops ~f:(fun op2 -> (not ([%compare.equal: Op.t] op1 op2)) && Op.arity op1 = Op.arity op2)
         |> List.map ~f:(fun op2 ->
                let args = List.init (Op.arity op1) ~f:(fun i -> Var i) in
                (Apply (op1, args), Apply (op2, args))))
+
+  let push_pull_replicate ops =
+    let repls = List.filter ops ~f:(fun op -> match Op.value op with Op.Replicate _ -> true | _ -> false) in
+    List.concat_map [ Op.union; Op.inter ] ~f:(fun binary ->
+        List.concat_map repls ~f:(fun r ->
+            [
+              (apply binary [ apply r [ Var 0 ]; Var 1 ], apply r [ apply binary [ Var 0; Var 1 ] ]);
+              (apply binary [ Var 0; apply r [ Var 1 ] ], apply r [ apply binary [ Var 0; Var 1 ] ]);
+            ]))
 
   let match_root init bind p t =
     let bind ctx k v = Option.map ctx ~f:(fun ctx -> bind ctx k v) in
@@ -72,3 +84,35 @@ module Pattern = struct
     List.iteri args ~f:(fun i t' ->
         rewrite_all rule t' (fun p -> k @@ Program.Apply (op, List.take args i @ (p :: List.drop args (i + 1)))))
 end
+
+module Rule = struct
+  type pat = (Op.t, int) Pattern.t [@@deriving compare, sexp]
+
+  type t = pat * pat [@@deriving compare, sexp]
+
+  let flip (x, y) = (y, x)
+end
+
+let of_rules ?n ?target rules eval =
+  let propose term =
+    let sampler = Sample.Incremental.reservoir 1 in
+    List.iter rules ~f:(fun ((lhs, rhs) as rule) ->
+        Pattern.rewrite_all rule term sampler.add;
+        Pattern.rewrite_all (rhs, lhs) term sampler.add);
+    Option.value ~default:term @@ List.hd @@ sampler.get_sample ()
+  in
+  let score = match target with Some t -> fun p -> Cad_conc.jaccard t @@ eval p | None -> Fun.const 1.0 in
+  let search center k = Sample.stochastic ?n ~propose ~score center k in
+  search
+
+let of_rules_root_only ?n ?target rules eval =
+  let propose term =
+    let sampler = Sample.Incremental.reservoir 1 in
+    List.iter rules ~f:(fun rule ->
+        Option.iter ~f:sampler.add @@ Pattern.rewrite_root rule term;
+        Option.iter ~f:sampler.add @@ Pattern.rewrite_root (Rule.flip rule) term);
+    Option.value ~default:term @@ List.hd @@ sampler.get_sample ()
+  in
+  let score = match target with Some t -> fun p -> Cad_conc.jaccard t @@ eval p | None -> Fun.const 1.0 in
+  let search center k = Sample.stochastic ?n ~propose ~score center k in
+  search

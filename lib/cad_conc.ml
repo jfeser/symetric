@@ -38,7 +38,7 @@ module Ctx = struct
     let bench = Params.get params Cad_params.bench in
     let xlen = bench.Cad_bench.input.xmax and ylen = bench.Cad_bench.input.ymax in
     let embed_fn = Params.get params embed_fn in
-    let embedder = Option.map ~f:Torch.Module.load @@ Option.some_if String.(embed_fn = "") embed_fn in
+    let embedder = Option.map ~f:Torch.Module.load @@ Option.some_if String.(embed_fn <> "") embed_fn in
     {
       xlen;
       ylen;

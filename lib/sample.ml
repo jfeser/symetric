@@ -69,3 +69,16 @@ module Incremental = struct
     iter sampler.add;
     sampler.get_sample ()
 end
+
+let stochastic ?(n = 5) ~score ~propose t f =
+  let rec loop i t v =
+    if i < n then (
+      f (t, v);
+
+      let t' = propose t in
+      let v' = score t' in
+      let ratio = v /. v' in
+      let accept = Random.float 1.0 in
+      if Float.(accept < ratio) then loop (i + 1) t' v' else loop (i + 1) t v)
+  in
+  loop 0 t (score t)
