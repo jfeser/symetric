@@ -219,3 +219,110 @@ let contains = [%compare.equal: t]
 let graphviz_pp _ = failwith "unimplemented pp"
 
 let top _ = failwith "unimplemented top"
+
+open Owl
+
+let to_matrix v = Mat.init (xlen v) (ylen v) (fun i -> if geti v i then 1.0 else 0.0) |> Mat.flip
+
+let ( =. ) = Float.( = )
+
+let ( >. ) = Float.( > )
+
+let of_matrix m =
+  let xlen, ylen = Mat.shape m and m' = Mat.flatten @@ Mat.rotate m 90 in
+  create ~xlen ~ylen (Bitarray.init (xlen * ylen) ~f:(fun i -> Owl.Dense.Ndarray.Generic.get m' [| i |] >. 0.0))
+
+let find_mask img mask =
+  let img_w, img_h = Mat.shape img and mask_w, mask_h = Mat.shape mask in
+  let ret_w = img_w - mask_w + 1 and ret_h = img_h - mask_h + 1 in
+  let ret = Mat.zeros ret_w ret_h in
+  for i = 0 to ret_w - 1 do
+    for j = 0 to ret_h - 1 do
+      let v = ref true in
+      for i' = 0 to mask_w - 1 do
+        for j' = 0 to mask_h - 1 do
+          v := !v && Mat.get mask i' j' =. Mat.get img (i + i') (j + j')
+        done
+      done;
+      Mat.set ret i j (if !v then 1.0 else 0.0)
+    done
+  done;
+  ret
+
+let ul_corner = Mat.of_arrays [| [| 0.0; 0.0; 0.0 |]; [| 0.0; 1.0; 1.0 |]; [| 0.0; 1.0; 1.0 |] |]
+
+let ur_corner = Mat.of_arrays [| [| 0.0; 0.0; 0.0 |]; [| 1.0; 1.0; 0.0 |]; [| 1.0; 1.0; 0.0 |] |]
+
+let ll_corner = Mat.of_arrays [| [| 0.0; 1.0; 1.0 |]; [| 0.0; 1.0; 1.0 |]; [| 0.0; 0.0; 0.0 |] |]
+
+let lr_corner = Mat.of_arrays [| [| 1.0; 1.0; 0.0 |]; [| 1.0; 1.0; 0.0 |]; [| 0.0; 0.0; 0.0 |] |]
+
+let vert_r = Mat.of_arrays [| [| 0.0; 1.0 |]; [| 0.0; 1.0 |] |]
+
+let vert_l = Mat.of_arrays [| [| 1.0; 0.0 |]; [| 1.0; 0.0 |] |]
+
+let hori_u = Mat.of_arrays [| [| 0.0; 0.0 |]; [| 1.0; 1.0 |] |]
+
+let hori_l = Mat.of_arrays [| [| 1.0; 1.0 |]; [| 0.0; 0.0 |] |]
+
+let masks = [| ul_corner; ur_corner; ll_corner; lr_corner; vert_r; vert_l; hori_u; hori_l |]
+
+let features v =
+  let img = to_matrix v in
+  Array.map masks ~f:(fun m -> Owl.Dense.Ndarray.Generic.get (find_mask img m |> Mat.sum) [| 0 |])
+
+open Cad_op
+
+let ctx = Ctx.create ~xlen:8 ~ylen:8 ()
+
+let%expect_test "" =
+  let v =
+    eval ctx
+      (replicate ~id:0 ~count:3 ~v:{ x = 1.0; y = 1.0 })
+      [ eval ctx (rect ~id:1 ~lo_left:{ x = 1.0; y = 1.0 } ~hi_right:{ x = 4.0; y = 4.0 }) [] ]
+  in
+  let img = to_matrix v and mask = ll_corner in
+  let masked = find_mask img mask in
+  Mat.print img;
+  Mat.print mask;
+  Mat.print masked;
+  pprint Fmt.stdout (of_matrix masked);
+  [%expect {|
+       C0 C1 C2 C3 C4 C5 C6 C7
+    R0  0  0  0  0  0  0  0  0
+    R1  0  0  0  0  0  0  0  0
+    R2  0  0  0  1  1  1  0  0
+    R3  0  0  1  1  1  1  0  0
+    R4  0  1  1  1  1  1  0  0
+    R5  0  1  1  1  1  0  0  0
+    R6  0  1  1  1  0  0  0  0
+    R7  0  0  0  0  0  0  0  0
+
+
+       C0 C1 C2
+    R0  0  1  1
+    R1  0  1  1
+    R2  0  0  0
+
+       C0 C1 C2 C3 C4 C5
+    R0  0  0  0  0  0  0
+    R1  0  0  0  0  0  0
+    R2  0  0  0  0  0  0
+    R3  0  0  0  0  0  0
+    R4  0  0  0  0  0  0
+    R5  1  0  0  0  0  0
+    ......
+    ......
+    ......
+    ......
+    ......
+    █..... |}]
+
+let%expect_test "" =
+  let v =
+    eval ctx
+      (replicate ~id:0 ~count:3 ~v:{ x = 1.0; y = 1.0 })
+      [ eval ctx (rect ~id:1 ~lo_left:{ x = 1.0; y = 1.0 } ~hi_right:{ x = 4.0; y = 4.0 }) [] ]
+  in
+  print_s [%message (features v : float array)];
+  [%expect {| ("features v" (0 1 1 0 2 2 2 2)) |}]
