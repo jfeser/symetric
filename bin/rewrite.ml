@@ -134,4 +134,39 @@ let run ?(size = 6) ?(n_terms = 10000) () =
 
   print_s @@ [%sexp_of: (Local_search.Rule.t * float * float * float) list] distances_summary
 
-let () = run ()
+let distance_graph ?(size = 6) () =
+  let module G = Graph.Imperative.Graph.Concrete (Value) in
+  (* let open Owl in *)
+  let ops = Cad_gen_pattern.ops in
+  let ectx = Value.Ctx.create ~xlen:Cad_gen_pattern.xmax ~ylen:Cad_gen_pattern.ymax () in
+  let eval = Program.eval (Value.eval ectx) in
+
+  let search_state =
+    let filler = new filler (B.Ctx.create ~max_cost:size ectx ops Cad_conc.dummy ()) in
+    filler#build_search_state
+  in
+  let rules =
+    let open Local_search in
+    Pattern.(rename_patterns ops @ push_pull_replicate ops)
+    |> List.map ~f:(fun (r, r') -> if [%compare: Rule.pat] r r' <= 0 then (r, r') else (r', r))
+    |> List.dedup_and_sort ~compare:[%compare: Rule.t]
+  in
+
+  (* let dist = Cad_conc.jaccard in *)
+  let states = Array.of_list @@ B.Search_state.states search_state in
+  let n_states = Array.length states in
+  (* let vdist = Mat.init_2d n_states n_states (fun i j -> dist states.(i) states.(j)) in *)
+  let tdist =
+    let g = G.create () in
+    Array.iter states ~f:(G.add_vertex g);
+    for i = 0 to 1000000 do
+      if i mod 10000 = 0 then print_s [%message (i : int)];
+      let v = states.(Random.int n_states) in
+      let p = B.Search_state.program_exn search_state v in
+      List.iter rules ~f:(fun rule -> all_rewrites rule p |> Iter.iter (fun p' -> G.add_edge g v (eval p')))
+    done;
+    g
+  in
+  print_s [%message (G.nb_vertex tdist : int) (G.nb_edges tdist : int)]
+
+let () = distance_graph ()

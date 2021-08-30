@@ -56,6 +56,6 @@
 (executable
  (name rewrite)
  (modules rewrite)
- (libraries core iter staged_synth)
+ (libraries core iter staged_synth owl)
  (preprocess
   (pps ppx_jane)))
