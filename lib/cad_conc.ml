@@ -265,11 +265,18 @@ let hori_u = Mat.of_arrays [| [| 0.0; 0.0 |]; [| 1.0; 1.0 |] |]
 
 let hori_l = Mat.of_arrays [| [| 1.0; 1.0 |]; [| 0.0; 0.0 |] |]
 
-let masks = [| ul_corner; ur_corner; ll_corner; lr_corner; vert_r; vert_l; hori_u; hori_l |]
+let masks = [| (* ul_corner; ur_corner; ll_corner; lr_corner; *) vert_r; vert_l; hori_u; hori_l |]
 
 let features v =
   let img = to_matrix v in
-  Array.map masks ~f:(fun m -> Owl.Dense.Ndarray.Generic.get (find_mask img m |> Mat.sum) [| 0 |])
+  let xlen, ylen = Mat.shape img in
+  let kernel = [| xlen / 3; ylen / 3 |] in
+  let stride = kernel in
+  Arr.concatenate @@ Array.map masks ~f:(fun m -> Mat.flatten @@ Mat.avg_pool (find_mask img m) kernel stride)
+
+let feature_dist v v' =
+  let f = features v and f' = features v' in
+  Arr.l2norm' (Arr.sub f f')
 
 open Cad_op
 
@@ -287,7 +294,8 @@ let%expect_test "" =
   Mat.print mask;
   Mat.print masked;
   pprint Fmt.stdout (of_matrix masked);
-  [%expect {|
+  [%expect
+    {|
        C0 C1 C2 C3 C4 C5 C6 C7
     R0  0  0  0  0  0  0  0  0
     R1  0  0  0  0  0  0  0  0
@@ -324,5 +332,8 @@ let%expect_test "" =
       (replicate ~id:0 ~count:3 ~v:{ x = 1.0; y = 1.0 })
       [ eval ctx (rect ~id:1 ~lo_left:{ x = 1.0; y = 1.0 } ~hi_right:{ x = 4.0; y = 4.0 }) [] ]
   in
-  print_s [%message (features v : float array)];
-  [%expect {| ("features v" (0 1 1 0 2 2 2 2)) |}]
+  Arr.print @@ features v;
+  [%expect
+    {|
+      C0 C1 C2 C3 C4 C5 C6 C7 C8 C9 C10  C11 C12 C13 C14 C15 C16 C17 C18 C19 C20 C21 C22 C23  C24 C25 C26 C27 C28 C29 C30 C31 C32 C33 C34 C35 C36 C37 C38 C39 C40 C41 C42 C43 C44 C45 C46 C47 C48 C49 C50 C51 C52 C53 C54 C55 C56 C57 C58 C59 C60 C61 C62 C63 C64 C65 C66 C67 C68  C69  C70 C71 C72 C73 C74 C75 C76 C77 C78 C79 C80 C81 C82 C83 C84 C85 C86 C87 C88 C89 C90 C91 C92 C93 C94 C95 C96 C97 C98 C99
+    R  0  0  0  0  0  0  0  0  0  0   0 0.25   0   0   0   0   0   0   0   0   0   0   0   0 0.25   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0 0.5   0   0   0   0   0   0   0   0   0   0   0   0   0 0.5   0   0   0   0   0   0   0   0   0   0 0.25 0.25   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0 0.5 0.5   0   0 |}]

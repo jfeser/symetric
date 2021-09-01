@@ -6,7 +6,7 @@
 
 (* Functorial interface *)
 open Caml
-open Std
+module Option = Std.Option
 
 module Array = struct
   include Array

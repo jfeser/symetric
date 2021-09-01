@@ -14,6 +14,13 @@ include struct
   let (_ : _) = Spec.add spec @@ Param.const_str ~name:"synth" "local-search-diverse"
 end
 
+let sum_to arr x =
+  let sum = ref 0 in
+  for i = 0 to x do
+    sum := !sum + arr.(i)
+  done;
+  !sum
+
 include struct
   module Lang = Cad
   open Lang
@@ -28,7 +35,7 @@ include struct
     ret
 
   class synthesizer params =
-    let _search_width = 100
+    let _search_width = 10
     and _search_close_states_time = Params.get params search_close_states_time
     and _sample_states_time = Params.get params sample_states_time
     and _max_cost = Params.get params Baseline.max_cost
@@ -50,12 +57,16 @@ include struct
 
       val search_width = _search_width
 
-      val sample_width = Array.create ~len:(_max_cost + 1) 2
+      val sample_width =
+        let arr = Array.create ~len:(_max_cost + 1) 2 in
+        arr.(0) <- 0;
+        arr
 
-      val pats = Option.value _rules ~default:Local_search.Pattern.(rename_patterns _ops @ push_pull_replicate _ops)
+      val pats =
+        Option.value _rules
+          ~default:Local_search.Pattern.(close_leaf_patterns _ops @ union_leaf_patterns _ops @ push_pull_replicate _ops)
 
-      method local_search ?n ?target =
-        Local_search.of_rules_root_only ?n ?target pats (Program.eval (Value.eval eval_ctx))
+      method local_search ~target = Local_search.of_rules_tabu ~target pats (Program.eval (Value.eval eval_ctx))
 
       method local_search_diverse ~n term k =
         let k' t' =
@@ -75,13 +86,15 @@ include struct
 
       method search_close_states new_states =
         with_time _search_close_states_time @@ fun () ->
-        let search_states = List.filter new_states ~f:(fun (v, _, _) -> Float.(Cad_conc.jaccard output v < 0.05)) in
+        let search_states = List.filter new_states ~f:(fun (v, _, _) -> Float.(Cad_conc.jaccard output v < 0.01)) in
         Fmt.epr "Searching %d/%d neighborhoods\n%!" (List.length search_states) (List.length new_states);
 
         List.iter search_states ~f:(fun (_, op, args) ->
             let center = Search_state.program_of_op_args_exn search_state op args in
-            self#local_search ~n:search_width ~target:output center @@ fun (p, _) ->
-            if [%compare.equal: Value.t] (Program.eval (Value.eval eval_ctx) p) output then raise @@ Parent.Done p)
+            self#local_search ~target:output center |> Iter.take search_width
+            |> Iter.iter (fun p ->
+                   if [%compare.equal: Value.t] (Program.eval (Value.eval eval_ctx) p) output then
+                     raise @@ Parent.Done p))
 
       method sample_diverse_states cost new_states =
         with_time _sample_states_time @@ fun () ->
@@ -109,9 +122,12 @@ include struct
         else new_states
 
       method! generate_states cost =
-        let new_states = super#generate_states cost |> self#dedup_states in
+        let new_states = super#generate_states cost in
+        super#check_states new_states;
+        let new_states = self#dedup_states new_states in
         self#search_close_states new_states;
-        self#sample_diverse_states cost new_states
+        let new_states' = self#sample_diverse_states cost new_states in
+        new_states'
 
       method! run =
         let rec reduce_sample_width () =
@@ -120,7 +136,7 @@ include struct
           | None ->
               Search_state.clear search_state;
               let idx, _ = Array.findi_exn sample_width ~f:(fun _ v -> v > 0) in
-              sample_width.(idx) <- 0;
+              sample_width.(idx) <- sample_width.(idx) - 1;
               reduce_sample_width ()
         in
         reduce_sample_width ()

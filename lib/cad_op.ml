@@ -52,3 +52,15 @@ let args_type x =
   match value x with Circle _ | Rect _ -> [] | Replicate _ -> [ Cad_type.Scene ] | Union | Inter -> [ Scene; Scene ]
 
 let type_ x = (args_type x, ret_type x)
+
+let center =
+  let none _ = None in
+  match_ ~union:none ~inter:none ~replicate:none
+    ~circle:(fun c -> Some c.center)
+    ~rect:(fun r ->
+      Some
+        Vector2.
+          {
+            x = r.lo_left.x +. ((r.hi_right.x -. r.lo_left.x) /. 2.0);
+            y = r.lo_left.y +. ((r.hi_right.y -. r.lo_left.y) /. 2.0);
+          })

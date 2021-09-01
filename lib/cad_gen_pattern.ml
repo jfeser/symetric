@@ -100,7 +100,7 @@ let replicates =
   [ Vector2.{ x = step; y = step }; { x = -.step; y = step }; { x = step; y = -.step }; { x = -.step; y = -.step } ]
   |> List.map ~f:(fun v -> Cad_op.replicate ~id:0 ~count:4 ~v)
 
-let ops = shapes @ replicates @ [ Cad_op.union; Cad_op.inter ]
+let ops = shapes @ [ Cad_op.union; Cad_op.inter ]
 
 let checkpoint states fn =
   let open Owl in
@@ -187,13 +187,13 @@ let mk_dataset params =
 let mk_bench params =
   let size = Params.get params Baseline.max_cost in
   let output_fn = Params.get params output_filename in
-  let other_ops = replicates @ [ Cad_op.union; Cad_op.inter ] in
+  let other_ops = [ Cad_op.union; Cad_op.inter ] in
   let all_states = Hashtbl.create (module Cad_conc) in
 
   let add_state c s = Hashtbl.set all_states ~key:c ~data:s in
 
   for class_ = 0 to Params.get params centers do
-    let shape_ops = List.take (List.permute shapes) 4 in
+    let shape_ops = List.take (List.permute shapes) 6 in
     let ops = shape_ops @ other_ops in
     let params =
       Dumb_params.set params Cad_params.bench

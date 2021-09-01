@@ -34,6 +34,25 @@ module Pattern = struct
         List.filter_map leaf_ops ~f:(fun op2 ->
             Option.some_if (not ([%compare.equal: Op.t] op1 op2)) (Apply (op1, []), Apply (op2, []))))
 
+  let union_leaf_patterns ops =
+    let module Op = Cad_op in
+    List.filter ops ~f:(fun op -> Op.arity op = 0)
+    |> List.map ~f:(fun op -> (Var 0, Apply (Op.union, [ Var 0; Apply (op, []) ])))
+
+  let close_leaf_patterns ?(radius = 10.0) ops =
+    let module Op = Cad_op in
+    let leaf_ops = List.filter ops ~f:(fun op -> Op.arity op = 0) in
+    List.concat_map leaf_ops ~f:(fun op1 ->
+        List.filter_map leaf_ops ~f:(fun op2 ->
+            let are_close () =
+              Option.map2 (Op.center op1) (Op.center op2) ~f:(fun c1 c2 ->
+                  let d = Vector2.l2_dist c1 c2 in
+                  Float.(d <= radius))
+              |> Option.value ~default:false
+            in
+            let are_different () = not ([%compare.equal: Op.t] op1 op2) in
+            Option.some_if (are_different () && are_close ()) (Apply (op1, []), Apply (op2, []))))
+
   let rename_patterns ?(max_arity = Int.max_value) ops =
     let module Op = Cad_op in
     let ops = List.filter ops ~f:(fun op -> Op.arity op <= max_arity) in
@@ -93,7 +112,7 @@ module Rule = struct
   let flip (x, y) = (y, x)
 end
 
-let of_rules ?n ?target rules eval =
+let of_rules ?n ?target ?(dist = Cad_conc.jaccard) rules eval =
   let propose term =
     let sampler = Sample.Incremental.reservoir 1 in
     List.iter rules ~f:(fun ((lhs, rhs) as rule) ->
@@ -101,7 +120,7 @@ let of_rules ?n ?target rules eval =
         Pattern.rewrite_all (rhs, lhs) term sampler.add);
     Option.value ~default:term @@ List.hd @@ sampler.get_sample ()
   in
-  let score = match target with Some t -> fun p -> Cad_conc.jaccard t @@ eval p | None -> Fun.const 1.0 in
+  let score = match target with Some t -> fun p -> dist t @@ eval p | None -> Fun.const 1.0 in
   let search center k = Sample.stochastic ?n ~propose ~score center k in
   search
 
@@ -116,3 +135,54 @@ let of_rules_root_only ?n ?target rules eval =
   let score = match target with Some t -> fun p -> Cad_conc.jaccard t @@ eval p | None -> Fun.const 1.0 in
   let search center k = Sample.stochastic ?n ~propose ~score center k in
   search
+
+let tabu ?(max_tabu = 10) ~neighbors state start k =
+  let seen = Hash_queue.create @@ Base.Hashable.of_key state in
+  let current = ref start in
+  Hash_queue.enqueue_back_exn seen start ();
+  while true do
+    let next = Iter.find_pred_exn (fun c -> not (Hash_queue.mem seen c)) (neighbors !current) in
+    Hash_queue.enqueue_back_exn seen next ();
+    current := next;
+    if Hash_queue.length seen > max_tabu then Hash_queue.drop_front seen;
+    k next
+  done
+
+let of_rules_root_only_tabu ?(dist = Cad_conc.jaccard) ~target rules eval =
+  let neighbors t =
+    List.concat_map rules ~f:(fun rule ->
+        (Option.to_list @@ Pattern.rewrite_root rule t) @ Option.to_list @@ Pattern.rewrite_root (Rule.flip rule) t)
+    |> List.map ~f:(fun t' -> (dist (eval t') target, t'))
+    |> List.sort ~compare:(fun (d, _) (d', _) -> [%compare: float] d d')
+    |> List.map ~f:(fun (_, v) -> v)
+    |> Iter.of_list
+  in
+  let module P = struct
+    module T = struct
+      type t = Cad_op.t Program.t [@@deriving compare, hash, sexp]
+    end
+
+    include T
+  end in
+  tabu ~neighbors (module P)
+
+let of_rules_tabu ?(dist = Cad_conc.jaccard) ~target rules eval =
+  let neighbors t =
+    let neighbors = Queue.create () in
+    List.iter rules ~f:(fun ((lhs, rhs) as rule) ->
+        Pattern.rewrite_all rule t (Queue.enqueue neighbors);
+        Pattern.rewrite_all (rhs, lhs) t (Queue.enqueue neighbors));
+
+    List.map (Queue.to_list neighbors) ~f:(fun t' -> (dist (eval t') target, t'))
+    |> List.sort ~compare:(fun (d, _) (d', _) -> [%compare: float] d d')
+    |> List.map ~f:(fun (_, v) -> v)
+    |> Iter.of_list
+  in
+  let module P = struct
+    module T = struct
+      type t = Cad_op.t Program.t [@@deriving compare, hash, sexp]
+    end
+
+    include T
+  end in
+  tabu ~neighbors (module P)

@@ -22,3 +22,21 @@ module Option = struct
 
   let value_lazy ~default = function Some x -> x | None -> Lazy.force default
 end
+
+module List = struct
+  include List
+
+  let unzip4 list =
+    let rec loop list l1 l2 l3 l4 =
+      match list with
+      | [] -> (rev l1, rev l2, rev l3, rev l4)
+      | (x, y, z, a) :: tl -> loop tl (x :: l1) (y :: l2) (z :: l3) (a :: l4)
+    in
+    loop list [] [] [] []
+end
+
+module Random = struct
+  include Random
+
+  let list_elem_exn l = List.nth_exn l (Random.int @@ List.length l)
+end

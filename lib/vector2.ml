@@ -16,6 +16,6 @@ module O = struct
   let ( ~- ) { x; y } = { x = -.x; y = -.y }
 end
 
-let l2_dist { x; y } { x = x'; y = y' } = Float.(sqrt ((x - x') * (x - x')) + ((y - y') * (y - y')))
+let l2_dist { x; y } { x = x'; y = y' } = Float.(sqrt (((x - x') * (x - x')) + ((y - y') * (y - y'))))
 
 let zero = { x = 0.0; y = 0.0 }
