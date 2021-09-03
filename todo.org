@@ -11,3 +11,5 @@
 ** DONE Sample programs, apply all rewrites, record distances, repeat 
 ** TODO Save rules with distances and use as weighted rewriter
 * TODO Try rotation/mirror invariant distances
+
+* TODO Generate our own cad-style benchmarks

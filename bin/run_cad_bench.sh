@@ -7,7 +7,7 @@ FULL_EXE=$BUILD_DIR/$EXE
 
 dune build --profile=release "$EXE"
 rm -f jobs
-find no_repl_size_11 -type f > $WORKDIR/jobs
+find bench/random_small_pat_size_8_leaf_only -type f > $WORKDIR/jobs
 
 # parallel --eta --joblog "$WORKDIR/joblog" --timeout 600 --colsep ' ' \
 #          "$FULL_EXE cad-baseline -max-cost 11 -print-json true {1} 2> /dev/null" \
@@ -15,11 +15,6 @@ find no_repl_size_11 -type f > $WORKDIR/jobs
 #     >> "$WORKDIR/baseline_results"
 
 parallel --eta --joblog "$WORKDIR/joblog" --timeout 600 --colsep ' ' \
-         "$FULL_EXE cad-local -max-cost 11 -print-json true {1} 2> /dev/null" \
-         :::: $WORKDIR/jobs \
-         >> "$WORKDIR/local_results"
-
-# parallel --eta --joblog "$WORKDIR/joblog" --timeout 600 --colsep ' ' \
-#          "$FULL_EXE cad-local -max-cost 8 -print-json true -rules-file rules.sexp {1} 2> /dev/null" \
-#          :::: $WORKDIR/jobs \
-#          >> "$WORKDIR/local_results_rules"
+         "$FULL_EXE cad-local -max-cost 9 -print-json true -rule-sets close-leaf,union-leaf,push-pull-replicate -distance {2} {1} 2> /dev/null" \
+         :::: $WORKDIR/jobs ::: jaccard feature \
+         >> "$WORKDIR/local_results_size_8_custom_rules"

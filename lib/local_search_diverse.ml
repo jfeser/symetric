@@ -11,6 +11,13 @@ include struct
 
   let rules_fn = Spec.add spec @@ Param.string ~name:"rules-file" ~init:(`Cli (Some "")) ~doc:"" ()
 
+  let rule_sets = Spec.add spec @@ Param.string ~name:"rule-sets" ~init:(`Cli (Some "")) ~doc:"" ()
+
+  let distance = Spec.add spec @@ Param.string ~name:"distance" ~init:(`Cli (Some "jaccard")) ~doc:"" ()
+
+  let search_thresh =
+    Spec.add spec @@ Param.string ~name:"search-thresh" ~init:(`Cli (Some "(Distance 0.01)")) ~doc:"" ()
+
   let (_ : _) = Spec.add spec @@ Param.const_str ~name:"synth" "local-search-diverse"
 end
 
@@ -20,6 +27,10 @@ let sum_to arr x =
     sum := !sum + arr.(i)
   done;
   !sum
+
+module Search_thresh = struct
+  type t = Distance of float | Top_k of int | Top_frac of float [@@deriving sexp]
+end
 
 include struct
   module Lang = Cad
@@ -34,24 +45,43 @@ include struct
     (t := !t +. Time.Span.(to_ms Time.(diff end_time start_time)));
     ret
 
+  let make_rules rules_fn rule_sets ops =
+    let open Local_search in
+    let rules =
+      if String.(rules_fn <> "") then
+        Sexp.load_sexp_conv_exn rules_fn [%of_sexp: (Rule.t * float * float * float) list]
+        |> List.map ~f:(fun (r, _, _, _) -> r)
+      else if String.(rule_sets <> "") then
+        let rule_types = String.split rule_sets ~on:',' in
+
+        let open Pattern in
+        List.concat_map rule_types ~f:(function
+          | "close-leaf" -> close_leaf_patterns ops
+          | "union-leaf" -> union_leaf_patterns ops
+          | "push-pull-replicate" -> push_pull_replicate ops
+          | "leaf" -> leaf_patterns ops
+          | "rename" -> rename_patterns ops
+          | class_ -> raise_s [%message "unknown rule class" (class_ : string)])
+      else []
+    in
+    List.dedup_and_sort ~compare:[%compare: Rule.t] rules
+
+  let make_dist = function
+    | "jaccard" -> Cad_conc.jaccard
+    | "feature" -> Cad_conc.feature_dist
+    | dist -> raise_s [%message "unknown distance" (dist : string)]
+
+  let make_search_thresh str = Sexp.of_string_conv_exn str [%of_sexp: Search_thresh.t]
+
   class synthesizer params =
     let _search_width = 10
     and _search_close_states_time = Params.get params search_close_states_time
     and _sample_states_time = Params.get params sample_states_time
     and _max_cost = Params.get params Baseline.max_cost
     and _ops = Bench.ops @@ Params.get params bench
-    and _rules =
-      let fn = Params.get params rules_fn in
-      if String.(fn = "") then None
-      else
-        let rules =
-          Sexp.load_sexp_conv_exn fn [%of_sexp: (Local_search.Rule.t * float * float * float) list]
-          |> List.map ~f:(fun (r, _, _, _) -> r)
-        in
-        let rules = List.take rules 100 in
-
-        Some rules
-    in
+    and _dist = make_dist @@ Params.get params distance
+    and _search_thresh = make_search_thresh @@ Params.get params search_thresh in
+    let _rules = make_rules (Params.get params rules_fn) (Params.get params rule_sets) _ops in
     object (self)
       inherit Parent.synthesizer (Parent.Ctx.of_params params) as super
 
@@ -62,11 +92,8 @@ include struct
         arr.(0) <- 0;
         arr
 
-      val pats =
-        Option.value _rules
-          ~default:Local_search.Pattern.(close_leaf_patterns _ops @ union_leaf_patterns _ops @ push_pull_replicate _ops)
-
-      method local_search ~target = Local_search.of_rules_tabu ~target pats (Program.eval (Value.eval eval_ctx))
+      method local_search ~target =
+        Local_search.of_rules_tabu ~target ~dist:_dist _rules (Program.eval (Value.eval eval_ctx))
 
       method local_search_diverse ~n term k =
         let k' t' =
@@ -75,7 +102,7 @@ include struct
         in
         if n > 0 then
           let open Local_search in
-          List.iter pats ~f:(fun rule ->
+          List.iter _rules ~f:(fun rule ->
               Option.iter ~f:k' @@ Pattern.rewrite_root rule term;
               Option.iter ~f:k' @@ Pattern.rewrite_root (Rule.flip rule) term)
 
@@ -86,7 +113,21 @@ include struct
 
       method search_close_states new_states =
         with_time _search_close_states_time @@ fun () ->
-        let search_states = List.filter new_states ~f:(fun (v, _, _) -> Float.(Cad_conc.jaccard output v < 0.01)) in
+        let search_states =
+          let top_k k =
+            let sorted_states =
+              List.map new_states ~f:(fun ((v, _, _) as s) -> (_dist output v, s))
+              |> List.sort ~compare:(fun (d, _) (d', _) -> [%compare: float] d d')
+            in
+            List.take sorted_states k |> List.map ~f:Tuple.T2.get2
+          in
+          match _search_thresh with
+          | Search_thresh.Distance d -> List.filter new_states ~f:(fun (v, _, _) -> Float.(_dist output v < d))
+          | Top_k k -> top_k k
+          | Top_frac p ->
+              let k = Float.(to_int (p *. of_int (List.length new_states))) in
+              top_k k
+        in
         Fmt.epr "Searching %d/%d neighborhoods\n%!" (List.length search_states) (List.length new_states);
 
         List.iter search_states ~f:(fun (_, op, args) ->

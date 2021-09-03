@@ -138,15 +138,18 @@ let of_rules_root_only ?n ?target rules eval =
 
 let tabu ?(max_tabu = 10) ~neighbors state start k =
   let seen = Hash_queue.create @@ Base.Hashable.of_key state in
-  let current = ref start in
+  let rec loop current =
+    let m_next = Iter.find_pred (fun c -> not (Hash_queue.mem seen c)) (neighbors current) in
+    match m_next with
+    | Some next ->
+        Hash_queue.enqueue_back_exn seen next ();
+        if Hash_queue.length seen > max_tabu then Hash_queue.drop_front seen;
+        k next;
+        loop next
+    | None -> ()
+  in
   Hash_queue.enqueue_back_exn seen start ();
-  while true do
-    let next = Iter.find_pred_exn (fun c -> not (Hash_queue.mem seen c)) (neighbors !current) in
-    Hash_queue.enqueue_back_exn seen next ();
-    current := next;
-    if Hash_queue.length seen > max_tabu then Hash_queue.drop_front seen;
-    k next
-  done
+  loop start
 
 let of_rules_root_only_tabu ?(dist = Cad_conc.jaccard) ~target rules eval =
   let neighbors t =
