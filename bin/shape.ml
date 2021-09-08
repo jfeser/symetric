@@ -3,8 +3,8 @@ open Staged_synth
 open Std
 
 let () =
-  Random.init 0;
-  let n_pos = 10 and n_sides = 10 in
+  Random.init 1;
+  let n_pos = 5 and n_sides = 10 in
   let scene =
     Array.init n_pos ~f:(fun _ ->
         let has_shape = Float.(Random.float 1.0 < 0.3) in
@@ -24,5 +24,6 @@ let () =
   in
   print_s [%message (ops : Shape.Op.t list)];
 
-  Local_synth_shape.synth scene ops n_pos;
-  Abstract_synth_shape.synth scene ops n_pos
+  let (), local_time = Synth_utils.timed (fun () -> Local_synth_shape.synth scene ops n_pos) in
+  let (), abs_time = Synth_utils.timed (fun () -> Abstract_synth_shape.synth scene ops n_pos) in
+  Fmt.pr "Local: %a, Abs: %a" Time.Span.pp local_time Time.Span.pp abs_time

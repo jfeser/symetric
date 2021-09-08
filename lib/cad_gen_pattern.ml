@@ -168,7 +168,7 @@ let mk_dataset params =
       |> List.iter ~f:(fun output ->
              add_state output class_;
              for _ = 0 to 10 do
-               let center = B.Search_state.random_program_exn search_state output in
+               let center = B.Search_state.random_program_exn search_state Scene output in
                Tree_ball.Rename_leaves.sample ~n:100 ~d:2 (module Cad_op) rename center @@ fun p' ->
                let output' = F.eval (Cad_conc.eval eval_ctx) p' in
                if
@@ -204,7 +204,7 @@ let mk_bench params =
     let search_state = filler#build_search_state in
 
     let output = List.hd_exn @@ List.permute @@ B.Search_state.search ~cost:size ~type_:Cad_type.output search_state in
-    let solution = B.Search_state.random_program_exn search_state output in
+    let solution = B.Search_state.random_program_exn search_state Scene output in
     if not (Hashtbl.mem all_states output) then (
       add_state output class_;
       let solution_ops = shapes @ other_ops in

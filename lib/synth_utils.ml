@@ -46,19 +46,23 @@ module Generate_iter (Lang : Lang_intf.S) = struct
       if arg_idx >= arity then f @@ make_edge params op @@ unsafe_to_list args
       else
         search ss ~cost:costs.(arg_idx) ~type_:types_.(arg_idx)
-        |> List.iter ~f:(fun v ->
+        |> Iter.iter (fun v ->
                Option_array.set_some args arg_idx v;
                build_args (arg_idx + 1))
     in
     build_args 0
 
   let generate_states search params ss ops cost f =
+    let op_iter = Iter.of_list ops in
     if cost = 1 then
-      List.filter ops ~f:(fun op -> Op.arity op = 0) |> List.iter ~f:(fun op -> f @@ make_edge params op [])
+      op_iter |> Iter.filter (fun op -> Op.arity op = 0) |> Iter.iter (fun op -> f @@ make_edge params op [])
     else if cost > 1 then
       let arg_cost = cost - 1 in
-      List.filter ops ~f:(fun op -> Op.arity op > 0)
-      |> List.iter ~f:(fun op ->
+      op_iter
+      |> Iter.filter (fun op ->
+             let arity = Op.arity op in
+             arity > 0 && arity < cost)
+      |> Iter.iter (fun op ->
              Combinat.compositions ~n:arg_cost ~k:(Op.arity op) (fun costs -> generate_args search params ss op costs f))
 end
 

@@ -41,7 +41,7 @@ include struct
         List.for_all old ~f:(fun old_idx -> Float.(dist states.(old_idx) states.(new_idx) >= retain_thresh)))
 
   let sample_incr dist retain_thresh states _old new_ =
-    let gt_thresh i j = Float.(dist states.(i) states.(j) >= retain_thresh) in
+    let gt_thresh i j = Float.(dist states.(i).Search_state.TValue.value states.(j).value >= retain_thresh) in
     let rec select in_ out =
       let next_state =
         List.find out ~f:(fun i -> List.for_all in_ ~f:(gt_thresh i) (* && Range.for_all old ~f:(gt_thresh i) *))
@@ -92,10 +92,10 @@ include struct
 
     let states = Search_state.states ss in
     Dumb_progress.with_bar (Dumb_progress.basic_bar @@ List.length states) @@ fun bar ->
-    List.iteri states ~f:(fun i v ->
+    List.iteri states ~f:(fun i { value = v; _ } ->
         Dumb_progress.update bar i;
         for _ = 0 to k do
-          let p = Search_state.random_program_exn ss v in
+          let p = Search_state.random_program_exn ss Scene v in
 
           let n_ball = ref 0 in
           Tree_ball.Rename_leaves.enumerate_d3
@@ -161,8 +161,9 @@ include struct
 
       method dedup_states states =
         states
-        |> List.filter ~f:(fun (s, _, _) -> not (Search_state.mem search_state s))
-        |> List.dedup_and_sort ~compare:(fun (s, _, _) (s', _, _) -> [%compare: Value.t] s s')
+        |> List.filter ~f:(fun (s, op, _) -> not (Search_state.mem search_state { type_ = Op.ret_type op; value = s }))
+        |> List.dedup_and_sort ~compare:(fun (s, op, _) (s', op', _) ->
+               [%compare: Value.t * Type.t] (s, Op.ret_type op) (s', Op.ret_type op'))
 
       method find_close_states search_thresh new_states =
         List.filter_map new_states ~f:(fun (v, op, args) ->
@@ -205,7 +206,9 @@ include struct
       method sample_diverse_states new_states =
         let new_states_a = Array.of_list new_states in
         let all_states =
-          Array.of_list @@ List.map new_states ~f:(fun (v, _, _) -> v) @ Search_state.states search_state
+          Array.of_list
+          @@ List.map new_states ~f:(fun (v, op, _) -> Search_state.TValue.{ type_ = Op.ret_type op; value = v })
+          @ Search_state.states search_state
         in
         let old = Range.create (List.length new_states) (Array.length all_states)
         and new_ = Range.create 0 (List.length new_states) in

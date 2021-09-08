@@ -76,7 +76,7 @@ module Value = struct
           |> Iter.sum
         in
         let union = 2 * n_pos in
-        Float.(of_int inter / of_int union)
+        Float.(1.0 - (of_int inter / of_int union))
     | _ -> Float.infinity
 
   let embed _ = failwith ""

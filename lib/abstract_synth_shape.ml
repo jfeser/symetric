@@ -65,6 +65,7 @@ let refine (ctx : Abstract_value.Ctx.t) (target : Shape.Value.t) (v : Shape.Valu
   | _ -> None
 
 let synth (target : Shape.Value.t) ops n_pos =
+  let exception Done in
   let ectx = Shape.Value.Ctx.{ n_pos } in
   let module Synth = Baseline.Make (Abs_shape) in
   let rec loop ctx =
@@ -75,9 +76,11 @@ let synth (target : Shape.Value.t) ops n_pos =
       let synth = new Synth.synthesizer sctx in
       match synth#run with
       | Some p ->
-          print_s [%message (p : Shape.Op.t Program.t)];
           let v = Program.eval (Shape.Value.eval ectx) p in
-          if [%compare.equal: Shape.Value.t] v target then failwith "success" else refine ctx target v
+          if [%compare.equal: Shape.Value.t] v target then (
+            print_s [%message (p : Shape.Op.t Program.t)];
+            raise Done)
+          else refine ctx target v
       | None -> failwith "synthesis failed"
     in
     match ctx' with
@@ -87,4 +90,4 @@ let synth (target : Shape.Value.t) ops n_pos =
     | None -> failwith "refinement failed"
   in
   let ctx = Abstract_value.Ctx.{ n_pos; show_color = false; show_sides = false } in
-  loop ctx
+  try ignore (loop ctx : Abstract_value.Ctx.t) with Done -> ()

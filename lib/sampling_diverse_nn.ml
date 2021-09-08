@@ -18,7 +18,7 @@ include struct
     let b, bs = List.split_n l n in
     if List.is_empty bs then [ b ] else b :: batched n bs
 
-  let sample_batched ?(batch_size = 1024) embed retain_thresh states old new_ =
+  let sample_batched ?(batch_size = 1024) embed retain_thresh (states : Search_state.TValue.t array) old new_ =
     let open Torch in
     if List.is_empty old || List.is_empty new_ then new_
     else
@@ -27,7 +27,7 @@ include struct
              let device = Device.Cuda 0 in
              let to_tensor s =
                Tensor.to_device ~device @@ Tensor.unsqueeze ~dim:0 @@ Tensor.squeeze @@ embed
-               @@ List.map s ~f:(fun i -> states.(i))
+               @@ List.map s ~f:(fun i -> states.(i).value)
              in
              let old_tensor = to_tensor old and new_tensor = to_tensor new_ in
              let dists = Tensor.squeeze @@ Tensor.cdist ~x1:old_tensor ~x2:new_tensor ~p:1.0 ~compute_mode:0 in
@@ -86,7 +86,9 @@ include struct
       method! sample_diverse_states new_states =
         let new_states_a = Array.of_list new_states in
         let all_states =
-          Array.of_list @@ List.map new_states ~f:(fun (v, _, _) -> v) @ Search_state.states search_state
+          Array.of_list
+          @@ List.map new_states ~f:(fun (v, op, _) -> Search_state.TValue.{ type_ = Op.ret_type op; value = v })
+          @ Search_state.states search_state
         in
         let old = List.range (List.length new_states) (Array.length all_states)
         and new_ = List.range 0 (List.length new_states) in

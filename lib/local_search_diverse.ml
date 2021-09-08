@@ -99,9 +99,12 @@ module Make (Lang : Lang_intf.S) = struct
               Option.iter ~f:k' @@ Pattern.rewrite_root (module Op) (Rule.flip rule) term)
 
       method dedup_states states =
+        let module S = Search_state in
         states
-        |> List.filter ~f:(fun (s, _, _) -> not (Search_state.mem search_state s))
-        |> List.dedup_and_sort ~compare:(fun (s, _, _) (s', _, _) -> [%compare: Value.t] s s')
+        |> List.map ~f:(fun ((value, op, _) as x) -> (S.TValue.{ type_ = Op.ret_type op; value }, x))
+        |> List.filter ~f:(fun (tval, _) -> not (S.mem search_state tval))
+        |> List.dedup_and_sort ~compare:(fun (tval, _) (tval', _) -> [%compare: S.TValue.t] tval tval')
+        |> List.map ~f:(fun (_, x) -> x)
 
       method search_close_states new_states =
         let top_k k =
@@ -131,21 +134,26 @@ module Make (Lang : Lang_intf.S) = struct
                      raise @@ Parent.Done p))
 
       method sample_diverse_states cost new_states =
+        let module TValue = struct
+          type t = Value.t * Type.t [@@deriving compare, hash, sexp_of]
+        end in
         with_time ctx.sample_states_time @@ fun () ->
         let width = sample_width.(cost) in
         if width > 0 then (
           let new_states_a = Array.of_list new_states in
           let classes =
-            List.mapi new_states ~f:(fun i ((v, _, _) as x) -> (v, (x, Union_find.create i)))
-            |> Hashtbl.of_alist_exn (module Value)
+            List.mapi new_states ~f:(fun i ((v, op, _) as x) -> ((v, Op.ret_type op), (x, Union_find.create i)))
+            |> Hashtbl.of_alist_exn (module TValue)
           in
           let module F = Flat_program.Make (Op) in
           Hashtbl.iter classes ~f:(fun ((_, op, args), class_) ->
               let p = Search_state.program_of_op_args_exn search_state op args in
               self#local_search_diverse ~n:width p (fun p ->
-                  Program.eval (Value.eval eval_ctx) p
-                  |> Hashtbl.find classes
-                  |> Option.iter ~f:(fun (_, class_') -> Union_find.union class_ class_')));
+                  let v = Program.eval (Value.eval eval_ctx) p in
+                  let (Apply (op, _)) = p in
+                  let t = Op.ret_type op in
+
+                  Hashtbl.find classes (v, t) |> Option.iter ~f:(fun (_, class_') -> Union_find.union class_ class_')));
 
           let to_keep =
             Hashtbl.data classes |> List.map ~f:Tuple.T2.get2 |> List.map ~f:Union_find.get

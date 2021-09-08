@@ -86,7 +86,7 @@ let mk_hard_term ectx size =
   let search_state = filler#build_search_state in
 
   let value = List.hd_exn @@ List.permute @@ B.Search_state.search ~cost:size ~type_:Cad_type.output search_state in
-  let term = B.Search_state.random_program_exn search_state value in
+  let term = B.Search_state.random_program_exn search_state Scene value in
   (term, value)
 
 let of_queue q f = Queue.iter q ~f
@@ -170,14 +170,14 @@ let distance_graph ?(size = 10) () =
 
   let states = Array.of_list @@ B.Search_state.states search_state in
   let n_states = Array.length states in
-  let random_state () = states.(Random.int n_states) in
+  let random_state () = states.(Random.int n_states).value in
 
   print_endline "Generating transform graph.";
   let g = G.create () in
-  Array.iter states ~f:(G.add_vertex g);
-  Array.iter states ~f:(fun v ->
-      let p = B.Search_state.program_exn search_state v in
-      List.iter rules ~f:(fun rule -> all_rewrites rule p |> Iter.iter (fun p' -> G.add_edge g v (eval p'))));
+  Array.iter states ~f:(fun s -> G.add_vertex g s.value);
+  Array.iter states ~f:(fun s ->
+      let p = B.Search_state.program_exn search_state s.type_ s.value in
+      List.iter rules ~f:(fun rule -> all_rewrites rule p |> Iter.iter (fun p' -> G.add_edge g s.value (eval p'))));
   print_s [%message (G.nb_vertex g : int) (G.nb_edges g : int)];
 
   print_endline "Calculating correlation.";
@@ -331,13 +331,13 @@ let stochastic_distance ?(size = 10) () =
 
   let states = Array.of_list @@ B.Search_state.states search_state in
   let n_states = Array.length states in
-  let random_state () = states.(Random.int n_states) in
+  let random_state () = states.(Random.int n_states).value in
 
   print_endline "Generating transform graph.";
   let g = G.create () in
-  Array.iter states ~f:(G.add_vertex g);
-  Array.iter states ~f:(fun v ->
-      let p = B.Search_state.program_exn search_state v in
+  Array.iter states ~f:(fun s -> G.add_vertex g s.value);
+  Array.iter states ~f:(fun { value = v; type_ = t } ->
+      let p = B.Search_state.program_exn search_state t v in
       List.iter rules ~f:(fun rule ->
           all_rewrites rule p
           |> Iter.iter (fun p' ->
