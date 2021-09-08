@@ -7,8 +7,6 @@ module type S = sig
 
   val arity : t -> int
 
-  val type_ : t -> type_ list * type_
-
   val args_type : t -> type_ list
 
   val ret_type : t -> type_

@@ -43,3 +43,20 @@ let param (type op value) (module Op : Sexpable.S with type t = op) (module Valu
     let init = First init
   end : Dumb_params.Param.S
     with type t = (Op.t, Value.t) t)
+  |> Dumb_params.Param.create
+
+module Make (Op : Sexpable.S) (Value : Sexpable.S) = struct
+  type nonrec t = (Op.t, Value.t) t [@@deriving sexp]
+
+  let load = load [%of_sexp: Op.t] [%of_sexp: Value.t]
+
+  let save = save [%sexp_of: Op.t] [%sexp_of: Value.t]
+
+  let ops = ops
+
+  let output = output
+
+  let solution_exn = solution_exn
+
+  let param = param (module Op) (module Value)
+end

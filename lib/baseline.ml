@@ -37,7 +37,7 @@ module Make (Lang : Lang_intf.S) = struct
       program_cost : float ref;
     }
 
-    let create ?stats ?(verbose = false) ~max_cost ectx ops output () =
+    let create ?stats ?(verbose = false) ~max_cost ectx ops output =
       let stats = Option.value_lazy stats ~default:(lazy (Stats.create ())) in
       {
         max_cost;

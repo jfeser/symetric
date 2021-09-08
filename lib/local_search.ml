@@ -1,6 +1,5 @@
-open Cad
-
 let full ?(n = 5) ?target ops ectx =
+  let open Cad in
   let eval = Program.eval (Value.eval ectx) in
   let score = match target with Some t -> fun p -> Cad_conc.jaccard t @@ eval p | None -> Fun.const 1.0 in
   let search center k = Tree_ball.Rename_insert_delete.stochastic ~n (module Op) ~score ops center k in
@@ -27,8 +26,7 @@ module Pattern = struct
 
   let rec of_program Program.(Apply (op, args)) = Apply (op, List.map args ~f:of_program)
 
-  let leaf_patterns ops =
-    let module Op = Cad_op in
+  let leaf_patterns (type op) (module Op : Op_intf.S with type t = op) ops =
     let leaf_ops = List.filter ops ~f:(fun op -> Op.arity op = 0) in
     List.concat_map leaf_ops ~f:(fun op1 ->
         List.filter_map leaf_ops ~f:(fun op2 ->
@@ -53,8 +51,7 @@ module Pattern = struct
             let are_different () = not ([%compare.equal: Op.t] op1 op2) in
             Option.some_if (are_different () && are_close ()) (Apply (op1, []), Apply (op2, []))))
 
-  let rename_patterns ?(max_arity = Int.max_value) ops =
-    let module Op = Cad_op in
+  let rename_patterns ?(max_arity = Int.max_value) (type op) (module Op : Op_intf.S with type t = op) ops =
     let ops = List.filter ops ~f:(fun op -> Op.arity op <= max_arity) in
     List.concat_map ops ~f:(fun op1 ->
         List.filter ops ~f:(fun op2 -> (not ([%compare.equal: Op.t] op1 op2)) && Op.arity op1 = Op.arity op2)
@@ -63,6 +60,7 @@ module Pattern = struct
                (Apply (op1, args), Apply (op2, args))))
 
   let push_pull_replicate ops =
+    let open Cad in
     let repls = List.filter ops ~f:(fun op -> match Op.value op with Op.Replicate _ -> true | _ -> false) in
     List.concat_map [ Op.union; Op.inter ] ~f:(fun binary ->
         List.concat_map repls ~f:(fun r ->
@@ -71,7 +69,7 @@ module Pattern = struct
               (apply binary [ Var 0; apply r [ Var 1 ] ], apply r [ apply binary [ Var 0; Var 1 ] ]);
             ]))
 
-  let match_root init bind p t =
+  let match_root (type op) (module Op : Op_intf.S with type t = op) init bind p t =
     let bind ctx k v = Option.map ctx ~f:(fun ctx -> bind ctx k v) in
     let rec match_ ctx p t =
       match (p, t) with
@@ -83,53 +81,53 @@ module Pattern = struct
     in
     match_ (Some init) p t
 
-  let rec match_all init bind p t k =
-    Option.iter (match_root init bind p t) ~f:k;
+  let rec match_all op_m init bind p t k =
+    Option.iter (match_root op_m init bind p t) ~f:k;
     let (Apply (_, args)) = t in
-    List.iter args ~f:(fun t' -> match_all init bind p t' k)
+    List.iter args ~f:(fun t' -> match_all op_m init bind p t' k)
 
   let rec subst subst_var = function
     | Var v -> subst_var v
     | Apply (op, args) -> Program.Apply (op, List.map args ~f:(subst subst_var))
 
-  let rewrite_root (lhs, rhs) t =
+  let rewrite_root op (lhs, rhs) t =
     Option.map
-      (match_root (Map.empty (module Int)) (fun m k v -> Map.add_exn m ~key:k ~data:v) lhs t)
+      (match_root op (Map.empty (module Int)) (fun m k v -> Map.add_exn m ~key:k ~data:v) lhs t)
       ~f:(fun ctx -> subst (Map.find_exn ctx) rhs)
 
-  let rec rewrite_all rule t k =
-    Option.iter (rewrite_root rule t) ~f:k;
+  let rec rewrite_all op_m rule t k =
+    Option.iter (rewrite_root op_m rule t) ~f:k;
     let (Apply (op, args)) = t in
     List.iteri args ~f:(fun i t' ->
-        rewrite_all rule t' (fun p -> k @@ Program.Apply (op, List.take args i @ (p :: List.drop args (i + 1)))))
+        rewrite_all op_m rule t' (fun p -> k @@ Program.Apply (op, List.take args i @ (p :: List.drop args (i + 1)))))
 end
 
 module Rule = struct
-  type pat = (Op.t, int) Pattern.t [@@deriving compare, sexp]
+  type 'o pat = ('o, int) Pattern.t [@@deriving compare, sexp]
 
-  type t = pat * pat [@@deriving compare, sexp]
+  type 'o t = 'o pat * 'o pat [@@deriving compare, sexp]
 
   let flip (x, y) = (y, x)
 end
 
-let of_rules ?n ?target ?(dist = Cad_conc.jaccard) rules eval =
+let of_rules ?n ?target ~dist m_op rules eval =
   let propose term =
     let sampler = Sample.Incremental.reservoir 1 in
     List.iter rules ~f:(fun ((lhs, rhs) as rule) ->
-        Pattern.rewrite_all rule term sampler.add;
-        Pattern.rewrite_all (rhs, lhs) term sampler.add);
+        Pattern.rewrite_all m_op rule term sampler.add;
+        Pattern.rewrite_all m_op (rhs, lhs) term sampler.add);
     Option.value ~default:term @@ List.hd @@ sampler.get_sample ()
   in
   let score = match target with Some t -> fun p -> dist t @@ eval p | None -> Fun.const 1.0 in
   let search center k = Sample.stochastic ?n ~propose ~score center k in
   search
 
-let of_rules_root_only ?n ?target rules eval =
+let of_rules_root_only ?n ?target m_op rules eval =
   let propose term =
     let sampler = Sample.Incremental.reservoir 1 in
     List.iter rules ~f:(fun rule ->
-        Option.iter ~f:sampler.add @@ Pattern.rewrite_root rule term;
-        Option.iter ~f:sampler.add @@ Pattern.rewrite_root (Rule.flip rule) term);
+        Option.iter ~f:sampler.add @@ Pattern.rewrite_root m_op rule term;
+        Option.iter ~f:sampler.add @@ Pattern.rewrite_root m_op (Rule.flip rule) term);
     Option.value ~default:term @@ List.hd @@ sampler.get_sample ()
   in
   let score = match target with Some t -> fun p -> Cad_conc.jaccard t @@ eval p | None -> Fun.const 1.0 in
@@ -151,10 +149,12 @@ let tabu ?(max_tabu = 10) ~neighbors state start k =
   Hash_queue.enqueue_back_exn seen start ();
   loop start
 
-let of_rules_root_only_tabu ?(dist = Cad_conc.jaccard) ~target rules eval =
+let of_rules_root_only_tabu ~dist ~target m_op rules eval =
   let neighbors t =
     List.concat_map rules ~f:(fun rule ->
-        (Option.to_list @@ Pattern.rewrite_root rule t) @ Option.to_list @@ Pattern.rewrite_root (Rule.flip rule) t)
+        (Option.to_list @@ Pattern.rewrite_root m_op rule t)
+        @ Option.to_list
+        @@ Pattern.rewrite_root m_op (Rule.flip rule) t)
     |> List.map ~f:(fun t' -> (dist (eval t') target, t'))
     |> List.sort ~compare:(fun (d, _) (d', _) -> [%compare: float] d d')
     |> List.map ~f:(fun (_, v) -> v)
@@ -169,12 +169,12 @@ let of_rules_root_only_tabu ?(dist = Cad_conc.jaccard) ~target rules eval =
   end in
   tabu ~neighbors (module P)
 
-let of_rules_tabu ?(dist = Cad_conc.jaccard) ~target rules eval =
+let of_rules_tabu (type op) ~dist ~target ((module Op : Op_intf.S with type t = op) as m_op) rules eval =
   let neighbors t =
     let neighbors = Queue.create () in
     List.iter rules ~f:(fun ((lhs, rhs) as rule) ->
-        Pattern.rewrite_all rule t (Queue.enqueue neighbors);
-        Pattern.rewrite_all (rhs, lhs) t (Queue.enqueue neighbors));
+        Pattern.rewrite_all m_op rule t (Queue.enqueue neighbors);
+        Pattern.rewrite_all m_op (rhs, lhs) t (Queue.enqueue neighbors));
 
     List.map (Queue.to_list neighbors) ~f:(fun t' -> (dist (eval t') target, t'))
     |> List.sort ~compare:(fun (d, _) (d', _) -> [%compare: float] d d')
@@ -183,7 +183,7 @@ let of_rules_tabu ?(dist = Cad_conc.jaccard) ~target rules eval =
   in
   let module P = struct
     module T = struct
-      type t = Cad_op.t Program.t [@@deriving compare, hash, sexp]
+      type t = Op.t Program.t [@@deriving compare, hash, sexp]
     end
 
     include T

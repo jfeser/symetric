@@ -129,7 +129,7 @@ include struct
 
   let _ = (Spec.add spec @@ Param.const_str ~name:"lang" name : (string, Param.bound) Param.t)
 
-  let bench = Spec.add spec @@ Param.create @@ Bench.param (module Op) (module Value)
+  let bench = Spec.add spec @@ Bench.param (module Op) (module Value)
 end
 
 module Bench = Bench0

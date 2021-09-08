@@ -31,13 +31,13 @@ exception No_proposal
 
 let sample_step ((lhs, rhs) as rule) t =
   let sampler = Sample.Incremental.reservoir 1 in
-  Local_search.Pattern.rewrite_all rule t sampler.add;
-  Local_search.Pattern.rewrite_all (rhs, lhs) t sampler.add;
+  Local_search.Pattern.rewrite_all (module Op) rule t sampler.add;
+  Local_search.Pattern.rewrite_all (module Op) (rhs, lhs) t sampler.add;
   List.hd @@ sampler.get_sample ()
 
 let all_rewrites ((lhs, rhs) as rule) t k =
-  Local_search.Pattern.rewrite_all rule t k;
-  Local_search.Pattern.rewrite_all (rhs, lhs) t k
+  Local_search.Pattern.rewrite_all (module Op) rule t k;
+  Local_search.Pattern.rewrite_all (module Op) (rhs, lhs) t k
 
 let propose rules t =
   match List.permute rules |> List.find_map ~f:(fun r -> sample_step r t) with
@@ -82,7 +82,7 @@ let mk_hard_term ectx size =
   let shape_ops = List.take (List.permute Cgp.shapes) 4 in
   let ops = shape_ops @ other_ops in
 
-  let filler = new filler (B.Ctx.create ~max_cost:size ectx ops Cad_conc.dummy ()) in
+  let filler = new filler (B.Ctx.create ~max_cost:size ectx ops Cad_conc.dummy) in
   let search_state = filler#build_search_state in
 
   let value = List.hd_exn @@ List.permute @@ B.Search_state.search ~cost:size ~type_:Cad_type.output search_state in
@@ -112,9 +112,9 @@ let run ?(size = 6) ?(n_terms = 10000) () =
 
   let patterns =
     let open Local_search in
-    Pattern.(rename_patterns ops @ push_pull_replicate ops)
-    |> List.map ~f:(fun (r, r') -> if [%compare: Rule.pat] r r' <= 0 then (r, r') else (r', r))
-    |> List.dedup_and_sort ~compare:[%compare: Rule.t]
+    Pattern.(rename_patterns (module Op) ops @ push_pull_replicate ops)
+    |> List.map ~f:(fun (r, r') -> if [%compare: Op.t Rule.pat] r r' <= 0 then (r, r') else (r', r))
+    |> List.dedup_and_sort ~compare:[%compare: Op.t Rule.t]
   in
 
   let distances = List.map patterns ~f:(fun p -> (p, Queue.create ())) in
@@ -133,7 +133,7 @@ let run ?(size = 6) ?(n_terms = 10000) () =
     |> List.sort ~compare:(fun (_, d, _, _) (_, d', _, _) -> [%compare: float] d d')
   in
 
-  print_s @@ [%sexp_of: (Local_search.Rule.t * float * float * float) list] distances_summary
+  print_s @@ [%sexp_of: (Op.t Local_search.Rule.t * float * float * float) list] distances_summary
 
 let distance_graph ?(size = 10) () =
   let module G = Graph.Imperative.Graph.Concrete (Value) in
@@ -157,14 +157,14 @@ let distance_graph ?(size = 10) () =
   let eval = Program.eval (Value.eval ectx) in
 
   let search_state =
-    let filler = new filler (B.Ctx.create ~max_cost:size ectx ops Cad_conc.dummy ()) in
+    let filler = new filler (B.Ctx.create ~max_cost:size ectx ops Cad_conc.dummy) in
     filler#build_search_state
   in
   let rules =
     let open Local_search in
     Pattern.(close_leaf_patterns ops)
-    |> List.map ~f:(fun (r, r') -> if [%compare: Rule.pat] r r' <= 0 then (r, r') else (r', r))
-    |> List.dedup_and_sort ~compare:[%compare: Rule.t]
+    |> List.map ~f:(fun (r, r') -> if [%compare: Op.t Rule.pat] r r' <= 0 then (r, r') else (r', r))
+    |> List.dedup_and_sort ~compare:[%compare: Op.t Rule.t]
   in
   print_s [%message (List.length rules : int)];
 
@@ -318,14 +318,14 @@ let stochastic_distance ?(size = 10) () =
   let eval = Program.eval (Value.eval ectx) in
 
   let search_state =
-    let filler = new filler (B.Ctx.create ~max_cost:size ectx ops Cad_conc.dummy ()) in
+    let filler = new filler (B.Ctx.create ~max_cost:size ectx ops Cad_conc.dummy) in
     filler#build_search_state
   in
   let rules =
     let open Local_search in
     Pattern.(close_leaf_patterns ops)
-    |> List.map ~f:(fun (r, r') -> if [%compare: Rule.pat] r r' <= 0 then (r, r') else (r', r))
-    |> List.dedup_and_sort ~compare:[%compare: Rule.t]
+    |> List.map ~f:(fun (r, r') -> if [%compare: Op.t Rule.pat] r r' <= 0 then (r, r') else (r', r))
+    |> List.dedup_and_sort ~compare:[%compare: Op.t Rule.t]
   in
   print_s [%message (List.length rules : int)];
 

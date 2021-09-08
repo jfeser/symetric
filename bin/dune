@@ -59,3 +59,10 @@
  (libraries core iter staged_synth owl)
  (preprocess
   (pps ppx_jane)))
+
+(executable
+ (name shape)
+ (modules shape)
+ (libraries core iter staged_synth)
+ (preprocess
+  (pps ppx_jane)))
