@@ -4,7 +4,7 @@ open Std
 
 let () =
   Random.init 1;
-  let n_pos = 5 and n_sides = 10 in
+  let n_pos = 6 and n_sides = 10 in
   let scene =
     Array.init n_pos ~f:(fun _ ->
         let has_shape = Float.(Random.float 1.0 < 0.3) in
