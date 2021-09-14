@@ -68,9 +68,7 @@ module Value = struct
   module Tensor = Tensor
 
   module Vector = struct
-    type t = int array [@@deriving compare, equal, sexp]
-
-    let hash_fold_t = Hash.Builtin.hash_fold_array_frozen [%hash_fold: int]
+    type t = int list [@@deriving compare, hash, equal, sexp]
   end
 
   module T = struct
@@ -83,19 +81,20 @@ module Value = struct
   let eval _ op args =
     match (op, args) with
     | Op.Id t, [] -> Tensor t
-    | Reshape, [ Tensor m; Vector v ] -> ( try Tensor (Arr.reshape m v) with Invalid_argument _ -> Error)
+    | Reshape, [ Tensor m; Vector v ] -> (
+        try Tensor (Arr.reshape m @@ Array.of_list v) with Invalid_argument _ -> Error)
     | Permute, [ Tensor m; Vector v ] ->
         let dims = Arr.num_dims m in
-        if Array.length v <> dims then Error
+        if List.length v <> dims then Error
         else
           let found = Array.create ~len:dims false in
-          Array.iter v ~f:(fun ax -> if ax >= 0 && ax < dims then found.(ax) <- true);
-          if Array.for_all ~f:Fun.id found then Tensor (Arr.transpose ~axis:v m) else Error
+          List.iter v ~f:(fun ax -> if ax >= 0 && ax < dims then found.(ax) <- true);
+          if Array.for_all ~f:Fun.id found then Tensor (Arr.transpose ~axis:(Array.of_list v) m) else Error
     | Flip, [ Tensor m; Int x ] ->
         let dims = Arr.num_dims m in
         if x >= 0 && x < dims then Tensor (Arr.flip ~axis:x m) else Error
-    | Cons, [ Int x; Vector xs ] -> Vector (Array.of_list (x :: Array.to_list xs))
-    | Vec, [ Int x ] -> Vector [| x |]
+    | Cons, [ Int x; Vector xs ] -> Vector (x :: xs)
+    | Vec, [ Int x ] -> Vector [ x ]
     | Int x, [] -> Int x
     | (Reshape | Permute | Flip), ([ Error; _ ] | [ _; Error ]) -> Error
     | op, args -> raise_s [%message "unexpected arguments" (op : Op.t) (args : t list)]

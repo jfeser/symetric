@@ -64,19 +64,21 @@ module Value = struct
   let dist Ctx.{ n_pos } s s' =
     match (s, s') with
     | Scene s, Scene s' ->
-        let inter =
-          Iter.(0 -- (n_pos - 1))
-          |> Iter.map (fun i ->
-                 let v = Cow_array.get s i and v' = Cow_array.get s' i in
-                 match (v, v') with
-                 | Some (c, n), Some (c', n') ->
-                     (if n = n' then 1 else 0) + if [%compare.equal: color] c c' then 1 else 0
-                 | None, Some _ | Some _, None -> 0
-                 | None, None -> 2)
-          |> Iter.sum
-        in
-        let union = 2 * n_pos in
-        Float.(1.0 - (of_int inter / of_int union))
+        if Cow_array.count s ~f:Option.is_some = Cow_array.count s' ~f:Option.is_some then
+          let inter =
+            Iter.(0 -- (n_pos - 1))
+            |> Iter.map (fun i ->
+                   let v = Cow_array.get s i and v' = Cow_array.get s' i in
+                   match (v, v') with
+                   | Some (c, n), Some (c', n') ->
+                       (if n = n' then 1 else 0) + if [%compare.equal: color] c c' then 1 else 0
+                   | None, Some _ | Some _, None -> 0
+                   | None, None -> 2)
+            |> Iter.sum
+          in
+          let union = 2 * n_pos in
+          Float.(1.0 - (of_int inter / of_int union))
+        else Float.infinity
     | _ -> Float.infinity
 
   let embed _ = failwith ""

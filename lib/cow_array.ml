@@ -1,3 +1,5 @@
+open Core
+
 type 'a t = 'a array [@@deriving compare, equal, sexp]
 
 let hash_fold_t = Hash.Builtin.hash_fold_array_frozen
@@ -10,3 +12,5 @@ let set a i v =
   a'
 
 let of_array = Fun.id
+
+let count = Array.count

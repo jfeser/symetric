@@ -87,10 +87,10 @@ module Make (Lang : Lang_intf.S) = struct
         ctx.bank_size := Float.of_int @@ Search_state.length search_state
 
       method check_states states =
-        List.find_map states ~f:(fun (s, op, args) ->
-            if [%compare.equal: Value.t] s output then Some (Search_state.program_of_op_args_exn search_state op args)
-            else None)
-        |> Option.iter ~f:(fun p -> raise (Done p))
+        List.iter states ~f:(fun (s, op, args) ->
+            if [%compare.equal: Value.t] s output then
+              let p = Search_state.program_of_op_args_exn search_state op args in
+              raise (Done p))
 
       method fill cost =
         let new_states = self#generate_states cost in
@@ -109,7 +109,6 @@ module Make (Lang : Lang_intf.S) = struct
         with Done p ->
           ctx.found_program := true;
           ctx.program_cost := Float.of_int @@ Program.size p;
-          assert (Value.equal (Program.eval (Value.eval eval_ctx) p) output);
           Some p
     end
 end

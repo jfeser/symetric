@@ -43,6 +43,8 @@ module Make (Lang : Lang_intf.S) = struct
 
   let print_stats ctx = Fmt.epr "Total: %d\n%!" (length ctx)
 
+  let print_contents ctx = print_s [%message (ctx.values : Lang.Value.t Queue.t Hashtbl.M(Attr).t)]
+
   let rec program_exn ctx type_ value =
     let _, op, args = Queue.peek_exn @@ Hashtbl.find_exn ctx.paths { type_; value } in
     program_of_op_args_exn ctx op args
