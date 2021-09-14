@@ -12,25 +12,30 @@ module Type = struct
 end
 
 module Tensor = struct
-  open Owl
-  module M = Dense.Ndarray.Generic
+  type t = { elems : int list; shape : int list } [@@deriving compare, equal, hash, sexp]
 
-  type t = Arr.arr
+  let n_elems t = List.length t.elems
 
-  let equal = M.equal
+  let n_dims t = List.length t.shape
 
-  let compare a a' = if equal a a' then 0 else if M.greater a a' then 1 else -1
+  module T = Owl.Dense.Ndarray.D
 
-  let sexp_of_t a = [%sexp_of: float array * int array] (M.to_array a, M.shape a)
+  let to_owl t = T.of_array (Array.of_list @@ List.map ~f:Float.of_int t.elems) (Array.of_list t.shape)
 
-  let t_of_sexp s =
-    let data, shape = [%of_sexp: float array * int array] s in
-    Arr.of_array data shape
+  let of_owl arr =
+    { elems = T.to_array arr |> Array.to_list |> List.map ~f:Float.to_int; shape = T.shape arr |> Array.to_list }
 
-  let hash_fold_t s t =
-    let s = ref s in
-    Arr.iter (fun x -> s := [%hash_fold: float] !s x) t;
-    !s
+  let reshape t shape =
+    if List.fold ~f:( * ) ~init:1 shape = n_elems t then Some (of_owl @@ T.reshape (to_owl t) (Array.of_list shape))
+    else None
+
+  let permute t dims =
+    if [%compare.equal: int list] (List.sort ~compare:[%compare: int] dims) (List.init (n_dims t) ~f:(fun i -> i + 1))
+    then
+      let axis = List.map dims ~f:(fun d -> d - 1) |> Array.of_list in
+      try Some (of_owl @@ T.transpose ~axis @@ to_owl t)
+      with Failure msg -> raise_s [%message (msg : string) (t.shape : int list) (axis : int array)]
+    else None
 end
 
 module Op = struct
@@ -64,7 +69,6 @@ module Op = struct
 end
 
 module Value = struct
-  open Owl
   module Tensor = Tensor
 
   module Vector = struct
@@ -81,28 +85,18 @@ module Value = struct
   let eval _ op args =
     match (op, args) with
     | Op.Id t, [] -> Tensor t
-    | Reshape, [ Tensor m; Vector v ] -> (
-        try Tensor (Arr.reshape m @@ Array.of_list v) with Invalid_argument _ -> Error)
+    | Reshape, [ Tensor m; Vector v ] ->
+        Option.value ~default:Error @@ Option.map ~f:(fun t -> Tensor t) (Tensor.reshape m v)
     | Permute, [ Tensor m; Vector v ] ->
-        let dims = Arr.num_dims m in
-        if List.length v <> dims then Error
-        else
-          let found = Array.create ~len:dims false in
-          List.iter v ~f:(fun ax -> if ax >= 0 && ax < dims then found.(ax) <- true);
-          if Array.for_all ~f:Fun.id found then Tensor (Arr.transpose ~axis:(Array.of_list v) m) else Error
-    | Flip, [ Tensor m; Int x ] ->
-        let dims = Arr.num_dims m in
-        if x >= 0 && x < dims then Tensor (Arr.flip ~axis:x m) else Error
+        Option.value ~default:Error @@ Option.map ~f:(fun t -> Tensor t) (Tensor.permute m v)
+    | Flip, [ Tensor _; Int _ ] -> failwith "unimplemented"
     | Cons, [ Int x; Vector xs ] -> Vector (x :: xs)
     | Vec, [ Int x ] -> Vector [ x ]
     | Int x, [] -> Int x
     | (Reshape | Permute | Flip), ([ Error; _ ] | [ _; Error ]) -> Error
     | op, args -> raise_s [%message "unexpected arguments" (op : Op.t) (args : t list)]
 
-  let dist _ v v' =
-    match (v, v') with
-    | Tensor t, Tensor t' -> if Owl.Arr.num_dims t <> Owl.Arr.num_dims t' then 1.0 else 0.0
-    | _ -> Float.infinity
+  let dist _ = failwith ""
 end
 
 module Bench0 = struct
@@ -190,7 +184,7 @@ module Gen = struct
     and min_len = Params.get params min_len
     and max_len = Params.get params max_len in
     let dims = Random.int_incl min_dims max_dims in
-    let dim_lens = Array.init dims ~f:(fun _ -> Random.int_incl min_len max_len) in
+    let shape = List.init dims ~f:(fun _ -> Random.int_incl min_len max_len) in
 
     let wrap p =
       let t =
@@ -202,21 +196,22 @@ module Gen = struct
       match op with
       | `Reshape ->
           let new_dims = Random.int_incl min_dims max_dims in
-          let new_shape = List.random_element_exn (k_factors (Owl.Arr.numel t) new_dims) in
+          let new_shape = List.random_element_exn (k_factors (Tensor.n_elems t) new_dims) in
           Program.apply Op.Reshape ~args:[ p; Op.vec_of_list new_shape ]
       | `Permute ->
           let dims =
-            List.init (Owl.Arr.num_dims t) ~f:Fun.id
+            List.init (Tensor.n_dims t) ~f:Fun.id
             |> Combinat.permutations |> Combinat.random |> List.hd_exn |> Array.to_list
           in
           Program.apply Op.Permute ~args:[ p; Op.vec_of_list dims ]
       | `Flip ->
-          let axis = Random.int_incl 0 @@ (Owl.Arr.num_dims t - 1) in
+          let axis = Random.int_incl 0 @@ (Tensor.n_dims t - 1) in
           Program.(apply Op.Flip ~args:[ p; apply (Op.Int axis) ])
     in
 
     let generate n =
-      let tensor = Owl.Arr.init_nd dim_lens (fun _ -> Float.of_int @@ Random.int 10) in
+      let n_elems = List.reduce_exn shape ~f:( * ) in
+      let (tensor : Tensor.t) = { elems = List.init n_elems ~f:(fun _ -> Random.int 10); shape } in
       let p_init = Program.apply (Op.Id tensor) in
       let rec add_ops p = if Program.size p < n then add_ops @@ wrap p else p in
       add_ops p_init

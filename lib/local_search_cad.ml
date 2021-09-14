@@ -30,27 +30,27 @@ let make_dist = function
 
 let make_search_thresh str = Sexp.of_string_conv_exn str [%of_sexp: Local_search_diverse.Search_thresh.t]
 
-let cli =
-  let spec = Dumb_params.Spec.union [ spec; Params.spec; spec ] in
-  let open Command.Let_syntax in
-  Command.basic ~summary:(sprintf "Diversity sampling for %s" name)
-  @@ [%map_open
-       let params = Dumb_params.Spec.cli spec in
-       Synth_utils.run_synth
-         (fun params ->
-           let open Local_search_diverse in
-           let bench = Params.get params bench in
-           let ops = Bench.ops bench
-           and output = Bench.output bench
-           and ectx = Cad.Value.Ctx.create ~xlen:bench.input.xmax ~ylen:bench.input.ymax () in
-           let ctx =
-             Synth.Ctx.create
-               ~search_thresh:(make_search_thresh @@ Params.get params search_thresh)
-               ~rules:(make_rules (Params.get params rules_fn) (Params.get params rule_sets) ops)
-               ~distance:(make_dist @@ Params.get params distance)
-               ~verbose:(Params.get params Baseline.verbose) ~max_cost:(Params.get params Baseline.max_cost) ectx ops
-               output
-           in
-           new Synth.synthesizer ctx)
-         params
-         (Option.iter ~f:(fun p -> eprint_s [%message (p : Op.t Program.t)]))]
+(* let cli =
+ *   let spec = Dumb_params.Spec.union [ spec; Params.spec; spec ] in
+ *   let open Command.Let_syntax in
+ *   Command.basic ~summary:(sprintf "Diversity sampling for %s" name)
+ *   @@ [%map_open
+ *        let params = Dumb_params.Spec.cli spec in
+ *        Synth_utils.run_synth
+ *          (fun params ->
+ *            let open Local_search_diverse in
+ *            let bench = Params.get params bench in
+ *            let ops = Bench.ops bench
+ *            and output = Bench.output bench
+ *            and ectx = Cad.Value.Ctx.create ~xlen:bench.input.xmax ~ylen:bench.input.ymax () in
+ *            let ctx =
+ *              Synth.Ctx.create
+ *                ~search_thresh:(make_search_thresh @@ Params.get params search_thresh)
+ *                ~rules:(make_rules (Params.get params rules_fn) (Params.get params rule_sets) ops)
+ *                ~distance:(make_dist @@ Params.get params distance)
+ *                ~verbose:(Params.get params Baseline.verbose) ~max_cost:(Params.get params Baseline.max_cost) ectx ops
+ *                output
+ *            in
+ *            new Synth.synthesizer ctx)
+ *          params
+ *          (Option.iter ~f:(fun p -> eprint_s [%message (p : Op.t Program.t)]))] *)
