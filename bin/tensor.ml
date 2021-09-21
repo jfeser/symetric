@@ -19,4 +19,5 @@ let () =
   print_s [%message (ops : Tensor.Op.t list)];
 
   let (), abs_time = Synth_utils.timed (fun () -> Abstract_synth_tensor.synth target ops) in
-  Fmt.pr "Local: NaN, Abs: %a" Time.Span.pp abs_time
+  let (), local_time = Synth_utils.timed (fun () -> Local_synth_tensor.synth target ops) in
+  Fmt.pr "Local: %a, Abs: %a" Time.Span.pp local_time Time.Span.pp abs_time

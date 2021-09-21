@@ -14,6 +14,8 @@ end
 module Tensor = struct
   type t = { elems : int list; shape : int list } [@@deriving compare, equal, hash, sexp]
 
+  let shape t = t.shape
+
   let n_elems t = List.length t.elems
 
   let n_dims t = List.length t.shape
@@ -82,6 +84,12 @@ module Value = struct
   include T
   include Comparator.Make (T)
 
+  module Ctx = struct
+    type t = unit
+
+    let of_params _ = ()
+  end
+
   let eval _ op args =
     match (op, args) with
     | Op.Id t, [] -> Tensor t
@@ -95,8 +103,6 @@ module Value = struct
     | Int x, [] -> Int x
     | (Reshape | Permute | Flip), ([ Error; _ ] | [ _; Error ]) -> Error
     | op, args -> raise_s [%message "unexpected arguments" (op : Op.t) (args : t list)]
-
-  let dist _ = failwith ""
 end
 
 module Bench0 = struct

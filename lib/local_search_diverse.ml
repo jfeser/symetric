@@ -34,7 +34,55 @@ module Search_thresh = struct
   type t = Distance of float | Top_k of int | Top_frac of float [@@deriving sexp]
 end
 
-module Make (Lang : Lang_intf.S) = struct
+module type Lang_intf = sig
+  module Type : sig
+    type t [@@deriving compare, hash, sexp]
+
+    include Comparator.S with type t := t
+
+    val output : t
+  end
+
+  module Op : Op_intf.S with type type_ = Type.t
+
+  module Value : sig
+    type t [@@deriving compare, equal, hash, sexp_of]
+
+    module Ctx : sig
+      type t
+
+      val of_params : Params.t -> t
+    end
+
+    include Comparator.S with type t := t
+
+    val eval : Ctx.t -> Op.t -> t list -> t
+
+    val dist : Ctx.t -> t -> t -> float
+  end
+
+  module Bench : sig
+    type t [@@deriving of_sexp]
+
+    val ops : t -> Op.t list
+
+    val output : t -> Value.t
+
+    val solution_exn : t -> Op.t Program.t
+
+    val load : string -> t
+
+    val save : string -> t -> unit
+  end
+
+  val name : string
+
+  val bench : (Bench.t, Dumb_params.Param.bound) Dumb_params.Param.t
+
+  val spec : Dumb_params.Spec.t
+end
+
+module Make (Lang : Lang_intf) = struct
   open Lang
   module Parent = Baseline.Make (Lang)
   module Search_state = Parent.Search_state
@@ -146,8 +194,8 @@ module Make (Lang : Lang_intf.S) = struct
             |> Hashtbl.of_alist_exn (module TValue)
           in
           let module F = Flat_program.Make (Op) in
-          Hashtbl.iter classes ~f:(fun ((_, op, args), class_) ->
-              let p = Search_state.program_of_op_args_exn search_state op args in
+          Hashtbl.iter classes ~f:(fun ((value, op, _), class_) ->
+              let p = Search_state.random_program_exn search_state (Op.ret_type op) value in
               self#local_search_diverse ~n:width p (fun p ->
                   let v = Program.eval (Value.eval eval_ctx) p in
                   let (Apply (op, _)) = p in
@@ -155,13 +203,18 @@ module Make (Lang : Lang_intf.S) = struct
 
                   Hashtbl.find classes (v, t) |> Option.iter ~f:(fun (_, class_') -> Union_find.union class_ class_')));
 
+          (* let class_contents =
+               Hashtbl.to_alist classes
+               |> List.map ~f:(fun (v, (_, c)) -> (Union_find.get c, v))
+               |> Map.of_alist_multi (module Int)
+             in
+             print_s [%message (class_contents : TValue.t list Map.M(Int).t)]; *)
           let to_keep =
             Hashtbl.data classes |> List.map ~f:Tuple.T2.get2 |> List.map ~f:Union_find.get
             |> List.dedup_and_sort ~compare
           in
           Fmt.epr "Retained %d/%d new states\n%!" (List.length to_keep) (List.length new_states);
           let kept_states = List.map to_keep ~f:(fun i -> new_states_a.(i)) in
-          print_s [%message (List.map ~f:(fun (_, op, _) -> op) kept_states : Op.t list)];
           kept_states)
         else new_states
 
@@ -171,6 +224,7 @@ module Make (Lang : Lang_intf.S) = struct
         let new_states = self#dedup_states new_states in
         self#search_close_states new_states;
         let new_states' = self#sample_diverse_states cost new_states in
+        print_s [%message (new_states' : (Value.t * Op.t * Value.t list) list)];
         new_states'
 
       method! run =

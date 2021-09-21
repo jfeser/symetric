@@ -1,4 +1,22 @@
-module Generate_list (Lang : Lang_intf.S) = struct
+module type Lang_intf = sig
+  module Type : sig
+    type t [@@deriving compare, sexp]
+  end
+
+  module Op : Op_intf.S with type type_ = Type.t
+
+  module Value : sig
+    type t [@@deriving compare, sexp_of]
+
+    module Ctx : sig
+      type t
+    end
+
+    val eval : Ctx.t -> Op.t -> t list -> t
+  end
+end
+
+module Generate_list (Lang : Lang_intf) = struct
   open Lang
 
   let unsafe_to_list a = List.init (Option_array.length a) ~f:(Option_array.unsafe_get_some_assuming_some a)
@@ -31,7 +49,7 @@ module Generate_list (Lang : Lang_intf.S) = struct
     else []
 end
 
-module Generate_iter (Lang : Lang_intf.S) = struct
+module Generate_iter (Lang : Lang_intf) = struct
   open Lang
 
   let unsafe_to_list a = List.init (Option_array.length a) ~f:(Option_array.unsafe_get_some_assuming_some a)
@@ -66,7 +84,7 @@ module Generate_iter (Lang : Lang_intf.S) = struct
              Combinat.compositions ~n:arg_cost ~k:(Op.arity op) (fun costs -> generate_args search params ss op costs f))
 end
 
-module Generate_queue (Lang : Lang_intf.S) = struct
+module Generate_queue (Lang : Lang_intf) = struct
   module Iter = Generate_iter (Lang)
 
   let generate_states search params ss ops cost queue =

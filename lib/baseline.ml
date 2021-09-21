@@ -18,7 +18,43 @@ include struct
   let program_cost = Spec.add spec @@ Param.float_ref ~name:"program-cost" ()
 end
 
-module Make (Lang : Lang_intf.S) = struct
+module type Lang_intf = sig
+  module Type : sig
+    type t [@@deriving compare, hash, sexp]
+
+    include Comparator.S with type t := t
+
+    val output : t
+  end
+
+  module Op : Op_intf.S with type type_ = Type.t
+
+  module Value : sig
+    type t [@@deriving compare, equal, hash, sexp_of]
+
+    module Ctx : sig
+      type t
+
+      val of_params : Params.t -> t
+    end
+
+    include Comparator.S with type t := t
+
+    val eval : Ctx.t -> Op.t -> t list -> t
+  end
+
+  module Bench : sig
+    type t [@@deriving of_sexp]
+
+    val ops : t -> Op.t list
+
+    val output : t -> Value.t
+  end
+
+  val bench : (Bench.t, Dumb_params.Param.bound) Dumb_params.Param.t
+end
+
+module Make (Lang : Lang_intf) = struct
   open Lang
   module Search_state = Search_state_all.Make (Lang)
   module Gen = Synth_utils.Generate_list (Lang)

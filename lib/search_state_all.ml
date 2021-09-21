@@ -1,4 +1,16 @@
-module Make (Lang : Lang_intf.S) = struct
+module type Lang_intf = sig
+  module Type : sig
+    type t [@@deriving compare, hash, sexp]
+  end
+
+  module Op : Op_intf.S with type type_ = Type.t
+
+  module Value : sig
+    type t [@@deriving compare, hash, sexp_of]
+  end
+end
+
+module Make (Lang : Lang_intf) = struct
   module Attr = struct
     module T = struct
       type t = { cost : int; type_ : Lang.Type.t } [@@deriving compare, hash, sexp]

@@ -254,4 +254,4 @@ let synth target ops =
   in
   let ctx = Abs.Value.Ctx.create () in
   try ignore (loop ctx : Abs_value.Ctx.t)
-  with Done p -> print_s [%message "synthesis completed" (p : Abs.Op.t Program.t)]
+  with Done p -> print_s [%message "synthesis completed" (Program.size p : int) (p : Abs.Op.t Program.t)]
