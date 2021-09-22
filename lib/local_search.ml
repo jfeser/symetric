@@ -19,6 +19,28 @@ let leaf ?(n = 10) ?target ectx =
   in
   search
 
+module type Subst_intf = sig
+  type t
+
+  type k
+
+  type v
+
+  val empty : t
+
+  val set : t -> k -> v -> t
+
+  val get : t -> k -> v option
+end
+
+module type Term_set_intf = sig
+  type t [@@deriving compare]
+
+  type op
+
+  val heads : t -> (op * t list) Iter.t
+end
+
 module Pattern = struct
   type ('o, 'v) t = Apply of ('o * ('o, 'v) t list) | Var of 'v [@@deriving compare, sexp]
 
@@ -81,6 +103,26 @@ module Pattern = struct
     in
     match_ (Some init) p t
 
+  let match_ (type op ts subst var) (module Op : Op_intf.S with type t = op)
+      (module T : Term_set_intf with type t = ts and type op = Op.t)
+      (module S : Subst_intf with type t = subst and type k = var and type v = T.t) p ts k =
+    let rec match_ ctx = function
+      | [] -> k ctx
+      | (Var v, t) :: jobs -> (
+          match S.get ctx v with
+          | Some t' -> if [%compare.equal: T.t] t t' then match_ ctx jobs else ()
+          | None ->
+              let ctx' = S.set ctx v t in
+              match_ ctx' jobs)
+      | (Apply (op, args), t) :: jobs ->
+          T.heads t
+          |> Iter.iter (fun (op', args') ->
+                 if [%compare.equal: Op.t] op op' then
+                   let jobs' = List.zip_exn args args' in
+                   match_ ctx (jobs' @ jobs))
+    in
+    match_ S.empty [ (p, ts) ]
+
   let rec match_all op_m init bind p t k =
     Option.iter (match_root op_m init bind p t) ~f:k;
     let (Apply (_, args)) = t in
@@ -108,6 +150,9 @@ module Rule = struct
   type 'o t = 'o pat * 'o pat [@@deriving compare, sexp]
 
   let flip (x, y) = (y, x)
+
+  let normalize (type op) compare_op rules =
+    List.concat_map rules ~f:(fun r -> [ r; flip r ]) |> List.dedup_and_sort ~compare:[%compare: op t]
 end
 
 let of_rules ?n ?target ~dist m_op rules eval =

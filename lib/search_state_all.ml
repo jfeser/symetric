@@ -49,6 +49,20 @@ module Make (Lang : Lang_intf) = struct
     let paths = Hashtbl.find_or_add ctx.paths tvalue ~default:Queue.create in
     Queue.enqueue paths (cost, op, inputs)
 
+  let insert_groups ctx cost groups =
+    List.iter groups ~f:(fun states ->
+        match states with
+        | (value, op, args) :: states ->
+            let type_ = Lang.Op.ret_type op in
+            let tvalue = TValue.{ type_; value } in
+            (if not (mem ctx tvalue) then
+             let q = Hashtbl.find_or_add ctx.values { cost; type_ } ~default:Queue.create in
+             Queue.enqueue q value);
+
+            let paths = Hashtbl.find_or_add ctx.paths tvalue ~default:Queue.create in
+            Queue.enqueue_all paths ((cost, op, args) :: List.map states ~f:(fun (_, op, args) -> (cost, op, args)))
+        | [] -> ())
+
   let states ctx = Hashtbl.keys ctx.paths
 
   let length ctx = Hashtbl.length ctx.paths

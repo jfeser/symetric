@@ -87,12 +87,18 @@ module Make (Lang : Lang_intf) = struct
   module Parent = Baseline.Make (Lang)
   module Search_state = Parent.Search_state
 
-  let with_time t f =
+  let with_time_probe t f =
     let start_time = Time.now () in
     let ret = f () in
     let end_time = Time.now () in
     (t := !t +. Time.Span.(to_ms Time.(diff end_time start_time)));
     ret
+
+  let with_time f =
+    let start_time = Time.now () in
+    let ret = f () in
+    let end_time = Time.now () in
+    (ret, Time.diff end_time start_time)
 
   module Ctx = struct
     type t = {
@@ -112,12 +118,38 @@ module Make (Lang : Lang_intf) = struct
       {
         search_width;
         search_thresh;
-        rules;
+        rules = Local_search.Rule.normalize [%compare: Op.t] rules;
         distance;
         parent_ctx;
         search_close_states_time = Stats.add_probe_exn stats "search-close-states-time";
         sample_states_time = Stats.add_probe_exn stats "sample-states-time";
       }
+  end
+
+  module Term_set = struct
+    type op = Op.t
+
+    type t = {
+      search_state : (Search_state.t[@sexp.opaque]); [@ignore]
+      value : [ `List of (Value.t * Op.t * Value.t list) list | `Ref of Search_state.TValue.t ];
+    }
+    [@@deriving compare, sexp_of]
+
+    let heads ({ value; search_state } as ts) =
+      let of_op_args =
+        Iter.map (fun (op, args) ->
+            let type_ = Op.ret_type op in
+            (op, List.map args ~f:(fun value -> { ts with value = `Ref { type_; value } })))
+      in
+
+      match value with
+      | `List vs -> Iter.of_list vs |> Iter.map (fun (_, o, a) -> (o, a)) |> of_op_args
+      | `Ref tv ->
+          Hashtbl.find_exn search_state.paths tv |> Iter.of_queue |> Iter.map (fun (_, o, a) -> (o, a)) |> of_op_args
+
+    let of_states search_state states = { search_state; value = `List states }
+
+    let value_exn = function { value = `List _; _ } -> failwith "no value" | { value = `Ref tv; _ } -> tv.value
   end
 
   class synthesizer (ctx : Ctx.t) =
@@ -135,24 +167,48 @@ module Make (Lang : Lang_intf) = struct
           ctx.rules
           (Program.eval (Value.eval ctx.parent_ctx.ectx))
 
-      method local_search_diverse ~n term k =
-        let k' t' =
-          k t';
-          self#local_search_diverse ~n:(n - 1) term k
-        in
-        if n > 0 then
-          let open Local_search in
-          List.iter ctx.rules ~f:(fun rule ->
-              Option.iter ~f:k' @@ Pattern.rewrite_root (module Op) rule term;
-              Option.iter ~f:k' @@ Pattern.rewrite_root (module Op) (Rule.flip rule) term)
+      method apply_rules states =
+        let module Subst = struct
+          type k = int [@@deriving sexp]
 
-      method dedup_states states =
-        let module S = Search_state in
-        states
-        |> List.map ~f:(fun ((value, op, _) as x) -> (S.TValue.{ type_ = Op.ret_type op; value }, x))
-        |> List.filter ~f:(fun (tval, _) -> not (S.mem search_state tval))
-        |> List.dedup_and_sort ~compare:(fun (tval, _) (tval', _) -> [%compare: S.TValue.t] tval tval')
-        |> List.map ~f:(fun (_, x) -> x)
+          type v = Term_set.t [@@deriving sexp_of]
+
+          type t = v Map.M(Int).t [@@deriving sexp_of]
+
+          let get = Map.find
+
+          let set t k v = Map.set t ~key:k ~data:v
+
+          let empty = Map.empty (module Int)
+        end in
+        let eval_subst s p =
+          let rec eval_subst = function
+            | Local_search.Pattern.Apply (op, args) -> Value.eval ctx.parent_ctx.ectx op @@ List.map args ~f:eval_subst
+            | Var v -> (
+                match Subst.get s v with
+                | Some term_set -> Term_set.value_exn term_set
+                | None ->
+                    raise_s
+                      [%message "no value for binding" (v : int) (s : Subst.t) (p : (Op.t, int) Local_search.Pattern.t)]
+                )
+          in
+          eval_subst p
+        in
+
+        Iter.of_list states
+        |> Iter.map (fun state ->
+               Iter.of_list ctx.rules
+               |> Iter.map (fun (lhs, rhs) ->
+                      Local_search.Pattern.match_
+                        (module Op)
+                        (module Term_set)
+                        (module Subst)
+                        lhs
+                        (Term_set.of_states search_state [ state ])
+                      |> Iter.map (fun s -> eval_subst s rhs))
+               |> Iter.concat
+               |> Iter.map (fun v -> (state, v)))
+        |> Iter.concat
 
       method search_close_states new_states =
         let top_k k =
@@ -163,7 +219,7 @@ module Make (Lang : Lang_intf) = struct
           List.take sorted_states k |> List.map ~f:Tuple.T2.get2
         in
 
-        with_time ctx.search_close_states_time @@ fun () ->
+        with_time_probe ctx.search_close_states_time @@ fun () ->
         let search_states =
           match ctx.search_thresh with
           | Search_thresh.Distance d -> List.filter new_states ~f:(fun (v, _, _) -> Float.(ctx.distance output v < d))
@@ -172,64 +228,77 @@ module Make (Lang : Lang_intf) = struct
               let k = Float.(to_int (p *. of_int (List.length new_states))) in
               top_k k
         in
-        Fmt.epr "Searching %d/%d neighborhoods\n%!" (List.length search_states) (List.length new_states);
 
         List.iter search_states ~f:(fun (_, op, args) ->
             let center = Search_state.program_of_op_args_exn search_state op args in
             self#local_search ~target:output center |> Iter.take ctx.search_width
             |> Iter.iter (fun p ->
                    if [%compare.equal: Value.t] (Program.eval (Value.eval eval_ctx) p) output then
-                     raise @@ Parent.Done p))
+                     raise @@ Parent.Done p));
+        List.length search_states
 
-      method sample_diverse_states cost new_states =
+      method group_states cost new_states =
         let module TValue = struct
           type t = Value.t * Type.t [@@deriving compare, hash, sexp_of]
         end in
-        with_time ctx.sample_states_time @@ fun () ->
+        with_time_probe ctx.sample_states_time @@ fun () ->
         let width = sample_width.(cost) in
         if width > 0 then (
-          let new_states_a = Array.of_list new_states in
           let classes =
-            List.mapi new_states ~f:(fun i ((v, op, _) as x) -> ((v, Op.ret_type op), (x, Union_find.create i)))
-            |> Hashtbl.of_alist_exn (module TValue)
+            List.map new_states ~f:(fun ((v, op, _) as state) -> ((v, Op.ret_type op), state))
+            |> Hashtbl.of_alist_multi (module TValue)
           in
-          let module F = Flat_program.Make (Op) in
-          Hashtbl.iter classes ~f:(fun ((value, op, _), class_) ->
-              let p = Search_state.random_program_exn search_state (Op.ret_type op) value in
-              self#local_search_diverse ~n:width p (fun p ->
-                  let v = Program.eval (Value.eval eval_ctx) p in
-                  let (Apply (op, _)) = p in
-                  let t = Op.ret_type op in
-
-                  Hashtbl.find classes (v, t) |> Option.iter ~f:(fun (_, class_') -> Union_find.union class_ class_')));
-
-          (* let class_contents =
-               Hashtbl.to_alist classes
-               |> List.map ~f:(fun (v, (_, c)) -> (Union_find.get c, v))
-               |> Map.of_alist_multi (module Int)
-             in
-             print_s [%message (class_contents : TValue.t list Map.M(Int).t)]; *)
-          let to_keep =
-            Hashtbl.data classes |> List.map ~f:Tuple.T2.get2 |> List.map ~f:Union_find.get
-            |> List.dedup_and_sort ~compare
+          let classes =
+            let ctr = ref 0 in
+            Hashtbl.map classes ~f:(fun states ->
+                incr ctr;
+                (states, Union_find.create !ctr))
           in
-          Fmt.epr "Retained %d/%d new states\n%!" (List.length to_keep) (List.length new_states);
-          let kept_states = List.map to_keep ~f:(fun i -> new_states_a.(i)) in
-          kept_states)
-        else new_states
 
-      method! generate_states cost =
-        let new_states = super#generate_states cost in
-        super#check_states new_states;
-        let new_states = self#dedup_states new_states in
-        self#search_close_states new_states;
-        let new_states' = self#sample_diverse_states cost new_states in
-        print_s [%message (new_states' : (Value.t * Op.t * Value.t list) list)];
-        new_states'
+          self#apply_rules new_states
+          |> Iter.iter (fun ((v, op, _), alt_value) ->
+                 let t = Op.ret_type op in
+                 let key = (v, t) and alt_key = (alt_value, t) in
+                 match (Hashtbl.find classes key, Hashtbl.find classes alt_key) with
+                 | Some (_, c), Some (_, c') -> Union_find.union c c'
+                 | _ -> ());
+
+          let to_keep = Hashtbl.create (module Int) in
+          Hashtbl.iter classes ~f:(fun (states, class_id) ->
+              Hashtbl.update to_keep (Union_find.get class_id) ~f:(function
+                | Some states' -> states @ states'
+                | None -> states));
+          Hashtbl.data to_keep)
+        else List.map ~f:(fun s -> [ s ]) new_states
+
+      method! fill cost =
+        let new_states = self#generate_states_ cost in
+        List.iter new_states ~f:super#check_states;
+        self#insert_states_ cost new_states;
+        if verbose then (
+          Fmt.epr "Finished cost %d\n%!" cost;
+          Search_state.print_stats search_state)
+
+      method insert_states_ cost states =
+        Search_state.insert_groups search_state cost states;
+        ctx.parent_ctx.bank_size := Float.of_int @@ Search_state.length search_state
+
+      method generate_states_ cost =
+        Fmt.epr "Generating states of cost %d...\n%!" cost;
+        let new_states, gen_time = with_time (fun () -> super#generate_states cost) in
+        Fmt.epr "Generated %d states in %a.\n%!" (List.length new_states) Time.Span.pp gen_time;
+
+        let n_searched, search_time = with_time (fun () -> self#search_close_states new_states) in
+        Fmt.epr "Searched %d close states in %a.\n%!" n_searched Time.Span.pp search_time;
+
+        self#group_states cost new_states
 
       method! run =
         let rec reduce_sample_width () =
-          match super#run with
+          let ret, time = with_time (fun () -> super#run) in
+          Fmt.epr "Completed iteration in %a.\n%!" Time.Span.pp time;
+
+          match ret with
           | Some p -> Some p
           | None ->
               Search_state.clear search_state;
@@ -237,6 +306,7 @@ module Make (Lang : Lang_intf) = struct
               sample_width.(idx) <- sample_width.(idx) - 1;
               reduce_sample_width ()
         in
+
         reduce_sample_width ()
     end
 

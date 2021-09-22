@@ -20,7 +20,7 @@ module Tensor = struct
               kendall_tau (Tensor.shape t) (Tensor.shape t')
             else 1.0
           in
-          print_s [%message (Tensor.shape t : int list) (Tensor.shape t' : int list) (shape_kt : float)];
+          (* print_s [%message (Tensor.shape t : int list) (Tensor.shape t' : int list) (shape_kt : float)]; *)
           (value_dist +. shape_kt) /. 2.0
       | _ -> Float.infinity
     (* match (t, t') with
@@ -50,7 +50,7 @@ let synth (target : Tensor.Value.t) (ops : Tensor.Op.t list) =
 
   let ectx = () in
   let ctx =
-    Synth.Ctx.create ~verbose:true ~distance:(Value.dist ectx) ~max_cost:25 ~rules ~search_thresh:(Top_k 100) ectx ops
+    Synth.Ctx.create ~verbose:true ~distance:(Value.dist ectx) ~max_cost:11 ~rules ~search_thresh:(Top_k 3) ectx ops
       target
   in
   match (new Synth.synthesizer ctx)#run with

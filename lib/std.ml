@@ -40,3 +40,9 @@ module Random = struct
 
   let list_elem_exn l = List.nth_exn l (Random.int @@ List.length l)
 end
+
+module Iter = struct
+  include Iter
+
+  let of_queue q k = Queue.iter q ~f:k
+end
