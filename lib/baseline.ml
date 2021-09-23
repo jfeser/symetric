@@ -57,7 +57,7 @@ end
 module Make (Lang : Lang_intf) = struct
   open Lang
   module Search_state = Search_state_all.Make (Lang)
-  module Gen = Synth_utils.Generate_list (Lang)
+  module Gen = Generate.Gen_list (Lang)
 
   exception Done of Op.t Program.t
 
@@ -67,20 +67,24 @@ module Make (Lang : Lang_intf) = struct
       verbose : bool;
       ectx : Value.Ctx.t;
       ops : Op.t list;
-      output : Value.t;
+      goal : Op.t -> Value.t -> bool;
       bank_size : float ref;
       found_program : bool ref;
       program_cost : float ref;
     }
 
-    let create ?stats ?(verbose = false) ~max_cost ectx ops output =
+    let create ?stats ?(verbose = false) ~max_cost ectx ops goal =
       let stats = Option.value_lazy stats ~default:(lazy (Stats.create ())) in
       {
         max_cost;
         verbose;
         ectx;
         ops;
-        output;
+        goal =
+          (match goal with
+          | `Value v ->
+              fun op v' -> [%compare.equal: Type.t] (Op.ret_type op) Type.output && [%compare.equal: Value.t] v v'
+          | `Pred p -> p);
         bank_size = Stats.add_probe_exn stats "bank-size";
         found_program = ref false;
         program_cost = Stats.add_probe_exn stats "program-cost";
@@ -93,7 +97,9 @@ module Make (Lang : Lang_intf) = struct
         verbose = Params.get params verbose;
         ectx = Value.Ctx.of_params params;
         ops = Bench.ops bench;
-        output = Bench.output bench;
+        goal =
+          (fun op v ->
+            [%compare.equal: Type.t] (Op.ret_type op) Type.output && ([%compare.equal: Value.t] v @@ Bench.output bench));
         bank_size = Params.get params bank_size;
         found_program = Params.get params found_program;
         program_cost = Params.get params program_cost;
@@ -112,8 +118,6 @@ module Make (Lang : Lang_intf) = struct
 
       val ops = ctx.ops
 
-      val output = ctx.output
-
       method get_search_state = search_state
 
       method generate_states cost = Gen.generate_states Search_state.search eval_ctx search_state ops cost
@@ -124,7 +128,7 @@ module Make (Lang : Lang_intf) = struct
 
       method check_states states =
         List.iter states ~f:(fun (s, op, args) ->
-            if [%compare.equal: Value.t] s output then
+            if ctx.goal op s then
               let p = Search_state.program_of_op_args_exn search_state op args in
               raise (Done p))
 

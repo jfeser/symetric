@@ -18,6 +18,8 @@ module Make (Lang : Lang_intf) = struct
 
     include T
     include Comparator.Make (T)
+
+    let create cost type_ = { cost; type_ }
   end
 
   module TValue = struct
@@ -34,7 +36,7 @@ module Make (Lang : Lang_intf) = struct
 
   let search ctx ~cost ~type_ =
     if cost >= 0 && cost <= ctx.max_cost then
-      match Hashtbl.find ctx.values { cost; type_ } with Some q -> Queue.to_list q | None -> []
+      match Hashtbl.find ctx.values @@ Attr.create cost type_ with Some q -> Queue.to_list q | None -> []
     else []
 
   let mem ctx = Hashtbl.mem ctx.paths
@@ -43,7 +45,7 @@ module Make (Lang : Lang_intf) = struct
     let type_ = Lang.Op.ret_type op in
     let tvalue = TValue.{ type_; value = state } in
     (if not (mem ctx tvalue) then
-     let q = Hashtbl.find_or_add ctx.values { cost; type_ } ~default:Queue.create in
+     let q = Hashtbl.find_or_add ctx.values (Attr.create cost type_) ~default:Queue.create in
      Queue.enqueue q state);
 
     let paths = Hashtbl.find_or_add ctx.paths tvalue ~default:Queue.create in
@@ -93,4 +95,8 @@ module Make (Lang : Lang_intf) = struct
     Hashtbl.to_alist ctx.values
     |> List.find_map ~f:(fun (k, vs) ->
            if Queue.mem vs v ~equal:[%compare.equal: Lang.Value.t] then Some k.cost else None)
+
+  let n_states { values; _ } = Hashtbl.length values
+
+  let n_transitions { paths; _ } = Hashtbl.fold ~init:0 ~f:(fun ~key:_ ~data sum -> sum + Queue.length data) paths
 end

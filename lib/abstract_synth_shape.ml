@@ -141,7 +141,7 @@ let synth (target : Shape.Value.t) ops n_pos =
     let ctx' =
       let abs_scene = Abs_value.lift ctx target in
       print_s [%message "abstract target" (abs_scene : Abs_value.t)];
-      let sctx = Synth.Ctx.create ~max_cost:100 ctx ops abs_scene in
+      let sctx = Synth.Ctx.create ~max_cost:100 ctx ops (`Value abs_scene) in
       let synth = new Synth.synthesizer sctx in
       match synth#run with
       | Some p ->

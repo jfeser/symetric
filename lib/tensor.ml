@@ -38,6 +38,8 @@ module Tensor = struct
       try Some (of_owl @@ T.transpose ~axis @@ to_owl t)
       with Failure msg -> raise_s [%message (msg : string) (t.shape : int list) (axis : int array)]
     else None
+
+  let flip t axis = if axis >= 0 && axis < n_dims t then Some (of_owl @@ T.flip ~axis @@ to_owl t) else None
 end
 
 module Op = struct
@@ -91,13 +93,12 @@ module Value = struct
   end
 
   let eval _ op args =
+    let of_tensor_opt m = Option.value ~default:Error @@ Option.map ~f:(fun t -> Tensor t) m in
     match (op, args) with
     | Op.Id t, [] -> Tensor t
-    | Reshape, [ Tensor m; Vector v ] ->
-        Option.value ~default:Error @@ Option.map ~f:(fun t -> Tensor t) (Tensor.reshape m v)
-    | Permute, [ Tensor m; Vector v ] ->
-        Option.value ~default:Error @@ Option.map ~f:(fun t -> Tensor t) (Tensor.permute m v)
-    | Flip, [ Tensor _; Int _ ] -> failwith "unimplemented"
+    | Reshape, [ Tensor m; Vector v ] -> of_tensor_opt @@ Tensor.reshape m v
+    | Permute, [ Tensor m; Vector v ] -> of_tensor_opt @@ Tensor.permute m v
+    | Flip, [ Tensor t; Int a ] -> of_tensor_opt @@ Tensor.flip t a
     | Cons, [ Int x; Vector xs ] -> Vector (x :: xs)
     | Vec, [ Int x ] -> Vector [ x ]
     | Int x, [] -> Int x

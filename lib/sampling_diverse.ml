@@ -114,6 +114,7 @@ include struct
 
   class synthesizer params =
     let _local_search = Params.get params local_search in
+    let output = Bench.output @@ Params.get params bench in
     let n_components, component = local_search_equivalent params in
     object (self)
       inherit Parent.synthesizer (Parent.Ctx.of_params params) as super

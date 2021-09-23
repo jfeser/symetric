@@ -82,7 +82,7 @@ let mk_hard_term ectx size =
   let shape_ops = List.take (List.permute Cgp.shapes) 4 in
   let ops = shape_ops @ other_ops in
 
-  let filler = new filler (B.Ctx.create ~max_cost:size ectx ops Cad_conc.dummy) in
+  let filler = new filler (B.Ctx.create ~max_cost:size ectx ops @@ `Value Cad_conc.dummy) in
   let search_state = filler#build_search_state in
 
   let value = List.hd_exn @@ List.permute @@ B.Search_state.search ~cost:size ~type_:Cad_type.output search_state in
@@ -157,7 +157,7 @@ let distance_graph ?(size = 10) () =
   let eval = Program.eval (Value.eval ectx) in
 
   let search_state =
-    let filler = new filler (B.Ctx.create ~max_cost:size ectx ops Cad_conc.dummy) in
+    let filler = new filler (B.Ctx.create ~max_cost:size ectx ops @@ `Value Cad_conc.dummy) in
     filler#build_search_state
   in
   let rules =
@@ -318,7 +318,7 @@ let stochastic_distance ?(size = 10) () =
   let eval = Program.eval (Value.eval ectx) in
 
   let search_state =
-    let filler = new filler (B.Ctx.create ~max_cost:size ectx ops Cad_conc.dummy) in
+    let filler = new filler (B.Ctx.create ~max_cost:size ectx ops @@ `Value Cad_conc.dummy) in
     filler#build_search_state
   in
   let rules =

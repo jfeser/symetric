@@ -109,12 +109,14 @@ module Make (Lang : Lang_intf) = struct
       parent_ctx : Parent.Ctx.t;
       search_close_states_time : float ref;
       sample_states_time : float ref;
+      output : Value.t;
     }
 
     let create ?(search_width = 10) ?(verbose = false) ?stats ~search_thresh ~rules ~distance ~max_cost ectx ops output
         =
       let stats = Option.value_lazy stats ~default:(lazy (Stats.create ())) in
-      let parent_ctx = Parent.Ctx.create ~stats ~verbose ~max_cost ectx ops output in
+      let parent_ctx = Parent.Ctx.create ~stats ~verbose ~max_cost ectx ops (`Value output) in
+
       {
         search_width;
         search_thresh;
@@ -123,6 +125,7 @@ module Make (Lang : Lang_intf) = struct
         parent_ctx;
         search_close_states_time = Stats.add_probe_exn stats "search-close-states-time";
         sample_states_time = Stats.add_probe_exn stats "sample-states-time";
+        output;
       }
   end
 
@@ -155,6 +158,8 @@ module Make (Lang : Lang_intf) = struct
   class synthesizer (ctx : Ctx.t) =
     object (self)
       inherit Parent.synthesizer ctx.parent_ctx as super
+
+      val output = ctx.output
 
       val sample_width =
         let arr = Array.create ~len:(ctx.parent_ctx.max_cost + 1) 2 in
@@ -210,6 +215,7 @@ module Make (Lang : Lang_intf) = struct
                |> Iter.map (fun v -> (state, v)))
         |> Iter.concat
 
+      (* TODO: Local search must consider equivalent terms (not just the representative *)
       method search_close_states new_states =
         let top_k k =
           let sorted_states =
@@ -291,7 +297,9 @@ module Make (Lang : Lang_intf) = struct
         let n_searched, search_time = with_time (fun () -> self#search_close_states new_states) in
         Fmt.epr "Searched %d close states in %a.\n%!" n_searched Time.Span.pp search_time;
 
-        self#group_states cost new_states
+        let groups, group_time = with_time (fun () -> self#group_states cost new_states) in
+        Fmt.epr "Created %d groups in %a.\n%!" (List.length groups) Time.Span.pp group_time;
+        groups
 
       method! run =
         let rec reduce_sample_width () =

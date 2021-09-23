@@ -33,6 +33,12 @@ module List = struct
       | (x, y, z, a) :: tl -> loop tl (x :: l1) (y :: l2) (z :: l3) (a :: l4)
     in
     loop list [] [] [] []
+
+  let insert_sorted ~compare x xs =
+    let rec insert = function [] -> [ x ] | y :: ys -> if compare x y <= 0 then x :: y :: ys else y :: insert ys in
+    insert xs
+
+  let product l = List.reduce_exn l ~f:( * )
 end
 
 module Random = struct
@@ -44,5 +50,20 @@ end
 module Iter = struct
   include Iter
 
+  let sexp_of_t sexp_of_elem iter = [%sexp_of: elem list] @@ Iter.to_list iter
+
   let of_queue q k = Queue.iter q ~f:k
+
+  let of_set s k = Core.Set.iter ~f:k s
+end
+
+module Array = struct
+  include Array
+
+  let inversions compare a =
+    let inv = ref 0 in
+    for i = 0 to Array.length a - 2 do
+      if compare a.(i) a.(i + 1) > 0 then incr inv
+    done;
+    !inv
 end

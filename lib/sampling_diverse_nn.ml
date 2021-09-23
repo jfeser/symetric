@@ -69,6 +69,7 @@ include struct
              ret)
 
   class synthesizer params =
+    let output = Bench.output @@ Params.get params bench in
     object (self)
       inherit Parent.synthesizer params
 
