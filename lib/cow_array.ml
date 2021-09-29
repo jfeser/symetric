@@ -13,4 +13,8 @@ let set a i v =
 
 let of_array = Fun.id
 
+let length = Array.length
+
 let count = Array.count
+
+let map2_exn = Array.map2_exn

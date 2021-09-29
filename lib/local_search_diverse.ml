@@ -147,8 +147,10 @@ module Make (Lang : Lang_intf) = struct
 
       match value with
       | `List vs -> Iter.of_list vs |> Iter.map (fun (_, o, a) -> (o, a)) |> of_op_args
-      | `Ref tv ->
-          Hashtbl.find_exn search_state.paths tv |> Iter.of_queue |> Iter.map (fun (_, o, a) -> (o, a)) |> of_op_args
+      | `Ref tv -> (
+          match Hashtbl.find search_state.paths tv with
+          | Some terms -> Iter.of_queue terms |> Iter.map (fun (_, o, a) -> (o, a)) |> of_op_args
+          | None -> Iter.empty)
 
     let of_states search_state states = { search_state; value = `List states }
 
@@ -215,7 +217,6 @@ module Make (Lang : Lang_intf) = struct
                |> Iter.map (fun v -> (state, v)))
         |> Iter.concat
 
-      (* TODO: Local search must consider equivalent terms (not just the representative *)
       method search_close_states new_states =
         let top_k k =
           let sorted_states =

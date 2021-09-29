@@ -75,11 +75,20 @@ let synth ?(use_rules = true) cost (target : Tensor.Value.t) (ops : Tensor.Op.t 
     let open Local_search.Pattern in
     let open Op in
     if use_rules then
-      [
-        (Apply (Cons, [ Var 0; Apply (Vec, [ Var 1 ]) ]), Apply (Cons, [ Var 1; Apply (Vec, [ Var 0 ]) ]));
-        ( Apply (Cons, [ Var 0; Apply (Cons, [ Var 1; Var 2 ]) ]),
-          Apply (Cons, [ Var 1; Apply (Cons, [ Var 0; Var 2 ]) ]) );
-      ]
+      let adj_rule p p' =
+        [
+          (Apply (Cons, [ p; Apply (Vec, [ p' ]) ]), Apply (Cons, [ p'; Apply (Vec, [ p ]) ]));
+          (Apply (Cons, [ p; Apply (Cons, [ p'; Var 2 ]) ]), Apply (Cons, [ p'; Apply (Cons, [ p; Var 2 ]) ]));
+        ]
+      in
+      let flip_rules = adj_rule (Var 0) (Var 1) in
+      let _intro_rule =
+        [
+          (Apply (Cons, [ Var 0; Var 1 ]), Apply (Cons, [ Apply (Int 1, []); Apply (Cons, [ Var 0; Var 1 ]) ]));
+          (Apply (Vec, [ Var 0 ]), Apply (Cons, [ Apply (Int 1, []); Apply (Vec, [ Var 0 ]) ]));
+        ]
+      in
+      flip_rules
     else []
   in
 

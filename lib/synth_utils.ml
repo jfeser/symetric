@@ -4,6 +4,10 @@ let timed f =
   let end_ = Time.now () in
   (ret, Time.diff end_ start)
 
+let time f =
+  let _, t = timed f in
+  t
+
 exception Break
 
 let break _ = raise Break

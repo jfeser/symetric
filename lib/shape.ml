@@ -40,8 +40,9 @@ end
 
 module Value = struct
   module T = struct
-    type t = Scene of (color * int) option Cow_array.t | Int of int | Color of color
-    [@@deriving compare, equal, hash, sexp]
+    type scene = (color * int) option Cow_array.t [@@deriving compare, equal, hash, sexp]
+
+    type t = Scene of scene | Int of int | Color of color [@@deriving compare, equal, hash, sexp]
   end
 
   include T

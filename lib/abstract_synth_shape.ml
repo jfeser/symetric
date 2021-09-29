@@ -124,8 +124,51 @@ module Mask_abstract_value = struct
     | _ -> None
 end
 
+module Correct_mask_abstract_value = struct
+  module T = struct
+    type t = Scene of bool Cow_array.t | Int of int | Color of Shape.color [@@deriving compare, equal, hash, sexp]
+  end
+
+  include T
+  include Comparator.Make (T)
+
+  module Ctx = struct
+    type t = { scene : Shape.Value.scene }
+
+    let create scene = { scene }
+
+    let of_params _ = failwith "unimplemented"
+  end
+
+  let eval Ctx.{ scene } (op : Shape.Op.t) args =
+    match (op, args) with
+    | Draw, [ Scene s; Int sides; Color color; Int pos ] ->
+        Scene
+          Cow_array.(
+            set s pos ([%compare.equal: (Shape.color * int) option] (Some (color, sides)) (Cow_array.get scene pos)))
+    | Empty, [] ->
+        Scene
+          (Cow_array.of_array
+          @@ Array.init (Cow_array.length scene) ~f:(fun i -> Option.is_none @@ Cow_array.get scene i))
+    | (Sides x | Position x), [] -> Int x
+    | Color c, [] -> Color c
+    | _ -> failwith "unexpected eval"
+
+  let lift (ctx : Ctx.t) = function
+    | Shape.Value.Color c -> Color c
+    | Int x -> Int x
+    | Scene s ->
+        Scene (Cow_array.map2_exn s ctx.scene ~f:(fun v v' -> [%compare.equal: (Shape.color * int) option] v v'))
+
+  let embed _ = failwith ""
+
+  let dist _ = failwith ""
+
+  let refine _ _ _ = None
+end
+
 let synth (target : Shape.Value.t) ops n_pos =
-  let module Abs_value = Mask_abstract_value in
+  let module Abs_value = Correct_mask_abstract_value in
   let module Abs_bench = Bench.Make (Shape.Op) (Abs_value) in
   let module Abs_shape = struct
     include Shape
@@ -158,5 +201,5 @@ let synth (target : Shape.Value.t) ops n_pos =
         loop ctx'
     | None -> failwith "refinement failed"
   in
-  let ctx = Abs_value.Ctx.create n_pos in
+  let ctx = Abs_value.Ctx.create (match target with Scene s -> s | _ -> assert false) in
   try ignore (loop ctx : Abs_value.Ctx.t) with Done -> ()
