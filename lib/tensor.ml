@@ -70,6 +70,8 @@ module Op = struct
     | [] -> failwith "not enough elements"
     | [ x ] -> Program.(apply Vec ~args:[ apply (Int x) ])
     | x :: xs -> Program.(apply Cons ~args:[ apply (Int x); vec_of_list xs ])
+
+  let cost = function Cons -> 2 | _ -> 1
 end
 
 module Value = struct

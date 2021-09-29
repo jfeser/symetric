@@ -46,6 +46,8 @@ let to_string = Fmt.to_to_string pp
 
 let arity x = match value x with Circle _ | Rect _ -> 0 | Replicate _ -> 1 | Union | Inter -> 2
 
+let cost _ = 1
+
 let ret_type _ = Cad_type.Scene
 
 let args_type x =

@@ -237,7 +237,11 @@ module Make (Lang : Lang_intf) = struct
         in
 
         List.iter search_states ~f:(fun (_, op, args) ->
-            let center = Search_state.program_of_op_args_exn search_state op args in
+            let center = Search_state.random_program_of_op_args_exn search_state op args in
+            print_s
+              [%message
+                (List.init 10 ~f:(fun _ -> Search_state.random_program_of_op_args_exn search_state op args)
+                  : Op.t Program.t list)];
             self#local_search ~target:output center |> Iter.take ctx.search_width
             |> Iter.iter (fun p ->
                    if [%compare.equal: Value.t] (Program.eval (Value.eval eval_ctx) p) output then

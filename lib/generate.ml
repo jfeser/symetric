@@ -38,15 +38,17 @@ module Gen_list (Lang : Lang_intf) = struct
     build_args 0
 
   let generate_states search params ss ops cost =
-    if cost = 1 then List.filter ops ~f:(fun op -> Op.arity op = 0) |> List.map ~f:(fun op -> make_edge params op [])
-    else if cost > 1 then
-      let arg_cost = cost - 1 in
-      List.filter ops ~f:(fun op -> Op.arity op > 0)
-      |> List.concat_map ~f:(fun op ->
-             Combinat.compositions ~n:arg_cost ~k:(Op.arity op)
-             |> Combinat.to_list
-             |> List.concat_map ~f:(generate_args search params ss op))
-    else []
+    if cost <= 0 then []
+    else
+      List.concat_map ops ~f:(fun op ->
+          let op_cost = Op.cost op and arity = Op.arity op in
+          let args_cost = cost - op_cost in
+          if args_cost < arity then []
+          else if arity = 0 && args_cost = 0 then [ make_edge params op [] ]
+          else
+            Combinat.compositions ~n:args_cost ~k:arity
+            |> Combinat.to_list
+            |> List.concat_map ~f:(generate_args search params ss op))
 end
 
 module Gen_iter (Lang : Lang_intf) = struct

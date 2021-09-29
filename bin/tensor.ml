@@ -4,7 +4,7 @@ open Std
 
 let () =
   Random.init 0;
-  let cost = 15 and n_elems = 10 in
+  let cost = 16 and n_elems = 10 in
 
   let filter_bench p = Program.count p ~f:(function Tensor.Op.Permute | Reshape -> true | _ -> false) > 1 in
 

@@ -80,12 +80,20 @@ module Make (Lang : Lang_intf) = struct
   and program_of_op_args_exn ctx op args =
     Program.Apply (op, List.map2_exn (Lang.Op.args_type op) args ~f:(program_exn ctx))
 
+  let rec random_program_exn ctx type_ value =
+    let queue = Hashtbl.find_exn ctx.paths { type_; value } in
+    let _, op, args = Queue.get queue (Random.int @@ Queue.length queue) in
+    program_of_op_args_exn ctx op args
+
+  and random_program_of_op_args_exn ctx op args =
+    Program.Apply (op, List.map2_exn (Lang.Op.args_type op) args ~f:(random_program_exn ctx))
+
   let rec random_program_exn ctx max_cost type_ value =
     let q = Hashtbl.find_exn ctx.paths { type_; value } |> Queue.filter ~f:(fun (c, _, _) -> c <= max_cost) in
     let c, op, args = Queue.get q (Random.int @@ Queue.length q) in
     Program.Apply (op, List.map2_exn (Lang.Op.args_type op) args ~f:(random_program_exn ctx (c - 1)))
 
-  let random_program_exn ctx state = random_program_exn ctx Int.max_value state
+  let random_program_exn ?(max_cost = Int.max_value) ctx state = random_program_exn ctx max_cost state
 
   let clear { values; paths } =
     Hashtbl.clear values;

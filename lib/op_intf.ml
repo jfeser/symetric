@@ -5,6 +5,8 @@ module type S = sig
 
   include Comparator.S with type t := t
 
+  val cost : t -> int
+
   val arity : t -> int
 
   val args_type : t -> type_ list

@@ -36,6 +36,8 @@ module Op = struct
     | Position _ -> Position
 
   let type_ x = (args_type x, ret_type x)
+
+  let cost _ = 1
 end
 
 module Value = struct

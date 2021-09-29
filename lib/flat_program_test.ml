@@ -15,6 +15,8 @@ module Test_op = struct
   let args_type _ = assert false
 
   let ret_type _ = assert false
+
+  let cost _ = 1
 end
 
 open Test_op
