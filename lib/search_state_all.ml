@@ -69,7 +69,14 @@ module Make (Lang : Lang_intf) = struct
 
   let length ctx = Hashtbl.length ctx.paths
 
-  let print_stats ctx = Fmt.epr "Total: %d\n%!" (length ctx)
+  let print_stats ctx =
+    Hashtbl.keys ctx.values
+    |> List.map ~f:(fun a -> (a.cost, a.type_))
+    |> List.sort ~compare:[%compare: int * Lang.Type.t]
+    |> List.iter ~f:(fun (cost, type_) ->
+           let n = Hashtbl.find_exn ctx.values { cost; type_ } |> Queue.length in
+           eprint_s [%message (cost : int) (type_ : Lang.Type.t) (n : int)]);
+    Fmt.epr "Total: %d\n%!" (length ctx)
 
   let print_contents ctx = print_s [%message (ctx.values : Lang.Value.t Queue.t Hashtbl.M(Attr).t)]
 

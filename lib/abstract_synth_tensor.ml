@@ -36,13 +36,12 @@ module Abs_value = struct
   include Comparator.Make (T)
 
   module Ctx = struct
-    type t = { preds : Set.M(Pred).t } [@@deriving compare, sexp]
+    type t = { preds : Set.M(Pred).t; ectx : (Value.Ctx.t[@opaque]) [@compare.ignore] } [@@deriving compare, sexp]
 
-    let empty = { preds = Set.empty (module Pred) }
+    let create ?ectx () =
+      { preds = Set.empty (module Pred); ectx = Option.value_lazy ~default:(lazy (Value.Ctx.create ())) ectx }
 
-    let create () = empty
-
-    let of_params _ = empty
+    let of_params _ = failwith ""
   end
 
   let relevant = function
@@ -95,7 +94,7 @@ module Abs_value = struct
 
   let contains abs conc = match conc with Value.Tensor t' -> Set.for_all abs ~f:(eval_tensor_pred t') | _ -> false
 
-  let eval _ op args =
+  let eval (ctx : Ctx.t) op args =
     match (op, args) with
     | Op.Id t, [] -> of_list @@ relevant @@ Tensor t
     | Reshape, [ m; v ] ->
@@ -119,12 +118,12 @@ module Abs_value = struct
           Iter.product (Iter.of_set m) (Iter.of_set v)
           |> Iter.map (function
                | `Concrete_t t', `Concrete_v v' -> (
-                   match Value.eval () Op.Reshape [ Value.Tensor t'; Value.Vector v' ] with
+                   match Value.eval ctx.ectx Op.Reshape [ Value.Tensor t'; Value.Vector v' ] with
                    | Tensor t'' -> [ `Concrete_t t''; `N_dims (Tensor.n_dims t''); `N_elems (Tensor.n_elems t'') ]
                    | Error -> [ `False ]
                    | _ -> failwith "expected a tensor")
                | `Concrete_t t', `Elems v' -> (
-                   match Value.eval () Op.Reshape [ Value.Tensor t'; Value.Vector v' ] with
+                   match Value.eval ctx.ectx Op.Reshape [ Value.Tensor t'; Value.Vector v' ] with
                    | Tensor t'' -> [ `N_dims (Tensor.n_dims t''); `N_elems (Tensor.n_elems t'') ]
                    | Error -> [ `False ]
                    | _ -> failwith "expected a tensor")
@@ -164,7 +163,7 @@ module Abs_value = struct
                | `Concrete_t t, `Len i ->
                    if Tensor.n_dims t = i then [ `N_dims i; `N_elems (Tensor.n_elems t) ] else [ `False ]
                | `Concrete_t t, `Concrete_v v -> (
-                   match Value.eval () Op.Permute [ Value.Tensor t; Value.Vector v ] with
+                   match Value.eval ctx.ectx Op.Permute [ Value.Tensor t; Value.Vector v ] with
                    | Tensor t' -> [ `Concrete_t t' ]
                    | Error -> [ `False ]
                    | _ -> failwith "expected a tensor")
@@ -181,7 +180,7 @@ module Abs_value = struct
         |> Iter.map (function
              | `False, #Pred.int_pred | #Pred.tensor_pred, `False -> [ `False ]
              | `Concrete_t t, `Int i -> (
-                 match Value.eval () Op.Flip [ Value.Tensor t; Value.Int i ] with
+                 match Value.eval ctx.ectx Op.Flip [ Value.Tensor t; Value.Int i ] with
                  | Tensor t' -> [ `Concrete_t t' ]
                  | Error -> [ `False ]
                  | _ -> failwith "expected a tensor")
@@ -278,7 +277,7 @@ module Abs_value = struct
   let rec eval_all (ctx : Ctx.t) (Program.Apply (op, args)) =
     let args' = List.map args ~f:(eval_all ctx) in
     let args_conc, args_abs = List.map args' ~f:(fun (Program.Apply ((_, c, a), _)) -> (c, a)) |> List.unzip in
-    let conc = Value.eval () op args_conc and abs = eval ctx op args_abs |> Set.inter ctx.preds in
+    let conc = Value.eval ctx.ectx op args_conc and abs = eval ctx op args_abs |> Set.inter ctx.preds in
     Apply ((op, conc, abs), args')
 
   let refine (ctx : Ctx.t) (target : Value.t) p : Ctx.t option =
@@ -290,7 +289,7 @@ module Abs_value = struct
     let preds =
       Program.ops p' |> List.concat_map ~f:(fun (_, _, _, ps) -> Set.to_list ps) |> Set.of_list (module Pred)
     in
-    Some { preds = Set.union ctx.preds preds }
+    Some { ctx with preds = Set.union ctx.preds preds }
 
   let embed _ = failwith ""
 
@@ -328,7 +327,7 @@ let synth cost target ops =
 
       match synth#run with
       | Some p ->
-          let v = Program.eval (Conc.Value.eval ()) p in
+          let v = Program.eval (Conc.Value.eval ctx.ectx) p in
           if [%compare.equal: Conc.Value.t] v target then (
             print_s
               [%message

@@ -1,15 +1,3 @@
-* DONE Vectorize pairwise distance calculation (cnorm)
-* DONE Figure out why vectorized embedding & search threshold is behaving weird
-* TODO Figure out how to compare quality of learned distance w/ jaccard
-* DONE Learn a distance function with a larger training set
-* DONE Use online triplet selection to deal with collapsing model
-
-* DONE Implement renaming rewriter
-* DONE Implement push-pull rewriter
-* DONE Split rewriters into collections of rewrite rules
-* TODO Implement test for local rewriters (random walk, then try to get back)
-** DONE Sample programs, apply all rewrites, record distances, repeat 
-** TODO Save rules with distances and use as weighted rewriter
-* TODO Try rotation/mirror invariant distances
-
-* TODO Generate our own cad-style benchmarks
+- for tensor benchmarks, much of the improvement comes from reducing the number of vectors that will never be used
+  - vectors of size k grow as (num ints)^k, if the target program has max vector size k', anything larger than k' can be discarded completely
+  - its cheaper to guess that than it is to search through those vectors exhaustively

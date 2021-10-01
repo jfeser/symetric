@@ -2,11 +2,34 @@ open Core
 open Staged_synth
 open Std
 
+let generate_benchmarks ?(max_states = 100_000) ops ectx cost type_ =
+  let module Lang = Tensor in
+  let module Synth = Baseline.Make (Lang) in
+  let open Synth in
+  let config = Ctx.create ~max_cost:cost ~verbose:true ectx ops (`Pred (fun _ _ -> false)) in
+  let synth =
+    object
+      inherit synthesizer config as super
+
+      method! insert_states cost states =
+        super#insert_states cost
+        @@ List.take
+             (List.permute
+             @@ List.filter states ~f:(fun (v, _, _) -> match v with Vector x -> List.length x <= 5 | _ -> true))
+             max_states
+    end
+  in
+  ignore (synth#run : Lang.Op.t Program.t option);
+  let search_state : Search_state.t = synth#get_search_state in
+  let attr = Search_state.Attr.create cost type_ in
+  Hashtbl.find search_state.values attr |> Option.map ~f:Iter.of_queue |> Option.value ~default:Iter.empty
+  |> Iter.map (Search_state.program_exn search_state type_)
+
 let () =
   Random.init 0;
-  let cost = 16 and n_elems = 10 in
+  let n_elems = 10 in
 
-  let filter_bench p = Program.count p ~f:(function Tensor.Op.Permute | Reshape -> true | _ -> false) > 1 in
+  let filter_bench p = Program.count p ~f:(function Tensor.Op.Permute | Reshape -> true | _ -> false) > 0 in
 
   let input = Tensor.Op.Id { elems = List.init n_elems ~f:Fun.id; shape = [ n_elems ] } in
   let ops =
@@ -14,29 +37,34 @@ let () =
     Tensor.Op.[ Permute; Reshape; Cons; Vec; input ] @ ints
   in
 
-  let benchmarks =
-    Generate_bench.generate_benchmarks ~max_states:300_000
-      (module Tensor)
-      ops (Tensor.Value.Ctx.of_params ()) cost Tensor.Type.output
-    |> Iter.filter filter_bench |> Iter.take 25 |> Iter.persistent
-  in
-  print_s [%message (benchmarks : Tensor.Op.t Program.t Iter.t)];
+  let ectx = Tensor.Value.Ctx.create () in
 
-  let results =
-    benchmarks
-    |> Iter.map (fun p ->
-           let target = Program.eval (Tensor.Value.eval ()) p in
-           print_s [%message "concrete target" (target : Tensor.Value.t)];
+  Fmt.pr "cost,abs,local\n%!";
 
-           print_s [%message (ops : Tensor.Op.t list)];
+  List.iter [ 12; 14; 16; 18; 20 ] ~f:(fun cost ->
+      let benchmarks =
+        generate_benchmarks ~max_states:300_000 ops ectx cost Tensor.Type.output
+        |> Iter.filter filter_bench |> Iter.take 3 |> Iter.persistent
+      in
+      eprint_s [%message (benchmarks : Tensor.Op.t Program.t Iter.t)];
 
-           let abs = Synth_utils.time (fun () -> Abstract_synth_tensor.synth cost target ops) in
-           let local = Synth_utils.time (fun () -> Local_synth_tensor.synth cost target ops) in
-           (* let local_no_rules = *)
-           (*   Synth_utils.time (fun () -> Local_synth_tensor.synth ~use_rules:false cost target ops) *)
-           (* in *)
-           (abs, local))
-    |> Iter.to_list
-  in
-  Fmt.pr "abs,local\n";
-  List.iter results ~f:(fun (abs, local) -> Fmt.pr "%a,%a\n" Time.Span.pp abs Time.Span.pp local)
+      benchmarks
+      |> Iter.map (fun p ->
+             let target = Program.eval (Tensor.Value.eval ectx) p in
+             eprint_s [%message "concrete target" (target : Tensor.Value.t)];
+
+             eprint_s [%message (ops : Tensor.Op.t list)];
+
+             let abs = Synth_utils.time (fun () -> Abstract_synth_tensor.synth cost target ops) in
+             let local = Synth_utils.time (fun () -> Local_synth_tensor.synth cost target ops) in
+             let local_no_dist_close =
+               Synth_utils.time (fun () -> Local_synth_tensor.synth ~use_distance:`Close cost target ops)
+             in
+             let local_no_dist_far =
+               Synth_utils.time (fun () -> Local_synth_tensor.synth ~use_distance:`Far cost target ops)
+             in
+             (* let baseline = Synth_utils.time (fun () -> Baseline_synth_tensor.synth cost target ops) in *)
+             (abs, local, local_no_dist_close, local_no_dist_far))
+      |> Iter.iter (fun (abs, local, local_no_dist_close, local_no_dist_far) ->
+             Fmt.pr "%d,%a,%a,%a,%a\n%!" cost Time.Span.pp abs Time.Span.pp local Time.Span.pp local_no_dist_close
+               Time.Span.pp local_no_dist_far))

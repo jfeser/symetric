@@ -164,7 +164,7 @@ module Make (Lang : Lang_intf) = struct
       val output = ctx.output
 
       val sample_width =
-        let arr = Array.create ~len:(ctx.parent_ctx.max_cost + 1) 2 in
+        let arr = Array.create ~len:(ctx.parent_ctx.max_cost + 1) 1 in
         arr.(0) <- 0;
         arr
 
@@ -238,14 +238,11 @@ module Make (Lang : Lang_intf) = struct
 
         List.iter search_states ~f:(fun (_, op, args) ->
             let center = Search_state.random_program_of_op_args_exn search_state op args in
-            print_s
-              [%message
-                (List.init 10 ~f:(fun _ -> Search_state.random_program_of_op_args_exn search_state op args)
-                  : Op.t Program.t list)];
             self#local_search ~target:output center |> Iter.take ctx.search_width
-            |> Iter.iter (fun p ->
-                   if [%compare.equal: Value.t] (Program.eval (Value.eval eval_ctx) p) output then
-                     raise @@ Parent.Done p));
+            |> Iter.iteri (fun i p ->
+                   if [%compare.equal: Value.t] (Program.eval (Value.eval eval_ctx) p) output then (
+                     print_s [%message "found via local search" (i : int)];
+                     raise @@ Parent.Done p)));
         List.length search_states
 
       method group_states cost new_states =
@@ -284,7 +281,6 @@ module Make (Lang : Lang_intf) = struct
 
       method! fill cost =
         let new_states = self#generate_states_ cost in
-        List.iter new_states ~f:super#check_states;
         self#insert_states_ cost new_states;
         if verbose then (
           Fmt.epr "Finished cost %d\n%!" cost;
@@ -299,12 +295,16 @@ module Make (Lang : Lang_intf) = struct
         let new_states, gen_time = with_time (fun () -> super#generate_states cost) in
         Fmt.epr "Generated %d states in %a.\n%!" (List.length new_states) Time.Span.pp gen_time;
 
-        let n_searched, search_time = with_time (fun () -> self#search_close_states new_states) in
-        Fmt.epr "Searched %d close states in %a.\n%!" n_searched Time.Span.pp search_time;
+        super#check_states new_states;
 
-        let groups, group_time = with_time (fun () -> self#group_states cost new_states) in
-        Fmt.epr "Created %d groups in %a.\n%!" (List.length groups) Time.Span.pp group_time;
-        groups
+        if cost < max_cost then (
+          let n_searched, search_time = with_time (fun () -> self#search_close_states new_states) in
+          Fmt.epr "Searched %d close states in %a.\n%!" n_searched Time.Span.pp search_time;
+
+          let groups, group_time = with_time (fun () -> self#group_states cost new_states) in
+          Fmt.epr "Created %d groups in %a.\n%!" (List.length groups) Time.Span.pp group_time;
+          groups)
+        else []
 
       method! run =
         let rec reduce_sample_width () =
@@ -317,6 +317,7 @@ module Make (Lang : Lang_intf) = struct
               Search_state.clear search_state;
               let idx, _ = Array.findi_exn sample_width ~f:(fun _ v -> v > 0) in
               sample_width.(idx) <- sample_width.(idx) - 1;
+              Fmt.epr "Exhaustive prefix %d.\n%!" idx;
               reduce_sample_width ()
         in
 

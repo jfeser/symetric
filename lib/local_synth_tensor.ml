@@ -40,7 +40,7 @@ module Tensor = struct
   module Value = struct
     include Value
 
-    let dist () v v' =
+    let dist _ v v' =
       match (v, v') with
       | Tensor t, Tensor t' ->
           let value_dist = if [%compare.equal: Tensor.t] t t' then 0.0 else 1.0 in
@@ -52,24 +52,19 @@ module Tensor = struct
               (Float.of_int @@ sequence_distance (module Int) s s') /. Float.(of_int n * (of_int n - 1.0) / 2.0)
             else 1.0
           in
-          (* print_s [%message (Tensor.shape t : int list) (Tensor.shape t' : int list) (shape_kt : float)]; *)
           (value_dist +. shape_dist) /. 2.0
       | _ -> Float.infinity
     (* match (t, t') with
        | Tensor t, Tensor t' ->
            let n_elems_dist = if Tensor.n_elems t = Tensor.n_elems t' then 0.0 else 1.0 in
-           let shape_iou =
-             let shape_set t = Set.of_list (module Int) @@ Tensor.shape t in
-             let s = shape_set t and s' = shape_set t' in
-             (Float.of_int @@ Set.length @@ Set.inter s s') /. (Float.of_int @@ Set.length @@ Set.union s s')
-           in
+
            () *)
   end
 end
 
 module Synth = Local_search_diverse.Make (Tensor)
 
-let synth ?(use_rules = true) cost (target : Tensor.Value.t) (ops : Tensor.Op.t list) =
+let synth ?(use_rules = true) ?(use_distance = `True) cost (target : Tensor.Value.t) (ops : Tensor.Op.t list) =
   let open Tensor in
   let rules =
     let open Local_search.Pattern in
@@ -92,11 +87,11 @@ let synth ?(use_rules = true) cost (target : Tensor.Value.t) (ops : Tensor.Op.t 
     else []
   in
 
-  let ectx = () in
-  let ctx =
-    Synth.Ctx.create ~verbose:true ~distance:(Value.dist ectx) ~max_cost:cost ~rules ~search_thresh:(Top_k 3) ectx ops
-      target
+  let ectx = Value.Ctx.create () in
+  let distance =
+    match use_distance with `True -> Value.dist ectx | `Close -> fun _ _ -> 0.0 | `Far -> fun _ _ -> Float.infinity
   in
+  let ctx = Synth.Ctx.create ~verbose:true ~distance ~max_cost:cost ~rules ~search_thresh:(Top_k 3) ectx ops target in
   match (new Synth.synthesizer ctx)#run with
   | Some p -> print_s [%message (p : Op.t Program.t)]
   | None -> failwith "synthesis failed"
