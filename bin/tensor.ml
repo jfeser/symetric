@@ -25,6 +25,16 @@ let generate_benchmarks ?(max_states = 100_000) ops ectx cost type_ =
   Hashtbl.find search_state.values attr |> Option.map ~f:Iter.of_queue |> Option.value ~default:Iter.empty
   |> Iter.map (Search_state.program_exn search_state type_)
 
+let run_abs = false
+
+let run_local = true
+
+let run_local_no_dist_close = false
+
+let run_local_no_dist_far = false
+
+let time_if cond f = if cond then Synth_utils.time f else Time.Span.zero
+
 let () =
   Random.init 0;
   let n_elems = 10 in
@@ -37,31 +47,29 @@ let () =
     Tensor.Op.[ Permute; Reshape; Cons; Vec; input ] @ ints
   in
 
-  let ectx = Tensor.Value.Ctx.create () in
-
   Fmt.pr "cost,abs,local\n%!";
 
   List.iter [ 12; 14; 16; 18; 20 ] ~f:(fun cost ->
       let benchmarks =
-        generate_benchmarks ~max_states:300_000 ops ectx cost Tensor.Type.output
+        generate_benchmarks ~max_states:300_000 ops (Tensor.Value.Ctx.create ()) cost Tensor.Type.output
         |> Iter.filter filter_bench |> Iter.take 3 |> Iter.persistent
       in
       eprint_s [%message (benchmarks : Tensor.Op.t Program.t Iter.t)];
 
       benchmarks
       |> Iter.map (fun p ->
-             let target = Program.eval (Tensor.Value.eval ectx) p in
+             let target = Program.eval (Tensor.Value.eval @@ Tensor.Value.Ctx.create ()) p in
              eprint_s [%message "concrete target" (target : Tensor.Value.t)];
 
              eprint_s [%message (ops : Tensor.Op.t list)];
 
-             let abs = Synth_utils.time (fun () -> Abstract_synth_tensor.synth cost target ops) in
-             let local = Synth_utils.time (fun () -> Local_synth_tensor.synth cost target ops) in
+             let abs = time_if run_abs (fun () -> Abstract_synth_tensor.synth cost target ops) in
+             let local = time_if run_local (fun () -> Local_synth_tensor.synth cost target ops) in
              let local_no_dist_close =
-               Synth_utils.time (fun () -> Local_synth_tensor.synth ~use_distance:`Close cost target ops)
+               time_if run_local_no_dist_close (fun () -> Local_synth_tensor.synth ~use_distance:`Close cost target ops)
              in
              let local_no_dist_far =
-               Synth_utils.time (fun () -> Local_synth_tensor.synth ~use_distance:`Far cost target ops)
+               time_if run_local_no_dist_far (fun () -> Local_synth_tensor.synth ~use_distance:`Far cost target ops)
              in
              (* let baseline = Synth_utils.time (fun () -> Baseline_synth_tensor.synth cost target ops) in *)
              (abs, local, local_no_dist_close, local_no_dist_far))

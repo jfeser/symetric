@@ -1,3 +1,5 @@
+open Std
+
 let full ?(n = 5) ?target ops ectx =
   let open Cad in
   let eval = Program.eval (Value.eval ectx) in
@@ -214,18 +216,21 @@ let of_rules_root_only_tabu ~dist ~target m_op rules eval =
   end in
   tabu ~neighbors (module P)
 
-let of_rules_tabu (type op) ~dist ~target ((module Op : Op_intf.S with type t = op) as m_op) rules eval =
+let of_rules_tabu (type op) ?(max_tabu = 10) ~dist ~target ((module Op : Op_intf.S with type t = op) as m_op) rules eval
+    =
   let neighbors t =
-    let neighbors = Queue.create () in
-    List.iter rules ~f:(fun ((lhs, rhs) as rule) ->
-        Pattern.rewrite_all m_op rule t (Queue.enqueue neighbors);
-        Pattern.rewrite_all m_op (rhs, lhs) t (Queue.enqueue neighbors));
+    let iter_rewrites f =
+      List.iter rules ~f:(fun ((lhs, rhs) as rule) ->
+          Pattern.rewrite_all m_op rule t f;
+          Pattern.rewrite_all m_op (rhs, lhs) t f)
+    in
 
-    List.map (Queue.to_list neighbors) ~f:(fun t' -> (dist (eval t') target, t'))
-    |> List.sort ~compare:(fun (d, _) (d', _) -> [%compare: float] d d')
-    |> List.map ~f:(fun (_, v) -> v)
-    |> Iter.of_list
+    let cmp = [%compare: float * _] in
+    iter_rewrites
+    |> Iter.map (fun p -> (dist (eval p) target, p))
+    |> Iter.top_k ~cmp max_tabu |> Iter.sort ~cmp |> Iter.map Tuple.T2.get2
   in
+
   let module P = struct
     module T = struct
       type t = Op.t Program.t [@@deriving compare, hash, sexp]
@@ -233,4 +238,4 @@ let of_rules_tabu (type op) ~dist ~target ((module Op : Op_intf.S with type t = 
 
     include T
   end in
-  tabu ~neighbors (module P)
+  tabu ~max_tabu ~neighbors (module P)

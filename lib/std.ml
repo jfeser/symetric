@@ -39,6 +39,8 @@ module List = struct
     insert xs
 
   let product l = List.reduce_exn l ~f:( * )
+
+  let group_by m l = Hashtbl.of_alist_multi m l |> Hashtbl.to_alist
 end
 
 module Random = struct
@@ -55,6 +57,17 @@ module Iter = struct
   let of_queue q k = Queue.iter q ~f:k
 
   let of_set s k = Core.Set.iter ~f:k s
+
+  let top_k (type t) ~cmp k (l : t Iter.t) (f : t -> unit) =
+    let mins = Pairing_heap.create ~min_size:k ~cmp () in
+    Iter.iter
+      (fun (x : t) ->
+        if Pairing_heap.length mins < k || (Option.is_some @@ Pairing_heap.pop_if mins (fun x' -> cmp x' x < 0)) then
+          Pairing_heap.add mins x)
+      l;
+    Pairing_heap.iter ~f mins
+
+  let%expect_test "" = print_s [%message (top_k ~cmp:[%compare: int] 3 Iter.(0 -- 10) : int t)]
 end
 
 module Array = struct

@@ -91,7 +91,7 @@ let synth ?(use_rules = true) ?(use_distance = `True) cost (target : Tensor.Valu
   let distance =
     match use_distance with `True -> Value.dist ectx | `Close -> fun _ _ -> 0.0 | `Far -> fun _ _ -> Float.infinity
   in
-  let ctx = Synth.Ctx.create ~verbose:true ~distance ~max_cost:cost ~rules ~search_thresh:(Top_k 3) ectx ops target in
+  let ctx = Synth.Ctx.create ~verbose:false ~distance ~max_cost:cost ~rules ~search_thresh:(Top_k 3) ectx ops target in
   match (new Synth.synthesizer ctx)#run with
   | Some p -> print_s [%message (p : Op.t Program.t)]
   | None -> failwith "synthesis failed"

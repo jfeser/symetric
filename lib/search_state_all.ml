@@ -53,7 +53,7 @@ module Make (Lang : Lang_intf) = struct
 
   let insert_groups ctx cost groups =
     List.iter groups ~f:(fun states ->
-        match states with
+        match List.permute states with
         | (value, op, args) :: states ->
             let type_ = Lang.Op.ret_type op in
             let tvalue = TValue.{ type_; value } in
