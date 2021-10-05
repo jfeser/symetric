@@ -10,7 +10,7 @@ module Value = struct
     let v = eval p and v' = eval p' in
     Float.of_int @@ Cad_conc.hamming v v'
 
-  let embed _ = failwith "unimplemented"
+  let is_error _ = false
 end
 
 module Bench = struct

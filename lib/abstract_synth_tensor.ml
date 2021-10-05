@@ -291,9 +291,7 @@ module Abs_value = struct
     in
     Some { ctx with preds = Set.union ctx.preds preds }
 
-  let embed _ = failwith ""
-
-  let dist _ = failwith ""
+  let is_error s = Set.mem s `False
 end
 
 let synth cost target ops =

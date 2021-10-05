@@ -16,6 +16,8 @@ module type VALUE = sig
   include Comparator.S with type t := t
 
   val eval : Ctx.t -> op -> t list -> t
+
+  val is_error : t -> bool
 end
 
 module Make (Op : OP) (Value : VALUE with type op := Op.t) = struct
@@ -43,6 +45,8 @@ module Make (Op : OP) (Value : VALUE with type op := Op.t) = struct
         let v = create @@ Value.eval ctx.ctx op @@ List.map ~f:value args in
         Hashtbl.set ctx.tbl ~key:(op, args) ~data:v;
         v
+
+  let is_error v = Value.is_error @@ value v
 end
 
 module Make_cached (Op : OP) (Value : VALUE with type op := Op.t) = struct
@@ -50,4 +54,6 @@ module Make_cached (Op : OP) (Value : VALUE with type op := Op.t) = struct
   module Ctx = Value.Ctx
 
   let eval ctx op args = create @@ Value.eval ctx op @@ List.map ~f:value args
+
+  let is_error v = Value.is_error @@ value v
 end

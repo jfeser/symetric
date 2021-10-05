@@ -56,6 +56,8 @@ module type Lang_intf = sig
 
     include Comparator.S with type t := t
 
+    val is_error : t -> bool
+
     val eval : Ctx.t -> Op.t -> t list -> t
 
     val dist : Ctx.t -> t -> t -> float

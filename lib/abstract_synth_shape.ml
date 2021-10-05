@@ -38,10 +38,6 @@ module Simple_abstract_value = struct
                       (c, s)))
           |> Cow_array.of_array)
 
-  let embed _ = failwith ""
-
-  let dist _ = failwith ""
-
   let refine (ctx : Ctx.t) (target : Shape.Value.t) (v : Shape.Value.t) =
     match (target, v) with
     | Scene target, Scene v ->
@@ -54,6 +50,8 @@ module Simple_abstract_value = struct
                    else None
                | _ -> None)
     | _ -> None
+
+  let is_error _ = false
 end
 
 module Mask_abstract_value = struct
@@ -98,10 +96,6 @@ module Mask_abstract_value = struct
                       (c, s)))
           |> Cow_array.of_array)
 
-  let embed _ = failwith ""
-
-  let dist _ = failwith ""
-
   let refine (ctx : Ctx.t) (target : Shape.Value.t) (v : Shape.Value.t) =
     match (target, v) with
     | Scene target, Scene v ->
@@ -122,6 +116,8 @@ module Mask_abstract_value = struct
                    else None
                | _ -> None)
     | _ -> None
+
+  let is_error _ = false
 end
 
 module Correct_mask_abstract_value = struct
@@ -160,11 +156,9 @@ module Correct_mask_abstract_value = struct
     | Scene s ->
         Scene (Cow_array.map2_exn s ctx.scene ~f:(fun v v' -> [%compare.equal: (Shape.color * int) option] v v'))
 
-  let embed _ = failwith ""
-
-  let dist _ = failwith ""
-
   let refine _ _ _ = None
+
+  let is_error _ = false
 end
 
 let synth (target : Shape.Value.t) ops n_pos =

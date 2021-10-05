@@ -13,6 +13,8 @@ module type Lang_intf = sig
     end
 
     val eval : Ctx.t -> Op.t -> t list -> t
+
+    val is_error : t -> bool
   end
 end
 
@@ -21,14 +23,16 @@ module Gen_list (Lang : Lang_intf) = struct
 
   let unsafe_to_list a = List.init (Option_array.length a) ~f:(Option_array.unsafe_get_some_assuming_some a)
 
-  let make_edge params op args = (Value.eval params op args, op, args)
+  let make_edge params op args =
+    let state = Value.eval params op args in
+    if Value.is_error state then [] else [ (state, op, args) ]
 
   let generate_args search params ss op costs =
     let arity = Op.arity op in
     let types_ = Op.args_type op |> Array.of_list in
     let args = Option_array.create ~len:arity in
     let rec build_args arg_idx =
-      if arg_idx >= arity then [ make_edge params op @@ unsafe_to_list args ]
+      if arg_idx >= arity then make_edge params op @@ unsafe_to_list args
       else
         search ss ~cost:costs.(arg_idx) ~type_:types_.(arg_idx)
         |> List.concat_map ~f:(fun v ->
@@ -44,7 +48,7 @@ module Gen_list (Lang : Lang_intf) = struct
           let op_cost = Op.cost op and arity = Op.arity op in
           let args_cost = cost - op_cost in
           if args_cost < arity then []
-          else if arity = 0 && args_cost = 0 then [ make_edge params op [] ]
+          else if arity = 0 && args_cost = 0 then make_edge params op []
           else
             Combinat.compositions ~n:args_cost ~k:arity
             |> Combinat.to_list

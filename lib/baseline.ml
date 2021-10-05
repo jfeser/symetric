@@ -41,6 +41,8 @@ module type Lang_intf = sig
     include Comparator.S with type t := t
 
     val eval : Ctx.t -> Op.t -> t list -> t
+
+    val is_error : t -> bool
   end
 
   module Bench : sig
@@ -153,7 +155,15 @@ module Make (Lang : Lang_intf) = struct
     end
 end
 
-let cli (type value op) (module Lang : Lang_intf.S with type Value.t = value and type Op.t = op) =
+module type Cli_lang_intf = sig
+  include Lang_intf
+
+  val spec : Dumb_params.Spec.t
+
+  val name : string
+end
+
+let cli (type value op) (module Lang : Cli_lang_intf with type Value.t = value and type Op.t = op) =
   let module Synth = Make (Lang) in
   let spec = Dumb_params.Spec.union [ Lang.spec; Params.spec; spec ] in
   let open Command.Let_syntax in

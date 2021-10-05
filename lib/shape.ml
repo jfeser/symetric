@@ -85,6 +85,8 @@ module Value = struct
     | _ -> Float.infinity
 
   let embed _ = failwith ""
+
+  let is_error _ = false
 end
 
 let name = "shape"

@@ -112,6 +112,8 @@ module Value = struct
     | Int x, [] -> Int x
     | (Reshape | Permute | Flip), ([ Error; _ ] | [ _; Error ]) -> Error
     | op, args -> raise_s [%message "unexpected arguments" (op : Op.t) (args : t list)]
+
+  let is_error = function Error -> true | _ -> false
 end
 
 module Bench0 = struct
