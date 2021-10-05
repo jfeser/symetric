@@ -32,7 +32,7 @@ let sequence_distance m s1 s2 =
 
 let%expect_test "" =
   print_s [%message (sequence_distance (module Int) [ 1; 2; 3; 4; 5 ] [ 1; 3; 2; 5; 4 ] : int)];
-  [%expect {| ("sequence_distance (module Int) [1; 2; 3; 4; 5] [1; 3; 2; 5; 4]" (2)) |}]
+  [%expect {| ("sequence_distance (module Int) [1; 2; 3; 4; 5] [1; 3; 2; 5; 4]" 2) |}]
 
 module Tensor = struct
   include Tensor
@@ -70,6 +70,7 @@ let synth ?(use_rules = true) ?(use_distance = `True) cost (target : Tensor.Valu
     let open Local_search.Pattern in
     let open Op in
     if use_rules then
+      let int x = Apply (Int x, []) and cons x xs = Apply (Cons, [ x; xs ]) and v x = Var x in
       let adj_rule p p' =
         [
           (Apply (Cons, [ p; Apply (Vec, [ p' ]) ]), Apply (Cons, [ p'; Apply (Vec, [ p ]) ]));
@@ -83,7 +84,17 @@ let synth ?(use_rules = true) ?(use_distance = `True) cost (target : Tensor.Valu
           (Apply (Vec, [ Var 0 ]), Apply (Cons, [ Apply (Int 1, []); Apply (Vec, [ Var 0 ]) ]));
         ]
       in
-      flip_rules
+      let _factor_rules =
+        [
+          (cons (int 1) (cons (int 4) (v 0)), cons (int 2) (cons (int 2) (v 0)));
+          (cons (int 1) (cons (int 6) (v 0)), cons (int 2) (cons (int 3) (v 0)));
+          (cons (int 1) (cons (int 8) (v 0)), cons (int 2) (cons (int 4) (v 0)));
+          (cons (int 4) (cons (int 1) (v 0)), cons (int 2) (cons (int 2) (v 0)));
+          (cons (int 6) (cons (int 1) (v 0)), cons (int 2) (cons (int 3) (v 0)));
+          (cons (int 8) (cons (int 1) (v 0)), cons (int 2) (cons (int 4) (v 0)));
+        ]
+      in
+      flip_rules @ _intro_rule
     else []
   in
 

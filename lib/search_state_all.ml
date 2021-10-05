@@ -31,6 +31,7 @@ module Make (Lang : Lang_intf) = struct
     values : Lang.Value.t Queue.t Hashtbl.M(Attr).t;
     paths : (int * Lang.Op.t * Lang.Value.t list) Queue.t Hashtbl.M(TValue).t;
   }
+  [@@deriving sexp_of]
 
   let create max_cost = { max_cost; values = Hashtbl.create (module Attr); paths = Hashtbl.create (module TValue) }
 

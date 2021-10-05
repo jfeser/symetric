@@ -67,7 +67,8 @@ module Iter = struct
       l;
     Pairing_heap.iter ~f mins
 
-  let%expect_test "" = print_s [%message (top_k ~cmp:[%compare: int] 3 Iter.(0 -- 10) : int t)]
+  let%expect_test "" = print_s [%message (top_k ~cmp:[%compare: int] 3 Iter.(0 -- 10) : int t)];
+    [%expect {| ("top_k ~cmp:([%compare : int]) 3 (let open Iter in 0 -- 10)" (8 10 9)) |}]
 end
 
 module Array = struct

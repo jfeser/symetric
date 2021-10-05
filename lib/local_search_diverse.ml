@@ -155,7 +155,7 @@ module Make (Lang : Lang_intf) = struct
     type op = Op.t
 
     type t = {
-      search_state : (Search_state.t[@sexp.opaque]); [@ignore]
+      search_state : Search_state.t; [@ignore]
       value : [ `List of (Value.t * Op.t * Value.t list) list | `Ref of Search_state.TValue.t ];
     }
     [@@deriving compare, sexp_of]
@@ -263,13 +263,18 @@ module Make (Lang : Lang_intf) = struct
         |> Iter.map (fun state ->
                Iter.of_list ctx.rules
                |> Iter.map (fun (lhs, rhs) ->
+                      print_s
+                        [%message
+                          "matching" (state : Value.t * Op.t * Value.t list) ((lhs, rhs) : Op.t Local_search.Rule.t)];
                       Local_search.Pattern.match_
                         (module Op)
                         (module Term_set)
                         (module Subst)
                         lhs
                         (Term_set.of_states search_state [ state ])
-                      |> Iter.map (fun s -> eval_subst_value s rhs))
+                      |> Iter.map (fun s ->
+                             print_s [%message "found match" (s : Subst.t)];
+                             eval_subst_value s rhs))
                |> Iter.concat
                |> Iter.map (fun v -> (state, v)))
         |> Iter.concat
@@ -352,26 +357,33 @@ module Make (Lang : Lang_intf) = struct
               let ctr = ref 0 in
               Hashtbl.map classes ~f:(fun states ->
                   incr ctr;
-                  (states, Union_find.create !ctr))
+                  (states, Union_find.create !ctr, ref false))
             in
 
             self#apply_rules new_states
             |> Iter.iter (fun ((v, op, _), alt_value) ->
                    let t = Op.ret_type op in
                    let key = (v, t) and alt_key = (alt_value, t) in
-                   match (Hashtbl.find classes key, Hashtbl.find classes alt_key) with
-                   | Some (_, c), Some (_, c') -> Union_find.union c c'
-                   | _ -> ());
+                   print_s [%message (v : Value.t) (alt_value : Value.t)];
+                   if Search_state.(mem search_state TValue.{ type_ = t; value = alt_value }) then
+                     Option.iter ~f:(fun (_, _, dead) -> dead := true) @@ Hashtbl.find classes key
+                   else
+                     match (Hashtbl.find classes key, Hashtbl.find classes alt_key) with
+                     | Some (_, c, _), Some (_, c', _) -> Union_find.union c c'
+                     | _ -> ());
 
             let to_keep = Hashtbl.create (module Int) in
-            Hashtbl.iter classes ~f:(fun (states, class_id) ->
-                Hashtbl.update to_keep (Union_find.get class_id) ~f:(function
-                  | Some states' -> states @ states'
-                  | None -> states));
+            Hashtbl.iter classes ~f:(fun (states, class_id, dead) ->
+                if !dead then print_s [%message "dead" (states : (Value.t * _ * _) list)];
+                if not !dead then
+                  Hashtbl.update to_keep (Union_find.get class_id) ~f:(function
+                    | Some states' -> states @ states'
+                    | None -> states));
             Hashtbl.data to_keep)
           else List.map ~f:(fun s -> [ s ]) new_states
         in
         ctx.groups_created := !(ctx.groups_created) + List.length groups;
+        (* print_s [%message (List.take groups 10 : (Value.t * _ * _) list list)]; *)
         groups
 
       method fill cost =
@@ -418,6 +430,7 @@ module Make (Lang : Lang_intf) = struct
             else Second []
 
       method run =
+        print_s [%message (ctx.rules : Op.t Local_search.Rule.t list)];
         let solution =
           Synth_utils.luby_cutoff 1.5 16
           |> Iter.find (fun bound ->

@@ -35,7 +35,7 @@ let rec luby_cutoff base max_pow =
 let%expect_test "" =
   print_s [%message (luby_cutoff 2.0 4 : float Iter.t)];
   [%expect {|
-    ("luby_cutoff 2 4"
+    ("luby_cutoff 2.0 4"
      (1 1 2 1 1 2 4 1 1 2 1 1 2 4 8 1 1 2 1 1 2 4 1 1 2 1 1 2 4 8 16)) |}]
 
 let geometric_cutoff base = Iter.init (fun x -> Float.(to_int @@ (base ** of_int Int.(x + 1))))

@@ -105,14 +105,18 @@ module Pattern = struct
     in
     match_ (Some init) p t
 
-  let match_ (type op ts subst var) (module Op : Op_intf.S with type t = op)
+  module type Comparable = sig
+    type t [@@deriving compare]
+  end
+
+  let match_ (type op ts subst var) (module Op : Comparable with type t = op)
       (module T : Term_set_intf with type t = ts and type op = Op.t)
       (module S : Subst_intf with type t = subst and type k = var and type v = T.t) p ts k =
     let rec match_ ctx = function
       | [] -> k ctx
       | (Var v, t) :: jobs -> (
           match S.get ctx v with
-          | Some t' -> if [%compare.equal: T.t] t t' then match_ ctx jobs else ()
+          | Some t' -> if [%compare.equal: T.t] t t' then match_ ctx jobs
           | None ->
               let ctx' = S.set ctx v t in
               match_ ctx' jobs)
@@ -124,6 +128,37 @@ module Pattern = struct
                    match_ ctx (jobs' @ jobs))
     in
     match_ S.empty [ (p, ts) ]
+
+  let%expect_test "" =
+    let module Op = String in
+    let module Term_set = struct
+      type op = Op.t
+
+      type t = Op.t Program.t [@@deriving compare]
+
+      let heads : t -> _ Iter.t = fun (Apply (op, args)) -> Iter.singleton (op, args)
+    end in
+    let module Subst = struct
+      type k = int
+
+      type v = Op.t Program.t
+
+      type t = Op.t Program.t Map.M(Int).t [@@deriving sexp]
+
+      let get = Map.find
+
+      let set m k v = Map.set m ~key:k ~data:v
+
+      let empty = Map.empty (module Int)
+    end in
+    match_
+      (module Op)
+      (module Term_set)
+      (module Subst)
+      (Apply ("vec", [ Var 0 ]))
+      Program.(Apply ("vec", [ Apply ("1", []) ]))
+    |> Iter.iter (fun ctx -> print_s [%message (ctx : Subst.t)]);
+    [%expect {| (ctx ((0 (Apply 1 ())))) |}]
 
   let rec match_all op_m init bind p t k =
     Option.iter (match_root op_m init bind p t) ~f:k;
