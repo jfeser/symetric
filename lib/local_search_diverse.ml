@@ -205,6 +205,7 @@ module Make (Lang : Lang_intf) = struct
 
     type t = { classes : int Hashtbl.M(Term).t; mutable class_id : int }
 
+    (* new comment *)
     let rec id_of cons = function
       | `Apply (op, args) -> (
           let norm_app = `Apply (op, List.map ~f:(id_of cons) args) in
