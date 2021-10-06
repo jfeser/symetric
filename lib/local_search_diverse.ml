@@ -205,7 +205,6 @@ module Make (Lang : Lang_intf) = struct
 
     type t = { classes : int Hashtbl.M(Term).t; mutable class_id : int }
 
-    (* new comment *)
     let rec id_of cons = function
       | `Apply (op, args) -> (
           let norm_app = `Apply (op, List.map ~f:(id_of cons) args) in
@@ -316,7 +315,7 @@ module Make (Lang : Lang_intf) = struct
                  |> Iter.find_mapi (fun step p ->
                         incr examined;
                         if [%compare.equal: Value.t] (Program.eval (Value.eval ctx.ectx) p) ctx.output then (
-                          print_s [%message "local search" (step : int)];
+                          eprint_s [%message "local search" (step : int)];
                           Option.return p)
                         else None))
         in
@@ -448,17 +447,13 @@ module Make (Lang : Lang_intf) = struct
             else Second []
 
       method run =
-        print_s [%message (ctx.rules : Op.t Local_search.Rule.t list)];
         let solution =
-          let upper = Sequence.of_list @@ Iter.to_list @@ Synth_utils.luby_cutoff 2.0 16
-          and lower = Sequence.of_list @@ Iter.to_list @@ Iter.take 1000 @@ Synth_utils.geometric_cutoff 1.01 in
-          Sequence.zip upper lower
-          |> Sequence.find_map ~f:(fun (upper, _) ->
+          Synth_utils.luby_cutoff 2.0 16
+          |> Iter.find_map (fun upper ->
                  let bound = Float.to_int upper in
                  let scaled_bound = bound in
                  upper_bound <- scaled_bound;
                  enum_bound <- 0;
-                 Fmt.epr "Upper: %d, enum: %d\n%!" upper_bound enum_bound;
 
                  Search_state.clear search_state;
 
@@ -470,9 +465,10 @@ module Make (Lang : Lang_intf) = struct
                  let ret, time =
                    with_time (fun () -> Iter.(0 -- upper_bound) |> Iter.find_map (fun cost -> self#fill cost))
                  in
-                 Fmt.epr "Completed iteration in %a. (search %a) (grouping %a %d/%d)\n%!" Time.Span.pp time Time.Span.pp
-                   !(ctx.search_close_states_time) Time.Span.pp !(ctx.sample_states_time) !(ctx.groups_created)
-                   !(ctx.states_grouped);
+                 if ctx.verbose then
+                   Fmt.epr "Completed iteration in %a. (search %a) (grouping %a %d/%d)\n%!" Time.Span.pp time
+                     Time.Span.pp !(ctx.search_close_states_time) Time.Span.pp !(ctx.sample_states_time)
+                     !(ctx.groups_created) !(ctx.states_grouped);
                  ret)
         in
         Option.iter solution ~f:(fun p ->

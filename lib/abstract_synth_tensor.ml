@@ -327,7 +327,7 @@ let synth cost target ops =
       | Some p ->
           let v = Program.eval (Conc.Value.eval ctx.ectx) p in
           if [%compare.equal: Conc.Value.t] v target then (
-            print_s
+            eprint_s
               [%message
                 (Synth.Search_state.n_states synth#get_search_state : int)
                   (Synth.Search_state.n_transitions synth#get_search_state : int)];
@@ -347,4 +347,4 @@ let synth cost target ops =
   let ctx = Abs.Value.Ctx.create () in
   try ignore (loop 0 ctx : Abs_value.Ctx.t)
   with Done (iters, p) ->
-    print_s [%message "synthesis completed" (iters : int) (Program.size p : int) (p : Abs.Op.t Program.t)]
+    eprint_s [%message "synthesis completed" (iters : int) (Program.size p : int) (p : Abs.Op.t Program.t)]

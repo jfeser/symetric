@@ -147,5 +147,5 @@ let synth ?(use_rules = true) ?(use_normalize = true) ?(use_distance = `True) co
     Synth.Ctx.create ~verbose:false ~distance ~max_cost:cost ~rules ?normalize ~search_thresh:(Top_k 3) ectx ops target
   in
   match (new Synth.synthesizer ctx)#run with
-  | Some p -> print_s [%message (p : Op.t Program.t)]
+  | Some p -> eprint_s [%message (p : Op.t Program.t)]
   | None -> failwith "synthesis failed"

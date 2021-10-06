@@ -6,7 +6,7 @@ let generate_benchmarks ?(max_states = 100_000) ops ectx cost type_ =
   let module Lang = Tensor in
   let module Synth = Baseline.Make (Lang) in
   let open Synth in
-  let config = Ctx.create ~max_cost:cost ~verbose:true ectx ops (`Pred (fun _ _ -> false)) in
+  let config = Ctx.create ~max_cost:cost ~verbose:false ectx ops (`Pred (fun _ _ -> false)) in
   let synth =
     object
       inherit synthesizer config as super
@@ -25,13 +25,13 @@ let generate_benchmarks ?(max_states = 100_000) ops ectx cost type_ =
   Hashtbl.find search_state.values attr |> Option.map ~f:Iter.of_queue |> Option.value ~default:Iter.empty
   |> Iter.map (Search_state.program_exn search_state type_)
 
-let run_abs = false
+let run_abs = true
 
 let run_local = true
 
-let run_local_no_dist_close = false
+let run_local_no_dist_close = true
 
-let run_local_no_dist_far = false
+let run_local_no_dist_far = true
 
 let time_if cond f = if cond then Synth_utils.time f else Time.Span.zero
 
@@ -71,8 +71,8 @@ let () =
              let local_no_dist_far =
                time_if run_local_no_dist_far (fun () -> Local_synth_tensor.synth ~use_distance:`Far cost target ops)
              in
-             (* let baseline = Synth_utils.time (fun () -> Baseline_synth_tensor.synth cost target ops) in *)
              (abs, local, local_no_dist_close, local_no_dist_far))
       |> Iter.iter (fun (abs, local, local_no_dist_close, local_no_dist_far) ->
-             Fmt.pr "%d,%a,%a,%a,%a\n%!" cost Time.Span.pp abs Time.Span.pp local Time.Span.pp local_no_dist_close
-               Time.Span.pp local_no_dist_far))
+             let time_pp fmt ts = Fmt.pf fmt "%f" @@ Time.Span.to_ms ts in
+             Fmt.pr "%d,%a,%a,%a,%a\n%!" cost time_pp abs time_pp local time_pp local_no_dist_close time_pp
+               local_no_dist_far))
