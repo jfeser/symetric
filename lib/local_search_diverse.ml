@@ -112,6 +112,7 @@ module Make (Lang : Lang_intf) = struct
       search_width : int;
       search_thresh : Search_thresh.t;
       rules : Op.t Local_search.Rule.t list;
+      normalize : (Op.t Program.t -> Op.t Program.t) option;
       distance : Value.t -> Value.t -> float;
       search_close_states_time : Time.Span.t ref;
       sample_states_time : Time.Span.t ref;
@@ -127,14 +128,15 @@ module Make (Lang : Lang_intf) = struct
       groups_created : int ref;
     }
 
-    let create ?(search_width = 10) ?(verbose = false) ?stats ~search_thresh ~rules ~distance ?(max_cost = 64) ectx ops
-        output =
+    let create ?(search_width = 10) ?(verbose = false) ?stats ?normalize ~search_thresh ~rules ~distance
+        ?(max_cost = 64) ectx ops output =
       let stats = Option.value_lazy stats ~default:(lazy (Stats.create ())) in
 
       {
         search_width;
         search_thresh;
         rules = Local_search.Rule.normalize [%compare: Op.t] rules;
+        normalize;
         distance = (fun v v' -> distance (Value.value v) (Value.value v'));
         search_close_states_time = ref Time.Span.zero;
         sample_states_time = ref Time.Span.zero;
@@ -149,6 +151,10 @@ module Make (Lang : Lang_intf) = struct
         states_grouped = ref 0;
         groups_created = ref 0;
       }
+  end
+
+  module Op_program = struct
+    type t = Op.t Program.t [@@deriving compare, hash, sexp]
   end
 
   module Term_set = struct
@@ -351,37 +357,46 @@ module Make (Lang : Lang_intf) = struct
         ctx.states_grouped := !(ctx.states_grouped) + List.length new_states;
         let groups =
           if cost > enum_bound then (
-            let classes =
-              List.map new_states ~f:(fun ((v, op, _) as state) -> ((v, Op.ret_type op), state))
-              |> Hashtbl.of_alist_multi (module TValue)
-            in
-            let classes =
-              let ctr = ref 0 in
-              Hashtbl.map classes ~f:(fun states ->
-                  incr ctr;
-                  (states, Union_find.create !ctr, ref false))
-            in
+            match ctx.normalize with
+            | Some normalize ->
+                let groups = Hashtbl.create (module Op_program) in
+                List.iter new_states ~f:(fun ((_, op, args) as state) ->
+                    let prog = Search_state.program_of_op_args_exn search_state op args in
+                    let nprog = normalize prog in
+                    Hashtbl.update groups nprog ~f:(function None -> [ state ] | Some xs -> state :: xs));
+                Hashtbl.data groups
+            | None ->
+                let classes =
+                  List.map new_states ~f:(fun ((v, op, _) as state) -> ((v, Op.ret_type op), state))
+                  |> Hashtbl.of_alist_multi (module TValue)
+                in
+                let classes =
+                  let ctr = ref 0 in
+                  Hashtbl.map classes ~f:(fun states ->
+                      incr ctr;
+                      (states, Union_find.create !ctr, ref false))
+                in
 
-            self#apply_rules new_states
-            |> Iter.iter (fun ((v, op, _), alt_value) ->
-                   let t = Op.ret_type op in
-                   let key = (v, t) and alt_key = (alt_value, t) in
-                   (* print_s [%message (v : Value.t) (alt_value : Value.t)]; *)
-                   (* if Search_state.(mem search_state TValue.{ type_ = t; value = alt_value }) then *)
-                   (*   Option.iter ~f:(fun (_, _, dead) -> dead := true) @@ Hashtbl.find classes key *)
-                   (* else *)
-                   match (Hashtbl.find classes key, Hashtbl.find classes alt_key) with
-                   | Some (_, c, _), Some (_, c', _) -> Union_find.union c c'
-                   | _ -> ());
+                self#apply_rules new_states
+                |> Iter.iter (fun ((v, op, _), alt_value) ->
+                       let t = Op.ret_type op in
+                       let key = (v, t) and alt_key = (alt_value, t) in
+                       (* print_s [%message (v : Value.t) (alt_value : Value.t)]; *)
+                       (* if Search_state.(mem search_state TValue.{ type_ = t; value = alt_value }) then *)
+                       (*   Option.iter ~f:(fun (_, _, dead) -> dead := true) @@ Hashtbl.find classes key *)
+                       (* else *)
+                       match (Hashtbl.find classes key, Hashtbl.find classes alt_key) with
+                       | Some (_, c, _), Some (_, c', _) -> Union_find.union c c'
+                       | _ -> ());
 
-            let to_keep = Hashtbl.create (module Int) in
-            Hashtbl.iter classes ~f:(fun (states, class_id, _) ->
-                (* if !dead then print_s [%message "dead" (states : (Value.t * _ * _) list)]; *)
-                (* if not !dead then *)
-                Hashtbl.update to_keep (Union_find.get class_id) ~f:(function
-                  | Some states' -> states @ states'
-                  | None -> states));
-            Hashtbl.data to_keep)
+                let to_keep = Hashtbl.create (module Int) in
+                Hashtbl.iter classes ~f:(fun (states, class_id, _) ->
+                    (* if !dead then print_s [%message "dead" (states : (Value.t * _ * _) list)]; *)
+                    (* if not !dead then *)
+                    Hashtbl.update to_keep (Union_find.get class_id) ~f:(function
+                      | Some states' -> states @ states'
+                      | None -> states));
+                Hashtbl.data to_keep)
           else List.map ~f:(fun s -> [ s ]) new_states
         in
         ctx.groups_created := !(ctx.groups_created) + List.length groups;
@@ -434,12 +449,12 @@ module Make (Lang : Lang_intf) = struct
       method run =
         print_s [%message (ctx.rules : Op.t Local_search.Rule.t list)];
         let solution =
-          let upper = Sequence.of_list @@ Iter.to_list @@ Synth_utils.luby_cutoff 1.75 16
-          and lower = Sequence.of_list @@ Iter.to_list @@ Iter.take 100 @@ Synth_utils.geometric_cutoff 1.01 in
+          let upper = Sequence.of_list @@ Iter.to_list @@ Synth_utils.luby_cutoff 2.0 16
+          and lower = Sequence.of_list @@ Iter.to_list @@ Iter.take 1000 @@ Synth_utils.geometric_cutoff 1.01 in
           Sequence.zip upper lower
           |> Sequence.find_map ~f:(fun (upper, _) ->
                  let bound = Float.to_int upper in
-                 let scaled_bound = bound + 11 in
+                 let scaled_bound = bound in
                  upper_bound <- scaled_bound;
                  enum_bound <- 0;
                  Fmt.epr "Upper: %d, enum: %d\n%!" upper_bound enum_bound;

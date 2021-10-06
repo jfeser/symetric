@@ -69,7 +69,8 @@ end
 
 module Synth = Local_search_diverse.Make (Tensor)
 
-let synth ?(use_rules = true) ?(use_distance = `True) cost (target : Tensor.Value.t) (ops : Tensor.Op.t list) =
+let synth ?(use_rules = true) ?(use_normalize = true) ?(use_distance = `True) cost (target : Tensor.Value.t)
+    (ops : Tensor.Op.t list) =
   let open Tensor in
   let rules =
     let open Local_search.Pattern in
@@ -107,11 +108,44 @@ let synth ?(use_rules = true) ?(use_distance = `True) cost (target : Tensor.Valu
     else []
   in
 
+  let normalize =
+    if use_normalize then
+      let rec to_list (p : Op.t Program.t) =
+        let open Option.Let_syntax in
+        match p with
+        | Apply (Cons, [ x; xs ]) ->
+            let%bind xs = to_list xs in
+            return (x :: xs)
+        | Apply (Vec, [ x ]) -> return [ x ]
+        | _ -> None
+      in
+      let rec of_list : _ -> Op.t Program.t = function
+        | [] -> assert false
+        | [ x ] -> Apply (Vec, [ x ])
+        | x :: xs -> Apply (Cons, [ x; of_list xs ])
+      in
+      let norm p =
+        match to_list p with
+        | Some l ->
+            let l' =
+              List.filter l ~f:(function Apply (Int 1, []) -> false | _ -> true)
+              |> List.dedup_and_sort ~compare:[%compare: Op.t Program.t]
+            in
+            let (l' : Op.t Program.t list) = if List.is_empty l' then [ Apply (Int 1, []) ] else l' in
+            of_list l'
+        | None -> p
+      in
+      Some norm
+    else None
+  in
+
   let ectx = Value.Ctx.create () in
   let distance =
     match use_distance with `True -> Value.dist ectx | `Close -> fun _ _ -> 0.0 | `Far -> fun _ _ -> Float.infinity
   in
-  let ctx = Synth.Ctx.create ~verbose:false ~distance ~max_cost:cost ~rules ~search_thresh:(Top_k 3) ectx ops target in
+  let ctx =
+    Synth.Ctx.create ~verbose:false ~distance ~max_cost:cost ~rules ?normalize ~search_thresh:(Top_k 3) ectx ops target
+  in
   match (new Synth.synthesizer ctx)#run with
   | Some p -> print_s [%message (p : Op.t Program.t)]
   | None -> failwith "synthesis failed"

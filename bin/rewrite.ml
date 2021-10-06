@@ -113,7 +113,7 @@ let run ?(size = 6) ?(n_terms = 10000) () =
   let patterns =
     let open Local_search in
     Pattern.(rename_patterns (module Op) ops @ push_pull_replicate ops)
-    |> List.map ~f:(fun (r, r') -> if [%compare: Op.t Rule.pat] r r' <= 0 then (r, r') else (r', r))
+    |> List.map ~f:(fun (r, r') -> if [%compare: Op.t Pattern.t] r r' <= 0 then (r, r') else (r', r))
     |> List.dedup_and_sort ~compare:[%compare: Op.t Rule.t]
   in
 
@@ -163,7 +163,7 @@ let distance_graph ?(size = 10) () =
   let rules =
     let open Local_search in
     Pattern.(close_leaf_patterns ops)
-    |> List.map ~f:(fun (r, r') -> if [%compare: Op.t Rule.pat] r r' <= 0 then (r, r') else (r', r))
+    |> List.map ~f:(fun (r, r') -> if [%compare: Op.t Pattern.t] r r' <= 0 then (r, r') else (r', r))
     |> List.dedup_and_sort ~compare:[%compare: Op.t Rule.t]
   in
   print_s [%message (List.length rules : int)];
@@ -324,7 +324,7 @@ let stochastic_distance ?(size = 10) () =
   let rules =
     let open Local_search in
     Pattern.(close_leaf_patterns ops)
-    |> List.map ~f:(fun (r, r') -> if [%compare: Op.t Rule.pat] r r' <= 0 then (r, r') else (r', r))
+    |> List.map ~f:(fun (r, r') -> if [%compare: Op.t Pattern.t] r r' <= 0 then (r, r') else (r', r))
     |> List.dedup_and_sort ~compare:[%compare: Op.t Rule.t]
   in
   print_s [%message (List.length rules : int)];
