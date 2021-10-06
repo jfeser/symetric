@@ -46,7 +46,7 @@ module type Lang_intf = sig
   module Op : Op_intf.S with type type_ = Type.t
 
   module Value : sig
-    type t [@@deriving compare, equal, hash, sexp_of]
+    type t [@@deriving compare, equal, hash, sexp]
 
     module Ctx : sig
       type t
@@ -127,7 +127,7 @@ module Make (Lang : Lang_intf) = struct
       groups_created : int ref;
     }
 
-    let create ?(search_width = 100) ?(verbose = false) ?stats ~search_thresh ~rules ~distance ?(max_cost = 64) ectx ops
+    let create ?(search_width = 10) ?(verbose = false) ?stats ~search_thresh ~rules ~distance ?(max_cost = 64) ectx ops
         output =
       let stats = Option.value_lazy stats ~default:(lazy (Stats.create ())) in
 
@@ -158,13 +158,12 @@ module Make (Lang : Lang_intf) = struct
       search_state : Search_state.t; [@ignore]
       value : [ `List of (Value.t * Op.t * Value.t list) list | `Ref of Search_state.TValue.t ];
     }
-    [@@deriving compare, sexp_of]
+    [@@deriving compare, sexp]
 
     let heads ({ value; search_state } as ts) =
       let of_op_args =
         Iter.map (fun (op, args) ->
-            let type_ = Op.ret_type op in
-            (op, List.map args ~f:(fun value -> { ts with value = `Ref { type_; value } })))
+            (op, List.map2_exn (Op.args_type op) args ~f:(fun type_ value -> { ts with value = `Ref { type_; value } })))
       in
 
       match value with
@@ -177,6 +176,20 @@ module Make (Lang : Lang_intf) = struct
     let of_states search_state states = { search_state; value = `List states }
 
     let value_exn = function { value = `List _; _ } -> failwith "no value" | { value = `Ref tv; _ } -> tv.value
+  end
+
+  module Subst = struct
+    type k = int [@@deriving sexp]
+
+    type v = Term_set.t [@@deriving sexp]
+
+    type t = v Map.M(Int).t [@@deriving sexp]
+
+    let get = Map.find
+
+    let set t k v = Map.set t ~key:k ~data:v
+
+    let empty = Map.empty (module Int)
   end
 
   module HCons = struct
@@ -215,22 +228,13 @@ module Make (Lang : Lang_intf) = struct
       val search_state = Search_state.create ctx.max_cost
 
       method local_search ~target =
-        Local_search.of_rules_tabu ~target ~dist:ctx.distance (module Op) ctx.rules (Program.eval (Value.eval ctx.ectx))
+        Local_search.of_rules_tabu ~target ~dist:ctx.distance
+          (module Op)
+          (module Value)
+          ctx.rules
+          (Program.eval (Value.eval ctx.ectx))
 
       method apply_rules states =
-        let module Subst = struct
-          type k = int [@@deriving sexp]
-
-          type v = Term_set.t [@@deriving sexp_of]
-
-          type t = v Map.M(Int).t [@@deriving sexp_of]
-
-          let get = Map.find
-
-          let set t k v = Map.set t ~key:k ~data:v
-
-          let empty = Map.empty (module Int)
-        end in
         let eval_subst_value s p =
           let rec eval_subst = function
             | Local_search.Pattern.Apply (op, args) -> Value.eval ctx.ectx op @@ List.map args ~f:eval_subst
@@ -238,9 +242,7 @@ module Make (Lang : Lang_intf) = struct
                 match Subst.get s v with
                 | Some term_set -> Term_set.value_exn term_set
                 | None ->
-                    raise_s
-                      [%message "no value for binding" (v : int) (s : Subst.t) (p : (Op.t, int) Local_search.Pattern.t)]
-                )
+                    raise_s [%message "no value for binding" (v : int) (s : Subst.t) (p : Op.t Local_search.Pattern.t)])
           in
           eval_subst p
         in
@@ -252,9 +254,7 @@ module Make (Lang : Lang_intf) = struct
                 match Subst.get s v with
                 | Some term_set -> `Value (Term_set.value_exn term_set)
                 | None ->
-                    raise_s
-                      [%message "no value for binding" (v : int) (s : Subst.t) (p : (Op.t, int) Local_search.Pattern.t)]
-                )
+                    raise_s [%message "no value for binding" (v : int) (s : Subst.t) (p : Op.t Local_search.Pattern.t)])
           in
           eval_subst p
         in
@@ -263,52 +263,54 @@ module Make (Lang : Lang_intf) = struct
         |> Iter.map (fun state ->
                Iter.of_list ctx.rules
                |> Iter.map (fun (lhs, rhs) ->
-                      print_s
-                        [%message
-                          "matching" (state : Value.t * Op.t * Value.t list) ((lhs, rhs) : Op.t Local_search.Rule.t)];
-                      Local_search.Pattern.match_
-                        (module Op)
-                        (module Term_set)
-                        (module Subst)
-                        lhs
-                        (Term_set.of_states search_state [ state ])
-                      |> Iter.map (fun s ->
-                             print_s [%message "found match" (s : Subst.t)];
-                             eval_subst_value s rhs))
+                      let term_set = Term_set.of_states search_state [ state ] in
+
+                      (* print_s *)
+                      (*   [%message *)
+                      (*     "matching" (state : Value.t * Op.t * Value.t list) ((lhs, rhs) : Op.t Local_search.Rule.t)]; *)
+
+                      (* print_s [%message "args" ((lhs, term_set) : Op.t Local_search.Pattern.t * Term_set.t)]; *)
+                      Local_search.Pattern.match_ (module Op) (module Term_set) (module Subst) lhs term_set
+                      |> Iter.map (fun s -> (* print_s [%message "found match" (s : Subst.t)]; *)
+                                            eval_subst_value s rhs))
                |> Iter.concat
                |> Iter.map (fun v -> (state, v)))
         |> Iter.concat
 
       method search_close_states new_states =
-        let top_k k =
+        let top_k k new_states =
           Iter.of_list new_states
-          |> Iter.map (fun ((v, _, _) as s) -> (ctx.distance ctx.output v, s))
+          |> Iter.map (fun ((v, _, _) as s) -> (-.ctx.distance ctx.output v, s))
           |> Iter.top_k ~cmp:[%compare: float * _] k
-          |> Iter.map Tuple.T2.get2
         in
 
         with_time_probe ctx.search_close_states_time @@ fun () ->
         let search_states =
           match ctx.search_thresh with
-          | Search_thresh.Distance d ->
-              Iter.of_list new_states |> Iter.filter (fun (v, _, _) -> Float.(ctx.distance ctx.output v < d))
-          | Top_k k -> top_k k
+          | Search_thresh.Distance thresh ->
+              Iter.of_list new_states
+              |> Iter.filter_map (fun ((v, _, _) as s) ->
+                     let dist = ctx.distance ctx.output v in
+                     if Float.(dist < thresh) then Some (dist, s) else None)
+          | Top_k k -> top_k k new_states
           | Top_frac p ->
               let k = Float.(to_int (p *. of_int (List.length new_states))) in
-              top_k k
+              top_k k new_states
         in
+        let search_states = search_states |> Iter.filter (fun (d, _) -> Float.(d < infinity)) in
 
         let examined = ref 0 in
         let solution =
           search_states
-          |> Iter.find_map (fun (_, op, args) ->
+          |> Iter.find_map (fun (_, (_, op, args)) ->
                  let center = Search_state.random_program_of_op_args_exn search_state op args in
                  self#local_search ~target:ctx.output center
                  |> Iter.take ctx.search_width
-                 |> Iter.find_map (fun p ->
+                 |> Iter.find_mapi (fun step p ->
                         incr examined;
-                        if [%compare.equal: Value.t] (Program.eval (Value.eval ctx.ectx) p) ctx.output then
-                          Option.return p
+                        if [%compare.equal: Value.t] (Program.eval (Value.eval ctx.ectx) p) ctx.output then (
+                          print_s [%message "local search" (step : int)];
+                          Option.return p)
                         else None))
         in
         (solution, !examined)
@@ -364,21 +366,21 @@ module Make (Lang : Lang_intf) = struct
             |> Iter.iter (fun ((v, op, _), alt_value) ->
                    let t = Op.ret_type op in
                    let key = (v, t) and alt_key = (alt_value, t) in
-                   print_s [%message (v : Value.t) (alt_value : Value.t)];
-                   if Search_state.(mem search_state TValue.{ type_ = t; value = alt_value }) then
-                     Option.iter ~f:(fun (_, _, dead) -> dead := true) @@ Hashtbl.find classes key
-                   else
-                     match (Hashtbl.find classes key, Hashtbl.find classes alt_key) with
-                     | Some (_, c, _), Some (_, c', _) -> Union_find.union c c'
-                     | _ -> ());
+                   (* print_s [%message (v : Value.t) (alt_value : Value.t)]; *)
+                   (* if Search_state.(mem search_state TValue.{ type_ = t; value = alt_value }) then *)
+                   (*   Option.iter ~f:(fun (_, _, dead) -> dead := true) @@ Hashtbl.find classes key *)
+                   (* else *)
+                   match (Hashtbl.find classes key, Hashtbl.find classes alt_key) with
+                   | Some (_, c, _), Some (_, c', _) -> Union_find.union c c'
+                   | _ -> ());
 
             let to_keep = Hashtbl.create (module Int) in
-            Hashtbl.iter classes ~f:(fun (states, class_id, dead) ->
-                if !dead then print_s [%message "dead" (states : (Value.t * _ * _) list)];
-                if not !dead then
-                  Hashtbl.update to_keep (Union_find.get class_id) ~f:(function
-                    | Some states' -> states @ states'
-                    | None -> states));
+            Hashtbl.iter classes ~f:(fun (states, class_id, _) ->
+                (* if !dead then print_s [%message "dead" (states : (Value.t * _ * _) list)]; *)
+                (* if not !dead then *)
+                Hashtbl.update to_keep (Union_find.get class_id) ~f:(function
+                  | Some states' -> states @ states'
+                  | None -> states));
             Hashtbl.data to_keep)
           else List.map ~f:(fun s -> [ s ]) new_states
         in
@@ -432,12 +434,14 @@ module Make (Lang : Lang_intf) = struct
       method run =
         print_s [%message (ctx.rules : Op.t Local_search.Rule.t list)];
         let solution =
-          Synth_utils.luby_cutoff 1.5 16
-          |> Iter.find (fun bound ->
-                 let bound = Float.to_int bound in
-                 let scaled_bound = bound + 10 in
+          let upper = Sequence.of_list @@ Iter.to_list @@ Synth_utils.luby_cutoff 1.75 16
+          and lower = Sequence.of_list @@ Iter.to_list @@ Iter.take 100 @@ Synth_utils.geometric_cutoff 1.01 in
+          Sequence.zip upper lower
+          |> Sequence.find_map ~f:(fun (upper, _) ->
+                 let bound = Float.to_int upper in
+                 let scaled_bound = bound + 11 in
                  upper_bound <- scaled_bound;
-                 enum_bound <- Float.to_int @@ Float.log @@ Float.of_int scaled_bound;
+                 enum_bound <- 0;
                  Fmt.epr "Upper: %d, enum: %d\n%!" upper_bound enum_bound;
 
                  Search_state.clear search_state;

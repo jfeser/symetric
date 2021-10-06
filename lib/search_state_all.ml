@@ -6,7 +6,7 @@ module type Lang_intf = sig
   module Op : Op_intf.S with type type_ = Type.t
 
   module Value : sig
-    type t [@@deriving compare, hash, sexp_of]
+    type t [@@deriving compare, hash, sexp]
   end
 end
 
@@ -23,7 +23,7 @@ module Make (Lang : Lang_intf) = struct
   end
 
   module TValue = struct
-    type t = { type_ : Lang.Type.t; value : Lang.Value.t } [@@deriving compare, hash, sexp_of]
+    type t = { type_ : Lang.Type.t; value : Lang.Value.t } [@@deriving compare, hash, sexp]
   end
 
   type t = {
@@ -31,7 +31,7 @@ module Make (Lang : Lang_intf) = struct
     values : Lang.Value.t Queue.t Hashtbl.M(Attr).t;
     paths : (int * Lang.Op.t * Lang.Value.t list) Queue.t Hashtbl.M(TValue).t;
   }
-  [@@deriving sexp_of]
+  [@@deriving sexp]
 
   let create max_cost = { max_cost; values = Hashtbl.create (module Attr); paths = Hashtbl.create (module TValue) }
 

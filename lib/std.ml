@@ -59,15 +59,18 @@ module Iter = struct
   let of_set s k = Core.Set.iter ~f:k s
 
   let top_k (type t) ~cmp k (l : t Iter.t) (f : t -> unit) =
-    let mins = Pairing_heap.create ~min_size:k ~cmp () in
-    Iter.iter
-      (fun (x : t) ->
-        if Pairing_heap.length mins < k || (Option.is_some @@ Pairing_heap.pop_if mins (fun x' -> cmp x' x < 0)) then
-          Pairing_heap.add mins x)
-      l;
-    Pairing_heap.iter ~f mins
+    assert (k >= 0);
+    if k > 0 then (
+      let mins = Pairing_heap.create ~min_size:k ~cmp () in
+      Iter.iter
+        (fun (x : t) ->
+          if Pairing_heap.length mins < k || (Option.is_some @@ Pairing_heap.pop_if mins (fun x' -> cmp x' x < 0)) then
+            Pairing_heap.add mins x)
+        l;
+      Pairing_heap.iter ~f mins)
 
-  let%expect_test "" = print_s [%message (top_k ~cmp:[%compare: int] 3 Iter.(0 -- 10) : int t)];
+  let%expect_test "" =
+    print_s [%message (top_k ~cmp:[%compare: int] 3 Iter.(0 -- 10) : int t)];
     [%expect {| ("top_k ~cmp:([%compare : int]) 3 (let open Iter in 0 -- 10)" (8 10 9)) |}]
 end
 

@@ -1,3 +1,4 @@
 - for tensor benchmarks, much of the improvement comes from reducing the number of vectors that will never be used
   - vectors of size k grow as (num ints)^k, if the target program has max vector size k', anything larger than k' can be discarded completely
   - its cheaper to guess that than it is to search through those vectors exhaustively
+* TODO Investigate knuth-bendix for grouping

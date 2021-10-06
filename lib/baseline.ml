@@ -30,7 +30,7 @@ module type Lang_intf = sig
   module Op : Op_intf.S with type type_ = Type.t
 
   module Value : sig
-    type t [@@deriving compare, equal, hash, sexp_of]
+    type t [@@deriving compare, equal, hash, sexp]
 
     module Ctx : sig
       type t

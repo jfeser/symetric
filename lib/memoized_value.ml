@@ -5,7 +5,7 @@ end
 module type VALUE = sig
   type op
 
-  type t [@@deriving compare, equal, hash, sexp_of]
+  type t [@@deriving compare, equal, hash, sexp]
 
   module Ctx : sig
     type t
@@ -50,7 +50,7 @@ module Make (Op : OP) (Value : VALUE with type op := Op.t) = struct
 end
 
 module Make_cached (Op : OP) (Value : VALUE with type op := Op.t) = struct
-  include Hash_cached.Make_sexp_of (Value)
+  include Hash_cached.Make (Value)
   module Ctx = Value.Ctx
 
   let eval ctx op args = create @@ Value.eval ctx op @@ List.map ~f:value args

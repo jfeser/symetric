@@ -22,7 +22,7 @@ let leaf ?(n = 10) ?target ectx =
   search
 
 module type Subst_intf = sig
-  type t
+  type t [@@deriving sexp]
 
   type k
 
@@ -36,7 +36,7 @@ module type Subst_intf = sig
 end
 
 module type Term_set_intf = sig
-  type t [@@deriving compare]
+  type t [@@deriving compare, sexp]
 
   type op
 
@@ -44,7 +44,7 @@ module type Term_set_intf = sig
 end
 
 module Pattern = struct
-  type ('o, 'v) t = Apply of ('o * ('o, 'v) t list) | Var of 'v [@@deriving compare, sexp]
+  type 'o t = Apply of ('o * 'o t list) | Var of int [@@deriving compare, sexp]
 
   let apply x y = Apply (x, y)
 
@@ -105,14 +105,16 @@ module Pattern = struct
     in
     match_ (Some init) p t
 
-  module type Comparable = sig
-    type t [@@deriving compare]
+  module type Match_op = sig
+    type t [@@deriving compare, sexp]
   end
 
-  let match_ (type op ts subst var) (module Op : Comparable with type t = op)
+  let match_ (type op ts subst) (module Op : Match_op with type t = op)
       (module T : Term_set_intf with type t = ts and type op = Op.t)
-      (module S : Subst_intf with type t = subst and type k = var and type v = T.t) p ts k =
-    let rec match_ ctx = function
+      (module S : Subst_intf with type t = subst and type k = int and type v = T.t) p ts k =
+    let rec match_ ctx jobs =
+      (* print_s [%message (ctx : S.t) (jobs : (Op.t t * T.t) list)]; *)
+      match jobs with
       | [] -> k ctx
       | (Var v, t) :: jobs -> (
           match S.get ctx v with
@@ -128,37 +130,6 @@ module Pattern = struct
                    match_ ctx (jobs' @ jobs))
     in
     match_ S.empty [ (p, ts) ]
-
-  let%expect_test "" =
-    let module Op = String in
-    let module Term_set = struct
-      type op = Op.t
-
-      type t = Op.t Program.t [@@deriving compare]
-
-      let heads : t -> _ Iter.t = fun (Apply (op, args)) -> Iter.singleton (op, args)
-    end in
-    let module Subst = struct
-      type k = int
-
-      type v = Op.t Program.t
-
-      type t = Op.t Program.t Map.M(Int).t [@@deriving sexp]
-
-      let get = Map.find
-
-      let set m k v = Map.set m ~key:k ~data:v
-
-      let empty = Map.empty (module Int)
-    end in
-    match_
-      (module Op)
-      (module Term_set)
-      (module Subst)
-      (Apply ("vec", [ Var 0 ]))
-      Program.(Apply ("vec", [ Apply ("1", []) ]))
-    |> Iter.iter (fun ctx -> print_s [%message (ctx : Subst.t)]);
-    [%expect {| (ctx ((0 (Apply 1 ())))) |}]
 
   let rec match_all op_m init bind p t k =
     Option.iter (match_root op_m init bind p t) ~f:k;
@@ -182,9 +153,7 @@ module Pattern = struct
 end
 
 module Rule = struct
-  type 'o pat = ('o, int) Pattern.t [@@deriving compare, sexp]
-
-  type 'o t = 'o pat * 'o pat [@@deriving compare, sexp]
+  type 'o t = 'o Pattern.t * 'o Pattern.t [@@deriving compare, sexp]
 
   let flip (x, y) = (y, x)
 
@@ -216,12 +185,14 @@ let of_rules_root_only ?n ?target m_op rules eval =
   let search center k = Sample.stochastic ?n ~propose ~score center k in
   search
 
-let tabu ?(max_tabu = 10) ~neighbors state start k =
+let tabu (type state) ?(max_tabu = 10) ~neighbors state start k =
+  let (module State : Base.Hashable.Key with type t = state) = state in
   let seen = Hash_queue.create @@ Base.Hashable.of_key state in
   let rec loop current =
     let m_next = Iter.find_pred (fun c -> not (Hash_queue.mem seen c)) (neighbors current) in
     match m_next with
     | Some next ->
+        (* print_s [%message (current : State.t) (next : State.t)]; *)
         Hash_queue.enqueue_back_exn seen next ();
         if Hash_queue.length seen > max_tabu then Hash_queue.drop_front seen;
         k next;
@@ -251,8 +222,8 @@ let of_rules_root_only_tabu ~dist ~target m_op rules eval =
   end in
   tabu ~neighbors (module P)
 
-let of_rules_tabu (type op) ?(max_tabu = 10) ~dist ~target ((module Op : Op_intf.S with type t = op) as m_op) rules eval
-    =
+let of_rules_tabu (type op value) ?(max_tabu = 3) ~dist ~target ((module Op : Op_intf.S with type t = op) as m_op)
+    (module Value : Sexpable.S with type t = value) rules eval =
   let neighbors t =
     let iter_rewrites f =
       List.iter rules ~f:(fun ((lhs, rhs) as rule) ->
@@ -260,10 +231,29 @@ let of_rules_tabu (type op) ?(max_tabu = 10) ~dist ~target ((module Op : Op_intf
           Pattern.rewrite_all m_op (rhs, lhs) t f)
     in
 
-    let cmp = [%compare: float * _] in
-    iter_rewrites
-    |> Iter.map (fun p -> (dist (eval p) target, p))
-    |> Iter.top_k ~cmp max_tabu |> Iter.sort ~cmp |> Iter.map Tuple.T2.get2
+    let cmp = [%compare: float * _ * _ * _] in
+
+    let all_rewrites =
+      iter_rewrites
+      |> Iter.map (fun p ->
+             let state = eval p in
+             (dist state target, state, target, p))
+    in
+    let chosen_rewrites =
+      all_rewrites
+      |> Iter.map (fun (d, x, y, z) -> (-.d, x, y, z))
+      |> Iter.top_k ~cmp (max_tabu + 1)
+      |> Iter.map (fun (d, x, y, z) -> (-.d, x, y, z))
+      |> Iter.sort ~cmp
+    in
+
+    (* let all_dists = Iter.map (fun (d, _, _, _) -> d) all_rewrites |> Iter.to_list in *)
+    (* if Set.length (Set.of_list (module Float) all_dists) > 1 then *)
+    (*   print_s *)
+    (*     [%message *)
+    (*       (all_rewrites : (float * Value.t * Value.t * Op.t Program.t) Iter.t) *)
+    (*         (chosen_rewrites : (float * Value.t * Value.t * Op.t Program.t) Iter.t)]; *)
+    Iter.map (fun (_, _, _, p) -> p) chosen_rewrites
   in
 
   let module P = struct

@@ -30,6 +30,18 @@ let sequence_distance m s1 s2 =
   done;
   Array.inversions [%compare: int] p
 
+let shape_distance s s' =
+  let n = List.length s in
+  if n = List.length s' && Set.equal (Set.of_list (module Int) s) (Set.of_list (module Int) s') then
+    (Float.of_int @@ sequence_distance (module Int) s s') /. Float.(of_int n * (of_int n - 1.0) / 2.0)
+  else 1.0
+
+let jaccard_distance s s' =
+  let s = Set.of_list (module Int) s and s' = Set.of_list (module Int) s' in
+  let i = Float.of_int @@ Set.length @@ Set.inter s s' in
+  let u = Float.of_int @@ Set.length @@ Set.union s s' in
+  i /. u
+
 let%expect_test "" =
   print_s [%message (sequence_distance (module Int) [ 1; 2; 3; 4; 5 ] [ 1; 3; 2; 5; 4 ] : int)];
   [%expect {| ("sequence_distance (module Int) [1; 2; 3; 4; 5] [1; 3; 2; 5; 4]" 2) |}]
@@ -43,16 +55,9 @@ module Tensor = struct
     let dist _ v v' =
       match (v, v') with
       | Tensor t, Tensor t' ->
+          let s = Tensor.shape t and s' = Tensor.shape t' in
           let value_dist = if [%compare.equal: Tensor.t] t t' then 0.0 else 1.0 in
-
-          let shape_dist =
-            let s = Tensor.shape t and s' = Tensor.shape t' in
-            let n = List.length s in
-            if n = List.length s' && Set.equal (Set.of_list (module Int) s) (Set.of_list (module Int) s') then
-              (Float.of_int @@ sequence_distance (module Int) s s') /. Float.(of_int n * (of_int n - 1.0) / 2.0)
-            else 1.0
-          in
-          (value_dist +. shape_dist) /. 2.0
+          (value_dist +. shape_distance s s' +. jaccard_distance s s') /. 3.0
       | _ -> Float.infinity
     (* match (t, t') with
        | Tensor t, Tensor t' ->
@@ -86,6 +91,10 @@ let synth ?(use_rules = true) ?(use_distance = `True) cost (target : Tensor.Valu
       in
       let _factor_rules =
         [
+          (* (cons (int 4) (v 0), cons (int 2) (cons (int 2) (v 0))); *)
+          (* (cons (int 6) (v 0), cons (int 2) (cons (int 3) (v 0))); *)
+          (* (cons (int 8) (v 0), cons (int 2) (cons (int 4) (v 0))); *)
+          (* (cons (int 10) (v 0), cons (int 2) (cons (int 5) (v 0))); *)
           (cons (int 1) (cons (int 4) (v 0)), cons (int 2) (cons (int 2) (v 0)));
           (cons (int 1) (cons (int 6) (v 0)), cons (int 2) (cons (int 3) (v 0)));
           (cons (int 1) (cons (int 8) (v 0)), cons (int 2) (cons (int 4) (v 0)));
@@ -94,7 +103,7 @@ let synth ?(use_rules = true) ?(use_distance = `True) cost (target : Tensor.Valu
           (cons (int 8) (cons (int 1) (v 0)), cons (int 2) (cons (int 4) (v 0)));
         ]
       in
-      flip_rules @ _intro_rule
+      flip_rules @ _factor_rules @ _intro_rule
     else []
   in
 
