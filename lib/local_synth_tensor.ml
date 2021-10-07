@@ -90,6 +90,12 @@ let synth ?(use_rules = true) ?(use_normalize = true) ?(use_distance = `True) co
           (Apply (Vec, [ Var 0 ]), Apply (Cons, [ Apply (Int 1, []); Apply (Vec, [ Var 0 ]) ]));
         ]
       in
+      let dup_rule =
+        [
+          (Apply (Cons, [ Var 0; Var 1 ]), Apply (Cons, [ Var 0; Apply (Cons, [ Var 0; Var 1 ]) ]));
+          (Apply (Vec, [ Var 0 ]), Apply (Cons, [ Var 0; Apply (Vec, [ Var 0 ]) ]));
+        ]
+      in
       let _factor_rules =
         [
           (* (cons (int 4) (v 0), cons (int 2) (cons (int 2) (v 0))); *)
@@ -104,7 +110,7 @@ let synth ?(use_rules = true) ?(use_normalize = true) ?(use_distance = `True) co
           (cons (int 8) (cons (int 1) (v 0)), cons (int 2) (cons (int 4) (v 0)));
         ]
       in
-      flip_rules @ _factor_rules @ _intro_rule
+      flip_rules @ _factor_rules @ _intro_rule @ dup_rule
     else []
   in
 

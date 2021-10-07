@@ -94,7 +94,7 @@ module Pattern = struct
             ]))
 
   let match_root (type op) (module Op : Op_intf.S with type t = op) init bind p t =
-    let bind ctx k v = Option.map ctx ~f:(fun ctx -> bind ctx k v) in
+    let bind ctx k v = Option.bind ctx ~f:(fun ctx -> bind ctx k v) in
     let rec match_ ctx p t =
       match (p, t) with
       | Var v, t -> bind ctx v t
@@ -140,9 +140,15 @@ module Pattern = struct
     | Var v -> subst_var v
     | Apply (op, args) -> Program.Apply (op, List.map args ~f:(subst subst_var))
 
-  let rewrite_root op (lhs, rhs) t =
+  let rewrite_root (type op) ((module Op : Op_intf.S with type t = op) as op) (lhs, rhs) t =
     Option.map
-      (match_root op (Map.empty (module Int)) (fun m k v -> Map.add_exn m ~key:k ~data:v) lhs t)
+      (match_root op
+         (Map.empty (module Int))
+         (fun m k v ->
+           match Map.find m k with
+           | Some v' -> if [%compare.equal: Op.t Program.t] v v' then Some m else None
+           | None -> Some (Map.add_exn m ~key:k ~data:v))
+         lhs t)
       ~f:(fun ctx -> subst (Map.find_exn ctx) rhs)
 
   let rec rewrite_all op_m rule t k =
