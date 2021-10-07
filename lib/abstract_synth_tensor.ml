@@ -46,14 +46,14 @@ module Abs_value = struct
 
   let relevant = function
     | Value.Tensor t -> [ `N_dims (Tensor.n_dims t); `N_elems (Tensor.n_elems t); `Concrete_t t ]
-    | Vector v -> [ `Len (List.length v); `Concrete_v v; `Elems (List.sort ~compare:[%compare: int] v) ]
+    | Vector v -> [ `Len (List.length v); `Concrete_v v; `Elems (List.dedup_and_sort ~compare:[%compare: int] v) ]
     | Error -> [ `False ]
     | Int x -> [ `Int x ]
 
   let complete vs =
     Set.to_list vs
     |> List.concat_map ~f:(function
-         | `Concrete_v v as p -> [ p; `Len (List.length v); `Elems (List.sort ~compare:[%compare: int] v) ]
+         | `Concrete_v v as p -> [ p; `Len (List.length v); `Elems (List.dedup_and_sort ~compare:[%compare: int] v) ]
          | `Concrete_t t as p -> [ p; `N_dims (Tensor.n_dims t); `N_elems (Tensor.n_elems t) ]
          | p -> [ p ])
     |> Set.of_list (module Pred)
@@ -98,6 +98,7 @@ module Abs_value = struct
     match (op, args) with
     | Op.Id t, [] -> of_list @@ relevant @@ Tensor t
     | Reshape, [ m; v ] ->
+        let prod = List.reduce_exn ~f:( * ) in
         let m_preds =
           Iter.of_set m
           |> Iter.map (function
@@ -111,7 +112,8 @@ module Abs_value = struct
           |> Iter.map (function
                | `False as p -> [ p ]
                | `Len l -> [ `N_dims l ]
-               | `Elems v | `Concrete_v v -> [ `N_dims (List.length v); `N_elems (List.product v) ]
+               | `Concrete_v v -> [ `N_dims (List.length v); `N_elems (List.product v) ]
+               | `Elems _ -> []
                | #Pred.int_pred | #Pred.tensor_pred -> failwith "unexpected predicate")
         in
         let pair_preds =
@@ -122,13 +124,8 @@ module Abs_value = struct
                    | Tensor t'' -> [ `Concrete_t t''; `N_dims (Tensor.n_dims t''); `N_elems (Tensor.n_elems t'') ]
                    | Error -> [ `False ]
                    | _ -> failwith "expected a tensor")
-               | `Concrete_t t', `Elems v' -> (
-                   match Value.eval ctx.ectx Op.Reshape [ Value.Tensor t'; Value.Vector v' ] with
-                   | Tensor t'' -> [ `N_dims (Tensor.n_dims t''); `N_elems (Tensor.n_elems t'') ]
-                   | Error -> [ `False ]
-                   | _ -> failwith "expected a tensor")
-               | `N_elems n, (`Elems v | `Concrete_v v) ->
-                   if List.length v > 0 && n = List.reduce_exn v ~f:( * ) then [ `N_elems n ] else [ `False ]
+               | `N_elems n, `Concrete_v v -> if List.length v > 0 && n = prod v then [ `N_elems n ] else [ `False ]
+               | `Concrete_t t, `Elems v -> if prod v > Tensor.n_elems t then [ `False ] else []
                | _ -> [])
         in
         Iter.append_l [ m_preds; v_preds; pair_preds ] |> Iter.to_list |> List.concat |> of_list
@@ -136,9 +133,6 @@ module Abs_value = struct
         let is_permutation v =
           let v = List.sort ~compare:[%compare: int] v in
           List.for_alli v ~f:(fun i x -> x = i + 1)
-        in
-        let check_elems n v =
-          if [%compare.equal: int list] v (List.init n ~f:(fun i -> i + 1)) then [ `N_dims n ] else [ `False ]
         in
 
         let m_preds =
@@ -153,7 +147,8 @@ module Abs_value = struct
           |> Iter.map (function
                | `False as p -> [ p ]
                | `Len l -> [ `N_dims l ]
-               | `Elems v | `Concrete_v v -> if is_permutation v then [ `N_dims (List.length v) ] else [ `False ]
+               | `Elems v -> if is_permutation v then [] else [ `False ]
+               | `Concrete_v v -> if is_permutation v then [ `N_dims (List.length v) ] else [ `False ]
                | #Pred.int_pred | #Pred.tensor_pred -> failwith "unexpected predicate")
         in
 
@@ -168,7 +163,8 @@ module Abs_value = struct
                    | Error -> [ `False ]
                    | _ -> failwith "expected a tensor")
                | `N_dims n, `Len i -> if n = i then [ `N_dims n ] else [ `False ]
-               | `Concrete_t t, `Elems v -> check_elems (Tensor.n_dims t) v
+               | `Concrete_t t, `Elems v ->
+                   if is_permutation v && List.length v = Tensor.n_dims t then [] else [ `False ]
                | `N_dims n, `Elems v | `N_dims n, `Concrete_v v ->
                    if List.length v = n then [ `N_dims n ] else [ `False ]
                | _ -> [])
@@ -196,7 +192,8 @@ module Abs_value = struct
           |> Iter.map (function
                | `False as p -> [ p ]
                | `Len l -> [ `Len (l + 1) ]
-               | `Elems v | `Concrete_v v -> [ `Len (List.length v + 1) ]
+               | `Concrete_v v -> [ `Len (List.length v + 1) ]
+               | `Elems _ -> []
                | #Pred.int_pred | #Pred.tensor_pred -> failwith "unexpected predicate")
         in
 
@@ -205,8 +202,8 @@ module Abs_value = struct
           |> Iter.map (function
                | `False, #Pred.vector_pred | #Pred.int_pred, `False -> [ `False ]
                | `Int x, `Concrete_v xs ->
-                   [ `Concrete_v (x :: xs); `Elems (List.sort ~compare:[%compare: int] (x :: xs)) ]
-               | `Int x, `Elems xs -> [ `Elems (List.insert_sorted ~compare:[%compare: int] x xs) ]
+                   [ `Concrete_v (x :: xs); `Elems (List.dedup_and_sort ~compare:[%compare: int] (x :: xs)) ]
+               | `Int x, `Elems xs -> [ `Elems (List.dedup_and_sort ~compare:[%compare: int] (x :: xs)) ]
                | _ -> [])
         in
         Iter.append_l [ ps_preds; pair_preds ] |> Iter.to_list |> List.concat |> of_list
