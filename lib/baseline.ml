@@ -1,59 +1,35 @@
 open Std
 
-include struct
-  open Dumb_params
-
-  let spec = Spec.create ~name:"baseline" ()
-
-  let synth = Spec.add spec @@ Param.const_str ~name:"synth" "baseline"
-
-  let max_cost = Spec.add spec @@ Param.int ~name:"max-cost" ~doc:" max search cost" ()
-
-  let verbose = Spec.add spec @@ Param.bool ~init:(`Cli (Some false)) ~name:"verbose" ~doc:" verbose output" ()
-
-  let bank_size = Spec.add spec @@ Param.float_ref ~name:"bank-size" ()
-
-  let found_program = Spec.add spec @@ Param.bool_ref ~name:"found-program" ()
-
-  let program_cost = Spec.add spec @@ Param.float_ref ~name:"program-cost" ()
-end
-
 module type Lang_intf = sig
   module Type : sig
     type t [@@deriving compare, hash, sexp]
 
-    include Comparator.S with type t := t
-
     val output : t
   end
 
-  module Op : Op_intf.S with type type_ = Type.t
+  module Op : sig
+    type t [@@deriving compare, hash, sexp]
+
+    val cost : t -> int
+
+    val arity : t -> int
+
+    val args_type : t -> Type.t list
+
+    val ret_type : t -> Type.t
+  end
 
   module Value : sig
-    type t [@@deriving compare, equal, hash, sexp]
+    type t [@@deriving compare, hash, sexp]
 
     module Ctx : sig
       type t
-
-      val of_params : Params.t -> t
     end
-
-    include Comparator.S with type t := t
 
     val eval : Ctx.t -> Op.t -> t list -> t
 
     val is_error : t -> bool
   end
-
-  module Bench : sig
-    type t [@@deriving of_sexp]
-
-    val ops : t -> Op.t list
-
-    val output : t -> Value.t
-  end
-
-  val bench : (Bench.t, Dumb_params.Param.bound) Dumb_params.Param.t
 end
 
 module Make (Lang : Lang_intf) = struct
@@ -75,7 +51,7 @@ module Make (Lang : Lang_intf) = struct
       program_cost : float ref;
     }
 
-    let create ?stats ?(verbose = false) ~max_cost ectx ops goal =
+    let create ?stats ?(verbose = false) ?(max_cost = Int.max_value) ectx ops goal =
       let stats = Option.value_lazy stats ~default:(lazy (Stats.create ())) in
       {
         max_cost;
@@ -90,21 +66,6 @@ module Make (Lang : Lang_intf) = struct
         bank_size = Stats.add_probe_exn stats "bank-size";
         found_program = ref false;
         program_cost = Stats.add_probe_exn stats "program-cost";
-      }
-
-    let of_params params =
-      let bench = Params.get params bench in
-      {
-        max_cost = Params.get params max_cost;
-        verbose = Params.get params verbose;
-        ectx = Value.Ctx.of_params params;
-        ops = Bench.ops bench;
-        goal =
-          (fun op v ->
-            [%compare.equal: Type.t] (Op.ret_type op) Type.output && ([%compare.equal: Value.t] v @@ Bench.output bench));
-        bank_size = Params.get params bank_size;
-        found_program = Params.get params found_program;
-        program_cost = Params.get params program_cost;
       }
   end
 
@@ -154,23 +115,3 @@ module Make (Lang : Lang_intf) = struct
           Some p
     end
 end
-
-module type Cli_lang_intf = sig
-  include Lang_intf
-
-  val spec : Dumb_params.Spec.t
-
-  val name : string
-end
-
-let cli (type value op) (module Lang : Cli_lang_intf with type Value.t = value and type Op.t = op) =
-  let module Synth = Make (Lang) in
-  let spec = Dumb_params.Spec.union [ Lang.spec; Params.spec; spec ] in
-  let open Command.Let_syntax in
-  Command.basic ~summary:(sprintf "Enumerative baseline for %s" Lang.name)
-  @@ [%map_open
-       let params = Dumb_params.Spec.cli spec in
-       Synth_utils.run_synth
-         (fun params -> new Synth.synthesizer @@ Synth.Ctx.of_params params)
-         params
-         (Option.iter ~f:(fun p -> eprint_s ([%sexp_of: Lang.Op.t Program.t] p)))]

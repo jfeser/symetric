@@ -72,6 +72,20 @@ module Iter = struct
   let%expect_test "" =
     print_s [%message (top_k ~cmp:[%compare: int] 3 Iter.(0 -- 10) : int t)];
     [%expect {| ("top_k ~cmp:([%compare : int]) 3 (let open Iter in 0 -- 10)" (8 10 9)) |}]
+
+  let list_product iters f =
+    let rec product acc = function [] -> f @@ List.rev acc | q :: qs -> q (fun x -> product (x :: acc) qs) in
+    product [] iters
+
+  let%expect_test "" = print_s [%message (list_product [ Iter.(1 -- 3); Iter.(1 -- 3); Iter.(1 -- 3) ] : int list t)];
+    [%expect {|
+      ( "list_product\
+       \n  [(let open Iter in 1 -- 3);\
+       \n  (let open Iter in 1 -- 3);\
+       \n  (let open Iter in 1 -- 3)]"
+       ((1 1 1) (1 1 2) (1 1 3) (1 2 1) (1 2 2) (1 2 3) (1 3 1) (1 3 2) (1 3 3)
+        (2 1 1) (2 1 2) (2 1 3) (2 2 1) (2 2 2) (2 2 3) (2 3 1) (2 3 2) (2 3 3)
+        (3 1 1) (3 1 2) (3 1 3) (3 2 1) (3 2 2) (3 2 3) (3 3 1) (3 3 2) (3 3 3))) |}]
 end
 
 module Array = struct

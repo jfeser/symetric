@@ -73,3 +73,10 @@
  (libraries core iter staged_synth)
  (preprocess
   (pps ppx_jane)))
+
+(executable
+ (name cad)
+ (modules cad)
+ (libraries core iter staged_synth)
+ (preprocess
+  (pps ppx_jane)))
