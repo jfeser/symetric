@@ -293,13 +293,9 @@ end
 
 let synth cost target ops =
   let module Conc = Tensor in
-  let module Abs_bench = Bench.Make (Conc.Op) (Abs_value) in
   let module Abs = struct
     include Conc
     module Value = Abs_value
-    module Bench = Abs_bench
-
-    let bench = Dumb_params.Spec.add spec Bench.param
   end in
   let exception Done of int * Abs.Op.t Program.t in
   let module Synth = Baseline.Make (Abs) in

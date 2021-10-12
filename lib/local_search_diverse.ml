@@ -1,28 +1,5 @@
 open Std
 
-include struct
-  open Dumb_params
-
-  let spec = Spec.inherit_ Baseline.spec "local-search-diverse"
-
-  let search_close_states_time =
-    Spec.add spec @@ Param.(mut @@ float ~name:"search-close-states-time" ~doc:"" ~init:(`Default (Fun.const 0.0)) ())
-
-  let sample_states_time =
-    Spec.add spec @@ Param.(mut @@ float ~name:"sample-states-time" ~doc:"" ~init:(`Default (Fun.const 0.0)) ())
-
-  let rules_fn = Spec.add spec @@ Param.string ~name:"rules-file" ~init:(`Cli (Some "")) ~doc:"" ()
-
-  let rule_sets = Spec.add spec @@ Param.string ~name:"rule-sets" ~init:(`Cli (Some "")) ~doc:"" ()
-
-  let distance = Spec.add spec @@ Param.string ~name:"distance" ~init:(`Cli (Some "jaccard")) ~doc:"" ()
-
-  let search_thresh =
-    Spec.add spec @@ Param.string ~name:"search-thresh" ~init:(`Cli (Some "(Distance 0.01)")) ~doc:"" ()
-
-  let (_ : _) = Spec.add spec @@ Param.const_str ~name:"synth" "local-search-diverse"
-end
-
 let sum_to arr x =
   let sum = ref 0 in
   for i = 0 to x do

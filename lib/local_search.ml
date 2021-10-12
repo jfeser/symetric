@@ -7,20 +7,6 @@ let full ?(n = 5) ?target ops ectx =
   let search center k = Tree_ball.Rename_insert_delete.stochastic ~n (module Op) ~score ops center k in
   search
 
-let leaf ?(n = 10) ?target ectx =
-  let module Op = Cad_op in
-  let module Value = Cad_conc in
-  let module F = Flat_program.Make (Op) in
-  let eval = F.eval (Value.eval ectx) in
-  let score = match target with Some t -> fun p -> Cad_conc.jaccard t @@ eval p | None -> Fun.const 1.0 in
-  let search center k =
-    Tree_ball.Rename_leaves.stochastic
-      (module Op)
-      Cad_gen_pattern.rename center ~n ~score
-      (fun ap d -> k (F.to_program ap) d)
-  in
-  search
-
 module type Subst_intf = sig
   type t [@@deriving sexp]
 

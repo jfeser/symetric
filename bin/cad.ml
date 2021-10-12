@@ -34,7 +34,7 @@ let time_if cond f = if cond then Synth_utils.time f else Time.Span.zero
 let () =
   Random.init 0;
 
-  let ops = Op.[ inter; union ] @ Cad_gen_pattern.grid 30 30 16 (Op.circle ~id:0 ~center:Vector2.zero ~radius:3.0) in
+  let ops = Op.[ inter; union ] @ Cad_utils.grid 30 30 16 (Op.circle ~id:0 ~center:Vector2.zero ~radius:3.0) in
 
   let mk_ectx () = Value.Ctx.create ~xlen:30 ~ylen:30 () in
 
