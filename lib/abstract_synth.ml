@@ -28,39 +28,43 @@ module type Lang_intf = sig
   end
 end
 
-module Base_pred = struct
-  type ('v, 'p) t = True | False | Concrete of 'v | Pred of 'p [@@deriving compare, hash, sexp]
-end
-
 module type Domain_pred_intf = sig
   type concrete
 
   type op
 
+  type ctx
+
   type t [@@deriving compare, hash, sexp]
 
-  val cost : (concrete, t) Base_pred.t -> int
+  val cost : [ `Concrete of concrete | `Pred of t ] -> int
 
-  val relevant : concrete -> t Iter.t
+  val lift : concrete -> t Iter.t
 
   val complete : t -> t Iter.t
 
   val eval : t -> concrete -> bool
 
-  val transfer : op -> (concrete, t) Base_pred.t list -> (concrete, t) Base_pred.t
+  val transfer :
+    ctx ->
+    op ->
+    [ `True | `Concrete of concrete | `Pred of t ] list ->
+    [ `False | `Concrete of concrete | `Pred of t ] list
 end
 
 module Make
     (Lang : Lang_intf)
-    (Domain_pred : Domain_pred_intf with type concrete = Lang.Value.t and type op = Lang.Op.t) =
+    (Domain_pred : Domain_pred_intf
+                     with type concrete = Lang.Value.t
+                      and type op = Lang.Op.t
+                      and type ctx = Lang.Value.Ctx.t) =
 struct
   module Abs_value = struct
     open Lang
-    open Base_pred
 
     module Pred = struct
       module T = struct
-        type t = (Value.t, Domain_pred.t) Base_pred.t [@@deriving compare, hash, sexp]
+        type t = [ `Concrete of Value.t | `Pred of Domain_pred.t ] [@@deriving compare, hash, sexp]
       end
 
       include T
@@ -80,50 +84,56 @@ struct
       type t = Bottom | Preds of Set.M(Pred).t [@@deriving compare, equal, hash, sexp]
 
       let of_iter ?(ctx : Ctx.t option) iter =
-        let preds = Iter.to_set (module Pred) iter in
-        if Set.is_empty preds || Set.mem preds False then Bottom
+        let in_ctx = match ctx with Some ctx -> Set.mem ctx.preds | None -> Fun.const true in
+        Iter.fold
+          (fun ps p ->
+            match (ps, p) with
+            | ps, `True -> ps
+            | _, `False | Bottom, _ -> Bottom
+            | Preds pp, ((`Pred _ | `Concrete _) as p) -> if in_ctx p then Preds (Set.add pp p) else ps)
+          (Preds (Set.empty (module Pred)))
+          iter
+
+      let to_iter = function
+        | Bottom -> Iter.empty
+        | Preds ps ->
+            Iter.cons `True @@ Iter.map (function #Pred.t as p -> p) @@ (Iter.of_set ps :> [> Pred.t ] Iter.t)
+
+      let lift ?ctx conc =
+        if Value.is_error conc then Bottom
         else
-          let preds = match ctx with Some ctx -> Set.inter preds ctx.preds | None -> preds in
-          Preds (Set.remove preds True)
+          let domain = Domain_pred.lift conc |> Iter.map (fun p -> `Pred p) in
+          of_iter ?ctx (Iter.cons (`Concrete conc) domain)
 
-      let to_iter = function Bottom -> Iter.empty | Preds ps -> Iter.cons True @@ Iter.of_set ps
+      let and_ p p' =
+        match (p, p') with Bottom, _ | _, Bottom -> Bottom | Preds ps, Preds ps' -> Preds (Set.union ps ps')
 
-      let relevant conc =
-        let default = Iter.of_list [ True; Concrete conc ] in
-        let domain = Domain_pred.relevant conc |> Iter.map (fun p -> Pred p) in
-        Iter.append default domain
+      let and_many = Iter.fold and_ (Preds (Set.empty (module Pred)))
 
-      let complete p =
-        Iter.of_set p
-        |> Iter.map (function
-             | (True | False) as p -> Iter.singleton p
-             | Concrete v as p -> Iter.cons p @@ relevant v
-             | Pred p -> Domain_pred.complete p |> Iter.map (fun p -> Pred p))
-        |> Iter.concat |> Iter.to_list
-        |> Set.of_list (module Pred)
+      let complete = function
+        | Bottom as p -> p
+        | Preds ps ->
+            Iter.of_set ps
+            |> Iter.map (function
+                 | `Concrete v as p -> and_ (Preds (Set.singleton (module Pred) p)) @@ lift v
+                 | `Pred p -> Domain_pred.complete p |> Iter.map (fun p -> `Pred p) |> of_iter)
+            |> and_many
 
       let implies p p' =
-        match (p, p') with
+        match (complete p, complete p') with
         | Bottom, _ -> true
         | _, Bottom -> false
-        | Preds ps, Preds ps' -> Set.is_subset (complete ps') ~of_:(complete ps)
+        | Preds ps, Preds ps' -> Set.is_subset ps' ~of_:ps
 
       let contains p v =
         match p with
         | Bottom -> false
         | Preds ps ->
             Set.for_all ps ~f:(function
-              | True -> true
-              | False -> false
-              | Pred p -> Domain_pred.eval p v
-              | Concrete v' -> [%compare.equal: Value.t] v v')
-
-      let lift ?ctx v = relevant v |> of_iter ?ctx
+              | `Pred p -> Domain_pred.eval p v
+              | `Concrete v' -> [%compare.equal: Value.t] v v')
 
       let length = function Bottom -> 0 | Preds ps -> Set.length ps
-
-      let and_ p p' =
-        match (p, p') with Bottom, _ | _, Bottom -> Bottom | Preds ps, Preds ps' -> Preds (Set.union ps ps')
 
       let singleton p = of_iter @@ Iter.singleton p
     end
@@ -132,7 +142,9 @@ struct
     include Comparator.Make (T)
 
     let eval ctx op args =
-      List.map args ~f:to_iter |> Iter.list_product |> Iter.map (Domain_pred.transfer op) |> of_iter ~ctx
+      List.map args ~f:to_iter |> Iter.list_product
+      |> Iter.map (Domain_pred.transfer ctx.ectx op)
+      |> Iter.map Iter.of_list |> Iter.concat |> of_iter ~ctx
 
     let strengthen ~max_conjuncts too_strong too_weak check =
       let n_args = List.length too_strong in
@@ -146,7 +158,7 @@ struct
         end
 
         module Op = struct
-          type t = Args | And of int | Pred of int * Pred.t [@@deriving compare, hash, sexp]
+          type t = Args | And of int | Pred of int * [ Pred.t | `True ] [@@deriving compare, hash, sexp]
 
           let arity = function Args -> n_args | And _ -> 2 | Pred _ -> 0
 
@@ -157,7 +169,7 @@ struct
             | And slot -> [ Type.Pred slot; Type.Pred slot ]
             | Pred _ -> []
 
-          let cost = function Pred (_, p) -> Pred.cost p | Args | And _ -> 0
+          let cost = function Pred (_, `True) -> 1 | Pred (_, (#Pred.t as p)) -> Pred.cost p | Args | And _ -> 0
         end
 
         module Value = struct
@@ -182,7 +194,7 @@ struct
       let ops =
         Op.Args
         :: List.concat_mapi too_strong ~f:(fun slot conc ->
-               let pred_ops = relevant conc |> Iter.map (fun p -> Op.Pred (slot, p)) |> Iter.to_list in
+               let pred_ops = lift conc |> to_iter |> Iter.map (fun p -> Op.Pred (slot, p)) |> Iter.to_list in
                Op.And slot :: pred_ops)
       in
       let exception Done of t list in
@@ -241,7 +253,11 @@ struct
       let (Apply ((_, conc, abs), _)) = p in
       let p' = strengthen_program ctx p (strengthen_root ctx conc abs target) in
       let preds =
-        Program.ops_iter p' |> Iter.map (fun (_, _, _, ps) -> to_iter ps) |> Iter.concat |> Iter.to_set (module Pred)
+        Program.ops_iter p'
+        |> Iter.map (fun (_, _, _, ps) -> to_iter ps)
+        |> Iter.concat
+        |> Iter.filter_map (function `True -> None | #Pred.t as p -> Some p)
+        |> Iter.to_set (module Pred)
       in
       Some { ctx with preds = Set.union ctx.preds preds }
 

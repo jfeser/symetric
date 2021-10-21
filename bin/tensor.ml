@@ -27,6 +27,8 @@ let generate_benchmarks ?(max_states = 100_000) ops ectx cost type_ =
 
 let run_abs = true
 
+let run_abs_v2 = true
+
 let run_local = true
 
 let run_local_no_dist_close = true
@@ -57,13 +59,14 @@ let () =
       eprint_s [%message (benchmarks : Tensor.Op.t Program.t Iter.t)];
 
       benchmarks
-      |> Iter.map (fun p ->
+      |> Iter.iter (fun p ->
              let target = Program.eval (Tensor.Value.eval @@ Tensor.Value.Ctx.create ()) p in
              eprint_s [%message "concrete target" (target : Tensor.Value.t)];
 
              eprint_s [%message (ops : Tensor.Op.t list)];
 
              let abs = time_if run_abs (fun () -> Abstract_synth_tensor.synth cost target ops) in
+             let abs_v2 = time_if run_abs_v2 (fun () -> Abstract_synth_tensor_v2.synth cost target ops) in
              let local = time_if run_local (fun () -> Local_synth_tensor.synth cost target ops) in
              let local_no_dist_close =
                time_if run_local_no_dist_close (fun () -> Local_synth_tensor.synth ~use_distance:`Close cost target ops)
@@ -71,8 +74,6 @@ let () =
              let local_no_dist_far =
                time_if run_local_no_dist_far (fun () -> Local_synth_tensor.synth ~use_distance:`Far cost target ops)
              in
-             (abs, local, local_no_dist_close, local_no_dist_far))
-      |> Iter.iter (fun (abs, local, local_no_dist_close, local_no_dist_far) ->
              let time_pp fmt ts = Fmt.pf fmt "%f" @@ Time.Span.to_ms ts in
-             Fmt.pr "%d,%a,%a,%a,%a\n%!" cost time_pp abs time_pp local time_pp local_no_dist_close time_pp
-               local_no_dist_far))
+             Fmt.pr "%d,%a,%a,%a,%a,%a\n%!" cost time_pp abs time_pp abs_v2 time_pp local time_pp local_no_dist_close
+               time_pp local_no_dist_far))
