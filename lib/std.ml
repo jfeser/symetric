@@ -58,7 +58,10 @@ module Iter = struct
 
   let of_set s k = Core.Set.iter ~f:k s
 
-  let to_set m iter = fold Core.Set.add (Core.Set.empty m) iter
+  let to_set (type t w) m iter =
+    let module C = (val m : Comparator.S with type t = t and type comparator_witness = w) in
+    let l = to_list iter |> List.sort ~compare:C.comparator.compare in
+    Core.Set.of_list m l
 
   let top_k (type t) ~cmp k (l : t Iter.t) (f : t -> unit) =
     assert (k >= 0);
@@ -78,6 +81,11 @@ module Iter = struct
   let list_product iters f =
     let rec product acc = function [] -> f @@ List.rev acc | q :: qs -> q (fun x -> product (x :: acc) qs) in
     product [] iters
+
+  let%expect_test "" =
+    print_s [%message (list_product [ Iter.(1 -- 1) ] : int list t)];
+    [%expect {|
+      ("list_product [(let open Iter in 1 -- 1)]" ((1))) |}]
 
   let%expect_test "" =
     print_s [%message (list_product [ Iter.(1 -- 3); Iter.(1 -- 3); Iter.(1 -- 3) ] : int list t)];

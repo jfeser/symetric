@@ -11,25 +11,24 @@ module Tensor_pred = struct
 
   type any_pred = [ `True ] [@@deriving compare, hash, sexp]
 
-  type int_pred_conc = [ `Int of int ] [@@deriving compare, hash, sexp]
+  type int_pred_conc = [ `True | `Int of int ] [@@deriving compare, hash, sexp]
 
   type vector_pred = [ `Len of int | `Elems of int list ] [@@deriving compare, hash, sexp]
 
-  type vector_pred_conc = [ vector_pred | `Concrete_v of Value.Vector.t ] [@@deriving compare, hash, sexp]
+  type vector_pred_conc = [ vector_pred | `Concrete_v of Value.Vector.t | `True ] [@@deriving compare, hash, sexp]
 
   type tensor_pred = [ `N_dims of int | `N_elems of int ] [@@deriving compare, hash, sexp]
 
-  type tensor_pred_conc = [ tensor_pred | `Concrete_t of Value.Tensor.t ] [@@deriving compare, hash, sexp]
+  type tensor_pred_conc = [ tensor_pred | `Concrete_t of Value.Tensor.t | `True ] [@@deriving compare, hash, sexp]
 
-  type lifted = [ tensor_pred_conc | vector_pred_conc | int_pred_conc | `True ] [@@deriving compare, hash, sexp]
+  type lifted = [ tensor_pred_conc | vector_pred_conc | int_pred_conc ] [@@deriving compare, hash, sexp]
 
   type t = [ vector_pred | tensor_pred ] [@@deriving compare, hash, sexp]
 
   let relevant = function
-    | Value.Tensor t -> [ `N_dims (Tensor.n_dims t); `N_elems (Tensor.n_elems t) ]
-    | Vector v -> [ `Len (List.length v); `Elems (List.dedup_and_sort ~compare:[%compare: int] v) ]
-    | Error -> []
-    | Int _ -> []
+    | Value.Tensor t -> Iter.of_list [ `N_dims (Tensor.n_dims t); `N_elems (Tensor.n_elems t) ]
+    | Vector v -> Iter.of_list [ `Len (List.length v); `Elems (List.dedup_and_sort ~compare:[%compare: int] v) ]
+    | Error | Int _ -> Iter.empty
 
   let complete = Iter.singleton
 
@@ -166,7 +165,7 @@ module Tensor_pred = struct
 
   let cost = function `Concrete _ -> 5 | `Pred (`Elems _) -> 3 | `Pred _ -> 1
 
-  let lift c = relevant c |> Iter.of_list
+  let lift = relevant
 end
 
 module Synth = Abstract_synth.Make (Tensor) (Tensor_pred)

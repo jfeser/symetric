@@ -29,11 +29,11 @@ let run_abs = true
 
 let run_abs_v2 = true
 
-let run_local = true
+let run_local = false
 
-let run_local_no_dist_close = true
+let run_local_no_dist_close = false
 
-let run_local_no_dist_far = true
+let run_local_no_dist_far = false
 
 let time_if cond f = if cond then Synth_utils.time f else Time.Span.zero
 
@@ -76,4 +76,5 @@ let () =
              in
              let time_pp fmt ts = Fmt.pf fmt "%f" @@ Time.Span.to_ms ts in
              Fmt.pr "%d,%a,%a,%a,%a,%a\n%!" cost time_pp abs time_pp abs_v2 time_pp local time_pp local_no_dist_close
-               time_pp local_no_dist_far))
+               time_pp local_no_dist_far;
+             exit 1))

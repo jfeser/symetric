@@ -1,5 +1,7 @@
 open Std
 
+let debug = false
+
 module type Lang_intf = sig
   module Type : sig
     type t [@@deriving compare, hash, sexp]
@@ -83,14 +85,13 @@ struct
     module T = struct
       type t = Bottom | Preds of Set.M(Pred).t [@@deriving compare, equal, hash, sexp]
 
-      let of_iter ?(ctx : Ctx.t option) iter =
-        let in_ctx = match ctx with Some ctx -> Set.mem ctx.preds | None -> Fun.const true in
+      let of_iter iter =
         Iter.fold
           (fun ps p ->
             match (ps, p) with
             | ps, `True -> ps
             | _, `False | Bottom, _ -> Bottom
-            | Preds pp, ((`Pred _ | `Concrete _) as p) -> if in_ctx p then Preds (Set.add pp p) else ps)
+            | Preds pp, ((`Pred _ | `Concrete _) as p) -> Preds (Set.add pp p))
           (Preds (Set.empty (module Pred)))
           iter
 
@@ -99,11 +100,9 @@ struct
         | Preds ps ->
             Iter.cons `True @@ Iter.map (function #Pred.t as p -> p) @@ (Iter.of_set ps :> [> Pred.t ] Iter.t)
 
-      let lift ?ctx conc =
-        if Value.is_error conc then Bottom
-        else
-          let domain = Domain_pred.lift conc |> Iter.map (fun p -> `Pred p) in
-          of_iter ?ctx (Iter.cons (`Concrete conc) domain)
+      let lift conc =
+        let domain = Domain_pred.lift conc |> Iter.map (fun p -> `Pred p) in
+        of_iter (Iter.cons (`Concrete conc) domain)
 
       let and_ p p' =
         match (p, p') with Bottom, _ | _, Bottom -> Bottom | Preds ps, Preds ps' -> Preds (Set.union ps ps')
@@ -120,10 +119,8 @@ struct
             |> and_many
 
       let implies p p' =
-        match (complete p, complete p') with
-        | Bottom, _ -> true
-        | _, Bottom -> false
-        | Preds ps, Preds ps' -> Set.is_subset ps' ~of_:ps
+        let p = complete p and p' = complete p' in
+        match (p, p') with Bottom, _ -> true | _, Bottom -> false | Preds ps, Preds ps' -> Set.is_subset ps' ~of_:ps
 
       let contains p v =
         match p with
@@ -141,12 +138,12 @@ struct
     include T
     include Comparator.Make (T)
 
-    let eval ctx op args =
-      List.map args ~f:to_iter |> Iter.list_product
-      |> Iter.map (Domain_pred.transfer ctx.ectx op)
-      |> Iter.map Iter.of_list |> Iter.concat |> of_iter ~ctx
+    let eval (ctx : Ctx.t) op args =
+      let transfer = Domain_pred.transfer ctx.ectx op in
+      List.map args ~f:to_iter |> Iter.list_product |> Iter.map transfer |> Iter.map Iter.of_list |> Iter.concat
+      |> of_iter
 
-    let strengthen ~max_conjuncts too_strong too_weak check =
+    let _strengthen ~max_conjuncts too_strong too_weak check =
       let n_args = List.length too_strong in
       assert (List.length too_weak = n_args);
 
@@ -175,9 +172,7 @@ struct
         module Value = struct
           type nonrec t = Args of t list | Pred of t [@@deriving compare, hash, sexp]
 
-          module Ctx = struct
-            type t = unit
-          end
+          module Ctx = Unit
 
           let eval _ op args =
             match (op, args) with
@@ -197,6 +192,7 @@ struct
                let pred_ops = lift conc |> to_iter |> Iter.map (fun p -> Op.Pred (slot, p)) |> Iter.to_list in
                Op.And slot :: pred_ops)
       in
+      print_s [%message (ops : Op.t list)];
       let exception Done of t list in
       let synth =
         let config =
@@ -216,7 +212,40 @@ struct
         raise_s [%message "failed to refine"]
       with Done args -> args
 
+    let conjuncts ?(k = 3) l =
+      let k = min k (List.length l) in
+      let ret =
+        Iter.(0 -- k)
+        |> Iter.map (fun k -> if k = 0 then Iter.empty else Iter.map Array.to_list @@ Combinat.combinations ~k l)
+        |> Iter.concat
+        |> Iter.map (fun cs -> (List.sum (module Int) cs ~f:Pred.cost, of_iter @@ Iter.of_list cs))
+      in
+      ret
+
+    let conjuncts ~max_conjuncts = function
+      | [] -> Iter.empty
+      | [ x ] -> conjuncts x |> Iter.map (fun (c, x) -> (c, [ x ]))
+      | [ x; x' ] ->
+          Iter.product (conjuncts ~k:max_conjuncts x) (conjuncts ~k:max_conjuncts x')
+          |> Iter.map (fun ((c, x), (c', x')) -> (c + c', [ x; x' ]))
+      | _ -> assert false
+
+    let strengthen ~max_conjuncts too_strong too_weak implies =
+      let candidates =
+        List.map too_strong ~f:lift
+        |> List.map ~f:(fun p ->
+               to_iter p |> Iter.filter_map (function #Pred.t as p -> Some p | _ -> None) |> Iter.to_list)
+        |> conjuncts ~max_conjuncts
+        |> Iter.sort ~cmp:(fun (c, _) (c', _) -> [%compare: int] c c')
+        |> Iter.to_list
+      in
+      if debug then
+        eprint_s [%message (too_strong : Value.t list) (too_weak : t list) (candidates : (int * t list) list)];
+      let candidates = List.map ~f:(fun (_, cs) -> List.map2_exn cs too_weak ~f:and_) candidates in
+      List.find_exn candidates ~f:implies
+
     let strengthen_root (ctx : Ctx.t) too_strong too_weak target =
+      if debug then eprint_s [%message "strengthening program root" (too_strong : Value.t) (too_weak : t)];
       let new_pred =
         match
           strengthen ~max_conjuncts:ctx.max_conjuncts [ too_strong ] [ too_weak ] (function
@@ -228,7 +257,8 @@ struct
       in
       new_pred
 
-    let rec strengthen_program (ctx : Ctx.t) (Program.Apply ((op, conc, abs), args)) out =
+    let rec strengthen_program (ctx : Ctx.t) (Program.Apply ((op, conc, abs), args) as p) out =
+      if debug then eprint_s [%message "strengthening program" (p : (Op.t * Value.t * t) Program.t) (out : t)];
       let args' =
         if List.is_empty args then []
         else
@@ -236,6 +266,7 @@ struct
           let out' =
             strengthen ~max_conjuncts:ctx.max_conjuncts args_conc args_abs (fun cs ->
                 let v = eval ctx op cs in
+
                 implies v out)
           in
           List.map2_exn args out' ~f:(strengthen_program ctx)
@@ -250,6 +281,8 @@ struct
 
     let refine (ctx : Ctx.t) (target : Value.t) p : Ctx.t option =
       let p = eval_all ctx p in
+      if debug then print_s [%message "refining" (p : (Op.t * Value.t * t) Program.t)];
+
       let (Apply ((_, conc, abs), _)) = p in
       let p' = strengthen_program ctx p (strengthen_root ctx conc abs target) in
       let preds =
@@ -267,7 +300,14 @@ struct
   let synth ectx cost target ops =
     let module Abs = struct
       include Lang
-      module Value = Abs_value
+
+      module Value = struct
+        include Abs_value
+
+        (* When searching, only consider the predicates in the context *)
+        let eval ctx op args =
+          match eval ctx op args with Bottom as p -> p | Preds ps -> Preds (Set.inter ctx.preds ps)
+      end
     end in
     let exception Done of int * Abs.Op.t Program.t in
     let module Synth = Baseline.Make (Abs) in
