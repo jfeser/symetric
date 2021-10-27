@@ -1,35 +1,5 @@
 open Std
 
-include struct
-  open Dumb_params
-
-  let spec = Spec.inherit_ Baseline.spec "local-search-diverse"
-
-  let search_close_states_time =
-    Spec.add spec @@ Param.(mut @@ float ~name:"search-close-states-time" ~doc:"" ~init:(`Default (Fun.const 0.0)) ())
-
-  let sample_states_time =
-    Spec.add spec @@ Param.(mut @@ float ~name:"sample-states-time" ~doc:"" ~init:(`Default (Fun.const 0.0)) ())
-
-  let rules_fn = Spec.add spec @@ Param.string ~name:"rules-file" ~init:(`Cli (Some "")) ~doc:"" ()
-
-  let rule_sets = Spec.add spec @@ Param.string ~name:"rule-sets" ~init:(`Cli (Some "")) ~doc:"" ()
-
-  let distance = Spec.add spec @@ Param.string ~name:"distance" ~init:(`Cli (Some "jaccard")) ~doc:"" ()
-
-  let search_thresh =
-    Spec.add spec @@ Param.string ~name:"search-thresh" ~init:(`Cli (Some "(Distance 0.01)")) ~doc:"" ()
-
-  let (_ : _) = Spec.add spec @@ Param.const_str ~name:"synth" "local-search-diverse"
-end
-
-let sum_to arr x =
-  let sum = ref 0 in
-  for i = 0 to x do
-    sum := !sum + arr.(i)
-  done;
-  !sum
-
 module Search_thresh = struct
   type t = Distance of float | Top_k of int | Top_frac of float [@@deriving sexp]
 end
@@ -38,56 +8,43 @@ module type Lang_intf = sig
   module Type : sig
     type t [@@deriving compare, hash, sexp]
 
-    include Comparator.S with type t := t
-
     val output : t
   end
 
-  module Op : Op_intf.S with type type_ = Type.t
+  module Op : sig
+    type t [@@deriving compare, hash, sexp]
+
+    val cost : t -> int
+
+    val arity : t -> int
+
+    val args_type : t -> Type.t list
+
+    val ret_type : t -> Type.t
+  end
 
   module Value : sig
-    type t [@@deriving compare, equal, hash, sexp]
+    type t [@@deriving compare, hash, sexp]
 
     module Ctx : sig
       type t
-
-      val of_params : Params.t -> t
     end
-
-    include Comparator.S with type t := t
 
     val is_error : t -> bool
 
     val eval : Ctx.t -> Op.t -> t list -> t
-
-    val dist : Ctx.t -> t -> t -> float
   end
-
-  module Bench : sig
-    type t [@@deriving of_sexp]
-
-    val ops : t -> Op.t list
-
-    val output : t -> Value.t
-
-    val solution_exn : t -> Op.t Program.t
-
-    val load : string -> t
-
-    val save : string -> t -> unit
-  end
-
-  val name : string
-
-  val bench : (Bench.t, Dumb_params.Param.bound) Dumb_params.Param.t
-
-  val spec : Dumb_params.Spec.t
 end
 
 module Make (Lang : Lang_intf) = struct
   module Lang = struct
     include Lang
     module Value = Memoized_value.Make_cached (Op) (Value)
+
+    module Op = struct
+      include Op
+      include Comparator.Make (Op)
+    end
   end
 
   open Lang

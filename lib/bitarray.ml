@@ -31,6 +31,23 @@ let get t i = (t.buf.(i / bits_per_word) lsr (i mod bits_per_word)) land 1 > 0
 
 let to_list x = List.init (length x) ~f:(get x)
 
+let iter { len; buf } ~f =
+  let i = ref 0 and n_words = Array.length buf in
+  for w = 0 to n_words - 2 do
+    let word = buf.(w) in
+    for b = 0 to bits_per_word do
+      let bit = (word lsr b) land 1 > 0 in
+      f !i bit;
+      incr i
+    done
+  done;
+  let last_word = buf.(n_words - 1) in
+  for b = 0 to len - !i do
+    let bit = (last_word lsr b) land 1 > 0 in
+    f !i bit;
+    incr i
+  done
+
 let not a = { a with buf = Array.map a.buf ~f:lnot }
 
 let and_ a b = { len = a.len; buf = Array.map2_exn a.buf b.buf ~f:( land ) }

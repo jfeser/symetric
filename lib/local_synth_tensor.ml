@@ -149,9 +149,7 @@ let synth ?(use_rules = true) ?(use_normalize = true) ?(use_distance = `True) _ 
   let distance =
     match use_distance with `True -> Value.dist ectx | `Close -> fun _ _ -> 0.0 | `Far -> fun _ _ -> Float.infinity
   in
-  let ctx =
-    Synth.Ctx.create ~verbose:false ~distance ~max_cost:64 ~rules ?normalize ~search_thresh:(Top_k 3) ectx ops target
-  in
+  let ctx = Synth.Ctx.create ~verbose:false ~distance ~rules ?normalize ~search_thresh:(Top_k 3) ectx ops target in
   match (new Synth.synthesizer ctx)#run with
   | Some p -> eprint_s [%message (p : Op.t Program.t)]
   | None -> failwith "synthesis failed"

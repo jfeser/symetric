@@ -5,15 +5,11 @@ end
 module type VALUE = sig
   type op
 
-  type t [@@deriving compare, equal, hash, sexp]
+  type t [@@deriving compare, hash, sexp]
 
   module Ctx : sig
     type t
-
-    val of_params : Params.t -> t
   end
-
-  include Comparator.S with type t := t
 
   val eval : Ctx.t -> op -> t list -> t
 

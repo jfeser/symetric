@@ -93,7 +93,11 @@ module Pattern = struct
               (apply binary [ Var 0; apply r [ Var 1 ] ], apply r [ apply binary [ Var 0; Var 1 ] ]);
             ]))
 
-  let match_root (type op) (module Op : Op_intf.S with type t = op) init bind p t =
+  module type Comparable = sig
+    type t [@@deriving compare]
+  end
+
+  let match_root (type op) (module Op : Comparable with type t = op) init bind p t =
     let bind ctx k v = Option.bind ctx ~f:(fun ctx -> bind ctx k v) in
     let rec match_ ctx p t =
       match (p, t) with
@@ -140,7 +144,7 @@ module Pattern = struct
     | Var v -> subst_var v
     | Apply (op, args) -> Program.Apply (op, List.map args ~f:(subst subst_var))
 
-  let rewrite_root (type op) ((module Op : Op_intf.S with type t = op) as op) (lhs, rhs) t =
+  let rewrite_root (type op) ((module Op : Comparable with type t = op) as op) (lhs, rhs) t =
     Option.map
       (match_root op
          (Map.empty (module Int))
@@ -228,13 +232,17 @@ let of_rules_root_only_tabu ~dist ~target m_op rules eval =
   end in
   tabu ~neighbors (module P)
 
-let of_rules_tabu (type op value) ?(max_tabu = 3) ~dist ~target ((module Op : Op_intf.S with type t = op) as m_op)
+module type Op_intf = sig
+  type t [@@deriving compare, hash, sexp]
+end
+
+let of_rules_tabu (type op value) ?(max_tabu = 3) ~dist ~target (module Op : Op_intf with type t = op)
     (module Value : Sexpable.S with type t = value) rules eval =
   let neighbors t =
     let iter_rewrites f =
       List.iter rules ~f:(fun ((lhs, rhs) as rule) ->
-          Pattern.rewrite_all m_op rule t f;
-          Pattern.rewrite_all m_op (rhs, lhs) t f)
+          Pattern.rewrite_all (module Op) rule t f;
+          Pattern.rewrite_all (module Op) (rhs, lhs) t f)
     in
 
     let cmp = [%compare: float * _ * _ * _] in
@@ -263,10 +271,6 @@ let of_rules_tabu (type op value) ?(max_tabu = 3) ~dist ~target ((module Op : Op
   in
 
   let module P = struct
-    module T = struct
-      type t = Op.t Program.t [@@deriving compare, hash, sexp]
-    end
-
-    include T
+    type t = Op.t Program.t [@@deriving compare, hash, sexp]
   end in
   tabu ~max_tabu ~neighbors (module P)

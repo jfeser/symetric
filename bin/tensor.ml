@@ -57,7 +57,7 @@ let () =
       eprint_s [%message (benchmarks : Tensor.Op.t Program.t Iter.t)];
 
       benchmarks
-      |> Iter.map (fun p ->
+      |> Iter.iter (fun p ->
              let target = Program.eval (Tensor.Value.eval @@ Tensor.Value.Ctx.create ()) p in
              eprint_s [%message "concrete target" (target : Tensor.Value.t)];
 
@@ -71,6 +71,4 @@ let () =
              let local_no_dist_far =
                time_if run_local_no_dist_far (fun () -> Local_synth_tensor.synth ~use_distance:`Far cost target ops)
              in
-             (abs, local, local_no_dist_close, local_no_dist_far))
-      |> Iter.iter (fun (abs, local, local_no_dist_close, local_no_dist_far) ->
              Fmt.pr "%d,%s,%s,%s,%s\n%!" cost abs local local_no_dist_close local_no_dist_far))
