@@ -1,65 +1,3 @@
-; (executable
-;  (name mk_cad_bench)
-;  (modules mk_cad_bench)
-;  (libraries core staged_synth)
-;  (modes (byte exe))
-;  (preprocess (pps ppx_let)))
-
-; (executable
-;  (name bench)
-;  (modules bench)
-;  (libraries core staged_synth)
-;  (preprocess (pps ppx_compare ppx_let)))
-
-; (executable
-;  (name cegis)
-;  (modules cegis)
-;  (libraries core staged_synth)
-;  (preprocess (pps ppx_let ppx_sexp_conv)))
-
-(executable
- (name lazy_cegis)
- (public_name lazy_cegis)
- (modules lazy_cegis)
- (libraries core staged_synth)
- (preprocess
-  (pps ppx_jane)))
-
-; (executable
-;  (name mk_simple_cad_bench)
-;  (modules mk_simple_cad_bench)
-;  (libraries core staged_synth)
-;  (modes (byte exe))
-;  (preprocess (pps ppx_let)))
-
-(executable
- (name dump_cad_bench)
- (modules dump_cad_bench)
- (libraries core progress staged_synth combinat)
- (preprocess
-  (pps ppx_jane)))
-
-(executable
- (name print_bench)
- (modules print_bench)
- (libraries core staged_synth)
- (preprocess
-  (pps ppx_jane)))
-
-(executable
- (name test_progress)
- (modules test_progress)
- (libraries core staged_synth)
- (preprocess
-  (pps ppx_jane)))
-
-(executable
- (name rewrite)
- (modules rewrite)
- (libraries core iter staged_synth owl)
- (preprocess
-  (pps ppx_jane)))
-
 (executable
  (name shape)
  (modules shape)
@@ -70,6 +8,13 @@
 (executable
  (name tensor)
  (modules tensor)
+ (libraries core iter staged_synth)
+ (preprocess
+  (pps ppx_jane)))
+
+(executable
+ (name cad)
+ (modules cad)
  (libraries core iter staged_synth)
  (preprocess
   (pps ppx_jane)))

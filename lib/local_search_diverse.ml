@@ -37,6 +37,8 @@ module type Lang_intf = sig
 end
 
 module Make (Lang : Lang_intf) = struct
+  module Value0 = Lang.Value
+
   module Lang = struct
     include Lang
     module Value = Memoized_value.Make_cached (Op) (Value)
@@ -82,10 +84,13 @@ module Make (Lang : Lang_intf) = struct
       program_cost : float ref;
       states_grouped : int ref;
       groups_created : int ref;
+      on_close_state : Op.t Program.t -> Value0.t -> unit;
+      after_local_search : Op.t Program.t -> Value0.t -> unit;
+      tabu_length : int;
     }
 
-    let create ?(search_width = 10) ?(verbose = false) ?stats ?normalize ~search_thresh ~rules ~distance ectx ops output
-        =
+    let create ?(on_close_state = fun _ _ -> ()) ?(after_local_search = fun _ _ -> ()) ?(search_width = 10)
+        ?(tabu_length = 1000) ?(verbose = false) ?stats ?normalize ~search_thresh ~rules ~distance ectx ops output =
       let stats = Option.value_lazy stats ~default:(lazy (Stats.create ())) in
 
       {
@@ -105,6 +110,9 @@ module Make (Lang : Lang_intf) = struct
         found_program = ref false;
         states_grouped = ref 0;
         groups_created = ref 0;
+        on_close_state;
+        after_local_search;
+        tabu_length;
       }
   end
 
@@ -189,7 +197,7 @@ module Make (Lang : Lang_intf) = struct
       val search_state = Search_state.create ()
 
       method local_search ~target =
-        Local_search.of_rules_tabu ~target ~dist:ctx.distance
+        Local_search.of_rules_tabu ~max_tabu:ctx.tabu_length ~target ~dist:ctx.distance
           (module Op)
           (module Value)
           ctx.rules
@@ -263,16 +271,27 @@ module Make (Lang : Lang_intf) = struct
         let examined = ref 0 in
         let solution =
           search_states
-          |> Iter.find_map (fun (_, (_, op, args)) ->
+          |> Iter.find_map (fun (_, (value, op, args)) ->
                  let center = Search_state.random_program_of_op_args_exn search_state op args in
-                 self#local_search ~target:ctx.output center
-                 |> Iter.take ctx.search_width
-                 |> Iter.find_mapi (fun step p ->
-                        incr examined;
-                        if [%compare.equal: Value.t] (Program.eval (Value.eval ctx.ectx) p) ctx.output then (
-                          eprint_s [%message "local search" (step : int)];
-                          Option.return p)
-                        else None))
+                 ctx.on_close_state center (Value.value value);
+
+                 let last_state = ref None in
+                 let m_solution =
+                   self#local_search ~target:ctx.output center
+                   |> Iter.take ctx.search_width
+                   |> Iter.find_mapi (fun step p ->
+                          incr examined;
+                          let value = Program.eval (Value.eval ctx.ectx) p in
+                          ctx.on_close_state p (Value.value value);
+
+                          last_state := Some (p, Value.value value);
+                          if [%compare.equal: Value.t] value ctx.output then (
+                            eprint_s [%message "local search" (step : int)];
+                            Option.return p)
+                          else None)
+                 in
+                 (* Option.iter !last_state ~f:(fun (p, v) -> ctx.after_local_search p v); *)
+                 m_solution)
         in
         (solution, !examined)
 

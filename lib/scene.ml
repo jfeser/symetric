@@ -1,7 +1,9 @@
 module Size = struct
   type t = { xres : int; yres : int; xlen : float; ylen : float } [@@deriving compare, hash, sexp]
 
-  let create ~xres ~yres ~xlen ~ylen =
+  let create ?xlen ?ylen ~xres ~yres () =
+    let xlen = Option.value xlen ~default:(Float.of_int xres)
+    and ylen = Option.value ylen ~default:(Float.of_int yres) in
     assert (xres >= 0 && yres >= 0 && Float.(xlen >= 0.0 && ylen >= 0.0));
     { xres; yres; xlen; ylen }
 
@@ -35,7 +37,7 @@ let init (size : Size.t) ~f =
       (* update pixel position *)
       if !px = size.xres - 1 then (
         px := 0;
-        ptx := 0.0;
+        ptx := pixel_w *. 0.5;
         pty := !pty -. pixel_h)
       else (
         incr px;
@@ -44,7 +46,7 @@ let init (size : Size.t) ~f =
   |> create
 
 let pp fmt ((size : Size.t), x) =
-  Bitarray.iter x ~f:(fun i b ->
+  Bitarray.iter (pixels x) ~f:(fun i b ->
       if b then Fmt.pf fmt "█" else Fmt.pf fmt ".";
       if i mod size.xres = size.xres - 1 then Fmt.pf fmt "\n")
 

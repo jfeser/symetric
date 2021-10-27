@@ -35,7 +35,7 @@ let iter { len; buf } ~f =
   let i = ref 0 and n_words = Array.length buf in
   for w = 0 to n_words - 2 do
     let word = buf.(w) in
-    for b = 0 to bits_per_word do
+    for b = 0 to bits_per_word - 1 do
       let bit = (word lsr b) land 1 > 0 in
       f !i bit;
       incr i

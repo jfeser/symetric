@@ -18,8 +18,7 @@ let synth (target : Shape.Value.t) ops n_pos =
   in
   print_s [%message (rules : Op.t Rule.t list)];
   let ctx =
-    Synth.Ctx.create ~verbose:true ~distance:(Shape.Value.dist ectx) ~max_cost:25 ~rules ~search_thresh:(Top_k 20) ectx
-      ops target
+    Synth.Ctx.create ~verbose:true ~distance:(Shape.Value.dist ectx) ~rules ~search_thresh:(Top_k 20) ectx ops target
   in
   match (new Synth.synthesizer ctx)#run with
   | Some p -> print_s [%message (p : Shape.Op.t Program.t)]

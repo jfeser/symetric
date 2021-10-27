@@ -3,7 +3,15 @@ module type Lang_intf = sig
     type t [@@deriving compare, sexp]
   end
 
-  module Op : Op_intf.S with type type_ = Type.t
+  module Op : sig
+    type t [@@deriving compare, hash, sexp]
+
+    val cost : t -> int
+
+    val arity : t -> int
+
+    val args_type : t -> Type.t list
+  end
 
   module Value : sig
     type t [@@deriving compare, sexp_of]

@@ -163,13 +163,9 @@ end
 
 let synth (target : Shape.Value.t) ops n_pos =
   let module Abs_value = Correct_mask_abstract_value in
-  let module Abs_bench = Bench.Make (Shape.Op) (Abs_value) in
   let module Abs_shape = struct
     include Shape
     module Value = Abs_value
-    module Bench = Abs_bench
-
-    let bench = Dumb_params.Spec.add spec Bench.param
   end in
   let exception Done in
   let ectx = Shape.Value.Ctx.{ n_pos } in
