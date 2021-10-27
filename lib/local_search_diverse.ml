@@ -118,7 +118,6 @@ module Make (Lang : Lang_intf) = struct
       sample_states_time : Time.Span.t ref;
       output : Value.t;
       ectx : Value.Ctx.t;
-      max_cost : int;
       verbose : bool;
       ops : Op.t list;
       bank_size : float ref;
@@ -128,8 +127,8 @@ module Make (Lang : Lang_intf) = struct
       groups_created : int ref;
     }
 
-    let create ?(search_width = 10) ?(verbose = false) ?stats ?normalize ~search_thresh ~rules ~distance
-        ?(max_cost = 64) ectx ops output =
+    let create ?(search_width = 10) ?(verbose = false) ?stats ?normalize ~search_thresh ~rules ~distance ectx ops output
+        =
       let stats = Option.value_lazy stats ~default:(lazy (Stats.create ())) in
 
       {
@@ -142,7 +141,6 @@ module Make (Lang : Lang_intf) = struct
         sample_states_time = ref Time.Span.zero;
         output = Value.create output;
         ectx;
-        max_cost;
         verbose;
         ops;
         bank_size = Stats.add_probe_exn stats "bank-size";
@@ -231,7 +229,7 @@ module Make (Lang : Lang_intf) = struct
 
       val mutable upper_bound = 0
 
-      val search_state = Search_state.create ctx.max_cost
+      val search_state = Search_state.create ()
 
       method local_search ~target =
         Local_search.of_rules_tabu ~target ~dist:ctx.distance

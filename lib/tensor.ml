@@ -28,8 +28,11 @@ module Tensor = struct
     { elems = T.to_array arr |> Array.to_list |> List.map ~f:Float.to_int; shape = T.shape arr |> Array.to_list }
 
   let reshape t shape =
-    if List.fold ~f:( * ) ~init:1 shape = n_elems t then Some (of_owl @@ T.reshape (to_owl t) (Array.of_list shape))
-    else None
+    try
+      if List.fold ~f:( * ) ~init:1 shape = n_elems t && List.length shape <= 16 then
+        Some (of_owl @@ T.reshape (to_owl t) (Array.of_list shape))
+      else None
+    with _ -> raise_s [%message (shape : int list)]
 
   let permute t dims =
     if [%compare.equal: int list] (List.sort ~compare:[%compare: int] dims) (List.init (n_dims t) ~f:(fun i -> i + 1))

@@ -6,9 +6,14 @@ let timed f =
   let end_ = Time.now () in
   (ret, Time.diff end_ start)
 
-let time f =
-  let _, t = timed f in
-  t
+let time ?(repeat = 10) f =
+  let times =
+    Array.init repeat ~f:(fun _ ->
+        let _, t = timed f in
+        Time.Span.to_ms t)
+  in
+  let median = Array.median [%compare: float] times and stddev = Array.stddev times in
+  sprintf "%fms+-%fms" median stddev
 
 exception Break
 

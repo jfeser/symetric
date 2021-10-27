@@ -27,18 +27,16 @@ module Make (Lang : Lang_intf) = struct
   end
 
   type t = {
-    max_cost : int;
     values : Lang.Value.t Queue.t Hashtbl.M(Attr).t;
     paths : (int * Lang.Op.t * Lang.Value.t list) Queue.t Hashtbl.M(TValue).t;
   }
   [@@deriving sexp]
 
-  let create max_cost = { max_cost; values = Hashtbl.create (module Attr); paths = Hashtbl.create (module TValue) }
+  let create () = { values = Hashtbl.create (module Attr); paths = Hashtbl.create (module TValue) }
 
   let search ctx ~cost ~type_ =
-    if cost >= 0 && cost <= ctx.max_cost then
-      match Hashtbl.find ctx.values @@ Attr.create cost type_ with Some q -> Queue.to_list q | None -> []
-    else []
+    assert (cost >= 0);
+    match Hashtbl.find ctx.values @@ Attr.create cost type_ with Some q -> Queue.to_list q | None -> []
 
   let mem ctx = Hashtbl.mem ctx.paths
 

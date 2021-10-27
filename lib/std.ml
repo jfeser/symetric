@@ -75,6 +75,16 @@ module Iter = struct
 end
 
 module Array = struct
+  let mean a =
+    let n = Array.sum (module Float) a ~f:Fun.id and d = Float.of_int @@ Array.length a in
+    n /. d
+
+  let stddev a =
+    let mean = mean a in
+    let d = Array.fold a ~init:0.0 ~f:(fun s x -> s +. ((x -. mean) *. (x -. mean))) in
+    let d = d /. (Float.of_int @@ Array.length a) in
+    Float.sqrt d
+
   include Array
 
   let inversions compare a =
@@ -83,4 +93,8 @@ module Array = struct
       if compare a.(i) a.(i + 1) > 0 then incr inv
     done;
     !inv
+
+  let median compare a =
+    let a' = Array.sorted_copy a ~compare in
+    a'.(Array.length a' / 2)
 end

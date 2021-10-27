@@ -69,7 +69,7 @@ end
 
 module Synth = Local_search_diverse.Make (Tensor)
 
-let synth ?(use_rules = true) ?(use_normalize = true) ?(use_distance = `True) cost (target : Tensor.Value.t)
+let synth ?(use_rules = true) ?(use_normalize = true) ?(use_distance = `True) _ (target : Tensor.Value.t)
     (ops : Tensor.Op.t list) =
   let open Tensor in
   let rules =
@@ -150,7 +150,7 @@ let synth ?(use_rules = true) ?(use_normalize = true) ?(use_distance = `True) co
     match use_distance with `True -> Value.dist ectx | `Close -> fun _ _ -> 0.0 | `Far -> fun _ _ -> Float.infinity
   in
   let ctx =
-    Synth.Ctx.create ~verbose:false ~distance ~max_cost:cost ~rules ?normalize ~search_thresh:(Top_k 3) ectx ops target
+    Synth.Ctx.create ~verbose:false ~distance ~max_cost:64 ~rules ?normalize ~search_thresh:(Top_k 3) ectx ops target
   in
   match (new Synth.synthesizer ctx)#run with
   | Some p -> eprint_s [%message (p : Op.t Program.t)]

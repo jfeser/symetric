@@ -114,7 +114,7 @@ module Make (Lang : Lang_intf) = struct
 
       val verbose = ctx.verbose
 
-      val search_state = Search_state.create ctx.max_cost
+      val search_state = Search_state.create ()
 
       val eval_ctx = ctx.ectx
 

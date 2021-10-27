@@ -25,15 +25,15 @@ let generate_benchmarks ?(max_states = 100_000) ops ectx cost type_ =
   Hashtbl.find search_state.values attr |> Option.map ~f:Iter.of_queue |> Option.value ~default:Iter.empty
   |> Iter.map (Search_state.program_exn search_state type_)
 
-let run_abs = true
+let run_abs = false
 
 let run_local = true
 
-let run_local_no_dist_close = true
+let run_local_no_dist_close = false
 
-let run_local_no_dist_far = true
+let run_local_no_dist_far = false
 
-let time_if cond f = if cond then Synth_utils.time f else Time.Span.zero
+let time_if cond f = if cond then Synth_utils.time f else ""
 
 let () =
   Random.init 0;
@@ -73,6 +73,4 @@ let () =
              in
              (abs, local, local_no_dist_close, local_no_dist_far))
       |> Iter.iter (fun (abs, local, local_no_dist_close, local_no_dist_far) ->
-             let time_pp fmt ts = Fmt.pf fmt "%f" @@ Time.Span.to_ms ts in
-             Fmt.pr "%d,%a,%a,%a,%a\n%!" cost time_pp abs time_pp local time_pp local_no_dist_close time_pp
-               local_no_dist_far))
+             Fmt.pr "%d,%s,%s,%s,%s\n%!" cost abs local local_no_dist_close local_no_dist_far))
