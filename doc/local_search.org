@@ -1,0 +1,10 @@
+* Combining bottom-up enumeration and local search
+
+We hypothesize that an enumerative synthesis procedure can be improved by
+combining standard bottom-up enumeration with a heuristic local search. We
+consider local search techniques such as hill climbing that are effective at
+finding solutions when they start in an appropriate region, but are unable to
+find solutions when starting from scratch. We make use of an interesting
+property of many of these algorithms to combine them with our enumeration
+procedure.
+
