@@ -75,13 +75,6 @@ struct
       let cost = Domain_pred.cost
     end
 
-    module Ctx = struct
-      type t = { preds : Set.M(Pred).t; max_conjuncts : int; ectx : (Value.Ctx.t[@opaque]) [@compare.ignore] }
-      [@@deriving compare, sexp]
-
-      let create ?(max_conjuncts = 3) ectx = { preds = Set.empty (module Pred); max_conjuncts; ectx }
-    end
-
     module T = struct
       type t = Bottom | Preds of Set.M(Pred).t [@@deriving compare, equal, hash, sexp]
 
@@ -138,10 +131,29 @@ struct
     include T
     include Comparator.Make (T)
 
+    module Ctx = struct
+      type nonrec t = {
+        preds : Set.M(Pred).t;
+        max_conjuncts : int;
+        ectx : (Value.Ctx.t[@opaque]); [@compare.ignore]
+        refine_log : ((Op.t * Value.t * t) Program.t * Set.M(Pred).t * Set.M(Pred).t) Queue.t;
+      }
+      [@@deriving compare, sexp]
+
+      let create ?(max_conjuncts = 3) ectx =
+        { preds = Set.empty (module Pred); max_conjuncts; ectx; refine_log = Queue.create () }
+    end
+
+    (** Implements the abstract transfer function for conjunctions of atomic predicates. *)
     let eval (ctx : Ctx.t) op args =
       let transfer = Domain_pred.transfer ctx.ectx op in
       List.map args ~f:to_iter |> Iter.list_product |> Iter.map transfer |> Iter.map Iter.of_list |> Iter.concat
       |> of_iter
+
+    (** Restricts the abstract transfer to only use the predicates that we have
+       discovered through refinement. *)
+    let eval_restricted ctx op args =
+      match eval ctx op args with Bottom as p -> p | Preds ps -> Preds (Set.inter ctx.preds ps)
 
     let _strengthen ~max_conjuncts too_strong too_weak check =
       let n_args = List.length too_strong in
@@ -264,24 +276,21 @@ struct
         else
           let args_conc, args_abs = List.map args ~f:(fun (Program.Apply ((_, c, a), _)) -> (c, a)) |> List.unzip in
           let out' =
-            strengthen ~max_conjuncts:ctx.max_conjuncts args_conc args_abs (fun cs ->
-                let v = eval ctx op cs in
-
-                implies v out)
+            strengthen ~max_conjuncts:ctx.max_conjuncts args_conc args_abs (fun cs -> implies (eval ctx op cs) out)
           in
           List.map2_exn args out' ~f:(strengthen_program ctx)
       in
       Program.Apply ((op, conc, abs, out), args')
 
-    let rec eval_all (ctx : Ctx.t) (Program.Apply (op, args)) =
-      let args' = List.map args ~f:(eval_all ctx) in
-      let args_conc, args_abs = List.map args' ~f:(fun (Program.Apply ((_, c, a), _)) -> (c, a)) |> List.unzip in
-      let conc = Value.eval ctx.ectx op args_conc and abs = eval ctx op args_abs in
-      Apply ((op, conc, abs), args')
-
     let refine (ctx : Ctx.t) (target : Value.t) p : Ctx.t option =
+      (* Annotate program with concrete & restricted abstract values. *)
+      let rec eval_all (ctx : Ctx.t) (Program.Apply (op, args)) =
+        let args' = List.map args ~f:(eval_all ctx) in
+        let args_conc, args_abs = List.map args' ~f:(fun (Program.Apply ((_, c, a), _)) -> (c, a)) |> List.unzip in
+        let conc = Value.eval ctx.ectx op args_conc and abs = eval_restricted ctx op args_abs in
+        Apply ((op, conc, abs), args')
+      in
       let p = eval_all ctx p in
-      if debug then print_s [%message "refining" (p : (Op.t * Value.t * t) Program.t)];
 
       let (Apply ((_, conc, abs), _)) = p in
       let p' = strengthen_program ctx p (strengthen_root ctx conc abs target) in
@@ -292,7 +301,11 @@ struct
         |> Iter.filter_map (function `True -> None | #Pred.t as p -> Some p)
         |> Iter.to_set (module Pred)
       in
-      Some { ctx with preds = Set.union ctx.preds preds }
+      let preds' = Set.union ctx.preds preds in
+
+      Queue.enqueue ctx.refine_log (p, ctx.preds, preds');
+
+      Some { ctx with preds = preds' }
 
     let is_error = function Bottom -> true | _ -> false
   end
@@ -305,8 +318,7 @@ struct
         include Abs_value
 
         (* When searching, only consider the predicates in the context *)
-        let eval ctx op args =
-          match eval ctx op args with Bottom as p -> p | Preds ps -> Preds (Set.inter ctx.preds ps)
+        let eval = eval_restricted
       end
     end in
     let exception Done of int * Abs.Op.t Program.t in
@@ -341,7 +353,8 @@ struct
       | None -> failwith "refinement failed"
     in
     let ctx = Abs.Value.Ctx.create ectx in
-    try ignore (loop 0 ctx : Abs_value.Ctx.t)
-    with Done (iters, p) ->
-      eprint_s [%message "synthesis completed" (iters : int) (Program.size p : int) (p : Abs.Op.t Program.t)]
+    (try ignore (loop 0 ctx : Abs_value.Ctx.t)
+     with Done (iters, p) ->
+       eprint_s [%message "synthesis completed" (iters : int) (Program.size p : int) (p : Abs.Op.t Program.t)]);
+    ctx.refine_log
 end
