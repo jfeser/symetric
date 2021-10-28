@@ -57,9 +57,9 @@ end
 module Make
     (Lang : Lang_intf)
     (Domain_pred : Domain_pred_intf
-                     with type concrete = Lang.Value.t
-                      and type op = Lang.Op.t
-                      and type ctx = Lang.Value.Ctx.t) =
+                     with type concrete := Lang.Value.t
+                      and type op := Lang.Op.t
+                      and type ctx := Lang.Value.Ctx.t) =
 struct
   module Abs_value = struct
     open Lang
