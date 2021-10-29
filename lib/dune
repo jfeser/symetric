@@ -5,7 +5,9 @@
  (preprocess
   (pps ppx_jane))
  (inline_tests)
- (flags :standard -g -open Core -w -9))
+ (flags :standard -g -open Core -w -9)
+ (instrumentation
+  (backend landmarks)))
 
 (copy_files ../etc/{*.cpp,*.hpp})
 

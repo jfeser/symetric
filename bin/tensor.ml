@@ -27,7 +27,9 @@ let generate_benchmarks ?(max_states = 100_000) ops ectx cost type_ =
 
 let run_abs = false
 
-let run_local = true
+let run_abs_v2 = true
+
+let run_local = false
 
 let run_local_no_dist_close = false
 
@@ -64,6 +66,20 @@ let () =
              eprint_s [%message (ops : Tensor.Op.t list)];
 
              let abs = time_if run_abs (fun () -> Abstract_synth_tensor.synth cost target ops) in
+             let abs_v2 = time_if run_abs_v2 (fun () -> Abstract_synth_tensor_v2.synth cost target ops) in
+
+             (* for i = 0 to Queue.length abs_refine do *)
+             (*   let e = Queue.get abs_refine i and e' = Queue.get abs2_refine i in *)
+             (*   print_s *)
+             (*     [%message *)
+             (*       ((e, e') *)
+             (*         : ((Tensor.Op.t * Tensor.Value.t * Abstract_synth_tensor.Abs_value.t) Program.t *)
+             (*           * Set.M(Abstract_synth_tensor.Abs_value.Pred).t *)
+             (*           * Set.M(Abstract_synth_tensor.Abs_value.Pred).t) *)
+             (*           * ((Tensor.Op.t * Tensor.Value.t * Abstract_synth_tensor_v2.Synth.Abs_value.t) Program.t *)
+             (*             * Set.M(Abstract_synth_tensor_v2.Synth.Abs_value.Pred).t *)
+             (*             * Set.M(Abstract_synth_tensor_v2.Synth.Abs_value.Pred).t))] *)
+             (* done; *)
              let local = time_if run_local (fun () -> Local_synth_tensor.synth cost target ops) in
              let local_no_dist_close =
                time_if run_local_no_dist_close (fun () -> Local_synth_tensor.synth ~use_distance:`Close cost target ops)

@@ -36,10 +36,19 @@ module Abs_value = struct
   include Comparator.Make (T)
 
   module Ctx = struct
-    type t = { preds : Set.M(Pred).t; ectx : (Value.Ctx.t[@opaque]) [@compare.ignore] } [@@deriving compare, sexp]
+    type nonrec t = {
+      preds : Set.M(Pred).t;
+      ectx : (Value.Ctx.t[@opaque]);
+      refine_log : ((Op.t * Value.t * t) Program.t * Set.M(Pred).t * Set.M(Pred).t) Queue.t;
+    }
+    [@@deriving sexp]
 
     let create ?ectx () =
-      { preds = Set.empty (module Pred); ectx = Option.value_lazy ~default:(lazy (Value.Ctx.create ())) ectx }
+      {
+        preds = Set.empty (module Pred);
+        ectx = Option.value_lazy ~default:(lazy (Value.Ctx.create ())) ectx;
+        refine_log = Queue.create ();
+      }
 
     let of_params _ = failwith ""
   end
@@ -286,6 +295,8 @@ module Abs_value = struct
     let preds =
       Program.ops p' |> List.concat_map ~f:(fun (_, _, _, ps) -> Set.to_list ps) |> Set.of_list (module Pred)
     in
+    Queue.enqueue ctx.refine_log (p, ctx.preds, preds);
+
     Some { ctx with preds = Set.union ctx.preds preds }
 
   let is_error s = Set.mem s `False
@@ -331,13 +342,14 @@ let synth cost target ops =
     in
     match ctx' with
     | Some ctx' ->
-        if [%compare.equal: Abs.Value.Ctx.t] ctx ctx' then
+        if [%compare.equal: Abs_value.t] ctx.preds ctx'.preds then
           raise_s [%message "refinement failed" (ctx : Abs.Value.Ctx.t) (ctx' : Abs.Value.Ctx.t)];
         (* print_s [%message (Set.diff ctx'.preds ctx.preds : Set.M(Abs_value.Pred).t)]; *)
         loop (iters + 1) ctx'
     | None -> failwith "refinement failed"
   in
   let ctx = Abs.Value.Ctx.create () in
-  try ignore (loop 0 ctx : Abs_value.Ctx.t)
-  with Done (iters, p) ->
-    eprint_s [%message "synthesis completed" (iters : int) (Program.size p : int) (p : Abs.Op.t Program.t)]
+  (try ignore (loop 0 ctx : Abs_value.Ctx.t)
+   with Done (iters, p) ->
+     eprint_s [%message "synthesis completed" (iters : int) (Program.size p : int) (p : Abs.Op.t Program.t)]);
+  ctx.refine_log

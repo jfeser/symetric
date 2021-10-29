@@ -26,6 +26,10 @@ let rec count ~f (Apply (op, args)) = (if f op then 1 else 0) + List.sum (module
 
 let rec ops (Apply (op, args)) = op :: List.concat_map args ~f:ops
 
+let rec ops_iter (Apply (op, args)) f =
+  f op;
+  List.iter args ~f:(fun a -> ops_iter a f)
+
 let rec map_preorder ~f (Apply (op, args)) =
   let op' = f op in
   let args' = List.map args ~f:(map_preorder ~f) in

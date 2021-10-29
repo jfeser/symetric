@@ -1,6 +1,6 @@
 module type Lang_intf = sig
   module Type : sig
-    type t [@@deriving compare, sexp]
+    type t [@@deriving compare, hash, sexp]
   end
 
   module Op : sig
@@ -14,7 +14,7 @@ module type Lang_intf = sig
   end
 
   module Value : sig
-    type t [@@deriving compare, sexp_of]
+    type t [@@deriving compare, hash, sexp]
 
     module Ctx : sig
       type t
