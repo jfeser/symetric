@@ -3,20 +3,44 @@ open Cad_ext
 module type Pred_intf =
   Abstract_synth.Domain_pred_intf with type concrete := Value.t and type op := Op.t and type ctx := Value.Ctx.t
 
-let abs_value size =
+let abs_value ?(range_width = 5) size =
   (module struct
-    type t = Pixel_on of int * int [@@deriving compare, hash, sexp]
+    type t = Pixel_on of int * int | Range of int [@@deriving compare, hash, sexp]
 
     let complete = Iter.singleton
 
     let lift : Value.t -> t Iter.t = function
-      | Int _ -> Iter.empty
+      | Int _ -> Iter.empty (* Iter.(0 -- (range_width - 1)) |> Iter.map (fun offset -> Range (x - offset)) *)
       | Scene s ->
           Scene.to_iter size s |> Iter.filter_map (fun ((x, y, _, _), v) -> if v then Some (Pixel_on (x, y)) else None)
 
     type arg = [ `True | `Concrete of Value.t | `Pred of t ]
 
     type ret = [ `False | `Concrete of Value.t | `Pred of t ]
+
+    let all_ints : [> `Concrete of Value.t ] -> _ = function
+      | `Concrete (Int x) -> Iter.singleton x
+      | `Pred (Range l) -> Iter.(l -- (l + range_width - 1))
+      | `True -> Iter.(0 -- 30)
+      | _ -> assert false
+
+    let transfer_circle ctx x y r =
+      let ret = ref None in
+      all_ints x (fun x ->
+          all_ints y (fun y ->
+              all_ints r (fun r ->
+                  let v = Value.eval ctx Circle [ Int x; Int y; Int r ] in
+                  match !ret with Some r -> ret := Some (Value.eval ctx Inter [ r; v ]) | None -> ret := Some v)));
+      Iter.to_list @@ Iter.map (fun p -> `Pred p) @@ lift @@ Option.value_exn !ret
+
+    let transfer_rect ctx lx ly hx hy =
+      let min = function `Concrete (Value.Int x) | `Pred (Range x) -> Value.Int x | _ -> assert false in
+      let max = function
+        | `Concrete (Value.Int x) -> Value.Int x
+        | `Pred (Range x) -> Int (x + range_width - 1)
+        | _ -> assert false
+      in
+      Iter.to_list @@ Iter.map (fun p -> `Pred p) @@ lift @@ Value.eval ctx Rect [ max lx; max ly; min hx; min hy ]
 
     let transfer ctx (op : Cad_ext.Op.t) (args : arg list) : ret list =
       let all_concrete_m = List.map args ~f:(function `Concrete c -> Some c | _ -> None) |> Option.all in
@@ -34,13 +58,17 @@ let abs_value size =
               | [ `Concrete (Scene s); (`Pred (Pixel_on (x, y)) as p) ] ) )
             when Scene.(get s @@ Size.offset_of_pixel size x y) ->
               [ p ]
+          | Circle, [ x; y; r ] -> transfer_circle ctx x y r
+          | Rect, [ lx; ly; hx; hy ] -> transfer_rect ctx lx ly hx hy
           | _ -> [])
 
     let cost = function `Concrete _ -> 30 | `Pred _ -> 1
 
-    let eval (Pixel_on (x, y)) : Value.t -> _ = function
-      | Int _ -> assert false
-      | Scene s -> Scene.(get s @@ Size.offset_of_pixel size x y)
+    let eval p (v : Value.t) =
+      match (p, v) with
+      | Range l, Int x -> l <= x && x < l + range_width
+      | Pixel_on (x, y), Scene s -> Scene.(get s @@ Size.offset_of_pixel size x y)
+      | _ -> assert false
   end : Pred_intf)
 
 let synth size target ops =
