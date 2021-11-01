@@ -302,7 +302,7 @@ module Abs_value = struct
   let is_error s = Set.mem s `False
 end
 
-let synth cost target ops =
+let synth target ops =
   let module Conc = Tensor in
   let module Abs = struct
     include Conc
@@ -313,7 +313,7 @@ let synth cost target ops =
   let rec loop iters ctx =
     let ctx' =
       let sctx =
-        Synth.Ctx.create ~max_cost:cost ctx ops
+        Synth.Ctx.create ctx ops
         @@ `Pred
              (fun op s ->
                [%compare.equal: Abs.Type.t] (Abs.Op.ret_type op) Abs.Type.output && Abs.Value.contains s target)

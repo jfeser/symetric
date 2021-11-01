@@ -69,7 +69,7 @@ end
 
 module Synth = Local_search_diverse.Make (Tensor)
 
-let synth ?(use_rules = true) ?(use_normalize = true) ?(use_distance = `True) _ (target : Tensor.Value.t)
+let synth ?(use_rules = true) ?(use_normalize = true) ?(use_distance = `True) (target : Tensor.Value.t)
     (ops : Tensor.Op.t list) =
   let open Tensor in
   let rules =

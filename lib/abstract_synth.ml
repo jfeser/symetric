@@ -1,28 +1,32 @@
 open Std
 
-let debug = false
+let debug = true
 
 module type Lang_intf = sig
   module Type : sig
     type t [@@deriving compare, hash, sexp]
 
-    include Comparator.S with type t := t
-
     val output : t
   end
 
-  module Op : Op_intf.S with type type_ = Type.t
+  module Op : sig
+    type t [@@deriving compare, hash, sexp]
+
+    val cost : t -> int
+
+    val arity : t -> int
+
+    val args_type : t -> Type.t list
+
+    val ret_type : t -> Type.t
+  end
 
   module Value : sig
-    type t [@@deriving compare, equal, hash, sexp]
+    type t [@@deriving compare, hash, sexp]
 
     module Ctx : sig
       type t
-
-      val of_params : Params.t -> t
     end
-
-    include Comparator.S with type t := t
 
     val eval : Ctx.t -> Op.t -> t list -> t
 
@@ -78,6 +82,8 @@ struct
     module T = struct
       type t = Bottom | Preds of Set.M(Pred).t [@@deriving compare, equal, hash, sexp]
 
+      let true_ = Preds (Set.empty (module Pred))
+
       let of_iter iter =
         Iter.fold
           (fun ps p ->
@@ -85,8 +91,7 @@ struct
             | ps, `True -> ps
             | _, `False | Bottom, _ -> Bottom
             | Preds pp, ((`Pred _ | `Concrete _) as p) -> Preds (Set.add pp p))
-          (Preds (Set.empty (module Pred)))
-          iter
+          true_ iter
 
       let to_iter = function
         | Bottom -> Iter.empty
@@ -100,7 +105,7 @@ struct
       let and_ p p' =
         match (p, p') with Bottom, _ | _, Bottom -> Bottom | Preds ps, Preds ps' -> Preds (Set.union ps ps')
 
-      let and_many = Iter.fold and_ (Preds (Set.empty (module Pred)))
+      let and_many = Iter.fold and_ true_
 
       let complete = function
         | Bottom as p -> p
@@ -155,9 +160,31 @@ struct
     let eval_restricted ctx op args =
       match eval ctx op args with Bottom as p -> p | Preds ps -> Preds (Set.inter ctx.preds ps)
 
-    let _strengthen ~max_conjuncts too_strong too_weak check =
+    let conjuncts ~k l =
+      let k = min k (List.length l) in
+      let ret =
+        Iter.(0 -- k)
+        |> Iter.map (fun k -> if k = 0 then Iter.empty else Iter.map Array.to_list @@ Combinat.combinations ~k l)
+        |> Iter.concat
+        |> Iter.map (fun cs -> (List.sum (module Int) cs ~f:Pred.cost, of_iter @@ Iter.of_list cs))
+      in
+      ret
+
+    let per_arg_conjuncts ~k args =
+      let rec per_arg_conjuncts = function
+        | [] -> Iter.empty
+        | [ x ] -> conjuncts ~k x |> Iter.map (fun (c, x) -> (c, [ x ]))
+        | x :: xs ->
+            Iter.product (conjuncts ~k x) (per_arg_conjuncts xs)
+            |> Iter.map (fun ((c, x), (c', xs')) -> (c + c', x :: xs'))
+      in
+      per_arg_conjuncts args
+
+    let _strengthen ~k too_strong too_weak check =
       let n_args = List.length too_strong in
       assert (List.length too_weak = n_args);
+
+      print_s [%message (too_strong : Value.t list) (too_weak : t list)];
 
       let module Conjunct_lang = struct
         module Type = struct
@@ -178,7 +205,7 @@ struct
             | And slot -> [ Type.Pred slot; Type.Pred slot ]
             | Pred _ -> []
 
-          let cost = function Pred (_, `True) -> 1 | Pred (_, (#Pred.t as p)) -> Pred.cost p | Args | And _ -> 0
+          let cost = function Pred (_, `True) -> 1 | Pred (_, (#Pred.t as p)) -> Pred.cost p | Args | And _ -> 1
         end
 
         module Value = struct
@@ -193,7 +220,7 @@ struct
             | Pred (_, p), [] -> Pred (singleton p)
             | _ -> assert false
 
-          let is_error = function Pred p -> length p > max_conjuncts | _ -> false
+          let is_error = function Pred p -> length p > k | _ -> false
         end
       end in
       let open Conjunct_lang in
@@ -214,6 +241,7 @@ struct
                 match v with
                 | Value.Args args ->
                     let args = List.map2_exn args too_weak ~f:and_ in
+                    print_s [%message (args : t list)];
                     if check args then raise (Done args) else false
                 | _ -> false))
         in
@@ -224,43 +252,27 @@ struct
         raise_s [%message "failed to refine"]
       with Done args -> args
 
-    let conjuncts ?(k = 3) l =
-      let k = min k (List.length l) in
-      let ret =
-        Iter.(0 -- k)
-        |> Iter.map (fun k -> if k = 0 then Iter.empty else Iter.map Array.to_list @@ Combinat.combinations ~k l)
-        |> Iter.concat
-        |> Iter.map (fun cs -> (List.sum (module Int) cs ~f:Pred.cost, of_iter @@ Iter.of_list cs))
-      in
-      ret
+    (* let strengthen ~k too_strong too_weak implies = *)
+    (*   let candidates = *)
+    (*     List.map too_strong ~f:lift *)
+    (*     |> List.map ~f:(fun p -> *)
+    (*            to_iter p |> Iter.filter_map (function #Pred.t as p -> Some p | _ -> None) |> Iter.to_list) *)
+    (*     |> per_arg_conjuncts ~k *)
+    (*     |> Iter.sort ~cmp:(fun (c, _) (c', _) -> [%compare: int] c c') *)
+    (*     |> Iter.to_list *)
+    (*   in *)
+    (*   if debug then *)
+    (*     eprint_s [%message (too_strong : Value.t list) (too_weak : t list) (candidates : (int * t list) list)]; *)
+    (*   let candidates = List.map ~f:(fun (_, cs) -> List.map2_exn cs too_weak ~f:and_) candidates in *)
+    (*   List.find_exn candidates ~f:implies *)
 
-    let conjuncts ~max_conjuncts = function
-      | [] -> Iter.empty
-      | [ x ] -> conjuncts x |> Iter.map (fun (c, x) -> (c, [ x ]))
-      | [ x; x' ] ->
-          Iter.product (conjuncts ~k:max_conjuncts x) (conjuncts ~k:max_conjuncts x')
-          |> Iter.map (fun ((c, x), (c', x')) -> (c + c', [ x; x' ]))
-      | _ -> assert false
-
-    let strengthen ~max_conjuncts too_strong too_weak implies =
-      let candidates =
-        List.map too_strong ~f:lift
-        |> List.map ~f:(fun p ->
-               to_iter p |> Iter.filter_map (function #Pred.t as p -> Some p | _ -> None) |> Iter.to_list)
-        |> conjuncts ~max_conjuncts
-        |> Iter.sort ~cmp:(fun (c, _) (c', _) -> [%compare: int] c c')
-        |> Iter.to_list
-      in
-      if debug then
-        eprint_s [%message (too_strong : Value.t list) (too_weak : t list) (candidates : (int * t list) list)];
-      let candidates = List.map ~f:(fun (_, cs) -> List.map2_exn cs too_weak ~f:and_) candidates in
-      List.find_exn candidates ~f:implies
+    let strengthen = _strengthen
 
     let strengthen_root (ctx : Ctx.t) too_strong too_weak target =
       if debug then eprint_s [%message "strengthening program root" (too_strong : Value.t) (too_weak : t)];
       let new_pred =
         match
-          strengthen ~max_conjuncts:ctx.max_conjuncts [ too_strong ] [ too_weak ] (function
+          strengthen ~k:ctx.max_conjuncts [ too_strong ] [ too_weak ] (function
             | [ p ] -> not (contains p target)
             | _ -> assert false)
         with
@@ -275,9 +287,7 @@ struct
         if List.is_empty args then []
         else
           let args_conc, args_abs = List.map args ~f:(fun (Program.Apply ((_, c, a), _)) -> (c, a)) |> List.unzip in
-          let out' =
-            strengthen ~max_conjuncts:ctx.max_conjuncts args_conc args_abs (fun cs -> implies (eval ctx op cs) out)
-          in
+          let out' = strengthen ~k:ctx.max_conjuncts args_conc args_abs (fun cs -> implies (eval ctx op cs) out) in
           List.map2_exn args out' ~f:(strengthen_program ctx)
       in
       Program.Apply ((op, conc, abs, out), args')
@@ -310,7 +320,7 @@ struct
     let is_error = function Bottom -> true | _ -> false
   end
 
-  let synth ectx cost target ops =
+  let synth ectx target ops =
     let module Abs = struct
       include Lang
 
@@ -326,7 +336,7 @@ struct
     let rec loop iters ctx =
       let ctx' =
         let sctx =
-          Synth.Ctx.create ~max_cost:cost ctx ops
+          Synth.Ctx.create ctx ops
           @@ `Pred
                (fun op s ->
                  [%compare.equal: Abs.Type.t] (Abs.Op.ret_type op) Abs.Type.output && Abs.Value.contains s target)

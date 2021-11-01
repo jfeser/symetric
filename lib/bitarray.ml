@@ -10,43 +10,77 @@ let length t = t.len
 
 let bits_per_word = 63
 
-let init ~f len =
-  let nwords = (len / bits_per_word) + if len mod bits_per_word > 0 then 1 else 0 in
+let nwords len = (len / bits_per_word) + if len mod bits_per_word > 0 then 1 else 0
+
+let create len v =
+  let fill = if v then 0x7FFFFFFFFFFFFFFF else 0 in
+  { len; buf = Array.create ~len:(nwords len) fill }
+
+let init_fold ~f ~init len =
+  let nwords = nwords len in
   let buf = Array.create ~len:nwords 0 in
   let idx = ref 0 in
+  let state = ref init in
   for w = 0 to nwords - 1 do
     for b = 0 to bits_per_word - 1 do
-      let v = if !idx < len && f !idx then 1 else 0 in
-      buf.(w) <- buf.(w) + (v lsl b);
-      incr idx
+      if !idx < len then (
+        let state', value = f !state !idx in
+        let v = if value then 1 else 0 in
+        buf.(w) <- buf.(w) + (v lsl b);
+        incr idx;
+        state := state')
     done
   done;
   { len; buf }
 
+let init ~f len = init_fold ~f:(fun () i -> ((), f i)) ~init:() len
+
+let%expect_test "init-in-bounds" =
+  let len = 99 in
+  (init len ~f:(fun i ->
+       [%test_pred: int] (fun i -> 0 <= i && i < len) i;
+       false)
+    : t)
+  |> ignore
+
 let of_list x =
-  let x = List.to_array x in
-  init (Array.length x) ~f:(Array.get x)
+  init_fold (List.length x) ~f:(fun xs _ -> match xs with x :: xs' -> (xs', x) | [] -> assert false) ~init:x
 
 let get t i = (t.buf.(i / bits_per_word) lsr (i mod bits_per_word)) land 1 > 0
 
 let to_list x = List.init (length x) ~f:(get x)
 
-let iter { len; buf } ~f =
-  let i = ref 0 and n_words = Array.length buf in
+let fold { len; buf } ~f ~init =
+  let i = ref 0 and n_words = Array.length buf and state = ref init in
   for w = 0 to n_words - 2 do
     let word = buf.(w) in
     for b = 0 to bits_per_word - 1 do
       let bit = (word lsr b) land 1 > 0 in
-      f !i bit;
+      state := f !state bit;
       incr i
     done
   done;
   let last_word = buf.(n_words - 1) in
-  for b = 0 to len - !i do
+  for b = 0 to len - !i - 1 do
     let bit = (last_word lsr b) land 1 > 0 in
-    f !i bit;
+    assert (!i < len);
+    state := f !state bit;
     incr i
-  done
+  done;
+  !state
+
+let iteri x ~f =
+  (fold x
+     ~f:(fun i x ->
+       f i x;
+       i + 1)
+     ~init:0
+    : int)
+  |> ignore
+
+let%expect_test "iteri-in-bounds" =
+  let len = 99 in
+  create len false |> iteri ~f:(fun i _ -> [%test_pred: int] (fun i -> 0 <= i && i < len) i)
 
 let not a = { a with buf = Array.map a.buf ~f:lnot }
 

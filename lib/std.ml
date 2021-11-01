@@ -124,3 +124,9 @@ module Array = struct
     let a' = Array.sorted_copy a ~compare in
     a'.(Array.length a' / 2)
 end
+
+module Seq = struct
+  include OSeq
+
+  let sexp_of_t sexp_of_x s = [%sexp_of: x list] @@ to_list s
+end

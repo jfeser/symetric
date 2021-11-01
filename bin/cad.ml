@@ -49,8 +49,8 @@ let () =
       let target = Program.eval (Value.eval @@ mk_ectx ()) prog in
       Fmt.epr "%a\n%!" Scene.pp (match target with Scene s -> (size, s) | _ -> assert false);
 
-      let abs = time_if run_abs (fun () -> ()) in
-      let local = time_if run_local (fun () -> Local_synth_cad.synth target ops) in
+      let abs = time_if run_abs (fun () -> Abstract_synth_cad.synth size target ops) in
+      let local = time_if run_local (fun () -> Local_synth_cad.synth size target ops) in
       let local_no_dist_close = time_if run_local_no_dist_close (fun () -> ()) in
       let local_no_dist_far = time_if run_local_no_dist_far (fun () -> ()) in
       Fmt.pr "%s,%s,%s,%s\n%!" abs local local_no_dist_close local_no_dist_far)

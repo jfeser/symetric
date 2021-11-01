@@ -65,8 +65,8 @@ let () =
 
              eprint_s [%message (ops : Tensor.Op.t list)];
 
-             let abs = time_if run_abs (fun () -> Abstract_synth_tensor.synth cost target ops) in
-             let abs_v2 = time_if run_abs_v2 (fun () -> Abstract_synth_tensor_v2.synth cost target ops) in
+             let abs = time_if run_abs (fun () -> Abstract_synth_tensor.synth target ops) in
+             let _abs_v2 = time_if run_abs_v2 (fun () -> Abstract_synth_tensor_v2.synth target ops) in
 
              (* for i = 0 to Queue.length abs_refine do *)
              (*   let e = Queue.get abs_refine i and e' = Queue.get abs2_refine i in *)
@@ -80,11 +80,11 @@ let () =
              (*             * Set.M(Abstract_synth_tensor_v2.Synth.Abs_value.Pred).t *)
              (*             * Set.M(Abstract_synth_tensor_v2.Synth.Abs_value.Pred).t))] *)
              (* done; *)
-             let local = time_if run_local (fun () -> Local_synth_tensor.synth cost target ops) in
+             let local = time_if run_local (fun () -> Local_synth_tensor.synth target ops) in
              let local_no_dist_close =
-               time_if run_local_no_dist_close (fun () -> Local_synth_tensor.synth ~use_distance:`Close cost target ops)
+               time_if run_local_no_dist_close (fun () -> Local_synth_tensor.synth ~use_distance:`Close target ops)
              in
              let local_no_dist_far =
-               time_if run_local_no_dist_far (fun () -> Local_synth_tensor.synth ~use_distance:`Far cost target ops)
+               time_if run_local_no_dist_far (fun () -> Local_synth_tensor.synth ~use_distance:`Far target ops)
              in
              Fmt.pr "%d,%s,%s,%s,%s\n%!" cost abs local local_no_dist_close local_no_dist_far))

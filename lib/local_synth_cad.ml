@@ -2,14 +2,13 @@ open! Std
 open Cad_ext
 module Synth = Local_search_diverse.Make (Cad_ext)
 
-let (size : Scene.Size.t) = { xres = 30; yres = 30; xlen = 30.0; ylen = 30.0 }
-
 let jaccard (v : Value.t) (v' : Value.t) =
   match (v, v') with Scene s, Scene s' -> Scene.jaccard s s' | _ -> Float.infinity
 
 let norm_int x = Int.round ~dir:`Down x ~to_multiple_of:10
 
-let synth ?(use_rules = false) ?(use_normalize = false) ?(use_distance = `True) (target : Value.t) (ops : Op.t list) =
+let synth ?(use_rules = false) ?(use_normalize = false) ?(use_distance = `True) size (target : Value.t)
+    (ops : Op.t list) =
   let rules =
     let open Local_search.Pattern in
     if use_rules then List.init 29 ~f:(fun i -> (Apply (Op.Int i, []), Apply (Op.Int (i + 1), []))) else []
