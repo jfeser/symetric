@@ -7,11 +7,13 @@ let jaccard (v : Value.t) (v' : Value.t) =
 
 let norm_int x = Int.round ~dir:`Down x ~to_multiple_of:10
 
-let synth ?(use_rules = false) ?(use_normalize = false) ?(use_distance = `True) size (target : Value.t)
-    (ops : Op.t list) =
+let synth ?(use_rules = true) ?(use_normalize = true) ?(use_distance = `True) size (target : Value.t) (ops : Op.t list)
+    =
   let rules =
     let open Local_search.Pattern in
-    if use_rules then List.init 29 ~f:(fun i -> (Apply (Op.Int i, []), Apply (Op.Int (i + 1), []))) else []
+    if use_rules then List.init 29 ~f:(fun i -> (Apply (Op.Int i, []), Apply (Op.Int (i + 1), [])))
+      (* @ List.init 29 ~f:(fun i -> (Apply (Op.Int i, []), Apply (Op.Int (i + 5), []))) *)
+    else []
   in
 
   let normalize (p : Op.t Program.t) : Op.t Program.t =

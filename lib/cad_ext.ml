@@ -5,17 +5,18 @@ module Type = struct
 end
 
 module Op = struct
-  type t = Union | Inter | Circle | Rect | Int of int [@@deriving compare, hash, sexp]
+  type t = Union | Inter | Circle | Rect | Repl | Int of int [@@deriving compare, hash, sexp]
 
-  let arity = function Circle -> 3 | Rect -> 4 | Union | Inter -> 2 | Int _ -> 0
+  let arity = function Circle | Repl -> 3 | Rect -> 4 | Union | Inter -> 2 | Int _ -> 0
 
   let cost _ = 1
 
-  let ret_type : _ -> Type.t = function Union | Inter | Circle | Rect -> Scene | Int _ -> Int
+  let ret_type : _ -> Type.t = function Union | Inter | Circle | Rect | Repl -> Scene | Int _ -> Int
 
   let args_type : _ -> Type.t list = function
     | Circle -> [ Int; Int; Int ]
     | Rect -> [ Int; Int; Int; Int ]
+    | Repl -> [ Scene; Int; Int ]
     | Union | Inter -> [ Scene; Scene ]
     | Int _ -> []
 
@@ -55,7 +56,7 @@ module Value = struct
         let center_x = of_int center_x and center_y = of_int center_y and radius = of_int radius in
         Scene
           (S.init size ~f:(fun _ x y ->
-               Float.(sqrt (((x - center_x) * (x - center_x)) + ((y - center_y) * (y - center_y)))) <= radius))
+               Float.(((x - center_x) * (x - center_x)) + ((y - center_y) * (y - center_y))) <= radius * radius))
     | Rect, [ Int lo_left_x; Int lo_left_y; Int hi_right_x; Int hi_right_y ] ->
         let open Float in
         let lo_left_x = of_int lo_left_x
@@ -63,6 +64,14 @@ module Value = struct
         and hi_right_x = of_int hi_right_x
         and hi_right_y = of_int hi_right_y in
         Scene (S.init size ~f:(fun _ x y -> lo_left_x <= x && lo_left_y <= y && hi_right_x >= x && hi_right_y >= y))
+    | Repl, [ Scene s; Int dx; Int dy; Int c ] ->
+        let rec repl count stamp scene =
+          if count = 0 then scene
+          else
+            let stamp' = shift dx dy stamp in
+            repl (count - 1) stamp' @@ Bitarray.or_ stamp' scene
+        in
+        Scene (S.create @@ repl c (S.pixels s) (S.pixels s))
     | _ -> raise_s [%message "unexpected arguments" (op : Op.t) (args : t list)]
 
   module Test_eval = struct

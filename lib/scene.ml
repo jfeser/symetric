@@ -30,12 +30,12 @@ module Size = struct
       (fun ((px, py, ptx, pty) as state) ->
         if py < 0 then None
         else if px = size.xres - 1 then
-          let state' = (0, py - 1, pixel_w *. 0.5, pty -. pixel_h) in
+          let state' = (0, py - 1, pixel_w, pty -. pixel_h) in
           Some (state, state')
         else
           let state' = (px + 1, py, ptx +. pixel_w, pty) in
           Some (state, state'))
-      (0, size.yres - 1, pixel_w *. 0.5, size.ylen -. (pixel_h *. 0.5))
+      (0, size.yres - 1, pixel_w, size.ylen -. (pixel_h *. 0.5))
 
   let%expect_test "" =
     print_s [%message (pixel_seq @@ create ~xres:5 ~yres:3 () : (int * int * float * float) Seq.t)];
@@ -73,6 +73,8 @@ let init (size : Size.t) ~f =
       let ret = f idx ptx pty in
       (pixels, ret))
   |> create
+
+let npixels s = Bitarray.length @@ pixels s
 
 let to_iter (size : Size.t) s f =
   let (_ : _ Seq.t * int) =
