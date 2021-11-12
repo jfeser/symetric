@@ -1,44 +1,30 @@
 open Std
 
 module Size = struct
-  type t = { xres : int; yres : int; xlen : float; ylen : float } [@@deriving compare, hash, sexp]
+  type t = { xres : int; yres : int } [@@deriving compare, hash, sexp]
 
-  let create ?xlen ?ylen ~xres ~yres () =
-    let xlen = Option.value xlen ~default:(Float.of_int xres)
-    and ylen = Option.value ylen ~default:(Float.of_int yres) in
-    assert (xres > 0 && yres > 0 && Float.(xlen > 0.0 && ylen > 0.0));
-    { xres; yres; xlen; ylen }
+  let create ~xres ~yres () =
+    assert (xres > 0 && yres > 0);
+    { xres; yres }
 
-  (** Normalize point to [0, 1] *)
-  let norm s (v : Vector2.t) : Vector2.t = { x = v.x /. s.xlen; y = v.y /. s.xlen }
-
-  let offset_of_pixel s x y = ((s.yres - 1 - y) * s.xres) + x
-
-  (** Get offset of pixel containing point. Note pixels are stored left to right
-     starting from the top. *)
-  let offset_of_pt s v =
-    let nv = norm s v in
-    let x = Float.iround_down_exn (nv.x *. Float.of_int s.xres)
-    and y = Float.iround_down_exn (nv.y *. Float.of_int s.yres) in
-    offset_of_pixel s x y
+  let offset s x y = ((s.yres - 1 - y) * s.xres) + x
 
   (** Returns a sequence of the pixels and pixel centers for a canvas of
    `size`. Starts from the top left and continues left to right. *)
   let pixel_seq size =
-    let pixel_w = Float.(size.xlen / of_int size.xres) and pixel_h = Float.(size.ylen / of_int size.yres) in
     Seq.unfold
-      (fun ((px, py, ptx, pty) as state) ->
+      (fun ((px, py) as state) ->
         if py < 0 then None
         else if px = size.xres - 1 then
-          let state' = (0, py - 1, pixel_w, pty -. pixel_h) in
+          let state' = (0, py - 1) in
           Some (state, state')
         else
-          let state' = (px + 1, py, ptx +. pixel_w, pty) in
+          let state' = (px + 1, py) in
           Some (state, state'))
-      (0, size.yres - 1, pixel_w, size.ylen -. (pixel_h *. 0.5))
+      (0, size.yres - 1)
 
   let%expect_test "" =
-    print_s [%message (pixel_seq @@ create ~xres:5 ~yres:3 () : (int * int * float * float) Seq.t)];
+    print_s [%message (pixel_seq @@ create ~xres:5 ~yres:3 () : (int * int) Seq.t)];
     [%expect
       {|
       ("pixel_seq @@ (create ~xres:5 ~yres:3 ())"
@@ -65,7 +51,7 @@ let pixels = value
 let init (size : Size.t) ~f =
   let len = size.xres * size.yres in
   Bitarray.init_fold len ~init:(Size.pixel_seq size) ~f:(fun pixels idx ->
-      let (_, _, ptx, pty), pixels =
+      let (ptx, pty), pixels =
         match pixels () with
         | Seq.Cons (x, xs) -> (x, xs)
         | Nil -> raise_s [%message (len : int) (size : Size.t) (idx : int)]
@@ -102,3 +88,43 @@ let jaccard c c' =
   let h = hamming c c' in
   let l = Bitarray.length (pixels c) in
   Float.(of_int h / of_int l)
+
+let shift (size : Size.t) s dx dy =
+  init size ~f:(fun _ x y ->
+      let x' = x - dx and y' = y - dy in
+      if x' < 0 || x' >= size.xres || y' < 0 || y' >= size.yres then false else get s @@ Size.offset size x' y')
+
+let crop ~old:(size : Size.t) ~new_:(size' : Size.t) s = init size' ~f:(fun _ x y -> get s @@ Size.offset size x y)
+
+let edges (size : Size.t) s =
+  let to_int x = if x then 1 else 0 in
+  let pix = pixels s in
+  let get i = to_int @@ Bitarray.get pix i in
+
+  let above i =
+    let i' = i - size.yres in
+    if i' >= 0 then get i' else 0
+  and below i =
+    let i' = i + size.yres in
+    if i' < Bitarray.length pix then get i' else 0
+  and left i = if i mod size.yres = 0 then 0 else get (i - 1)
+  and right i = if (i + 1) mod size.yres = 0 then 0 else get (i + 1) in
+  let pixels =
+    Bitarray.init (size.yres * size.xres) ~f:(fun i -> Bitarray.get pix i && above i + below i + left i + right i < 4)
+  in
+  create pixels
+
+let corners (size : Size.t) s =
+  let pix = pixels s in
+  let get x y = x >= 0 && x < size.xres && y >= 0 && y < size.yres && (Bitarray.get pix @@ Size.offset size x y) in
+  let above x y = get x (y + 1)
+  and below x y = get x (y - 1)
+  and left x y = get (x - 1) y
+  and right x y = get (x + 1) y in
+  let c1 = init size ~f:(fun _ x y -> get x y && (not @@ above x y) && (not @@ left x y))
+  and c2 = init size ~f:(fun _ x y -> get x y && (not @@ above x y) && (not @@ right x y))
+  and c3 = init size ~f:(fun _ x y -> get x y && (not @@ below x y) && (not @@ left x y))
+  and c4 = init size ~f:(fun _ x y -> get x y && (not @@ below x y) && (not @@ right x y)) in
+  [ c1; c2; c3; c4 ]
+
+let count s = Bitarray.hamming_weight (pixels s)

@@ -86,11 +86,13 @@ module Make (Lang : Lang_intf) = struct
       groups_created : int ref;
       on_close_state : Op.t Program.t -> Value0.t -> unit;
       after_local_search : Op.t Program.t -> Value0.t -> unit;
+      on_groups : (Value0.t * Op.t * Value.t list) list list -> unit;
       tabu_length : int;
     }
 
-    let create ?(on_close_state = fun _ _ -> ()) ?(after_local_search = fun _ _ -> ()) ?(search_width = 10)
-        ?(tabu_length = 1000) ?(verbose = false) ?stats ?normalize ~search_thresh ~rules ~distance ectx ops output =
+    let create ?(on_close_state = fun _ _ -> ()) ?(after_local_search = fun _ _ -> ()) ?(on_groups = fun _ -> ())
+        ?(search_width = 10) ?(tabu_length = 1000) ?(verbose = false) ?stats ?normalize ~search_thresh ~rules ~distance
+        ectx ops output =
       let stats = Option.value_lazy stats ~default:(lazy (Stats.create ())) in
 
       {
@@ -112,6 +114,7 @@ module Make (Lang : Lang_intf) = struct
         groups_created = ref 0;
         on_close_state;
         after_local_search;
+        on_groups;
         tabu_length;
       }
   end
@@ -290,7 +293,7 @@ module Make (Lang : Lang_intf) = struct
                             Option.return p)
                           else None)
                  in
-                 (* Option.iter !last_state ~f:(fun (p, v) -> ctx.after_local_search p v); *)
+                 Option.iter !last_state ~f:(fun (p, v) -> ctx.after_local_search p v);
                  m_solution)
         in
         (solution, !examined)
@@ -375,6 +378,7 @@ module Make (Lang : Lang_intf) = struct
         in
         ctx.groups_created := !(ctx.groups_created) + List.length groups;
         (* print_s [%message (List.take groups 10 : (Value.t * _ * _) list list)]; *)
+        ctx.on_groups (List.map ~f:(List.map ~f:(fun (v, op, args) -> (Value.value v, op, args))) groups);
         groups
 
       method fill cost =

@@ -93,7 +93,8 @@ let xor a b = { len = a.len; buf = Array.map2_exn a.buf b.buf ~f:( lxor ) }
 let hamming_weight x = Array.sum (module Int) x.buf ~f:Int.popcount
 
 let hamming_distance a b =
-  assert (Array.length a.buf = Array.length b.buf);
+  [%test_result: int] ~expect:(length a) (length b);
+  [%test_result: int] ~expect:(Array.length a.buf) (Array.length b.buf);
   let sum = ref 0 in
   for i = 0 to Array.length a.buf - 1 do
     sum := !sum + Int.popcount (a.buf.(i) lxor b.buf.(i))

@@ -12,7 +12,7 @@ let abs_value ?(range_width = 5) size =
     let lift : Value.t -> t Iter.t = function
       | Int _ -> Iter.empty (* Iter.(0 -- (range_width - 1)) |> Iter.map (fun offset -> Range (x - offset)) *)
       | Scene s ->
-          Scene.to_iter size s |> Iter.filter_map (fun ((x, y, _, _), v) -> if v then Some (Pixel_on (x, y)) else None)
+          Scene.to_iter size s |> Iter.filter_map (fun ((x, y), v) -> if v then Some (Pixel_on (x, y)) else None)
 
     type arg = [ `True | `Concrete of Value.t | `Pred of t ]
 
@@ -56,7 +56,7 @@ let abs_value ?(range_width = 5) size =
           | ( Inter,
               ( [ (`Pred (Pixel_on (x, y)) as p); `Concrete (Scene s) ]
               | [ `Concrete (Scene s); (`Pred (Pixel_on (x, y)) as p) ] ) )
-            when Scene.(get s @@ Size.offset_of_pixel size x y) ->
+            when Scene.(get s @@ Size.offset size x y) ->
               [ p ]
           | Circle, [ x; y; r ] -> transfer_circle ctx x y r
           | Rect, [ lx; ly; hx; hy ] -> transfer_rect ctx lx ly hx hy
@@ -67,7 +67,7 @@ let abs_value ?(range_width = 5) size =
     let eval p (v : Value.t) =
       match (p, v) with
       | Range l, Int x -> l <= x && x < l + range_width
-      | Pixel_on (x, y), Scene s -> Scene.(get s @@ Size.offset_of_pixel size x y)
+      | Pixel_on (x, y), Scene s -> Scene.(get s @@ Size.offset size x y)
       | _ -> assert false
   end : Pred_intf)
 

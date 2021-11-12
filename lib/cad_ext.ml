@@ -7,8 +7,6 @@ end
 module Op = struct
   type t = Union | Inter | Circle | Rect | Repl | Int of int [@@deriving compare, hash, sexp]
 
-  let arity = function Circle | Repl -> 3 | Rect -> 4 | Union | Inter -> 2 | Int _ -> 0
-
   let cost _ = 1
 
   let ret_type : _ -> Type.t = function Union | Inter | Circle | Rect | Repl -> Scene | Int _ -> Int
@@ -16,9 +14,11 @@ module Op = struct
   let args_type : _ -> Type.t list = function
     | Circle -> [ Int; Int; Int ]
     | Rect -> [ Int; Int; Int; Int ]
-    | Repl -> [ Scene; Int; Int ]
+    | Repl -> [ Scene; Int; Int; Int ]
     | Union | Inter -> [ Scene; Scene ]
     | Int _ -> []
+
+  let arity op = List.length @@ args_type op
 
   let pp fmt x = Sexp.pp_hum fmt @@ [%sexp_of: t] x
 
@@ -29,6 +29,8 @@ module Op = struct
   let rect lx ly rx ry = Program.Apply (Rect, [ int lx; int ly; int rx; int ry ])
 
   let union x y = Program.Apply (Union, [ x; y ])
+
+  let repl dx dy c p = Program.Apply (Repl, [ p; int dx; int dy; int c ])
 end
 
 module Value = struct
@@ -44,35 +46,40 @@ module Value = struct
 
   let is_error _ = false
 
+  let replicate_is_set (size : Scene.Size.t) scene dx dy count x y =
+    let rec loop count x y =
+      if count <= 0 then false
+      else
+        ((x >= 0 && x < size.xres && y >= 0 && y < size.yres) && Scene.get scene (Scene.Size.offset size x y))
+        || loop (count - 1) (x - dx) (y - dy)
+    in
+    loop count x y
+
   let eval_unmemoized (ctx : Ctx.t) (op : Op.t) args =
     let module S = Scene in
     let size = ctx.size in
-    match (op, args) with
-    | Int x, [] -> Int x
-    | Inter, [ Scene s; Scene s' ] -> Scene (S.create (Bitarray.and_ (S.pixels s) (S.pixels s')))
-    | Union, [ Scene s; Scene s' ] -> Scene (S.create (Bitarray.or_ (S.pixels s) (S.pixels s')))
-    | Circle, [ Int center_x; Int center_y; Int radius ] ->
-        let open Float in
-        let center_x = of_int center_x and center_y = of_int center_y and radius = of_int radius in
-        Scene
-          (S.init size ~f:(fun _ x y ->
-               Float.(((x - center_x) * (x - center_x)) + ((y - center_y) * (y - center_y))) <= radius * radius))
-    | Rect, [ Int lo_left_x; Int lo_left_y; Int hi_right_x; Int hi_right_y ] ->
-        let open Float in
-        let lo_left_x = of_int lo_left_x
-        and lo_left_y = of_int lo_left_y
-        and hi_right_x = of_int hi_right_x
-        and hi_right_y = of_int hi_right_y in
-        Scene (S.init size ~f:(fun _ x y -> lo_left_x <= x && lo_left_y <= y && hi_right_x >= x && hi_right_y >= y))
-    | Repl, [ Scene s; Int dx; Int dy; Int c ] ->
-        let rec repl count stamp scene =
-          if count = 0 then scene
-          else
-            let stamp' = shift dx dy stamp in
-            repl (count - 1) stamp' @@ Bitarray.or_ stamp' scene
-        in
-        Scene (S.create @@ repl c (S.pixels s) (S.pixels s))
-    | _ -> raise_s [%message "unexpected arguments" (op : Op.t) (args : t list)]
+    let scene' =
+      match (op, args) with
+      | Int x, [] -> Int x
+      | Inter, [ Scene s; Scene s' ] -> Scene (S.create (Bitarray.and_ (S.pixels s) (S.pixels s')))
+      | Union, [ Scene s; Scene s' ] -> Scene (S.create (Bitarray.or_ (S.pixels s) (S.pixels s')))
+      | Circle, [ Int center_x; Int center_y; Int radius ] ->
+          let s =
+            S.init size ~f:(fun _ x y ->
+                ((x - center_x) * (x - center_x)) + ((y - center_y) * (y - center_y)) <= radius * radius)
+          in
+          Scene s
+      | Rect, [ Int lo_left_x; Int lo_left_y; Int hi_right_x; Int hi_right_y ] ->
+          Scene (S.init size ~f:(fun _ x y -> lo_left_x <= x && lo_left_y <= y && hi_right_x >= x && hi_right_y >= y))
+      | Repl, [ Scene s; Int dx; Int dy; Int c ] -> Scene (S.init size ~f:(fun _ -> replicate_is_set size s dx dy c))
+      | _ -> raise_s [%message "unexpected arguments" (op : Op.t) (args : t list)]
+    in
+    List.iter args ~f:(fun arg ->
+        match (arg, scene') with
+        | Scene arg, Scene scene' ->
+            [%test_result: int] ~expect:(Bitarray.length @@ Scene.pixels arg) (Bitarray.length @@ Scene.pixels scene')
+        | _ -> ());
+    scene'
 
   module Test_eval = struct
     let size = Scene.Size.create ~xres:30 ~yres:30 ()
