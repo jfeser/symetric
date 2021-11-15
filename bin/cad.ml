@@ -37,11 +37,20 @@ let circle = Op.(circle 5 5 5)
 
 let letter_e = Op.(union (rect 5 5 7 25) (repl 0 8 3 @@ rect 7 5 13 9))
 
+let simple_e = Op.(repl 0 8 3 @@ rect 7 5 13 9)
+
 let fence = Op.(union (repl 7 0 10 (rect 0 0 2 15)) (repl 0 7 2 (rect 0 4 30 5)))
 
 let checkerboard = Op.(repl 0 8 4 (union (repl 9 0 4 (rect 0 0 3 3)) (repl 9 0 3 (rect 4 4 8 7))))
 
-let benchmarks = [ circle; letter_e; two_circle; three_circle; four_circle ]
+let benchmarks =
+  [
+    simple_e;
+    (* (\* simple_e; (\\* circle; *\\) letter_e; *\) circle; *)
+    (* two_circle; *)
+    three_circle;
+    four_circle;
+  ]
 
 let benchmark_to_sketch p fn =
   let target = Program.eval (Value.eval @@ mk_ectx ()) p in

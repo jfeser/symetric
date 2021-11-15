@@ -70,10 +70,14 @@ module Gen_iter (Lang : Lang_intf) = struct
 
   let make_edge params op args = (Value.eval params op args, op, args)
 
+  let max_arity = 10
+
+  let args = Array.init max_arity ~f:(fun i -> Option_array.create ~len:i)
+
   let generate_args search params ss op costs f =
     let arity = Op.arity op in
     let types_ = Op.args_type op |> Array.of_list in
-    let args = Option_array.create ~len:arity in
+    let args = args.(arity) in
     let rec build_args arg_idx =
       if arg_idx >= arity then f @@ make_edge params op @@ unsafe_to_list args
       else

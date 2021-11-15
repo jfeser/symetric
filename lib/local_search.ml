@@ -211,45 +211,37 @@ let of_rules_root_only_tabu ~dist ~target m_op rules eval =
   end in
   tabu ~neighbors (module P)
 
-module type Op_intf = sig
+module type Value_intf = sig
   type t [@@deriving compare, hash, sexp]
 end
 
-let of_rules_tabu (type op value) ?(max_tabu = 1000) ~dist ~target (module Op : Op_intf with type t = op)
-    (module Value : Sexpable.S with type t = value) rules eval =
-  let neighbors t =
-    let iter_rewrites f =
-      List.iter rules ~f:(fun ((lhs, rhs) as rule) ->
-          Pattern.rewrite_all (module Op) rule t f;
-          Pattern.rewrite_all (module Op) (rhs, lhs) t f)
-    in
+let rewrite_all unnormalize t k =
+  let rec rewrite_all t k =
+    unnormalize t |> List.iter ~f:k;
+    let (Program.Apply (op, args)) = t in
+    List.iteri args ~f:(fun i t' ->
+        rewrite_all t' (fun p -> k @@ Program.Apply (op, List.take args i @ (p :: List.drop args (i + 1)))))
+  in
+  rewrite_all t k
 
-    let cmp = [%compare: float * _ * _ * _] in
-
-    let all_rewrites =
-      iter_rewrites
-      |> Iter.map (fun p ->
-             let state = eval p in
-             (dist state target, state, target, p))
-    in
-    let chosen_rewrites =
-      all_rewrites
-      |> Iter.map (fun (d, x, y, z) -> (-.d, x, y, z))
-      |> Iter.top_k ~cmp (max_tabu + 1)
-      |> Iter.map (fun (d, x, y, z) -> (-.d, x, y, z))
-      |> Iter.sort ~cmp
-    in
-
-    (* let all_dists = Iter.map (fun (d, _, _, _) -> d) all_rewrites |> Iter.to_list in *)
-    (* if Set.length (Set.of_list (module Float) all_dists) > 1 then *)
-    (*   print_s *)
-    (*     [%message *)
-    (*       (all_rewrites : (float * Value.t * Value.t * Op.t Program.t) Iter.t) *)
-    (*         (chosen_rewrites : (float * Value.t * Value.t * Op.t Program.t) Iter.t)]; *)
-    Iter.map (fun (_, _, _, p) -> p) chosen_rewrites
+let of_unnormalize_tabu (type op value) ?(max_tabu = 1000) ~dist ~target (module Op : Value_intf with type t = op)
+    (module Value : Value_intf with type t = value) unnormalize eval start =
+  let module State = struct
+    type t = { program : (Op.t Program.t[@compare.ignore]); value : Value.t } [@@deriving compare, hash, sexp]
+  end in
+  let neighbors (t : State.t) =
+    let cmp = [%compare: float * _] in
+    rewrite_all unnormalize t.program
+    |> Iter.map (fun p ->
+           let value = eval p in
+           (-.dist value target, State.{ program = p; value }))
+    |> Iter.map (fun ((d, (t' : State.t)) as x) ->
+           print_s [%message (d : float) (t.State.program : Op.t Program.t) (t'.program : Op.t Program.t)];
+           x)
+    |> Iter.top_k ~cmp (max_tabu + 1)
+    |> Iter.map (fun (d, x) -> (-.d, x))
+    |> Iter.sort ~cmp |> Iter.map Tuple.T2.get2
   in
 
-  let module P = struct
-    type t = Op.t Program.t [@@deriving compare, hash, sexp]
-  end in
-  tabu ~max_tabu ~neighbors (module P)
+  tabu ~max_tabu ~neighbors (module State) { program = start; value = eval start }
+  |> Iter.map (fun s -> s.State.program)

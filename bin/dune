@@ -1,11 +1,4 @@
 (executable
- (name shape)
- (modules shape)
- (libraries core iter staged_synth)
- (preprocess
-  (pps ppx_jane)))
-
-(executable
  (name tensor)
  (modules tensor)
  (libraries core iter staged_synth)
@@ -18,3 +11,12 @@
  (libraries core iter staged_synth)
  (preprocess
   (pps ppx_jane)))
+
+(executable
+ (name local_search_test)
+ (modules local_search_test)
+ (libraries core iter staged_synth)
+ (preprocess
+  (pps ppx_jane)))
+
+

@@ -69,8 +69,13 @@ module Iter = struct
       let mins = Pairing_heap.create ~min_size:k ~cmp () in
       Iter.iter
         (fun (x : t) ->
-          if Pairing_heap.length mins < k || (Option.is_some @@ Pairing_heap.pop_if mins (fun x' -> cmp x' x < 0)) then
-            Pairing_heap.add mins x)
+          if
+            Pairing_heap.length mins < k
+            || Option.is_some
+               @@ Pairing_heap.pop_if mins (fun x' ->
+                      let c = cmp x' x in
+                      c < 0 || (c = 0 && Random.bool ()))
+          then Pairing_heap.add mins x)
         l;
       Pairing_heap.iter ~f mins)
 
