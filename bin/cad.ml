@@ -25,7 +25,7 @@ let generate_benchmarks ?(max_states = 1_000) ops ectx cost type_ =
   Hashtbl.find search_state.values attr |> Option.map ~f:Iter.of_queue |> Option.value ~default:Iter.empty
   |> Iter.map (Search_state.program_exn search_state type_)
 
-let two_circle = Op.(union (circle 5 15 5) (circle 15 15 5))
+let two_circle = Op.(union (circle 3 12 4) (circle 17 11 6))
 
 let three_circle = Op.(union (circle 5 15 5) @@ union (circle 15 15 5) (circle 25 15 5))
 
@@ -33,7 +33,7 @@ let four_circle = Op.(union (circle 5 15 5) @@ union (circle 15 15 5) @@ union (
 
 let circle_repl = Op.(repl 10 10 5 (circle 5 5 5))
 
-let circle = Op.(circle 5 5 5)
+let circle = Op.(circle 6 4 5)
 
 let letter_e = Op.(union (rect 5 5 7 25) (repl 0 8 3 @@ rect 7 5 13 9))
 
@@ -45,7 +45,10 @@ let checkerboard = Op.(repl 0 8 4 (union (repl 9 0 4 (rect 0 0 3 3)) (repl 9 0 3
 
 let benchmarks =
   [
-    simple_e;
+    (* circle; *)
+    (* two_circle; *)
+    (* simple_e; *)
+    letter_e;
     (* (\* simple_e; (\\* circle; *\\) letter_e; *\) circle; *)
     (* two_circle; *)
     three_circle;
@@ -96,22 +99,26 @@ let () =
 
   List.iteri benchmarks ~f:(fun i prog ->
       let target = match Program.eval (Value.eval @@ mk_ectx ()) prog with Scene s -> s | _ -> assert false in
-      (* let min_x, min_y, max_x, max_y = *)
-      (*   Scene.to_iter size target *)
-      (*   |> Iter.fold *)
-      (*        (fun ((min_x, min_y, max_x, max_y) as acc) ((x, y), v) -> *)
-      (*          if v then (min min_x x, min min_y y, max max_x x, max max_y y) else acc) *)
-      (*        (Int.max_value, Int.max_value, Int.min_value, Int.min_value) *)
-      (* in *)
-      (* let size' = Scene.Size.create ~xres:(max_x - min_x + 1) ~yres:(max_y - min_y + 1) () in *)
+      let min_x, min_y, max_x, max_y =
+        Scene.to_iter size target
+        |> Iter.fold
+             (fun ((min_x, min_y, max_x, max_y) as acc) ((x, y), v) ->
+               if v then (min min_x x, min min_y y, max max_x x, max max_y y) else acc)
+             (Int.max_value, Int.max_value, Int.min_value, Int.min_value)
+      in
+      let size' = Scene.Size.create ~xres:(max_x - min_x + 1) ~yres:(max_y - min_y + 1) () in
       (* let target' = Value.Scene Scene.(crop ~old:size ~new_:size' @@ shift size target (-min_x) (-min_y)) in *)
-      let ops = Op.[ Union; Rect; Circle; Repl ] @ List.init (max size.xres size.yres) ~f:(fun i -> Op.Int i) in
+      let ops =
+        Op.[ Union; Circle; Repl ]
+        @ (List.range ~stride:5 1 (max size'.xres size'.yres) |> List.map ~f:(fun i -> Op.Int i))
+      in
+      print_s [%message (ops : Op.t list)];
+      print_s [%message (prog : Op.t Program.t)];
 
       benchmark_to_sketch prog @@ sprintf "cad%d.sk" i;
-      let target = Value.Scene target in
-      Fmt.epr "%a\n%!" Scene.pp (match target with Scene s -> (size, s) | _ -> assert false);
+      Fmt.epr "%a\n%!" Scene.pp (size, target);
 
-      let abs = time_if run_abs (fun () -> Abstract_synth_cad.synth size target ops) in
+      let abs = time_if run_abs (fun () -> Abstract_synth_cad.synth size (Value.Scene target) ops) in
       let local = time_if run_local (fun () -> Local_synth_cad.synth size target ops) in
       let local_no_dist_close = time_if run_local_no_dist_close (fun () -> ()) in
       let local_no_dist_far = time_if run_local_no_dist_far (fun () -> ()) in

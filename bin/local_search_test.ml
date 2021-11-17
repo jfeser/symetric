@@ -1,1 +1,1 @@
-let () = Staged_synth.Local_search_test.run ()
+let () = Staged_synth.Local_search_test.run_e ()

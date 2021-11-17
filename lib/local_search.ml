@@ -227,20 +227,32 @@ let rewrite_all unnormalize t k =
 let of_unnormalize_tabu (type op value) ?(max_tabu = 1000) ~dist ~target (module Op : Value_intf with type t = op)
     (module Value : Value_intf with type t = value) unnormalize eval start =
   let module State = struct
-    type t = { program : (Op.t Program.t[@compare.ignore]); value : Value.t } [@@deriving compare, hash, sexp]
+    type t = { program : Op.t Program.t; value : Value.t } [@@deriving compare, hash, sexp]
   end in
   let neighbors (t : State.t) =
     let cmp = [%compare: float * _] in
-    rewrite_all unnormalize t.program
-    |> Iter.map (fun p ->
-           let value = eval p in
-           (-.dist value target, State.{ program = p; value }))
-    |> Iter.map (fun ((d, (t' : State.t)) as x) ->
-           print_s [%message (d : float) (t.State.program : Op.t Program.t) (t'.program : Op.t Program.t)];
-           x)
+    let choices =
+      rewrite_all unnormalize t.program
+      |> Iter.map (fun p ->
+             let value = eval p in
+             (-.dist value target, State.{ program = p; value }))
+      |> Iter.to_list
+    in
+    let n_sample = List.length choices / 2 in
+    let n_sample = if n_sample > 0 then n_sample else List.length choices in
+    Iter.of_list choices |> Iter.sample n_sample |> Iter.of_array
     |> Iter.top_k ~cmp (max_tabu + 1)
     |> Iter.map (fun (d, x) -> (-.d, x))
-    |> Iter.sort ~cmp |> Iter.map Tuple.T2.get2
+    |> Iter.sort ~cmp
+    (* |> Iter.map (fun ((d, (t' : State.t)) as x) -> *)
+    (*        print_s *)
+    (*          [%message *)
+    (*            ([%compare.equal: Value.t] t.value t'.value : bool) *)
+    (*              (d : float) *)
+    (*              (t.State.program : Op.t Program.t) *)
+    (*              (t'.program : Op.t Program.t)]; *)
+    (*        x) *)
+    |> Iter.map Tuple.T2.get2
   in
 
   tabu ~max_tabu ~neighbors (module State) { program = start; value = eval start }

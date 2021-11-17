@@ -19,7 +19,12 @@ let corner size (v : Value.t) (v' : Value.t) =
       |> Float.of_int |> Float.sqrt
   | _ -> Float.infinity
 
+let gen_euclid v v' =
+  match (v, v') with Value.Scene s, Value.Scene s' -> Scene.distance size s s' | _ -> Float.infinity
+
 let distance v v' = (* jaccard_edges size v v' +. *) jaccard v v' +. corner size v v'
+
+let distance = gen_euclid
 
 let int x : Op.t Program.t = Apply (Int x, [])
 
@@ -57,10 +62,30 @@ let normalize : Op.t Program.t -> Op.t Program.t = function
   | Apply (Int x, []) -> Apply (Int (Int.round_nearest x ~to_multiple_of:10), [])
   | p -> p
 
-let run () =
+let run_repl () =
   let target = Op.(repl 0 8 3 @@ rect 7 5 13 9) in
   let start = Op.(repl 0 9 8 @@ rect 8 4 13 8) in
 
+  let ectx = Value.Ctx.create size in
+  let eval = Program.eval (Value.eval ectx) in
+  let target_value = eval target in
+  Local_search.of_unnormalize_tabu ~max_tabu:10 ~target:target_value ~dist:distance
+    (module Op)
+    (module Value)
+    unnormalize eval start
+  |> Iter.iter (fun p ->
+         let value = eval p in
+         if [%compare.equal: Value.t] value target_value then failwith "done";
+         Fmt.pr "Program: %a@\nGoal: %a@\n%a@." (Program.pp Op.pp) p (Program.pp Op.pp) target (Value.pp ectx) value)
+
+let run_e () =
+  (* Union( *)
+  (* Repl(Rect((Int 5), (Int 6), (Int 13), (Int 9)), (Int 0), (Int 16),  *)
+  (*   (Int 12)), *)
+  (* Repl(Rect((Int 5), (Int 5), (Int 11), (Int 17)), (Int 0), (Int 10),  *)
+  (*   (Int 2))) *)
+  let target = Op.(union (rect 5 5 7 25) (repl 0 8 3 @@ rect 7 5 13 9)) in
+  let start = Op.(union (repl 0 16 12 (rect 5 6 13 9)) (repl 0 10 2 @@ rect 5 5 11 17)) in
   let ectx = Value.Ctx.create size in
   let eval = Program.eval (Value.eval ectx) in
   let target_value = eval target in
@@ -71,5 +96,4 @@ let run () =
   |> Iter.iter (fun p ->
          let value = eval p in
          if [%compare.equal: Value.t] value target_value then failwith "done";
-         Fmt.pr "Program: %a@\nGoal: %a@\n%a@." (Program.pp Op.pp) p (Program.pp Op.pp) target (Value.pp ectx)
-           target_value)
+         Fmt.pr "Program: %a@\nGoal: %a@\n%a@." (Program.pp Op.pp) p (Program.pp Op.pp) target (Value.pp ectx) value)

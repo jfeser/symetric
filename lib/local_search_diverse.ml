@@ -85,14 +85,15 @@ module Make (Lang : Lang_intf) = struct
       states_grouped : int ref;
       groups_created : int ref;
       on_close_state : Op.t Program.t -> Value0.t -> unit;
+      on_existing : Value0.t -> Value0.t -> unit;
       after_local_search : Op.t Program.t -> Value0.t -> unit;
       on_groups : (Value0.t * Op.t * Value.t list) list list -> unit;
       tabu_length : int;
     }
 
     let create ?(on_close_state = fun _ _ -> ()) ?(after_local_search = fun _ _ -> ()) ?(on_groups = fun _ -> ())
-        ?(search_width = 10) ?(tabu_length = 1000) ?(verbose = false) ?stats ?(unnormalize = fun _ -> [])
-        ?(normalize = Fun.id) ~search_thresh ~distance ectx ops output =
+        ?(on_existing = fun _ _ -> ()) ?(search_width = 10) ?(tabu_length = 1000) ?(verbose = false) ?stats
+        ?(unnormalize = fun _ -> []) ?(normalize = Fun.id) ~search_thresh ~distance ectx ops output =
       let stats = Option.value_lazy stats ~default:(lazy (Stats.create ())) in
 
       {
@@ -113,6 +114,7 @@ module Make (Lang : Lang_intf) = struct
         states_grouped = ref 0;
         groups_created = ref 0;
         on_close_state;
+        on_existing;
         after_local_search;
         on_groups;
         tabu_length;
@@ -193,8 +195,6 @@ module Make (Lang : Lang_intf) = struct
 
   class synthesizer (ctx : Ctx.t) =
     object (self)
-      val mutable enum_bound = 0
-
       val mutable upper_bound = 0
 
       val search_state = Search_state.create ()
@@ -242,6 +242,8 @@ module Make (Lang : Lang_intf) = struct
                    |> Iter.find_mapi (fun step p ->
                           incr examined;
                           let value = Program.eval (Value.eval ctx.ectx) p in
+
+                          (* ctx.on_close_state p (Value.value value); *)
                           last_state := Some (p, Value.value value);
                           if [%compare.equal: Value.t] value ctx.output then (
                             eprint_s [%message "local search" (step : int)];
@@ -287,17 +289,21 @@ module Make (Lang : Lang_intf) = struct
         end in
         with_time_probe ctx.sample_states_time @@ fun () ->
         ctx.states_grouped := !(ctx.states_grouped) + List.length new_states;
+
+        (* List.iter new_states ~f:(fun (v, _, _) -> *)
+        (*     Hashtbl.iter_keys search_state.paths ~f:(fun v' -> *)
+        (*         let v' = v'.Search_state.TValue.value in *)
+        (*         if Float.(ctx.distance v v' < 1.0) then ctx.on_existing (Value.value v) (Value.value v'))); *)
         let groups =
-          if cost > enum_bound then (
-            let groups = Hashtbl.create (module Value) in
-            List.iter new_states ~f:(fun ((_, op, args) as state) ->
-                let prog = Search_state.program_of_op_args_exn search_state op args in
-                let nprog = ctx.normalize prog in
-                let nvalue = Program.eval (Value.eval ctx.ectx) nprog in
-                Hashtbl.update groups nvalue ~f:(function None -> [ state ] | Some xs -> state :: xs));
-            Hashtbl.data groups)
-          else List.map ~f:(fun s -> [ s ]) new_states
+          let groups = Hashtbl.create (module Value) in
+          List.iter new_states ~f:(fun ((_, op, args) as state) ->
+              let prog = Search_state.program_of_op_args_exn search_state op args in
+              let nprog = ctx.normalize prog in
+              let nvalue = Program.eval (Value.eval ctx.ectx) nprog in
+              Hashtbl.update groups nvalue ~f:(function None -> [ state ] | Some xs -> state :: xs));
+          Hashtbl.data groups
         in
+        let groups = List.map groups ~f:List.rev in
         ctx.groups_created := !(ctx.groups_created) + List.length groups;
         (* print_s [%message (List.take groups 10 : (Value.t * _ * _) list list)]; *)
         ctx.on_groups (List.map ~f:(List.map ~f:(fun (v, op, args) -> (Value.value v, op, args))) groups);
@@ -353,7 +359,6 @@ module Make (Lang : Lang_intf) = struct
                  let bound = Float.to_int upper in
                  let scaled_bound = bound in
                  upper_bound <- scaled_bound;
-                 enum_bound <- 0;
 
                  Search_state.clear search_state;
 

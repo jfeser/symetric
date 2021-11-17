@@ -128,3 +128,28 @@ let corners (size : Size.t) s =
   [ c1; c2; c3; c4 ]
 
 let count s = Bitarray.hamming_weight (pixels s)
+
+let distance (size : Size.t) s s' =
+  let dist = ref 0.0 in
+
+  for x = 0 to size.xres - 1 do
+    for y = 0 to size.yres - 1 do
+      for x' = 0 to size.xres - 1 do
+        for y' = 0 to size.yres - 1 do
+          let x1 = get s (Size.offset size x y)
+          and y1 = get s' (Size.offset size x y)
+          and x2 = get s (Size.offset size x' y')
+          and y2 = get s' (Size.offset size x' y') in
+          let to_float' x = if x then 1.0 else 0.0 in
+          let sum =
+            Float.(
+              (to_float' x1 -. to_float' y1)
+              *. (0.6 ** (abs (of_int x - of_int x') + abs (of_int y - of_int y')))
+              *. (to_float' x2 - to_float' y2))
+          in
+          dist := !dist +. sum
+        done
+      done
+    done
+  done;
+  !dist

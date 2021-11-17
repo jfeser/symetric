@@ -28,7 +28,11 @@ module Op = struct
 
   let rect lx ly rx ry = Program.Apply (Rect, [ int lx; int ly; int rx; int ry ])
 
+  let empty = circle 0 0 0
+
   let union x y = Program.Apply (Union, [ x; y ])
+
+  let inter x y = Program.Apply (Inter, [ x; y ])
 
   let repl dx dy c p = Program.Apply (Repl, [ p; int dx; int dy; int c ])
 end
