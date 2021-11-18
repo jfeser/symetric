@@ -40,8 +40,6 @@ let synth ?(use_normalize = true) ?(use_distance = `True) size (target : Scene.t
         | Apply (Rect, [ Apply (Int lx, []); Apply (Int ly, []); Apply (Int hx, []); Apply (Int hy, []) ]) ->
             let x = (lx + hx) / 2 and y = (ly + hy) / 2 in
             [ circle x y ((hx - lx) / 2); circle x y ((hy - ly) / 2) ]
-        | Apply (Union, [ s; s' ]) -> [ s; s' ]
-        | Apply (Inter, [ s; s' ]) -> [ s; s' ]
         | _ -> []
       in
       Some apply
@@ -78,14 +76,16 @@ let synth ?(use_normalize = true) ?(use_distance = `True) size (target : Scene.t
   let normalize = Option.some_if use_normalize normalize in
 
   let target = Value.Scene target in
+
+  let distance (v : Value.t) (v' : Value.t) =
+    match (v, v') with
+    | Int x, Int x' -> if abs (x - x') < 3 then 0.0 else Float.infinity
+    | Scene _, Scene _ -> jaccard v v'
+    | _ -> Float.infinity
+  in
+
   let distance =
-    match use_distance with
-    | `True ->
-        fun v v' ->
-          (* match (v, v') with Value.Scene s, Value.Scene s' -> Scene.distance size s s' | _ -> Float.infinity *)
-          jaccard v v' +. corner size v v'
-    | `Close -> fun _ _ -> 0.0
-    | `Far -> fun _ _ -> Float.infinity
+    match use_distance with `True -> distance | `Close -> fun _ _ -> 0.0 | `Far -> fun _ _ -> Float.infinity
   in
   let match_prog msg (prog : Op.t Program.t) state =
     match prog with
@@ -93,10 +93,10 @@ let synth ?(use_normalize = true) ?(use_distance = `True) size (target : Scene.t
       | Apply (Union, [ Apply (Repl, Apply (Rect, _) :: _); Apply (Rect, _) ])
       | Apply (Union, [ Apply (Circle, _); Apply (Repl, Apply (Circle, _) :: _) ])
       | Apply (Union, [ Apply (Repl, Apply (Circle, _) :: _); Apply (Circle, _) ])
-      | Apply (Union, [ _; Apply (Repl, _) ]) ) as prog ->
+      | Apply (Union, [ _; Apply (Repl, _) ])
+      | _ ) as prog ->
         Fmt.epr "@[<hv>%s %f:@ %a@.%a@]%!" msg (distance state target) (Program.pp Op.pp) prog (Value.pp ectx) state;
         print_s [%message (prog : Op.t Program.t)]
-    | _ -> ()
   in
   let on_close_state prog state =
     let d = distance state target in
@@ -119,8 +119,8 @@ let synth ?(use_normalize = true) ?(use_distance = `True) size (target : Scene.t
   in
 
   let ctx =
-    Synth.Ctx.create ~search_width:50 ~verbose:false ~distance ?unnormalize ?normalize ~search_thresh:(Top_k 15)
-      ~on_groups
+    Synth.Ctx.create ~search_width:100 ~verbose:true ~distance ?unnormalize ?normalize
+      ~search_thresh:(Top_k 15) (* ~on_groups *) ~after_local_search ~on_close_state
       (* (\* ~on_close_state ~after_local_search *\) *)
       (* (\* ~on_groups *\) ~on_existing *)
       ectx ops target

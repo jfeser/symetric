@@ -45,6 +45,7 @@ let checkerboard = Op.(repl 0 8 4 (union (repl 9 0 4 (rect 0 0 3 3)) (repl 9 0 3
 
 let benchmarks =
   [
+    (* two_circle; *)
     (* circle; *)
     (* two_circle; *)
     (* simple_e; *)
@@ -109,8 +110,7 @@ let () =
       let size' = Scene.Size.create ~xres:(max_x - min_x + 1) ~yres:(max_y - min_y + 1) () in
       (* let target' = Value.Scene Scene.(crop ~old:size ~new_:size' @@ shift size target (-min_x) (-min_y)) in *)
       let ops =
-        Op.[ Union; Circle; Repl ]
-        @ (List.range ~stride:5 1 (max size'.xres size'.yres) |> List.map ~f:(fun i -> Op.Int i))
+        Op.[ Union; Circle; Rect; Repl ] @ (List.range 0 (max size'.xres size'.yres) |> List.map ~f:(fun i -> Op.Int i))
       in
       print_s [%message (ops : Op.t list)];
       print_s [%message (prog : Op.t Program.t)];
