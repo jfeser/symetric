@@ -120,7 +120,7 @@ let synth ?(use_normalize = true) ?(use_distance = `True) size (target : Scene.t
 
   let ctx =
     Synth.Ctx.create ~search_width:100 ~verbose:true ~distance ?unnormalize ?normalize
-      ~search_thresh:(Top_k 15) (* ~on_groups *) ~after_local_search ~on_close_state
+      ~search_thresh:(Top_k 15) (* ~on_groups *) ~after_local_search (* ~on_close_state *)
       (* (\* ~on_close_state ~after_local_search *\) *)
       (* (\* ~on_groups *\) ~on_existing *)
       ectx ops target

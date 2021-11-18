@@ -4,7 +4,7 @@ open Std
 module Lang = Cad_ext
 open Lang
 
-let size = Scene.Size.create ~xres:30 ~yres:30 ()
+let size = Scene.Size.create ~xres:13 ~yres:20 ()
 
 let mk_ectx () = Value.Ctx.create size
 
@@ -35,7 +35,7 @@ let circle_repl = Op.(repl 10 10 5 (circle 5 5 5))
 
 let circle = Op.(circle 6 4 5)
 
-let letter_e = Op.(union (rect 5 5 7 25) (repl 0 8 3 @@ rect 7 5 13 9))
+let letter_e = Op.(union (rect 0 0 5 20) (repl 0 8 3 @@ rect 0 0 13 4))
 
 let simple_e = Op.(repl 0 8 3 @@ rect 7 5 13 9)
 
