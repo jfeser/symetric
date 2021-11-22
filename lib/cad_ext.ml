@@ -20,6 +20,8 @@ module Op = struct
 
   let arity op = List.length @@ args_type op
 
+  let is_commutative = function Union | Inter -> true | _ -> false
+
   let pp fmt x = Sexp.pp_hum fmt @@ [%sexp_of: t] x
 
   let int x = Program.Apply (Int x, [])

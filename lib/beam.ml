@@ -17,6 +17,8 @@ module type Lang_intf = sig
     val args_type : t -> Type.t list
 
     val ret_type : t -> Type.t
+
+    val is_commutative : t -> bool
   end
 
   module Value : sig

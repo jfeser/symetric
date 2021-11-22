@@ -19,6 +19,8 @@ module type Lang_intf = sig
     val args_type : t -> Type.t list
 
     val ret_type : t -> Type.t
+
+    val is_commutative : t -> bool
   end
 
   module Value : sig
@@ -204,6 +206,8 @@ struct
             | Args -> List.init n_args ~f:(fun slot -> Type.Pred slot)
             | And slot -> [ Type.Pred slot; Type.Pred slot ]
             | Pred _ -> []
+
+          let is_commutative _ = false
 
           let cost = function Pred (_, `True) -> 1 | Pred (_, (#Pred.t as p)) -> Pred.cost p | Args | And _ -> 1
         end

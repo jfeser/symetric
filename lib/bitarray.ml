@@ -95,11 +95,12 @@ let hamming_weight x = Array.sum (module Int) x.buf ~f:Int.popcount
 let hamming_distance a b =
   [%test_result: int] ~expect:(length a) (length b);
   [%test_result: int] ~expect:(Array.length a.buf) (Array.length b.buf);
-  let sum = ref 0 in
-  for i = 0 to Array.length a.buf - 1 do
-    sum := !sum + Int.popcount (a.buf.(i) lxor b.buf.(i))
-  done;
-  !sum
+  hamming_weight (xor a b)
+
+let weighted_jaccard ?(pos_weight = 0.5) a b =
+  ((Float.of_int (hamming_weight (not @@ and_ a b)) *. pos_weight)
+  +. (Float.of_int (hamming_weight (not @@ and_ (not a) (not b))) *. (1.0 -. pos_weight)))
+  /. (Float.of_int @@ length a)
 
 let%expect_test "" =
   for _ = 0 to 100 do

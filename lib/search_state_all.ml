@@ -21,6 +21,11 @@ module type Lang_intf = sig
 end
 
 module Make (Lang : Lang_intf) = struct
+  module Value = struct
+    include Lang.Value
+    include Comparator.Make (Lang.Value)
+  end
+
   module Attr = struct
     module T = struct
       type t = { cost : int; type_ : Lang.Type.t } [@@deriving compare, hash, sexp]
@@ -47,6 +52,37 @@ module Make (Lang : Lang_intf) = struct
   let search ctx ~cost ~type_ =
     assert (cost >= 0);
     match Hashtbl.find ctx.values @@ Attr.create cost type_ with Some q -> Queue.to_list q | None -> []
+
+  let rec find_term ctx = function
+    | Program.Apply (op, []) ->
+        let all_values =
+          Hashtbl.to_alist ctx.paths
+          |> List.filter_map ~f:(fun (v, paths) ->
+                 if Queue.exists ~f:(function _, op', [] -> [%compare.equal: Lang.Op.t] op op' | _ -> false) paths
+                 then Some v.value
+                 else None)
+        in
+        print_s [%message (op : Lang.Op.t) (List.length all_values : int)];
+
+        Program.Apply ((op, all_values), [])
+    | Apply (op, args) ->
+        let args = List.map args ~f:(find_term ctx) in
+        let arg_sets = List.map args ~f:(fun (Apply ((_, vs), _)) -> Set.of_list (module Value) vs) in
+        let all_outputs =
+          Hashtbl.to_alist ctx.paths
+          |> List.filter_map ~f:(fun (v, paths) ->
+                 if
+                   Queue.exists
+                     ~f:(function
+                       | _, op', args ->
+                           [%compare.equal: Lang.Op.t] op op' && List.for_all2_exn arg_sets args ~f:Set.mem)
+                     paths
+                 then Some v.value
+                 else None)
+        in
+        print_s [%message (op : Lang.Op.t) (List.length all_outputs : int)];
+
+        Apply ((op, all_outputs), args)
 
   let mem ctx = Hashtbl.mem ctx.paths
 

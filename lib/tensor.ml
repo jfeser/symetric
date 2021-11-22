@@ -75,6 +75,8 @@ module Op = struct
     | x :: xs -> Program.(apply Cons ~args:[ apply (Int x); vec_of_list xs ])
 
   let cost _ = 1
+
+  let is_commutative _ = false
 end
 
 module Value = struct

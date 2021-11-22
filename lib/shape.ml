@@ -38,6 +38,8 @@ module Op = struct
   let type_ x = (args_type x, ret_type x)
 
   let cost _ = 1
+
+  let is_commutative _ = false
 end
 
 module Value = struct

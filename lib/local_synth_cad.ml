@@ -5,6 +5,11 @@ module Synth = Local_search_diverse.Make (Cad_ext)
 let jaccard (v : Value.t) (v' : Value.t) =
   match (v, v') with Scene s, Scene s' -> Scene.jaccard s s' | _ -> Float.infinity
 
+let wjaccard (v : Value.t) (v' : Value.t) =
+  match (v, v') with
+  | Scene s, Scene s' -> Bitarray.weighted_jaccard (Scene.pixels s) (Scene.pixels s')
+  | _ -> Float.infinity
+
 let jaccard_edges size (v : Value.t) (v' : Value.t) =
   match (v, v') with Scene s, Scene s' -> Scene.(jaccard (edges size s) (edges size s')) | _ -> Float.infinity
 
@@ -18,7 +23,7 @@ let corner size (v : Value.t) (v' : Value.t) =
       |> Float.of_int |> Float.sqrt
   | _ -> Float.infinity
 
-let synth ?(use_normalize = true) ?(use_distance = `True) size (target : Scene.t) (ops : Op.t list) =
+let synth ?(use_normalize = true) ?(use_distance = `True) size prog (target : Scene.t) (ops : Op.t list) =
   let ectx = Value.Ctx.create size in
 
   let eval = Program.eval (Value.eval ectx) in
@@ -118,13 +123,19 @@ let synth ?(use_normalize = true) ?(use_distance = `True) size (target : Scene.t
       | _ -> ())
   in
 
+  let on_find_term (Program.Apply ((_, vs), _)) =
+    List.iter vs ~f:(fun v -> Fmt.epr "@[<hv>Potential solution state:@ %a@]%!" (Value.pp ectx) v)
+  in
+
   let ctx =
     Synth.Ctx.create ~search_width:100 ~verbose:true ~distance ?unnormalize ?normalize
-      ~search_thresh:(Top_k 15) (* ~on_groups *) ~after_local_search (* ~on_close_state *)
+      ~search_thresh:
+        (Top_k 15)
+        (* ~on_groups *)
+        (* ~after_local_search *)
+      ~find_term:(prog, on_find_term) (* ~on_close_state *)
       (* (\* ~on_close_state ~after_local_search *\) *)
       (* (\* ~on_groups *\) ~on_existing *)
       ectx ops target
   in
-  match (new Synth.synthesizer ctx)#run with
-  | Some p -> eprint_s [%message (p : Op.t Program.t)]
-  | None -> failwith "synthesis failed"
+  (new Synth.synthesizer ctx)#run

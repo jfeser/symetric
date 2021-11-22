@@ -11,6 +11,8 @@ module type Lang_intf = sig
     val arity : t -> int
 
     val args_type : t -> Type.t list
+
+    val is_commutative : t -> bool
   end
 
   module Value : sig
@@ -99,7 +101,11 @@ module Gen_iter (Lang : Lang_intf) = struct
              let arity = Op.arity op in
              arity > 0 && arity < cost)
       |> Iter.iter (fun op ->
-             Combinat.compositions ~n:arg_cost ~k:(Op.arity op) (fun costs -> generate_args search params ss op costs f))
+             let costs =
+               if Op.is_commutative op then Combinat.partitions ~n:arg_cost ~k:(Op.arity op)
+               else Combinat.compositions ~n:arg_cost ~k:(Op.arity op)
+             in
+             costs (fun costs -> generate_args search params ss op costs f))
 end
 
 module Gen_queue (Lang : Lang_intf) = struct

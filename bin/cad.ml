@@ -35,7 +35,7 @@ let circle_repl = Op.(repl 10 10 5 (circle 5 5 5))
 
 let circle = Op.(circle 6 4 5)
 
-let letter_e = Op.(union (rect 0 0 5 20) (repl 0 8 3 @@ rect 0 0 13 4))
+let letter_e = Op.(union (rect 0 0 5 19) (repl 0 8 3 @@ rect 0 0 13 4))
 
 let simple_e = Op.(repl 0 8 3 @@ rect 7 5 13 9)
 
@@ -119,7 +119,7 @@ let () =
       Fmt.epr "%a\n%!" Scene.pp (size, target);
 
       let abs = time_if run_abs (fun () -> Abstract_synth_cad.synth size (Value.Scene target) ops) in
-      let local = time_if run_local (fun () -> Local_synth_cad.synth size target ops) in
+      let local = time_if run_local (fun () -> Local_synth_cad.synth size prog target ops) in
       let local_no_dist_close = time_if run_local_no_dist_close (fun () -> ()) in
       let local_no_dist_far = time_if run_local_no_dist_far (fun () -> ()) in
       Fmt.pr "%s,%s,%s,%s\n%!" abs local local_no_dist_close local_no_dist_far)
