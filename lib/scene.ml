@@ -46,7 +46,7 @@ end
 include T
 include Comparator.Make (T)
 
-let pixels = value
+let[@inline] pixels x = value x
 
 let init (size : Size.t) ~f =
   let len = size.xres * size.yres in
@@ -82,7 +82,7 @@ let pp fmt ((size : Size.t), x) =
 
 let get x = Bitarray.get (pixels x)
 
-let hamming c c' = Bitarray.hamming_distance (pixels c) (pixels c')
+let[@inline] hamming c c' = Bitarray.hamming_distance (pixels c) (pixels c')
 
 let jaccard c c' =
   let h = hamming c c' in

@@ -92,10 +92,7 @@ let xor a b = { len = a.len; buf = Array.map2_exn a.buf b.buf ~f:( lxor ) }
 
 let hamming_weight x = Array.sum (module Int) x.buf ~f:Int.popcount
 
-let hamming_distance a b =
-  [%test_result: int] ~expect:(length a) (length b);
-  [%test_result: int] ~expect:(Array.length a.buf) (Array.length b.buf);
-  hamming_weight (xor a b)
+let hamming_distance a b = Array.fold2_exn a.buf b.buf ~f:(fun ct w w' -> ct + Int.popcount (w lxor w')) ~init:0
 
 let weighted_jaccard ?(pos_weight = 0.5) a b =
   ((Float.of_int (hamming_weight (not @@ and_ a b)) *. pos_weight)
