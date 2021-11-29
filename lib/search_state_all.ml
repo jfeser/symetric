@@ -110,7 +110,16 @@ module Make (Lang : Lang_intf) = struct
             Queue.enqueue_all paths ((cost, op, args) :: List.map states ~f:(fun (_, op, args) -> (cost, op, args)))
         | [] -> ())
 
-  let states ctx = Hashtbl.keys ctx.paths
+  let states ?cost ?type_ ctx =
+    match (cost, type_) with
+    | Some cost, Some type_ -> search ctx ~cost ~type_ |> Iter.of_list
+    | Some cost, None ->
+        fun f -> Hashtbl.iteri ctx.values ~f:(fun ~key ~data -> if key.cost = cost then Queue.iter data ~f)
+    | None, Some type_ ->
+        fun f ->
+          Hashtbl.iteri ctx.values ~f:(fun ~key ~data ->
+              if [%compare.equal: Lang.Type.t] key.type_ type_ then Queue.iter data ~f)
+    | None, None -> Hashtbl.keys ctx.paths |> Iter.of_list |> Iter.map (fun v -> v.TValue.value)
 
   let length ctx = Hashtbl.length ctx.paths
 

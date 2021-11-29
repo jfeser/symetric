@@ -298,39 +298,45 @@ module Make (Lang : Lang_intf) = struct
 
       method insert_states_ cost states =
         let states =
-          List.map states ~f:(fun ((v, _, _) as x) -> (v, x)) |> List.group_by (module Value) |> List.permute
+          List.map states ~f:(fun ((v, _, _) as x) -> (v, x))
+          |> List.group_by (module Value)
+          |> List.filter_map ~f:(function
+               | value, ((_, op, args) :: _ as states) ->
+                   if Search_state.mem search_state { value; type_ = Op.ret_type op } then (
+                     List.iter states ~f:(fun (_, op, args) -> Search_state.insert search_state cost value op args);
+                     None)
+                   else Some (value, ref false, op, args, states)
+               | _, [] -> None)
+          |> List.permute
         in
-        if ctx.verbose then Fmt.epr "Distinct states: %d.\n%!" @@ List.length states;
-        if ctx.verbose then
-          Fmt.epr "New states: %d.\n%!" @@ List.length
-          @@ List.filter states ~f:(function
-               | v, (_, op, _) :: _ -> not @@ Search_state.mem search_state { value = v; type_ = Op.ret_type op }
-               | _ -> false);
 
-        List.filter_map states ~f:(function
-          | _, [] -> None
-          | value, ((_, op, args) :: _ as states) ->
-              if Search_state.mem search_state { value; type_ = Op.ret_type op } then (
-                List.iter states ~f:(fun (_, op, args) -> Search_state.insert search_state cost value op args);
-                None)
-              else
-                let type_ = Op.ret_type op in
-                let inserted =
-                  match Hashtbl.find search_state.values { cost; type_ } with
-                  | None -> false
-                  | Some vs ->
-                      Queue.fold ~init:false
-                        ~f:(fun inserted v' ->
-                          if Float.(ctx.distance value v' < ctx.thresh) then (
-                            List.iter states ~f:(fun (_, op, args) -> Search_state.insert search_state cost v' op args);
-                            true)
-                          else inserted)
-                        vs
-                in
-                if not inserted then (
-                  List.iter states ~f:(fun (value, op, args) -> Search_state.insert search_state cost value op args);
-                  Some (value, op, args))
-                else None)
+        if List.is_empty states then []
+        else (
+          if ctx.verbose then (
+            Fmt.epr "Distinct states: %d.\n%!" @@ List.length states;
+            Fmt.epr "New states: %d.\n%!" @@ List.length
+            @@ List.filter states ~f:(fun (v, _, op, _, _) ->
+                   not @@ Search_state.mem search_state { value = v; type_ = Op.ret_type op }));
+
+          let annot_dist (v, _, _, _, _) (v', _, _, _, _) = ctx.distance v v' in
+          let query = Vpt.create annot_dist `Random states in
+          let reference =
+            Search_state.states ~type_:Type.output search_state |> Iter.to_list |> Vpt.create ctx.distance `Random
+          in
+
+          print_s [%message (Vpt.length query : int) (Vpt.length reference : int)];
+
+          (* Find close states and insert *)
+          Vpt.range (fun (v, _, _, _, _) v' -> ctx.distance v v') 0.0 ctx.thresh query reference
+          |> Iter.iter (fun ((value, inserted, op, args, states), v') ->
+                 List.iter states ~f:(fun (_, op, args) -> Search_state.insert search_state cost value op args);
+                 inserted := true);
+
+          List.filter_map states ~f:(fun (v, inserted, op, args, states) ->
+              if not !inserted then (
+                List.iter states ~f:(fun (value, op, args) -> Search_state.insert search_state cost value op args);
+                Some (v, op, args))
+              else None))
 
       method check_states states =
         List.find_map states ~f:(fun (s, op, args) ->

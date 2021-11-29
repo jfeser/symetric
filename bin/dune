@@ -19,4 +19,11 @@
  (preprocess
   (pps ppx_jane)))
 
+(executable
+ (name vp_test)
+ (modules vp_test)
+ (libraries core iter staged_synth vpt core_bench)
+ (preprocess
+  (pps ppx_jane)))
+
 
