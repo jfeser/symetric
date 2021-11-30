@@ -49,7 +49,8 @@ let benchmarks =
     (* circle; *)
     (* two_circle; *)
     (* simple_e; *)
-    letter_e;
+    (* letter_e; *)
+    checkerboard;
     (* (\* simple_e; (\\* circle; *\\) letter_e; *\) circle; *)
     (* two_circle; *)
     three_circle;

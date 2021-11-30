@@ -103,18 +103,18 @@ let synth ?(use_normalize = true) ?(use_distance = `True) size prog (target : Sc
         Fmt.epr "@[<hv>%s %f:@ %a@.%a@]%!" msg (distance state target) (Program.pp Op.pp) prog (Value.pp ectx) state;
         print_s [%message (prog : Op.t Program.t)]
   in
-  let on_close_state prog state =
+  let _on_close_state prog state =
     let d = distance state target in
     if Float.(d < infinity) then match_prog "Before local search" prog state
   in
-  let after_local_search = match_prog "After local search" in
+  let _after_local_search = match_prog "After local search" in
 
-  let on_existing state state' =
+  let _on_existing state state' =
     Fmt.epr "@[<hv>Close existing state:@ %a@.%a@]%!" (Value.pp ectx) state (Value.pp ectx) state'
   in
-  let after_local_search = match_prog "After local search" in
+  let _after_local_search = match_prog "After local search" in
 
-  let on_groups groups =
+  let _on_groups groups =
     List.iter groups ~f:(function
       | (value, _, _) :: rest ->
           Fmt.epr "@[<hv>Group representative %f:@ %a@]\n%!" (distance target value) (Value.pp ectx) value;
@@ -123,19 +123,12 @@ let synth ?(use_normalize = true) ?(use_distance = `True) size prog (target : Sc
       | _ -> ())
   in
 
-  let on_find_term (Program.Apply ((_, vs), _)) =
+  let _on_find_term (Program.Apply ((_, vs), _)) =
     List.iter vs ~f:(fun v -> Fmt.epr "@[<hv>Potential solution state:@ %a@]%!" (Value.pp ectx) v)
   in
 
   let ctx =
-    Synth.Ctx.create ~search_width:100 ~verbose:true ~distance ?unnormalize ?normalize
-      ~search_thresh:
-        (Top_k 15)
-        (* ~on_groups *)
-        (* ~after_local_search *)
-      ~find_term:(prog, on_find_term) (* ~on_close_state *)
-      (* (\* ~on_close_state ~after_local_search *\) *)
-      (* (\* ~on_groups *\) ~on_existing *)
-      ectx ops target
+    Synth.Ctx.create ~search_width:100 ~verbose:true ~distance ?unnormalize ?normalize ~search_thresh:(Top_k 15) ectx
+      ops target
   in
   (new Synth.synthesizer ctx)#run
