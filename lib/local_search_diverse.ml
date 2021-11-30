@@ -270,8 +270,16 @@ module Make (Lang : Lang_intf) = struct
       method fill cost =
         let new_states = self#generate_states cost in
         if ctx.verbose then Fmt.epr "Inserting %d states...\n%!" @@ List.length new_states;
-        let new_states, time = with_time (fun () -> self#insert_states_ cost new_states) in
-        if ctx.verbose then Fmt.epr "Inserted %d states in %a.\n%!" (List.length new_states) Time.Span.pp time;
+
+        (* Group new states by type and insert *)
+        List.map new_states ~f:(fun ((_, op, _) as state) -> (Op.ret_type op, state))
+        |> List.group_by (module Type)
+        |> List.iter ~f:(fun (type_, states) ->
+               let new_states, time = with_time (fun () -> self#insert_states_ cost type_ new_states) in
+               if ctx.verbose then
+                 Fmt.epr "Inserted %d %a states in %a.\n%!" (List.length new_states) Sexp.pp
+                   ([%sexp_of: Type.t] type_)
+                   Time.Span.pp time);
 
         Option.iter ctx.find_term ~f:(fun (t, f) ->
             Fmt.epr "Looking for close terms...\n%!";
@@ -296,7 +304,7 @@ module Make (Lang : Lang_intf) = struct
       (*         with _ -> ()); *)
       (*        Fmt.epr "@[<hv>State %f:@ %a@]\n%!" d (Value0.pp ctx.ectx) (Value.value v)); *)
 
-      method insert_states_ cost states =
+      method insert_states_ cost type_ states =
         let states =
           List.map states ~f:(fun ((v, _, _) as x) -> (v, x))
           |> List.group_by (module Value)
@@ -318,25 +326,24 @@ module Make (Lang : Lang_intf) = struct
             @@ List.filter states ~f:(fun (v, _, op, _, _) ->
                    not @@ Search_state.mem search_state { value = v; type_ = Op.ret_type op }));
 
-          let annot_dist (v, _, _, _, _) (v', _, _, _, _) = ctx.distance v v' in
-          let query = Vpt.create annot_dist `Random states in
-          let reference =
-            Search_state.states ~type_:Type.output search_state |> Iter.to_list |> Vpt.create ctx.distance `Random
+          let reference = Search_state.states ~type_ search_state |> Iter.to_list |> Vpt.create ctx.distance `Random in
+          let insert key states =
+            List.iter states ~f:(fun (_, op, args) -> Search_state.insert search_state cost key op args)
           in
-
-          print_s [%message (Vpt.length query : int) (Vpt.length reference : int)];
-
-          (* Find close states and insert *)
-          Vpt.range (fun (v, _, _, _, _) v' -> ctx.distance v v') 0.0 ctx.thresh query reference
-          |> Iter.iter (fun ((value, inserted, op, args, states), v') ->
-                 List.iter states ~f:(fun (_, op, args) -> Search_state.insert search_state cost value op args);
-                 inserted := true);
-
-          List.filter_map states ~f:(fun (v, inserted, op, args, states) ->
-              if not !inserted then (
-                List.iter states ~f:(fun (value, op, args) -> Search_state.insert search_state cost value op args);
-                Some (v, op, args))
-              else None))
+          List.fold states ~init:[] ~f:(fun kept (v, _, _, _, states) ->
+              let inserted = ref false in
+              Vpt.neighbors ctx.distance v ctx.thresh reference
+              |> Iter.iter (fun v' ->
+                     inserted := true;
+                     insert v' states);
+              List.iter kept ~f:(fun v' ->
+                  if Float.(ctx.distance v v' < ctx.thresh) then (
+                    inserted := true;
+                    insert v' states));
+              if !inserted then kept
+              else (
+                insert v states;
+                v :: kept)))
 
       method check_states states =
         List.find_map states ~f:(fun (s, op, args) ->
