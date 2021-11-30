@@ -295,15 +295,6 @@ module Make (Lang : Lang_intf) = struct
           Fmt.epr "Finished cost %d\n%!" cost;
           Search_state.print_stats search_state)
 
-      (* Search_state.search search_state ~cost ~type_:Type.output *)
-      (* |> List.map ~f:(fun v -> (ctx.distance v ctx.output, v)) *)
-      (* |> List.sort ~compare:(fun (d, _) (d', _) -> [%compare: float] d d') *)
-      (* |> (fun l -> List.take l 10) *)
-      (* |> List.iter ~f:(fun (d, v) -> *)
-      (*        (try print_s [%message (Search_state.program_exn search_state Type.output v : Op.t Program.t)] *)
-      (*         with _ -> ()); *)
-      (*        Fmt.epr "@[<hv>State %f:@ %a@]\n%!" d (Value0.pp ctx.ectx) (Value.value v)); *)
-
       method insert_states_ cost type_ states =
         let states =
           List.map states ~f:(fun ((v, _, _) as x) -> (v, x))
