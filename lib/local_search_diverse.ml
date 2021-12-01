@@ -139,14 +139,17 @@ module Make (Lang : Lang_intf) = struct
 
       val search_state = Search_state.create ()
 
-      method local_search ~target =
-        Local_search.of_unnormalize_tabu ~max_tabu:ctx.tabu_length ~target ~dist:ctx.distance
-          (module Op)
-          (module Value)
-          ctx.unnormalize
-          (Program.eval (Value.eval ctx.ectx))
+      method local_search ~target size value op args =
+        Search_state.local_search ~max_tabu:ctx.tabu_length search_state (Value.eval ctx.ectx) ctx.distance target size
+          value op args
 
-      method search_close_states new_states =
+      (* Local_search.of_unnormalize_tabu ~max_tabu:ctx.tabu_length ~target ~dist:ctx.distance *)
+      (*   (module Op) *)
+      (*   (module Value) *)
+      (*   ctx.unnormalize *)
+      (*   (Program.eval (Value.eval ctx.ectx)) *)
+
+      method search_close_states size new_states =
         let top_k k new_states =
           Iter.of_list new_states
           |> Iter.map (fun ((v, _, _) as s) -> (-.ctx.distance ctx.output v, s))
@@ -171,13 +174,14 @@ module Make (Lang : Lang_intf) = struct
         let examined = ref 0 in
         let solution =
           search_states
+          |> Iter.filter (fun (_, (_, op, _)) -> [%compare.equal: Type.t] Type.output (Op.ret_type op))
           |> Iter.find_map (fun (_, (value, op, args)) ->
                  let center = Search_state.random_program_of_op_args_exn search_state op args in
                  ctx.on_close_state center (Value.value value);
 
                  let last_state = ref None in
                  let m_solution =
-                   self#local_search ~target:ctx.output center
+                   self#local_search ~target:ctx.output size value op args
                    |> Iter.take ctx.search_width
                    |> Iter.find_mapi (fun step p ->
                           incr examined;
@@ -215,7 +219,7 @@ module Make (Lang : Lang_intf) = struct
             |> Program.map ~f:(fun (op, v) -> (op, List.map ~f:Value.value v))
             |> f);
 
-        let solution, n_searched = self#search_close_states new_states in
+        let solution, n_searched = self#search_close_states cost new_states in
         if ctx.verbose then Fmt.epr "Searched %d close states.\n%!" n_searched;
         Option.iter solution ~f:(fun _ -> failwith "found solution");
 

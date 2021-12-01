@@ -243,16 +243,7 @@ let of_unnormalize_tabu (type op value) ?(max_tabu = 1000) ~dist ~target (module
     Iter.of_list choices |> Iter.sample n_sample |> Iter.of_array
     |> Iter.top_k ~cmp (max_tabu + 1)
     |> Iter.map (fun (d, x) -> (-.d, x))
-    |> Iter.sort ~cmp
-    (* |> Iter.map (fun ((d, (t' : State.t)) as x) -> *)
-    (*        print_s *)
-    (*          [%message *)
-    (*            ([%compare.equal: Value.t] t.value t'.value : bool) *)
-    (*              (d : float) *)
-    (*              (t.State.program : Op.t Program.t) *)
-    (*              (t'.program : Op.t Program.t)]; *)
-    (*        x) *)
-    |> Iter.map Tuple.T2.get2
+    |> Iter.sort ~cmp |> Iter.map Tuple.T2.get2
   in
 
   tabu ~max_tabu ~neighbors (module State) { program = start; value = eval start }

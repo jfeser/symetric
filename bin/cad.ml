@@ -45,7 +45,7 @@ let checkerboard = Op.(repl 0 8 4 (union (repl 9 0 4 (rect 0 0 3 3)) (repl 9 0 3
 
 let benchmarks =
   [
-    (* two_circle; *)
+    two_circle;
     (* circle; *)
     (* two_circle; *)
     (* simple_e; *)

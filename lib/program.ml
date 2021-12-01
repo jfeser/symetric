@@ -1,6 +1,10 @@
 exception Eval_error of Sexp.t [@@deriving sexp]
 
-type 'o t = Apply of 'o * 'o t list [@@deriving compare, equal, hash, sexp]
+module T = struct
+  type 'o t = Apply of 'o * 'o t list
+end
+
+type 'o t = 'o T.t = Apply of 'o * 'o t list [@@deriving compare, equal, hash, sexp]
 
 let rec pp pp_op fmt (Apply (op, args)) =
   if List.is_empty args then pp_op fmt op
