@@ -225,7 +225,15 @@ module Make (Lang : Lang_intf) = struct
 
         if ctx.verbose then (
           Fmt.epr "Finished cost %d\n%!" cost;
-          Search_state.print_stats search_state)
+          Search_state.print_stats search_state);
+
+        if cost = 9 then (
+          Out_channel.with_file "search_state.sexp" ~f:(fun ch ->
+              Sexp.output ch @@ [%sexp_of: Search_state.t] search_state);
+          exit 1);
+        Out_channel.with_file "search_state.dot" ~f:(fun ch ->
+            let fmt = Format.formatter_of_out_channel ch in
+            Search_state.pp_dot fmt search_state)
 
       method insert_states_ cost type_ states =
         let states =
@@ -251,7 +259,7 @@ module Make (Lang : Lang_intf) = struct
 
           let reference = Search_state.states ~type_ search_state |> Iter.to_list |> Vpt.create ctx.distance `Random in
           let insert key states =
-            List.iter states ~f:(fun (_, op, args) -> Search_state.insert search_state cost key op args)
+            List.iter states ~f:(fun (value, op, args) -> Search_state.insert ~key search_state cost value op args)
           in
           List.fold states ~init:[] ~f:(fun kept (v, _, _, _, states) ->
               let inserted = ref false in

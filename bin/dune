@@ -26,4 +26,11 @@
  (preprocess
   (pps ppx_jane)))
 
+(executable
+ (name search_test)
+ (modules search_test)
+ (libraries core iter staged_synth vpt core_bench)
+ (preprocess
+  (pps ppx_jane)))
+
 
