@@ -320,7 +320,7 @@ module Make (Lang : Lang_intf) = struct
         let%bind xs' = all_map ~f xs in
         return (x' :: xs')
 
-  let rec local_search_direct ss eval dist target (class_ : TValue.t) =
+  let rec local_search_direct_ ss eval dist target (class_ : TValue.t) =
     if [%compare.equal: Value.t] target class_.value then Some (program_of_class_exn ss class_)
     else
       let paths = H.find_exn ss.paths class_ in
@@ -337,6 +337,7 @@ module Make (Lang : Lang_intf) = struct
       match solution_m with
       | Some s -> Some s
       | None ->
+          print_s [%message (Queue.length paths : int)];
           Iter.of_queue paths
           |> Iter.map (fun (p : Path.t) -> (dist target p.value, p))
           |> Iter.sort ~cmp:(fun (d, _) (d', _) -> [%compare: float] d d')
@@ -351,4 +352,60 @@ module Make (Lang : Lang_intf) = struct
                           all_map args' ~f:(fun (v, c) -> local_search_direct ss eval dist v c)
                         else None)
                  |> Option.map ~f:(fun arg_progs -> Apply (p.op, arg_progs)))
+
+  and local_search_direct ss eval dist target class_ =
+    let ret = local_search_direct_ ss eval dist target class_ in
+    print_s [%message (class_ : TValue.t) (ret : Op.t Program.t option)];
+    ret
+
+  let list_set l i x = List.mapi l ~f:(fun j y -> if i = j then x else y)
+
+  let rec local_search2 ss cost eval dist (class_ : TValue.t) : _ Gen.t =
+    let mk_heap () = Pairing_heap.create ~cmp:(fun (d, _) (d', _) -> [%compare: float] d d') () in
+    let path_heap = mk_heap () in
+    H.find_exn ss.paths class_
+    |> Queue.iter ~f:(fun p -> if p.cost <= cost then Pairing_heap.add path_heap (dist p.value, (p, None)));
+    let rec path_candidates () =
+      let path = Pairing_heap.pop path_heap in
+      match path with
+      | None -> None
+      | Some (d, (({ args = [] } as path), None)) -> Some (d, Apply (path.op, []))
+      | Some (d, (({ args = [ args_value ] } as path), None)) ->
+          let args_type = match Op.args_type path.op with [ t ] -> t | _ -> assert false in
+          let dist' v = dist (eval path.op [ v ]) in
+          let alts =
+            local_search2 ss (cost - 1) eval dist' { value = args_value; type_ = args_type }
+            |> Gen.map (fun (d', p) -> (d', Apply (path.op, [ p ])))
+          in
+          Pairing_heap.add path_heap (d, (path, Some alts));
+          path_candidates ()
+      | Some (d, (path, None)) ->
+          let arg_alts =
+            let i = ref 0 in
+            List.map2_exn (Op.args_type path.op) path.args ~f:(fun arg_type arg_value ->
+                let arg_class = TValue.{ value = arg_value; type_ = arg_type } in
+                let idx = !i in
+                let dist' v = dist (eval path.op @@ list_set path.args idx v) in
+                incr i;
+                local_search2 ss (cost - 1) eval dist' arg_class)
+          in
+          let alts =
+            arg_alts
+            |> List.map ~f:(Gen.take 100)
+            |> Gen.list_product
+            |> Gen.map (fun args ->
+                   let _, args = List.unzip args in
+                   let p = Apply (path.op, args) in
+                   (dist (Program.eval eval p), p))
+          in
+          Pairing_heap.add path_heap (d, (path, Some alts));
+          path_candidates ()
+      | Some (_, (path, Some alts)) -> (
+          match alts () with
+          | None -> path_candidates ()
+          | Some (d, x) ->
+              Pairing_heap.add path_heap (d, (path, Some alts));
+              Some (d, x))
+    in
+    path_candidates
 end

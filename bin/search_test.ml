@@ -23,8 +23,10 @@ let () =
           ~f:(function
             | Value.Scene s as v ->
                 Fmt.pr "Searching:\n%a\n%!" Scene.pp (size, s);
-                Search_state.local_search_direct search_state (Value.eval ectx) distance target_value
+                Search_state.local_search2 search_state 9 (Value.eval ectx) (distance target_value)
                   { type_ = key.type_; value = v }
-                |> Option.iter ~f:(fun p -> raise_s [%message "found program" (p : Op.t Program.t)])
+                |> Gen.iter (fun (d, p) ->
+                       if [%compare.equal: Value.t] target_value (Program.eval (Value.eval ectx) p) then
+                         raise_s [%message "found program" (d : float) (p : Op.t Program.t)])
             | _ -> ())
           q)
