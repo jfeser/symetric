@@ -125,7 +125,6 @@ let synth ?(use_normalize = true) ?(use_distance = `True) size prog (target : Sc
   in
 
   let ctx =
-    Synth.Ctx.create ~search_width:100 ~verbose:true ~distance ?unnormalize ?normalize ~search_thresh:(Top_k 15)
-      ~on_close_state ectx ops target
+    Synth.Ctx.create ~search_width:100 ~verbose:true ~distance ~search_thresh:(Top_k 15) ~on_close_state ectx ops target
   in
   (new Synth.synthesizer ctx)#run

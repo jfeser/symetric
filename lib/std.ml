@@ -105,6 +105,18 @@ module Iter = struct
         (3 1 1) (3 1 2) (3 1 3) (3 2 1) (3 2 2) (3 2 3) (3 3 1) (3 3 2) (3 3 3))) |}]
 end
 
+module Gen = struct
+  include Gen
+
+  let list_product l =
+    match List.rev l with
+    | [] -> Gen.empty
+    | x :: xs ->
+        List.fold_left xs
+          ~init:(Gen.map (fun v -> [ v ]) x)
+          ~f:(fun vs x -> Gen.product x vs |> Gen.map (fun (v, vs) -> v :: vs))
+end
+
 module Array = struct
   let mean a =
     let n = Array.sum (module Float) a ~f:Fun.id and d = Float.of_int @@ Array.length a in
@@ -134,4 +146,9 @@ module Seq = struct
   include OSeq
 
   let sexp_of_t sexp_of_x s = [%sexp_of: x list] @@ to_list s
+
+  let of_queue q =
+    let l = Queue.length q in
+    let rec aux a i () = if i = l then Nil else Cons (Queue.get q i, aux a (i + 1)) in
+    aux q 0
 end

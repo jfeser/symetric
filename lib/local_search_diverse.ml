@@ -45,7 +45,6 @@ module Make (Lang : Lang_intf) = struct
 
   module Lang = struct
     include Lang
-    module Value = Memoized_value.Make_cached (Op) (Value)
 
     module Op = struct
       include Op
@@ -108,10 +107,10 @@ module Make (Lang : Lang_intf) = struct
         search_thresh;
         unnormalize;
         normalize;
-        distance = (fun v v' -> distance (Value.value v) (Value.value v'));
+        distance;
         search_close_states_time = ref Time.Span.zero;
         sample_states_time = ref Time.Span.zero;
-        output = Value.create output;
+        output;
         ectx;
         verbose;
         ops;
@@ -138,6 +137,8 @@ module Make (Lang : Lang_intf) = struct
       val close_states = Hashtbl.create (module Value)
 
       val search_state = Search_state.create ()
+
+      method get_search_state = search_state
 
       method local_search ~target size value op args =
         Search_state.local_search ~max_tabu:ctx.tabu_length search_state (Value.eval ctx.ectx) ctx.distance target size
@@ -177,7 +178,7 @@ module Make (Lang : Lang_intf) = struct
           |> Iter.filter (fun (_, (_, op, _)) -> [%compare.equal: Type.t] Type.output (Op.ret_type op))
           |> Iter.find_map (fun (_, (value, op, args)) ->
                  let center = Search_state.random_program_of_op_args_exn search_state op args in
-                 ctx.on_close_state center (Value.value value);
+                 ctx.on_close_state center value;
 
                  let last_state = ref None in
                  let m_solution =
@@ -187,8 +188,8 @@ module Make (Lang : Lang_intf) = struct
                           incr examined;
                           let value = Program.eval (Value.eval ctx.ectx) p in
 
-                          ctx.on_close_state p (Value.value value);
-                          last_state := Some (p, Value.value value);
+                          ctx.on_close_state p value;
+                          last_state := Some (p, value);
                           if [%compare.equal: Value.t] value ctx.output then (
                             eprint_s [%message "local search" (step : int)];
                             Option.return p)
@@ -215,9 +216,7 @@ module Make (Lang : Lang_intf) = struct
 
         Option.iter ctx.find_term ~f:(fun (t, f) ->
             Fmt.epr "Looking for close terms...\n%!";
-            Search_state.find_term search_state t
-            |> Program.map ~f:(fun (op, v) -> (op, List.map ~f:Value.value v))
-            |> f);
+            Search_state.find_term search_state t |> f);
 
         let solution, n_searched = self#search_close_states cost new_states in
         if ctx.verbose then Fmt.epr "Searched %d close states.\n%!" n_searched;
@@ -225,15 +224,7 @@ module Make (Lang : Lang_intf) = struct
 
         if ctx.verbose then (
           Fmt.epr "Finished cost %d\n%!" cost;
-          Search_state.print_stats search_state);
-
-        if cost = 9 then (
-          Out_channel.with_file "search_state.sexp" ~f:(fun ch ->
-              Sexp.output ch @@ [%sexp_of: Search_state.t] search_state);
-          exit 1);
-        Out_channel.with_file "search_state.dot" ~f:(fun ch ->
-            let fmt = Format.formatter_of_out_channel ch in
-            Search_state.pp_dot fmt search_state)
+          Search_state.print_stats search_state)
 
       method insert_states_ cost type_ states =
         let states =

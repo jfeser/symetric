@@ -360,52 +360,106 @@ module Make (Lang : Lang_intf) = struct
 
   let list_set l i x = List.mapi l ~f:(fun j y -> if i = j then x else y)
 
-  let rec local_search2 ss cost eval dist (class_ : TValue.t) : _ Gen.t =
-    let mk_heap () = Pairing_heap.create ~cmp:(fun (d, _) (d', _) -> [%compare: float] d d') () in
-    let path_heap = mk_heap () in
-    H.find_exn ss.paths class_
-    |> Queue.iter ~f:(fun p -> if p.cost <= cost then Pairing_heap.add path_heap (dist p.value, (p, None)));
-    let rec path_candidates () =
-      let path = Pairing_heap.pop path_heap in
-      match path with
-      | None -> None
-      | Some (d, (({ args = [] } as path), None)) -> Some (d, Apply (path.op, []))
-      | Some (d, (({ args = [ args_value ] } as path), None)) ->
-          let args_type = match Op.args_type path.op with [ t ] -> t | _ -> assert false in
-          let dist' v = dist (eval path.op [ v ]) in
-          let alts =
-            local_search2 ss (cost - 1) eval dist' { value = args_value; type_ = args_type }
-            |> Gen.map (fun (d', p) -> (d', Apply (path.op, [ p ])))
-          in
-          Pairing_heap.add path_heap (d, (path, Some alts));
-          path_candidates ()
-      | Some (d, (path, None)) ->
-          let arg_alts =
-            let i = ref 0 in
-            List.map2_exn (Op.args_type path.op) path.args ~f:(fun arg_type arg_value ->
-                let arg_class = TValue.{ value = arg_value; type_ = arg_type } in
-                let idx = !i in
-                let dist' v = dist (eval path.op @@ list_set path.args idx v) in
-                incr i;
-                local_search2 ss (cost - 1) eval dist' arg_class)
-          in
-          let alts =
-            arg_alts
-            |> List.map ~f:(Gen.take 100)
-            |> Gen.list_product
-            |> Gen.map (fun args ->
-                   let _, args = List.unzip args in
-                   let p = Apply (path.op, args) in
-                   (dist (Program.eval eval p), p))
-          in
-          Pairing_heap.add path_heap (d, (path, Some alts));
-          path_candidates ()
-      | Some (_, (path, Some alts)) -> (
-          match alts () with
-          | None -> path_candidates ()
-          | Some (d, x) ->
-              Pairing_heap.add path_heap (d, (path, Some alts));
-              Some (d, x))
+  (* let rec local_search2 ss cost eval dist (class_ : TValue.t) : _ Gen.t = *)
+  (*   let mk_heap () = Pairing_heap.create ~cmp:(fun (d, _) (d', _) -> [%compare: float] d d') () in *)
+  (*   let path_heap = mk_heap () in *)
+  (*   H.find_exn ss.paths class_ *)
+  (*   |> Queue.iter ~f:(fun p -> if p.cost <= cost then Pairing_heap.add path_heap (dist p.value, (p, None))); *)
+  (*   let rec path_candidates () = *)
+  (*     let path = Pairing_heap.pop path_heap in *)
+  (*     match path with *)
+  (*     | None -> None *)
+  (*     | Some (d, (({ args = [] } as path), None)) -> Some (d, Apply (path.op, [])) *)
+  (*     | Some (d, (({ args = [ args_value ] } as path), None)) -> *)
+  (*         let args_type = match Op.args_type path.op with [ t ] -> t | _ -> assert false in *)
+  (*         let dist' v = dist (eval path.op [ v ]) in *)
+  (*         let alts = *)
+  (*           local_search2 ss (cost - 1) eval dist' { value = args_value; type_ = args_type } *)
+  (*           |> Gen.map (fun (d', p) -> (d', Apply (path.op, [ p ]))) *)
+  (*         in *)
+  (*         Pairing_heap.add path_heap (d, (path, Some alts)); *)
+  (*         path_candidates () *)
+  (*     | Some (d, (path, None)) -> *)
+  (*         let arg_alts = *)
+  (*           let i = ref 0 in *)
+  (*           List.map2_exn (Op.args_type path.op) path.args ~f:(fun arg_type arg_value -> *)
+  (*               let arg_class = TValue.{ value = arg_value; type_ = arg_type } in *)
+  (*               let idx = !i in *)
+  (*               let dist' v = dist (eval path.op @@ list_set path.args idx v) in *)
+  (*               incr i; *)
+  (*               Gen.peek @@ local_search2 ss (cost - 1) eval dist' arg_class) *)
+  (*         in *)
+  (*         let alts = *)
+  (*           List.map arg_alts ~f:(fun alts -> *)
+  (*               let current = Option.value_exn (Gen.next alts) in *)
+  (*               let next = Gen.next alts in *)
+  (*               (current, next, alts)) *)
+  (*             |>  *)
+  (*           Gen.unfold (fun arg_alts -> *)
+  (*               let idx = List.mapi arg_alts ~f:(function *)
+  (*                       | ((d, _), Some (d', _), _) -> d)) *)
+
+  (*             |> Gen.list_product *)
+  (*           |> Gen.map (fun args -> *)
+  (*                  let _, args = List.unzip args in *)
+  (*                  let p = Apply (path.op, args) in *)
+  (*                  (dist (Program.eval eval p), p)) *)
+  (*         in *)
+  (*         Pairing_heap.add path_heap (d, (path, Some alts)); *)
+  (*         path_candidates () *)
+  (*     | Some (_, (path, Some alts)) -> ( *)
+  (*         match alts () with *)
+  (*         | None -> path_candidates () *)
+  (*         | Some (d, x) -> *)
+  (*             Pairing_heap.add path_heap (d, (path, Some alts)); *)
+  (*             Some (d, x)) *)
+  (*   in *)
+  (*   path_candidates *)
+
+  let to_grammar ss op_pp (class_ : TValue.t) =
+    let syms = Hashtbl.create (module TValue) in
+    let id = ref 0 in
+    let sym_of class_ =
+      match Hashtbl.find syms class_ with
+      | Some s -> s
+      | None ->
+          let sym = sprintf "x%d" !id in
+          incr id;
+          Hashtbl.set syms ~key:class_ ~data:sym;
+          sym
     in
-    path_candidates
+
+    let rec to_grammar class_ =
+      Fmt.pr "@[<hov 4>%s :=@ " @@ sym_of class_;
+      Hashtbl.find_exn ss.paths class_
+      |> Queue.iter ~f:(fun p ->
+             Fmt.pr "@[<hv>%a(" op_pp p.op;
+             Fmt.pr "%a)@]@ | " (Fmt.list ~sep:Fmt.comma Fmt.string)
+             @@ List.map2_exn (Op.args_type p.op) p.args ~f:(fun arg_type arg_value ->
+                    sym_of TValue.{ value = arg_value; type_ = arg_type }));
+      Fmt.pr "@]\n"
+    in
+
+    to_grammar class_
+
+  let rec local_greedy ss cost eval dist (class_ : TValue.t) =
+    let _, best_path =
+      let all_paths = H.find_exn ss.paths class_ in
+      let eligible_paths =
+        Iter.of_queue all_paths
+        |> Iter.filter (fun (p : Path.t) -> p.cost <= cost)
+        |> Iter.map (fun (p : Path.t) -> (dist p.value, p))
+        |> Iter.to_list
+      in
+      let n_sample = max 1 (List.length eligible_paths / 5) in
+      Iter.of_list eligible_paths |> Iter.sample n_sample |> Iter.of_array
+      |> Iter.min_exn ~lt:(fun (d, _) (d', _) -> Float.(d < d'))
+    in
+    List.zip_exn (Op.args_type best_path.op) best_path.args
+    |> List.mapi ~f:(fun i (arg_type, arg_value) ->
+           let arg_class = TValue.{ value = arg_value; type_ = arg_type } in
+           let dist' v = dist (eval best_path.op @@ list_set best_path.args i v) in
+           local_greedy ss (cost - 1) eval dist' arg_class)
+    |> Option.all
+    |> Option.map ~f:(fun arg_progs -> Apply (best_path.op, arg_progs))
 end
