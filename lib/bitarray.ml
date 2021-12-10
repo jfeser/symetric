@@ -82,6 +82,8 @@ let%expect_test "iteri-in-bounds" =
   let len = 99 in
   create len false |> iteri ~f:(fun i _ -> [%test_pred: int] (fun i -> 0 <= i && i < len) i)
 
+let is_empty a = Array.exists a.buf ~f:(fun x -> x <> 0)
+
 let not a = { a with buf = Array.map a.buf ~f:lnot }
 
 let and_ a b = { len = a.len; buf = Array.map2_exn a.buf b.buf ~f:( land ) }

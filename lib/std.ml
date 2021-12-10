@@ -58,6 +58,8 @@ module Iter = struct
 
   let of_set s k = Core.Set.iter ~f:k s
 
+  let of_hashtbl x k = Hashtbl.iteri ~f:(fun ~key ~data -> k (key, data)) x
+
   let to_set (type t w) m iter =
     let module C = (val m : Comparator.S with type t = t and type comparator_witness = w) in
     let l = to_list iter |> List.sort ~compare:C.comparator.compare in

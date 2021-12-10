@@ -24,15 +24,6 @@ module Size = struct
       (0, size.yres - 1)
 
   let%expect_test "" =
-    print_s [%message (pixel_seq @@ create ~xres:5 ~yres:3 () : (int * int) Seq.t)];
-    [%expect
-      {|
-      ("pixel_seq @@ (create ~xres:5 ~yres:3 ())"
-       ((0 2 0.5 2.5) (1 2 1.5 2.5) (2 2 2.5 2.5) (3 2 3.5 2.5) (4 2 4.5 2.5)
-        (0 1 0.5 1.5) (1 1 1.5 1.5) (2 1 2.5 1.5) (3 1 3.5 1.5) (4 1 4.5 1.5)
-        (0 0 0.5 0.5) (1 0 1.5 0.5) (2 0 2.5 0.5) (3 0 3.5 0.5) (4 0 4.5 0.5))) |}]
-
-  let%expect_test "" =
     for _ = 0 to 10 do
       let xres = 1 + Random.int 10 and yres = 1 + Random.int 10 in
       [%test_result: int] (Seq.length @@ pixel_seq @@ create ~xres ~yres ()) ~expect:(xres * yres)
@@ -84,10 +75,17 @@ let get x = Bitarray.get (pixels x)
 
 let[@inline] hamming c c' = Bitarray.hamming_distance (pixels c) (pixels c')
 
+let is_empty s = Bitarray.is_empty (pixels s)
+
 let jaccard c c' =
   let h = hamming c c' in
   let l = Bitarray.length (pixels c) in
   Float.(of_int h / of_int l)
+
+let inter c c' =
+  let c = pixels c and c' = pixels c' in
+  let union = Bitarray.(Float.of_int @@ hamming_weight (or_ c c')) in
+  if Float.(union = 0.0) then 1.0 else 1.0 -. Bitarray.(Float.((of_int @@ hamming_weight (and_ c c')) /. union))
 
 let shift (size : Size.t) s dx dy =
   init size ~f:(fun _ x y ->
@@ -97,22 +95,8 @@ let shift (size : Size.t) s dx dy =
 let crop ~old:(size : Size.t) ~new_:(size' : Size.t) s = init size' ~f:(fun _ x y -> get s @@ Size.offset size x y)
 
 let edges (size : Size.t) s =
-  let to_int x = if x then 1 else 0 in
-  let pix = pixels s in
-  let get i = to_int @@ Bitarray.get pix i in
-
-  let above i =
-    let i' = i - size.yres in
-    if i' >= 0 then get i' else 0
-  and below i =
-    let i' = i + size.yres in
-    if i' < Bitarray.length pix then get i' else 0
-  and left i = if i mod size.yres = 0 then 0 else get (i - 1)
-  and right i = if (i + 1) mod size.yres = 0 then 0 else get (i + 1) in
-  let pixels =
-    Bitarray.init (size.yres * size.xres) ~f:(fun i -> Bitarray.get pix i && above i + below i + left i + right i < 4)
-  in
-  create pixels
+  let get x y = if x < 0 || x >= size.xres || y < 0 || y >= size.yres then false else get s @@ Size.offset size x y in
+  init size ~f:(fun i x y -> get x y && not (get (x - 1) y && get (x + 1) y && get x (y - 1) && get x (y + 1)))
 
 let corners (size : Size.t) s =
   let pix = pixels s in

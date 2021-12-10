@@ -428,22 +428,38 @@ module Make (Lang : Lang_intf) = struct
           Hashtbl.set syms ~key:class_ ~data:sym;
           sym
     in
+    let printed = Hash_set.create (module TValue) in
+    let to_print = Hash_set.create (module TValue) in
 
-    let rec to_grammar class_ =
-      Fmt.pr "@[<hov 4>%s :=@ " @@ sym_of class_;
-      Hashtbl.find_exn ss.paths class_
-      |> Queue.iter ~f:(fun p ->
-             Fmt.pr "@[<hv>%a(" op_pp p.op;
-             Fmt.pr "%a)@]@ | " (Fmt.list ~sep:Fmt.comma Fmt.string)
-             @@ List.map2_exn (Op.args_type p.op) p.args ~f:(fun arg_type arg_value ->
-                    sym_of TValue.{ value = arg_value; type_ = arg_type }));
-      Fmt.pr "@]\n"
+    let rec to_grammar () =
+      match Hash_set.find to_print ~f:(Fun.const true) with
+      | Some class_ when not (Hash_set.mem printed class_) ->
+          Hash_set.add printed class_;
+          Hash_set.remove to_print class_;
+
+          Fmt.pr "@[<hov 4>%s :=@ " @@ sym_of class_;
+          Hashtbl.find_exn ss.paths class_
+          |> Queue.iter ~f:(fun p ->
+                 Fmt.pr "@[<hv>%a(" op_pp p.op;
+                 Fmt.pr "%a)@]@ | " (Fmt.list ~sep:Fmt.comma Fmt.string)
+                 @@ List.map2_exn (Op.args_type p.op) p.args ~f:(fun arg_type arg_value ->
+                        let arg_class = TValue.{ value = arg_value; type_ = arg_type } in
+                        if not (Hash_set.mem printed arg_class) then Hash_set.add to_print arg_class;
+                        sym_of arg_class));
+          Fmt.pr "@]@,";
+          to_grammar ()
+      | Some _ -> to_grammar ()
+      | None -> ()
     in
 
-    to_grammar class_
+    Hash_set.add to_print class_;
+    Fmt.pr "@[<v>";
+    to_grammar ();
+    Fmt.pr "@]"
 
   let rec local_greedy ss cost eval dist (class_ : TValue.t) =
-    let _, best_path =
+    let open Option.Let_syntax in
+    let%bind _, best_path =
       let all_paths = H.find_exn ss.paths class_ in
       let eligible_paths =
         Iter.of_queue all_paths
@@ -451,9 +467,9 @@ module Make (Lang : Lang_intf) = struct
         |> Iter.map (fun (p : Path.t) -> (dist p.value, p))
         |> Iter.to_list
       in
-      let n_sample = max 1 (List.length eligible_paths / 5) in
+      let n_sample = max 1 (List.length eligible_paths / 2) in
       Iter.of_list eligible_paths |> Iter.sample n_sample |> Iter.of_array
-      |> Iter.min_exn ~lt:(fun (d, _) (d', _) -> Float.(d < d'))
+      |> Iter.min ~lt:(fun (d, _) (d', _) -> Float.(d < d'))
     in
     List.zip_exn (Op.args_type best_path.op) best_path.args
     |> List.mapi ~f:(fun i (arg_type, arg_value) ->
