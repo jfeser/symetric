@@ -6,7 +6,7 @@ module S = Synth.Search_state
 
 let size = Scene.Size.create ~xres:13 ~yres:20 ()
 
-let read = true
+let read = false
 
 let () =
   let ectx = Value.Ctx.create size in
