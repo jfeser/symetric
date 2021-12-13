@@ -5,9 +5,7 @@ include struct
   open Dumb_params
 
   let spec = Spec.create ~name:"cad-value" ()
-
   let eval_calls = Spec.add spec @@ Param.float_ref ~name:"eval-calls" ()
-
   let raw_eval_calls = Spec.add spec @@ Param.float_ref ~name:"raw-eval-calls" ()
 
   let embed_fn =
@@ -56,7 +54,6 @@ let pt' ~ylen:stride idx =
   Vector2.{ x = (Float.of_int @@ (idx / stride)) +. 0.5; y = (Float.of_int @@ (idx mod stride)) +. 0.5 }
 
 let pt b idx = pt' ~ylen:(ylen b) idx
-
 let geti b = Bitarray.get (pixels b)
 
 let replicate_is_set repl scene pt =
@@ -196,7 +193,6 @@ module Prog = struct
 end
 
 let hashable = Hashtbl.Hashable.of_key (module Prog)
-
 let table = Hash_queue.create hashable
 
 let rec eval_program params p =
@@ -209,23 +205,16 @@ let rec eval_program params p =
       v
 
 let roots _ = failwith "unimplemented roots"
-
 let to_symb _ = failwith "unimplemented to_symb"
-
 let leq _ = failwith "unimplemented is_subset"
-
 let contains = [%compare.equal: t]
-
 let graphviz_pp _ = failwith "unimplemented pp"
-
 let top _ = failwith "unimplemented top"
 
 open Owl
 
 let to_matrix v = Mat.init (xlen v) (ylen v) (fun i -> if geti v i then 1.0 else 0.0) |> Mat.flip
-
 let ( =. ) = Float.( = )
-
 let ( >. ) = Float.( > )
 
 let of_matrix m =
@@ -250,21 +239,13 @@ let find_mask img mask =
   ret
 
 let ul_corner = Mat.of_arrays [| [| 0.0; 0.0; 0.0 |]; [| 0.0; 1.0; 1.0 |]; [| 0.0; 1.0; 1.0 |] |]
-
 let ur_corner = Mat.of_arrays [| [| 0.0; 0.0; 0.0 |]; [| 1.0; 1.0; 0.0 |]; [| 1.0; 1.0; 0.0 |] |]
-
 let ll_corner = Mat.of_arrays [| [| 0.0; 1.0; 1.0 |]; [| 0.0; 1.0; 1.0 |]; [| 0.0; 0.0; 0.0 |] |]
-
 let lr_corner = Mat.of_arrays [| [| 1.0; 1.0; 0.0 |]; [| 1.0; 1.0; 0.0 |]; [| 0.0; 0.0; 0.0 |] |]
-
 let vert_r = Mat.of_arrays [| [| 0.0; 1.0 |]; [| 0.0; 1.0 |] |]
-
 let vert_l = Mat.of_arrays [| [| 1.0; 0.0 |]; [| 1.0; 0.0 |] |]
-
 let hori_u = Mat.of_arrays [| [| 0.0; 0.0 |]; [| 1.0; 1.0 |] |]
-
 let hori_l = Mat.of_arrays [| [| 1.0; 1.0 |]; [| 0.0; 0.0 |] |]
-
 let masks = [| (* ul_corner; ur_corner; ll_corner; lr_corner; *) vert_r; vert_l; hori_u; hori_l |]
 
 let features v =

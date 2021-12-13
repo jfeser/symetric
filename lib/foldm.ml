@@ -1,7 +1,6 @@
 module FoldM0
     (M : Monad.S) (F : sig
       type t
-
       type elem
 
       val fold : t -> init:'b -> f:('b -> elem -> 'b) -> 'b
@@ -39,7 +38,6 @@ struct
   let fold (type a) ~f ~init (c : a F.t) =
     let module F0 = struct
       type t = a F.t
-
       type elem = a
 
       let fold = F.fold
@@ -60,7 +58,6 @@ struct
   let fold (type a b) ~f ~init (c : (a, b) F.t) =
     let module F0 = struct
       type t = (a, b) F.t
-
       type elem = a
 
       let fold = F.fold

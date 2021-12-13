@@ -1,11 +1,9 @@
 open! Core
 open Staged_synth
-
 module Core = Cstage_core.Make ()
 
 module Code = struct
   module Core = Cstage_core.Make ()
-
   include Core
   include Cstage.Code (Core)
   module Set = Cstage_set.Hash_set (Core)
@@ -36,9 +34,7 @@ let main () =
   end in
   let module Sketch = struct
     let background = [ "S"; "V"; "C"; "CO"; "U"; "UOX"; "UOY"; "UOZ" ]
-
     let input = "V"
-
     let output = "E"
   end in
   let open Synth.Make (Sketch) (C) (Cad.Lang) (Cad.Cache) in

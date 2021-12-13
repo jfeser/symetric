@@ -124,9 +124,7 @@ module Make (P : Point) = struct
     b < c || d < a
 
   let itv_overlap left right = not (itv_dont_overlap left right)
-
   let square (x : float) : float = x *. x
-
   let float_compare (x : float) (y : float) : int = if x < y then -1 else if x > y then 1 else 0
   (* x = y *)
 
@@ -317,7 +315,6 @@ module Make (P : Point) = struct
     loop [] tree
 
   let is_empty = function Empty -> true | Node _ -> false
-
   let root = function Empty -> raise Not_found | Node { vp } -> vp
 
   (* test if the tree invariant holds.

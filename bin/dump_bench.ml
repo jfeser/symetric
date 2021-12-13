@@ -17,7 +17,6 @@ let no_total_counter ?message ?pp ?width ?(sampling_interval = 1) () =
   |> box |> periodic sampling_interval |> accumulator Int64.( + ) 0L |> make ~init:0L
 
 let bar msg = no_total_counter ~message:msg ~pp:iters ()
-
 let tbar msg total = Progress.counter ~total ~message:msg ~pp:iters ()
 
 let sequence_progress bar =

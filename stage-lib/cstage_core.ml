@@ -4,7 +4,6 @@ module type S = sig
   type mark = unit -> bool
 
   type typ = Univ_map.t [@@deriving sexp_of]
-
   and expr = { ebody : string; ret : string; etype : typ; efree : (string * mark) list; eeffect : bool }
 
   type var_decl = { vname : string; vtype : typ; init : expr option }
@@ -25,34 +24,26 @@ module type S = sig
   }
 
   type 'a t = expr [@@deriving sexp_of]
-
   type 'a ctype = typ [@@deriving sexp_of]
 
   val type_of : expr -> typ
-
   val cast : expr -> expr
 
   module Type : sig
     val name : typ -> string
-
     val create : name:string -> typ
-
     val add_exn : typ -> key:'a Type_equal.Id.t -> data:'a -> typ
   end
 
   type fmt_arg = C of expr | S of string
 
   val eformat : ?has_effect:bool -> string -> typ -> string -> (string * fmt_arg) list -> expr
-
   val unit_t : typ
 
   module Func : sig
     val mk_type : typ -> typ -> typ
-
     val arg_t : typ -> typ
-
     val ret_t : typ -> typ
-
     val func : string -> typ -> (expr -> expr) -> expr
 
     (* val of_name : string -> func_decl option *)
@@ -61,19 +52,12 @@ module type S = sig
   end
 
   val add_local : var_decl -> unit
-
   val add_global : var_decl -> unit
-
   val fresh_name : unit -> string
-
   val expr_of_var : var_decl -> expr
-
   val unit : expr
-
   val to_string : expr -> string
-
   val unop : (string -> string, unit, string, string, string, string) format6 -> typ -> expr -> expr
-
   val binop : (string -> string -> string, unit, string, string, string, string) format6 -> typ -> expr -> expr -> expr
 
   module Sexp : sig
@@ -81,13 +65,9 @@ module type S = sig
 
     module List : sig
       val get : expr -> expr -> expr
-
       val length : expr -> expr
-
       val const : expr array -> expr
-
       val init : expr -> (expr -> expr) -> expr
-
       val type_ : typ
     end
 
@@ -96,70 +76,41 @@ module type S = sig
     end
 
     val input : unit -> expr
-
     val print : expr -> expr
-
     val to_list : expr -> expr
-
     val to_atom : expr -> expr
   end
 
   module Bool : sig
     val type_ : typ
-
     val bool : bool -> expr
-
     val ( && ) : expr -> expr -> expr
-
     val ( || ) : expr -> expr -> expr
-
     val not : expr -> expr
-
     val of_sexp : expr -> expr
-
     val sexp_of : expr -> expr
   end
 
   val fresh_var : typ -> mark -> expr
-
   val fresh_decl : ?init:expr -> typ -> expr
-
   val fresh_global : typ -> expr
-
   val let_ : expr -> (expr -> expr) -> expr
-
   val let_global : expr -> (expr -> expr) -> expr
-
   val genlet : expr -> expr
-
   val let_locus : (unit -> expr) -> expr
-
   val with_stackmark : ((unit -> bool) -> 'a) -> 'a
-
   val ite : expr -> (unit -> expr) -> (unit -> expr) -> expr
-
   val for_ : expr -> expr -> expr -> (expr -> expr) -> expr
-
   val seq : expr -> expr -> expr
-
   val sseq : expr list -> expr
-
   val assign : expr -> to_:expr -> expr
-
   val print : string -> expr
-
   val eprint : string -> expr
-
   val exit : expr
-
   val with_comment : string -> expr -> expr
-
   val assert_ : expr -> expr
-
   val add_annot : expr -> 'b Univ_map.Key.t -> 'b -> expr
-
   val find_annot : expr -> 'b Univ_map.Key.t -> 'b option
-
   val return : expr
 end
 
@@ -189,22 +140,16 @@ module Make () : S = struct
   }
 
   type 'a ctype = typ [@@deriving sexp_of]
-
   type 'a t = expr [@@deriving sexp_of]
-
   type fmt_arg = C of expr | S of string
 
   let type_of e = e.etype
-
   let cast = Fun.id
 
   module Type = struct
     let name_k = Univ_map.Key.create ~name:"name" [%sexp_of: string]
-
     let name t = Univ_map.find_exn t name_k
-
     let create ~name = Univ_map.(of_alist_exn Packed.[ T (name_k, name) ])
-
     let add_exn t ~key ~data = Univ_map.add_exn t key data
   end
 
@@ -231,15 +176,10 @@ module Make () : S = struct
     { ebody; ret; etype; efree; eeffect = has_effect || eeffect }
 
   let is_unit = Univ_map.Key.create ~name:"is_unit" [%sexp_of: unit]
-
   let unit_t = Type.create ~name:"int" |> Type.add_exn ~key:is_unit ~data:()
-
   let int_t = Type.create ~name:"int"
-
   let arg_t = Univ_map.Key.create ~name:"arg_t" [%sexp_of: typ]
-
   let ret_t = Univ_map.Key.create ~name:"ret_t" [%sexp_of: typ]
-
   let func_t t1 t2 = Univ_map.(of_alist_exn Packed.[ T (arg_t, t1); T (ret_t, t2) ])
 
   let prog =
@@ -255,24 +195,16 @@ module Make () : S = struct
     { globals = []; funcs = [ main ]; cur_func = main; fresh = Fresh.create () }
 
   let add_local x = prog.cur_func.locals <- x :: prog.cur_func.locals
-
   let add_global x = prog.globals <- x :: prog.globals
-
   let add_func f = prog.funcs <- f :: prog.funcs
-
   let fresh_name () = Fresh.name prog.fresh "x%d"
-
   let expr_of_var { vname; vtype; _ } = { ebody = ""; ret = vname; etype = vtype; efree = []; eeffect = false }
-
   let unit = eformat "0" unit_t "" []
 
   module Func = struct
     let mk_type = func_t
-
     let arg_t t = Univ_map.find_exn t arg_t
-
     let ret_t t = Univ_map.find_exn t ret_t
-
     let of_name n = List.find prog.funcs ~f:(fun f -> String.(f.fname = n))
 
     let func name type_ f =
@@ -389,7 +321,6 @@ namespace std {
     header ^ forward_decls ^ global_decls ^ funcs
 
   let unop fmt type_ x = eformat (sprintf fmt "$(arg)") type_ "" [ ("arg", C x) ]
-
   let binop fmt type_ x x' = eformat (sprintf fmt "$(arg1)" "$(arg2)") type_ "" [ ("arg1", C x); ("arg2", C x') ]
 
   let fresh_var etype m =
@@ -424,9 +355,7 @@ namespace std {
     type 'a t = expr
 
     let let_ = let_
-
     let to_string e = [%sexp_of: expr] e |> Core.Sexp.to_string_hum
-
     let is_well_scoped c = (not c.eeffect) && List.for_all c.efree ~f:(fun (_, m) -> m ())
   end)
 
@@ -487,21 +416,13 @@ for(int $(i) = $(lo); $(i) < $(hi); $(i) += $(step)) {
     { y with ebody = x.ebody ^ y.ebody; efree = x.efree @ y.efree; eeffect = x.eeffect || y.eeffect }
 
   let print s = eformat ~has_effect:true "0" unit_t "std::cout << $(str);" [ ("str", S (sprintf "%S" s)) ]
-
   let eprint s = eformat ~has_effect:true "0" unit_t "std::cerr << $(str);" [ ("str", S (sprintf "%S" s)) ]
-
   let return = eformat ~has_effect:true "0" unit_t "return 0;" []
-
   let exit = eformat ~has_effect:true "0" unit_t "exit(0);" []
-
   let with_comment s e = { e with ebody = sprintf "\n// begin %s\n%s// end %s\n" s e.ebody s }
-
   let assert_ f = eformat ~has_effect:true "0" unit_t "assert($(cond));" [ ("cond", C f) ]
-
   let add_annot e k v = { e with etype = Univ_map.set e.etype k v }
-
   let find_annot e k = Univ_map.find e.etype k
-
   let int x = eformat (sprintf "%d" x) (Type.create ~name:"int") "" []
 
   module Sexp = struct
@@ -509,13 +430,9 @@ for(int $(i) = $(lo); $(i) < $(hi); $(i) += $(step)) {
 
     module List = struct
       let get x i = eformat "(($(x))[$(i)])" type_ "" [ ("x", C x); ("i", C i) ]
-
       let length x = eformat "((int)(($(x)).size()))" (Type.create ~name:"int") "" [ ("x", C x) ]
-
       let type_ = Type.create ~name:"std::vector<sexp*>"
-
       let to_list a = eformat "(new list($(a)))" type_ "" [ ("a", C a) ]
-
       let set a i x = eformat ~has_effect:true "0" unit_t "$(a)[$(i)] = $(x);" [ ("a", C a); ("i", C i); ("x", C x) ]
 
       let const a =
@@ -536,25 +453,17 @@ for(int $(i) = $(lo); $(i) < $(hi); $(i) += $(step)) {
       eformat ~has_effect:false "$(name)" type_ "sexp *$(name) = sexp::load(std::cin);" [ ("name", S (fresh_name ())) ]
 
     let print x = eformat ~has_effect:false "0" type_ "($(x))->print(std::cout);" [ ("x", C x) ]
-
     let to_list x = eformat "((list*)($(x)))->get_body()" List.type_ "" [ ("x", C x) ]
-
     let to_atom x = eformat "((atom*)($(x)))->get_body()" Atom.type_ "" [ ("x", C x) ]
   end
 
   module Bool = struct
     let type_ = Type.create ~name:"int"
-
     let bool x = eformat (if x then "1" else "0") type_ "" []
-
     let ( && ) x y = binop "(%s && %s)" type_ x y
-
     let ( || ) x y = binop "(%s || %s)" type_ x y
-
     let not x = unop "(!%s)" type_ x
-
     let of_sexp x = eformat "std::stoi(((atom*)$(x))->get_body())" type_ "" [ ("x", C x) ]
-
     let sexp_of x = eformat "(new atom(std::to_string($(x))))" Sexp.type_ "" [ ("x", C x) ]
   end
 end

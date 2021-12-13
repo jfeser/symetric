@@ -1,5 +1,4 @@
 type t = { idx : int; arr : float array; [@compare.ignore] type_ : Csg_type.Offset.t } [@@deriving compare, hash, sexp]
-
 type ctx = float array Map.M(Csg_type.Offset).t [@@deriving sexp_of]
 
 let of_list t l =
@@ -18,7 +17,6 @@ let of_type ctx t =
   | None -> Sequence.empty
 
 let of_type_count ctx t = match Map.find ctx t with Some offsets -> Array.length offsets | None -> 0
-
 let offset x = x.arr.(x.idx)
 
 let prev x =

@@ -1,12 +1,9 @@
 module Bool_vector = struct
   type elem = Free of Smt.Var.t | Fixed of bool [@@deriving compare, sexp]
-
   type t = elem list [@@deriving sexp]
 
   let free x = Free x
-
   let fixed x = Fixed x
-
   let to_expr = function Free v -> Smt.var v | Fixed x -> Smt.bool x
 end
 

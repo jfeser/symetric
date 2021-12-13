@@ -11,7 +11,8 @@ let%expect_test "" =
       (fun args -> implies (eval ctx Reshape args) (Preds (Set.of_list (module Pred) [ `Pred (N_dims 2) ])))
   in
   print_s [%message (args' : Synth.Abs_value.t list)];
-  [%expect {|
+  [%expect
+    {|
     (ops
      (Args (And 0) (Pred 0 True)
       (Pred 0 (Concrete (Tensor ((elems (1 2 3 4)) (shape (1 4))))))

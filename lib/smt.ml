@@ -16,14 +16,11 @@ let pp_sig fmt (name, n_args) =
     Fmt.pf fmt "%s (%s) Bool" name args
 
 module Var = String_id
-
 module Model0 = struct end
 
 module Expr = struct
   type binop = Implies | Equals | Xor [@@deriving compare, sexp]
-
   type unop = Not [@@deriving compare, sexp]
-
   type varop = And | Or [@@deriving compare, sexp]
 
   type t =
@@ -37,9 +34,7 @@ module Expr = struct
   [@@deriving compare, variants, sexp]
 
   let pp_binop fmt = function Implies -> Fmt.pf fmt "=>" | Equals -> Fmt.pf fmt "=" | Xor -> Fmt.pf fmt "xor"
-
   let pp_unop fmt = function Not -> Fmt.pf fmt "not"
-
   let pp_varop fmt = function And -> Fmt.pf fmt "and" | Or -> Fmt.pf fmt "or"
 
   let[@landmark "serialize"] rec pp fmt = function
@@ -97,7 +92,6 @@ module Expr = struct
                 type t = bool
 
                 let ( + ) = ( && )
-
                 let zero = true
               end)
               ~f:Fun.id vs
@@ -107,7 +101,6 @@ module Expr = struct
                 type t = bool
 
                 let ( + ) = ( || )
-
                 let zero = false
               end)
               ~f:Fun.id vs)
@@ -143,15 +136,10 @@ end
 open Expr
 
 let var_s = Expr.var_s
-
 let var x = Var x
-
 let false_ = Bool false
-
 let true_ = Bool true
-
 let is_false = function Bool x -> not x | _ -> false
-
 let is_true = function Bool x -> x | _ -> false
 
 let or_ xs =
@@ -191,11 +179,8 @@ let ( = ) x y =
   | _, _ -> Binop (Equals, x, y)
 
 let ( || ) x x' = or_ [ x; x' ]
-
 let ( && ) x x' = and_ [ x; x' ]
-
 let not = not_
-
 let ( => ) = implies
 
 let ( lxor ) x x' =
@@ -218,7 +203,6 @@ module Decl = struct
   type t = { name : Var.t; n_args : int }
 
   let create ?(n_args = 0) name = { name; n_args }
-
   let to_smtlib fmt { name; n_args } = Fmt.pf fmt "(declare-fun %a)" pp_sig (name, n_args)
 end
 
@@ -226,7 +210,6 @@ module Defn = struct
   type t = Decl.t * Expr.t
 
   let create ?n_args name body = (Decl.create ?n_args name, body)
-
   let to_smtlib fmt (Decl.{ name; n_args }, body) = Fmt.pf fmt "(define-fun %a %a)" pp_sig (name, n_args) Expr.pp body
 end
 
@@ -243,32 +226,22 @@ module Revlist : sig
   type 'a t
 
   val empty : 'a t
-
   val append : 'a t -> 'a -> 'a t
-
   val append_many : 'a t -> 'a list -> 'a t
-
   val to_list : 'a t -> 'a list
-
   val filter : 'a t -> f:('a -> bool) -> 'a t
 end = struct
   type 'a t = 'a list
 
   let empty = []
-
   let append x l = l :: x
-
   let append_many xs xs' = List.fold_left xs' ~init:xs ~f:(fun xs x -> x :: xs)
-
   let to_list = List.rev
-
   let filter = List.filter
 end
 
 type stmt = Decl of Decl.t | Defn of Defn.t | Assert of Assert.t | Comment of string | Newline
-
 type state = { stmts : (stmt * string) Revlist.t; var_ctr : int; group : int option }
-
 type 'a t = state -> 'a * state
 
 include Monad.Make (struct
@@ -279,16 +252,12 @@ include Monad.Make (struct
     f x s'
 
   let return x s = (x, s)
-
   let map = `Define_using_bind
 end)
 
 let[@landmark "smt"] with_state s f = f s
-
 let run c = with_state { stmts = Revlist.empty; var_ctr = 0; group = None } c
-
 let eval c = Tuple.T2.get1 @@ run c
-
 let eval_with_state s c = Tuple.T2.get1 @@ with_state s c
 
 let clear_asserts s =
@@ -313,7 +282,6 @@ let add_stmts stmts =
   fun s -> ((), { s with stmts = Revlist.append_many s.stmts stmt_strs })
 
 let get_stmts s = (s.stmts, s)
-
 let fresh_num s = (s.var_ctr, { s with var_ctr = s.var_ctr + 1 })
 
 let make_decl ?n_args name =
@@ -360,11 +328,8 @@ let with_comment_block ~name ?descr body =
   ret
 
 let annotate key value term = Annot (term, key, value)
-
 let comment = annotate "comment"
-
 let assert_ body s = match body with Bool true -> ((), s) | body -> add_stmt (Assert { body; group = s.group }) s
-
 let _exactly_one_naive xs = at_least_one xs && at_most_one xs
 
 let exactly_one_bitwise xs =
@@ -584,7 +549,6 @@ module Model = struct
            else None)
 
   let _models_hybrid ?vars e = if Set.length @@ Expr.vars e > 5 then models_solver ?vars e else models_enum ?vars e
-
   let of_ = models_solver
 
   let%expect_test "" =

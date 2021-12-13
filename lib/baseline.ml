@@ -11,13 +11,9 @@ module type Lang_intf = sig
     type t [@@deriving compare, hash, sexp]
 
     val cost : t -> int
-
     val arity : t -> int
-
     val args_type : t -> Type.t list
-
     val ret_type : t -> Type.t
-
     val is_commutative : t -> bool
   end
 
@@ -29,7 +25,6 @@ module type Lang_intf = sig
     end
 
     val eval : Ctx.t -> Op.t -> t list -> t
-
     val is_error : t -> bool
   end
 end
@@ -74,17 +69,11 @@ module Make (Lang : Lang_intf) = struct
   class synthesizer (ctx : Ctx.t) =
     object (self : 'self)
       val max_cost = ctx.max_cost
-
       val verbose = ctx.verbose
-
       val search_state = Search_state.create ()
-
       val eval_ctx = ctx.ectx
-
       val ops = ctx.ops
-
       method get_search_state = search_state
-
       method generate_states cost = Gen.generate_states Search_state.search eval_ctx search_state ops cost
 
       method insert_states cost states =

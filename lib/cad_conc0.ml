@@ -16,11 +16,8 @@ end
 include TC
 
 let create ~xlen ~ylen pixels = create { xlen; ylen; pixels }
-
 let xlen x = (value x).xlen
-
 let ylen x = (value x).ylen
-
 let pixels x = (value x).pixels
 
 let copy ?xlen:xlen_ ?ylen:ylen_ ?pixels:pixels_ x =

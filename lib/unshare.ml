@@ -26,7 +26,6 @@ struct
     include Comparator.Make (T)
 
     let vertex x = x.node
-
     let pp pp_node fmt x = Fmt.pf fmt "%a@%d" pp_node x.node x.id
   end
 

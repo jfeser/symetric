@@ -31,6 +31,5 @@ module Make (Op : Op_intf.S) = struct
     p
 
   let leaves buf = Array.filter_mapi buf ~f:(fun i op -> if Op.arity op = 0 then Some i else None)
-
   let eval eval_op buf = Tuple.T2.get1 @@ read buf 0 eval_op
 end

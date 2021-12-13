@@ -2,7 +2,6 @@ open! Core
 
 module T = struct
   type 'a t = { start : int; len : int; arr : 'a array }
-
   type 'a elt = 'a
 
   let fold x ~init ~f =
@@ -16,9 +15,7 @@ module T = struct
     done
 
   let iter = `Custom iter
-
   let length x = x.len
-
   let length = `Custom length
 end
 

@@ -6,7 +6,6 @@ struct
     type t = { value : T.t; hash : int }
 
     let compare x x' = [%compare: T.t] x.value x'.value
-
     let sexp_of_t x = [%sexp_of: T.t] x.value
   end
 
@@ -14,11 +13,8 @@ struct
   include Comparator.Make (S)
 
   let create x = { value = x; hash = [%hash: T.t] x }
-
   let value x = x.value
-
   let hash x = x.hash
-
   let hash_fold_t s x = [%hash_fold: int] s @@ hash x
 
   let compare x x' =
@@ -26,7 +22,6 @@ struct
     if hcmp = 0 then [%compare: T.t] (value x) (value x') else hcmp
 
   let equal x x' = hash x = hash x' && [%compare.equal: T.t] (value x) (value x')
-
   let sexp_of_t x = [%sexp_of: T.t] (value x)
 end
 

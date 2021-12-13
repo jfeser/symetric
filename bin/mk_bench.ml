@@ -8,9 +8,7 @@ let main () =
   let module Deepcoder = Deepcoder.Make (Cstage_array.Array (Core)) (Code) in
   let module Sketch = struct
     let background = []
-
     let input = "L"
-
     let output = "L"
   end in
   let module DeepSynth = Synth.Make (Sketch) (Code) (Deepcoder.Lang) (Deepcoder.Cache) in

@@ -36,16 +36,13 @@ module Op = struct
     | Position _ -> Position
 
   let type_ x = (args_type x, ret_type x)
-
   let cost _ = 1
-
   let is_commutative _ = false
 end
 
 module Value = struct
   module T = struct
     type scene = (color * int) option Cow_array.t [@@deriving compare, equal, hash, sexp]
-
     type t = Scene of scene | Int of int | Color of color [@@deriving compare, equal, hash, sexp]
   end
 
@@ -87,7 +84,6 @@ module Value = struct
     | _ -> Float.infinity
 
   let embed _ = failwith ""
-
   let is_error _ = false
 end
 
@@ -96,5 +92,4 @@ let name = "shape"
 module Bench = Bench.Make (Op) (Value)
 
 let spec = Dumb_params.Spec.create ()
-
 let bench = Dumb_params.Spec.add spec @@ Bench.param

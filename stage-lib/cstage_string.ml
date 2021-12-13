@@ -3,9 +3,7 @@ open Types
 
 module type S = sig
   type t
-
   type 'a code
-
   type 'a ctype
 
   val type_ : t ctype
@@ -15,13 +13,9 @@ module type S = sig
   end
 
   val const : String.t -> t code
-
   val input : t code
-
   val print : t code -> unit code
-
   val of_sexp : sexp code -> t code
-
   val sexp_of : t code -> sexp code
 end
 
@@ -31,7 +25,6 @@ module String (C : Cstage_core.S) = struct
   open C
 
   let type_ = Type.create ~name:"std::string"
-
   let of_sexp = Sexp.to_atom
 
   module O = struct
@@ -39,7 +32,6 @@ module String (C : Cstage_core.S) = struct
   end
 
   let const s = eformat "$(s)" type_ "" [ ("s", S (sprintf "%S" s)) ]
-
   let print s = eformat ~has_effect:true "0" unit_t "std::cout << $(str) << std::endl;" [ ("str", C s) ]
 
   let input =

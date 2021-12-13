@@ -2,11 +2,8 @@ module type Param_intf = sig
   type t [@@deriving sexp_of]
 
   val name : string
-
   val to_json : (t -> Yojson.Basic.t) option
-
   val init : (Univ_map.Packed.t Command.Param.t, unit -> t) Either.t
-
   val key : t Univ_map.Key.t
 end
 
@@ -16,7 +13,6 @@ module Spec = struct
   type t = { name : string; elems : (module Param_intf) Hashtbl.M(String).t }
 
   let create ?(name = "") () = { name; elems = Hashtbl.create (module String) }
-
   let inherit_ t n = { name = t.name ^ "." ^ n; elems = Hashtbl.copy t.elems }
 
   let add (type t) q ((module S : Param_intf with type t = t) as p) =
@@ -45,9 +41,7 @@ module Param = struct
   module type S = Param_intf
 
   type free
-
   type bound
-
   type ('a, 'b) t = (module Param_intf with type t = 'a)
 
   type 'a mk =
@@ -74,20 +68,14 @@ module Param = struct
 
   module Json = struct
     let float x = `Float x
-
     let bool x = `Bool x
-
     let string x = `String x
-
     let int x = `Int x
-
     let list x = `List x
   end
 
   let mk_to_json json f = if json then Some f else None
-
   let create = Fun.id
-
   let const_default x = `Default (Fun.const x)
 
   let int ~name ~doc ?(init = `Cli None) ?(json = true) ?aliases () =
@@ -95,11 +83,8 @@ module Param = struct
       type t = int [@@deriving sexp_of]
 
       let key = Univ_map.Key.create ~name [%sexp_of: t]
-
       let name = name
-
       let to_json = mk_to_json json Json.int
-
       let init = make_init ~name ~doc ?aliases key Command.Param.int sexp_of_t init
     end : Param_intf
       with type t = int)
@@ -109,11 +94,8 @@ module Param = struct
       type t = bool [@@deriving sexp_of]
 
       let key = Univ_map.Key.create ~name [%sexp_of: t]
-
       let name = name
-
       let to_json = mk_to_json json Json.bool
-
       let init = make_init ~name ~doc ?aliases key Command.Param.bool sexp_of_t init
     end : Param_intf
       with type t = bool)
@@ -123,11 +105,8 @@ module Param = struct
       type t = float [@@deriving sexp_of]
 
       let key = Univ_map.Key.create ~name [%sexp_of: t]
-
       let name = name
-
       let to_json = mk_to_json json Json.float
-
       let init = make_init ~name ~doc ?aliases key Command.Param.float sexp_of_t init
     end : Param_intf
       with type t = float)
@@ -137,11 +116,8 @@ module Param = struct
       type t = Time.Span.t [@@deriving sexp_of]
 
       let key = Univ_map.Key.create ~name [%sexp_of: t]
-
       let name = name
-
       let init = make_init ~name ~doc ?aliases key Command.(Arg_type.map Param.float ~f:Time.Span.of_ms) sexp_of_t init
-
       let to_json = mk_to_json json @@ fun x -> Json.float (Time.Span.to_ms x)
     end : Param_intf
       with type t = Time.Span.t)
@@ -151,11 +127,8 @@ module Param = struct
       type t = string [@@deriving sexp_of]
 
       let key = Univ_map.Key.create ~name [%sexp_of: t]
-
       let name = name
-
       let init = make_init ~name ~doc ?aliases key Command.Param.string sexp_of_t init
-
       let to_json = mk_to_json json Json.string
     end : Param_intf
       with type t = string)
@@ -165,11 +138,8 @@ module Param = struct
       type t = P.t ref [@@deriving sexp_of]
 
       let key = Univ_map.Key.create ~name:P.name [%sexp_of: t]
-
       let name = P.name
-
       let to_json = Option.map P.to_json ~f:(fun p_to_json x -> p_to_json !x)
-
       let init = Either.map P.init ~first:(fun _ -> failwith "") ~second:(fun mk_default () -> ref (mk_default ()))
     end : Param_intf
       with type t = P.t ref)
@@ -187,11 +157,8 @@ module Param = struct
       type t = float Queue.t [@@deriving sexp_of]
 
       let key = Univ_map.Key.create ~name [%sexp_of: t]
-
       let name = name
-
       let init = Second (fun () -> Queue.create ())
-
       let to_json = mk_to_json json @@ fun x -> Queue.to_list x |> List.map ~f:Json.float |> Json.list
     end : Param_intf
       with type t = float Queue.t)
@@ -201,9 +168,7 @@ module Param = struct
       type t = float list Queue.t [@@deriving sexp_of]
 
       let key = Univ_map.Key.create ~name [%sexp_of: t]
-
       let name = name
-
       let init = Second (fun () -> Queue.create ())
 
       let to_json =
@@ -221,11 +186,8 @@ module Param = struct
       type nonrec t = t list
 
       let sexp_of_t = List.sexp_of_t Cmp.comparator.sexp_of_t
-
       let ids_map = Map.of_alist_exn (module String) ids
-
       let key = Univ_map.Key.create ~name [%sexp_of: t]
-
       let name = name
 
       let init =
@@ -242,15 +204,10 @@ module Param = struct
       type nonrec t = t
 
       let to_string x = List.find_map_exn syms ~f:(fun (s, n) -> if Poly.(x = s) then Some n else None)
-
       let sexp_of_t x = [%sexp_of: string] @@ to_string x
-
       let key = Univ_map.Key.create ~name [%sexp_of: t]
-
       let name = name
-
       let of_string x = List.find_map_exn syms ~f:(fun (s, n) -> if Poly.(x = n) then Some s else None)
-
       let arg_type = Command.Arg_type.create of_string
 
       let init =
@@ -269,7 +226,6 @@ module Param = struct
 end
 
 let get (type t) m (module S : Param_intf with type t = t) = Univ_map.find_exn m.values S.key
-
 let set (type t) m (module S : Param_intf with type t = t) v = { m with values = Univ_map.set m.values S.key v }
 
 let json m =

@@ -6,7 +6,6 @@ module Abs_value = struct
   module Pred = struct
     module T = struct
       type any_pred = [ `False ] [@@deriving compare, hash, sexp]
-
       type int_pred = [ any_pred | `Int of int ] [@@deriving compare, hash, sexp]
 
       type vector_pred = [ any_pred | `Len of int | `Elems of int list | `Concrete_v of Value.Vector.t ]
@@ -77,7 +76,6 @@ module Abs_value = struct
     ret
 
   let lift (ctx : Ctx.t) v = Set.inter ctx.preds (Set.of_list (module Pred) @@ relevant v)
-
   let eval_pred = function `False -> false | _ -> true
 
   let eval_tensor_pred t = function
@@ -92,7 +90,6 @@ module Abs_value = struct
     | p -> eval_pred p
 
   let eval_int_pred x = function `Int x' -> x = x' | p -> eval_pred p
-
   let eval_error_pred _ = false
 
   let implies_not_value (p : Set.M(Pred).t) = function

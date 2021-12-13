@@ -13,6 +13,5 @@ module Make
   module G_replicated : LABELED_GRAPH with type label = int
 
   val id : G_replicated.V.t -> int
-
   val unshare : G.t -> G_replicated.t * (G.V.t, G_replicated.V.t) One_to_many.t
 end

@@ -7,11 +7,8 @@ module type Lang_intf = sig
     type t [@@deriving compare, hash, sexp]
 
     val cost : t -> int
-
     val arity : t -> int
-
     val args_type : t -> Type.t list
-
     val is_commutative : t -> bool
   end
 
@@ -23,7 +20,6 @@ module type Lang_intf = sig
     end
 
     val eval : Ctx.t -> Op.t -> t list -> t
-
     val is_error : t -> bool
   end
 end
@@ -69,11 +65,8 @@ module Gen_iter (Lang : Lang_intf) = struct
   open Lang
 
   let unsafe_to_list a = List.init (Option_array.length a) ~f:(Option_array.unsafe_get_some_assuming_some a)
-
   let make_edge params op args = (Value.eval params op args, op, args)
-
   let max_arity = 10
-
   let args = Array.init max_arity ~f:(fun i -> Option_array.create ~len:i)
 
   let generate_args search params ss op costs f =

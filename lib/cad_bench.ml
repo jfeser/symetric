@@ -34,11 +34,7 @@ let save fn b =
   Sexp.save_hum fn @@ [%sexp_of: Serial.t] @@ Serial.{ ops = b.ops; input = b.input; output; solution = b.solution }
 
 let t_of_sexp s = [%of_sexp: Serial.t] s |> of_serial
-
 let output x = x.output
-
 let ops x = x.ops
-
 let solution_exn x = Option.value_exn x.solution
-
 let filename_exn x = Option.value_exn x.filename

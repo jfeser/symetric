@@ -9,7 +9,6 @@ let generate_benchmarks (type op ctx type_) ?(max_states = 100_000)
   let synth =
     object
       inherit synthesizer config as super
-
       method! insert_states cost states = super#insert_states cost @@ List.take (List.permute states) max_states
     end
   in

@@ -2,21 +2,16 @@ open Std
 
 module type Subst_intf = sig
   type t [@@deriving sexp]
-
   type k
-
   type v
 
   val empty : t
-
   val set : t -> k -> v -> t
-
   val get : t -> k -> v option
 end
 
 module type Term_set_intf = sig
   type t [@@deriving compare, sexp]
-
   type op
 
   val heads : t -> (op * t list) Iter.t
@@ -26,7 +21,6 @@ module Pattern = struct
   type 'o t = Apply of ('o * 'o t list) | Var of int [@@deriving compare, sexp]
 
   let apply x y = Apply (x, y)
-
   let rec of_program Program.(Apply (op, args)) = Apply (op, List.map args ~f:of_program)
 
   let leaf_patterns (type op) (module Op : Op_intf.S with type t = op) ops =

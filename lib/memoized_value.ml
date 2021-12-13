@@ -4,7 +4,6 @@ end
 
 module type VALUE = sig
   type op
-
   type t [@@deriving compare, hash, sexp]
 
   module Ctx : sig
@@ -12,7 +11,6 @@ module type VALUE = sig
   end
 
   val eval : Ctx.t -> op -> t list -> t
-
   val is_error : t -> bool
 end
 
@@ -50,6 +48,5 @@ module Make_cached (Op : OP) (Value : VALUE with type op := Op.t) = struct
   module Ctx = Value.Ctx
 
   let eval ctx op args = create @@ Value.eval ctx op @@ List.map ~f:value args
-
   let is_error v = Value.is_error @@ value v
 end

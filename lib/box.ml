@@ -3,7 +3,6 @@ open Base_quickcheck
 type is_open = Open | Closed [@@deriving compare, hash, sexp, quickcheck]
 
 let is_closed = function Closed -> true | Open -> false
-
 let is_open = Fun.negate is_closed
 
 type bound = float [@@deriving compare, hash, sexp, quickcheck]
@@ -14,7 +13,6 @@ type box = { xmin : bound * is_open; xmax : bound * is_open; ymin : bound * is_o
 [@@deriving compare, hash, sexp, quickcheck]
 
 type t = Bot | Box of box [@@deriving compare, hash, sexp, quickcheck]
-
 type conc = Vector2.t [@@deriving compare, hash, sexp]
 
 let top =
@@ -27,13 +25,9 @@ let top =
     }
 
 let bot = Bot
-
 let lo_lt (v, c) (v', c') = Float.(v < v' || (v = v' && (is_closed c || is_open c')))
-
 let hi_lt (v, c) (v', c') = Float.(v < v' || (v = v' && (is_open c || is_closed c')))
-
 let lo_le p p' = lo_lt p p' || [%compare.equal: bound * is_open] p p'
-
 let hi_le p p' = hi_lt p p' || [%compare.equal: bound * is_open] p p'
 
 let is_empty b =
@@ -61,23 +55,15 @@ let leq b b' =
   | Box b, Box b' -> lo_le b'.xmin b.xmin && hi_le b.xmax b'.xmax && lo_le b'.ymin b.ymin && hi_le b.ymax b'.ymax
 
 let lo_min p p' = if lo_lt p p' then p else p'
-
 let hi_min p p' = if hi_lt p p' then p else p'
-
 let lo_max p p' = if lo_lt p p' then p' else p
-
 let hi_max p p' = if hi_lt p p' then p' else p
-
 let test_le x x' exp = [%test_result: bool] ~expect:exp @@ lo_le x x'
-
 let test_lt x x' exp = [%test_result: bool] ~expect:exp (x < x')
 
 let%test_unit "" = test_le (0.0, Closed) (0.0, Open) true
-
 let%test_unit "" = test_le (0.0, Closed) (0.0, Closed) true
-
 let%test_unit "" = test_le (0.0, Open) (0.0, Open) true
-
 let%test_unit "" = test_le (0.0, Open) (0.0, Closed) false
 
 let%test_unit "" =

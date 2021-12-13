@@ -37,6 +37,5 @@ module type S = sig
   end
 
   val refine : t -> State.t list -> (Refinement.t, op Program.t) Either.t
-
   val summarize : (t -> State.t list -> (Abs.t * State.t list) list) option
 end

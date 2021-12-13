@@ -4,9 +4,7 @@ open Types
 module Make (A : Cstage_array.S) (C : Sigs.CODE with type 'a t = 'a A.code and type 'a ctype = 'a A.ctype) = struct
   module Value = struct
     type array_t = int A.t C.Array.t
-
     type int_t = int C.Array.t
-
     type value = Value
 
     type t =
@@ -19,7 +17,6 @@ module Make (A : Cstage_array.S) (C : Sigs.CODE with type 'a t = 'a A.code and t
     type mapper = { f : 'a. 'a C.t -> 'a C.t }
 
     let int_t = C.Array.mk_type C.Int.type_
-
     let array_t = C.Array.mk_type (A.mk_type C.Int.type_)
 
     let random ?(state = Random.State.default) sym n =
@@ -86,7 +83,6 @@ module Make (A : Cstage_array.S) (C : Sigs.CODE with type 'a t = 'a A.code and t
     module Value = Value
 
     type value = Value.t
-
     type 'a code = 'a C.t
 
     let grammar : (Value.t, bool code) Semantics.t Grammar.t =
@@ -140,13 +136,9 @@ module Make (A : Cstage_array.S) (C : Sigs.CODE with type 'a t = 'a A.code and t
       failwith @@ sprintf "Expected %s but got %s" expected got
 
     let to_array = function A x -> x | x -> err "array" x
-
     let to_int = function I x -> x | x -> err "int" x
-
     let to_int_f = function F_int x -> x | _ -> assert false
-
     let to_bool_f = function F_bool x -> x | _ -> assert false
-
     let to_int2_f = function F_int2 x -> x | _ -> assert false
 
     open C
@@ -258,11 +250,8 @@ module Make (A : Cstage_array.S) (C : Sigs.CODE with type 'a t = 'a A.code and t
 
   module Cache = struct
     type value = Value.t
-
     type 'a code = 'a C.t
-
     type cache = Value.int_t set array * Value.array_t set array
-
     type t = { ints : Value.int_t set C.Array.t code; arrays : Value.array_t set C.Array.t code }
 
     let max_size = 100
@@ -294,9 +283,7 @@ module Make (A : Cstage_array.S) (C : Sigs.CODE with type 'a t = 'a A.code and t
       | _ -> assert false
 
     let print_size _ = failwith "print_size"
-
     let code_of { ints; arrays } = C.Tuple.create ints arrays
-
     let of_code t = { ints = C.Tuple.fst t; arrays = C.Tuple.snd t }
   end
 end

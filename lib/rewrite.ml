@@ -56,9 +56,7 @@ module Make (Lang_op : Op_intf.S) = struct
   type ctx = { ops : Lang_op.t list; ops_by_arity : Lang_op.t list Hashtbl.M(Int).t }
 
   let sample_id v = Random.int (Program.size v)
-
   let sample_op_arity ctx arity = Hashtbl.find_exn ctx.ops_by_arity arity |> List.random_element_exn
-
   let sample_op ctx = List.random_element_exn ctx.ops
 
   let sample_rename ctx v =

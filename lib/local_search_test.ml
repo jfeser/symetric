@@ -23,9 +23,7 @@ let gen_euclid v v' =
   match (v, v') with Value.Scene s, Value.Scene s' -> Scene.distance size s s' | _ -> Float.infinity
 
 let distance v v' = (* jaccard_edges size v v' +. *) jaccard v v' +. corner size v v'
-
 let distance v v' = gen_euclid v v'
-
 let int x : Op.t Program.t = Apply (Int x, [])
 
 let unnormalize = function

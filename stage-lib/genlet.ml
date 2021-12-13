@@ -21,7 +21,6 @@ module Make (C : sig
      the scope extrusion check, throwing an exception if the check fails.
   *)
   val is_well_scoped : 'a t -> bool
-
   val let_ : 'a t -> ('a t -> 'b t) -> 'b t
 end) =
 struct

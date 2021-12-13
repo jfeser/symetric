@@ -39,15 +39,10 @@ let remove ?(display = Display.default) bar =
 
 module Ansi = struct
   let show_cursor = "\x1b[?25h"
-
   let hide_cursor = "\x1b[?25l"
-
   let erase_display_suffix = "\x1b[J"
-
   let erase_line = "\x1b[K"
-
   let move_up ch = function 0 -> () | n -> Out_channel.fprintf ch "\x1b[%dA" n
-
   let move_down ch = function 0 -> () | n -> Out_channel.fprintf ch "\x1b[%dB" n
 end
 
@@ -68,7 +63,6 @@ let update ?(display = Display.default) bar state =
   render_all display
 
 let format_counter ?tot ~n () = match tot with Some tot -> sprintf "%d/%dit" n tot | None -> sprintf "%dit" n
-
 let format_iters = sprintf "%0.2fit/s"
 
 let draw_progress buf p =

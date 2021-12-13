@@ -9,23 +9,15 @@ module Tensor_pred = struct
   let complete = Iter.singleton
 
   type arg = [ `True | `Concrete of Value.t | `Pred of t ]
-
   type ret = [ `False | `Concrete of Value.t | `Pred of t ]
 
   let n_elems n = `Pred (N_elems n)
-
   let n_elems_of t = n_elems @@ Tensor.n_elems t
-
   let n_dims n = `Pred (N_dims n)
-
   let n_dims_of t = n_dims @@ Tensor.n_dims t
-
   let elems xs = `Pred (Elems (List.dedup_and_sort ~compare:[%compare: int] xs))
-
   let len x = `Pred (Len x)
-
   let len_of x = len @@ List.length x
-
   let unwrap (`Pred x) = x
 
   let lift = function
@@ -84,7 +76,6 @@ module Tensor_pred = struct
     match x with `Concrete (Int x) -> [ `Concrete (Vector [ x ]); elems [ x ]; len 1 ] | _ -> [ len 1 ]
 
   let transfer_int (x : int) : ret list = [ `Concrete (Int x) ]
-
   let transfer_id t : ret list = [ n_dims_of t; n_elems_of t; `Concrete (Tensor t) ]
 
   let transfer : _ -> _ -> arg list -> ret list =

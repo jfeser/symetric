@@ -9,18 +9,13 @@ module Test_op = struct
   type type_ = unit
 
   let arity (Op x) = x
-
   let type_ _ = assert false
-
   let args_type _ = assert false
-
   let ret_type _ = assert false
-
   let cost _ = 1
 end
 
 open Test_op
-
 open Flat_program.Make (Test_op)
 
 let%expect_test "" =

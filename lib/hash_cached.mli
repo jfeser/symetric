@@ -6,9 +6,7 @@ end) : sig
   include Comparator.S with type t := t
 
   val create : T.t -> t
-
   val value : t -> T.t
-
   val equal : t -> t -> bool
 end
 
@@ -20,8 +18,6 @@ end) : sig
   include Comparator.S with type t := t
 
   val create : T.t -> t
-
   val value : t -> T.t
-
   val equal : t -> t -> bool
 end

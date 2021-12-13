@@ -9,5 +9,4 @@ module O : Comparable.Infix with type t := t = struct
 end
 
 let is_true = function True -> true | _ -> false
-
 let is_false = function False -> true | _ -> false

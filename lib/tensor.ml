@@ -15,9 +15,7 @@ module Tensor = struct
   type t = { elems : int list; shape : int list } [@@deriving compare, equal, hash, sexp]
 
   let shape t = t.shape
-
   let n_elems t = List.length t.elems
-
   let n_dims t = List.length t.shape
 
   module T = Owl.Dense.Ndarray.D
@@ -66,7 +64,6 @@ module Op = struct
     | Vec -> [ Int ]
 
   let type_ x = (args_type x, ret_type x)
-
   let arity x = List.length @@ args_type x
 
   let rec vec_of_list = function
@@ -75,7 +72,6 @@ module Op = struct
     | x :: xs -> Program.(apply Cons ~args:[ apply (Int x); vec_of_list xs ])
 
   let cost _ = 1
-
   let is_commutative _ = false
 end
 
@@ -101,7 +97,6 @@ module Value = struct
     type nonrec t = { memo : t Hashtbl.M(Op_args).t }
 
     let create () = { memo = Hashtbl.create (module Op_args) }
-
     let of_params _ = create ()
   end
 
@@ -125,15 +120,10 @@ module Bench0 = struct
   type t = (Op.t, Value.t) Bench.t [@@deriving compare, sexp]
 
   let solution_exn = Bench.solution_exn
-
   let output = Bench.output
-
   let ops = Bench.ops
-
   let create = Bench.create
-
   let load = Bench.load [%of_sexp: Op.t] [%of_sexp: Value.t]
-
   let save = Bench.save [%sexp_of: Op.t] [%sexp_of: Value.t]
 end
 
@@ -141,9 +131,7 @@ include struct
   open Dumb_params
 
   let spec = Spec.create ()
-
   let _ = (Spec.add spec @@ Param.const_str ~name:"lang" name : (string, Param.bound) Param.t)
-
   let bench = Spec.add spec @@ Bench.param (module Op) (module Value)
 end
 

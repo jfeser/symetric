@@ -6,7 +6,6 @@ module Tuple (C : Cstage_core.S) = struct
   open C
 
   let fst_t = Univ_map.Key.create ~name:"fst_t" [%sexp_of: typ]
-
   let snd_t = Univ_map.Key.create ~name:"snd_t" [%sexp_of: typ]
 
   let mk_type x y =
@@ -22,34 +21,23 @@ module Tuple (C : Cstage_core.S) = struct
     create (t1_of_sexp @@ Sexp.List.get x (Int.int 0)) (t2_of_sexp @@ Sexp.List.get x (Int.int 1))
 
   let fst_type t = Univ_map.find_exn t fst_t
-
   let snd_type t = Univ_map.find_exn t snd_t
-
   let fst t = eformat "std::get<0>($(t))" (fst_type t.etype) "" [ ("t", C t) ]
-
   let snd t = eformat "std::get<1>($(t))" (snd_type t.etype) "" [ ("t", C t) ]
-
   let of_tuple (x, y) = create x y
-
   let to_tuple t = (fst t, snd t)
-
   let sexp_of x sexp_of_t1 sexp_of_t2 = Sexp.List.const [| sexp_of_t1 @@ fst x; sexp_of_t2 @@ snd x |]
 end
 
 module Tuple_3 = struct
   module type S = sig
     type ('a, 'b, 'c) t
-
     type 'a ctype
-
     type 'a code
 
     val mk_type : 'a ctype -> 'b ctype -> 'c ctype -> ('a, 'b, 'c) t ctype
-
     val fst : ('a, 'b, 'c) t code -> 'a code
-
     val of_tuple : 'a code * 'b code * 'c code -> ('a, 'b, 'c) t code
-
     val tuple_of : ('a, 'b, 'c) t code -> ('a code * 'b code * 'c code -> 'd code) -> 'd code
 
     val of_sexp :
@@ -66,9 +54,7 @@ module Tuple_3 = struct
     type ('a, 'b, 'c) t
 
     let fst_t = Univ_map.Key.create ~name:"fst_t" [%sexp_of: typ]
-
     let snd_t = Univ_map.Key.create ~name:"snd_t" [%sexp_of: typ]
-
     let thd_t = Univ_map.Key.create ~name:"thd_t" [%sexp_of: typ]
 
     let mk_type x y z =
@@ -87,15 +73,10 @@ module Tuple_3 = struct
         (t3_of_sexp @@ Sexp.List.get x (Int.int 2))
 
     let fst_type t = Univ_map.find_exn t fst_t
-
     let snd_type t = Univ_map.find_exn t snd_t
-
     let thd_type t = Univ_map.find_exn t thd_t
-
     let fst t = eformat "std::get<0>($(t))" (fst_type t.etype) "" [ ("t", C t) ]
-
     let snd t = eformat "std::get<1>($(t))" (snd_type t.etype) "" [ ("t", C t) ]
-
     let thd t = eformat "std::get<2>($(t))" (thd_type t.etype) "" [ ("t", C t) ]
 
     let sexp_of x sexp_of_t1 sexp_of_t2 sexp_of_t3 =
@@ -114,15 +95,11 @@ end
 module Tuple_4 = struct
   module type S = sig
     type ('a, 'b, 'c, 'd) t
-
     type 'a ctype
-
     type 'a code
 
     val mk_type : 'a ctype -> 'b ctype -> 'c ctype -> 'd ctype -> ('a, 'b, 'c, 'd) t ctype
-
     val of_tuple : 'a code * 'b code * 'c code * 'd code -> ('a, 'b, 'c, 'd) t code
-
     val tuple_of : ('a, 'b, 'c, 'd) t code -> ('a code * 'b code * 'c code * 'd code -> 'e code) -> 'e code
 
     val of_sexp :
@@ -151,11 +128,8 @@ module Tuple_4 = struct
     type ('a, 'b, 'c, 'd) t
 
     let fst_t = Univ_map.Key.create ~name:"fst_t" [%sexp_of: typ]
-
     let snd_t = Univ_map.Key.create ~name:"snd_t" [%sexp_of: typ]
-
     let thd_t = Univ_map.Key.create ~name:"thd_t" [%sexp_of: typ]
-
     let fth_t = Univ_map.Key.create ~name:"fth_t" [%sexp_of: typ]
 
     let mk_type x y z a =
@@ -176,19 +150,12 @@ module Tuple_4 = struct
         (t4_of_sexp @@ Sexp.List.get x (Int.int 3))
 
     let fst_type t = Univ_map.find_exn t fst_t
-
     let snd_type t = Univ_map.find_exn t snd_t
-
     let thd_type t = Univ_map.find_exn t thd_t
-
     let fth_type t = Univ_map.find_exn t fth_t
-
     let fst t = eformat "std::get<0>($(t))" (fst_type t.etype) "" [ ("t", C t) ]
-
     let snd t = eformat "std::get<1>($(t))" (snd_type t.etype) "" [ ("t", C t) ]
-
     let thd t = eformat "std::get<2>($(t))" (thd_type t.etype) "" [ ("t", C t) ]
-
     let fth t = eformat "std::get<3>($(t))" (fth_type t.etype) "" [ ("t", C t) ]
 
     let sexp_of x sexp_of_t1 sexp_of_t2 sexp_of_t3 sexp_of_t4 =

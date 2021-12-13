@@ -41,7 +41,6 @@ let clang_exec ?(args = "-Wall -Wextra -fsanitize=undefined -fsanitize=address -
 
   object
     method compiler_output = compiler_output
-
     method exe_output = exe_output
   end
 
@@ -50,9 +49,7 @@ module Cont = struct
     type ('a, 'r) t = { runCont : ('a -> 'r) -> 'r }
 
     let return a = { runCont = (fun k -> k a) }
-
     let bind { runCont = g } ~f = { runCont = (fun k -> g (fun a -> (f a).runCont k)) }
-
     let map = `Define_using_bind
   end
 
@@ -80,9 +77,7 @@ module OneShot = struct
       }
 
     let return a = { runCont = (fun k -> k a) }
-
     let bind { runCont = g } ~f = { runCont = (fun k -> g (fun a -> (f a).runCont k)) }
-
     let map = `Define_using_bind
   end
 
@@ -97,9 +92,7 @@ let input_sketch ch =
   let input, background = match List.rev inputs with [] -> assert false | x :: xs -> (x, List.rev xs) in
   (module struct
     let background = background
-
     let input = input
-
     let output = output
   end : Sigs.SKETCH)
 

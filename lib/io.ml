@@ -2,15 +2,10 @@ module Out = struct
   type t = { close : unit -> unit; flush : unit -> unit; output_substring : string -> pos:int -> len:int -> unit }
 
   let nop = { close = Fun.id; flush = Fun.id; output_substring = (fun _ ~pos:_ ~len:_ -> ()) }
-
   let close c = c.close ()
-
   let flush c = c.flush ()
-
   let output_substring c buf ~pos ~len = c.output_substring buf ~pos ~len
-
   let output_string c s = c.output_substring s ~pos:0 ~len:(String.length s)
-
   let newline c = output_string c "\n"
 
   let output_lines c lines =

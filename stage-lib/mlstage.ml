@@ -24,62 +24,36 @@ module Code = struct
   open Value
 
   type _ t = Value.t Lazy.t [@@deriving sexp_of]
-
   type _ ctype = unit [@@deriving compare, sexp]
 
   let let_ v f = f v
-
   let let_global = let_
-
   let genlet = Fun.id
-
   let let_locus f = f ()
-
   let to_value x = (Lazy.force x).value
-
   let to_value' x = Lazy.force x
-
   let to_int x = match to_value x with Int x -> x | _ -> assert false
-
   let to_float x = match to_value x with Float x -> x | _ -> assert false
-
   let to_bool x = match to_value x with Bool x -> x | _ -> assert false
-
   let to_unit x = match to_value x with Unit -> () | _ -> assert false
-
   let to_sexp x = match to_value x with Sexp x -> x | _ -> assert false
-
   let to_str x = match to_value x with String x -> x | _ -> assert false
-
   let to_array x = match to_value x with Array x -> x | _ -> assert false
-
   let to_set x = match to_value x with Set x -> x | _ -> assert false
-
   let to_code value = lazy value
-
   let to_string x = to_value x |> [%sexp_of: Value.value] |> Sexp.to_string_hum
-
   let unit_t = ()
-
   let int_t = ()
-
   let bool_t = ()
-
   let type_of _ = ()
-
   let cast x = (x : 'a t :> 'b t)
-
   let wrap thunk = lazy { value = thunk (); annot = Univ_map.empty }
-
   let wrap' = Lazy.from_fun
-
   let unit = wrap @@ fun () -> Unit
 
   module Sexp = struct
     let type_ = ()
-
     let sexp s = wrap @@ fun () -> Sexp s
-
     let input () = wrap @@ fun () -> Sexp (Sexp.input_sexp In_channel.stdin)
 
     let print x =
@@ -103,41 +77,23 @@ module Code = struct
     type t = Types.int
 
     let type_ = int_t
-
     let int x = wrap @@ fun () -> Int x
-
     let ( ~- ) x = wrap @@ fun () -> Int (-to_int x)
-
     let int_binop f x x' = wrap @@ fun () -> Int (f (to_int x) (to_int x'))
-
     let ( + ) x y = int_binop ( + ) x y
-
     let ( - ) x y = int_binop ( - ) x y
-
     let ( * ) x y = int_binop ( * ) x y
-
     let ( / ) x y = int_binop ( / ) x y
-
     let ( mod ) x y = int_binop ( mod ) x y
-
     let min x y = int_binop Int.min x y
-
     let max x y = int_binop Int.max x y
-
     let cmp_binop f x x' = wrap @@ fun () -> Bool (f (to_int x) (to_int x'))
-
     let ( > ) x y = cmp_binop ( > ) x y
-
     let ( >= ) x y = cmp_binop ( >= ) x y
-
     let ( < ) x y = cmp_binop ( < ) x y
-
     let ( <= ) x y = cmp_binop ( <= ) x y
-
     let ( = ) x y = cmp_binop ( = ) x y
-
     let of_sexp x = wrap @@ fun () -> Int ([%of_sexp: int] (to_sexp x))
-
     let sexp_of x = wrap @@ fun () -> Sexp ([%sexp_of: int] (to_int x))
   end
 
@@ -145,19 +101,12 @@ module Code = struct
     type t
 
     let type_ = bool_t
-
     let bool x = wrap @@ fun () -> Bool x
-
     let bool_binop f x x' = wrap @@ fun () -> Bool (f (to_bool x) (to_bool x'))
-
     let ( && ) x y = bool_binop ( && ) x y
-
     let ( || ) x y = bool_binop ( || ) x y
-
     let not x = wrap @@ fun () -> Bool (not (to_bool x))
-
     let of_sexp x = wrap @@ fun () -> Bool ([%of_sexp: int] (to_sexp x) = 1)
-
     let sexp_of x = wrap @@ fun () -> Sexp ([%sexp_of: bool] (to_bool x))
   end
 
@@ -171,7 +120,6 @@ module Code = struct
     end
 
     let of_sexp x = wrap @@ fun () -> match to_sexp x with Atom s -> String s | _ -> failwith "Expected an atom."
-
     let sexp_of x = wrap @@ fun () -> Sexp ([%sexp_of: string] (to_str x))
 
     let print s =
@@ -180,19 +128,15 @@ module Code = struct
       Unit
 
     let input = wrap @@ fun () -> String (In_channel.input_all In_channel.stdin)
-
     let const s = wrap @@ fun () -> String s
   end
 
   module Array = struct
     type nonrec 'a code = 'a t
-
     type nonrec 'a ctype = 'a ctype
-
     type 'a t = Array_t
 
     let mk_type _ = ()
-
     let elem_type _ = ()
 
     module O = struct
@@ -200,7 +144,6 @@ module Code = struct
     end
 
     let const _ a = wrap @@ fun () -> Array (Array.map a ~f:to_value')
-
     let get a i = wrap' @@ fun () -> (to_array a).(to_int i)
 
     let set a i x =
@@ -219,9 +162,7 @@ module Code = struct
       Unit
 
     let sub a i i' = wrap @@ fun () -> Array (to_array a |> Array.(sub ~pos:(to_int i) ~len:(to_int i')))
-
     let init i f = wrap @@ fun () -> Array (Array.init (to_int i) ~f:(fun i -> f Int.(int i) |> to_value'))
-
     let map a ~f = wrap @@ fun () -> Array (Array.map (to_array a) ~f:(fun x -> f @@ to_code x |> to_value'))
 
     let map2 a a' ~f =
@@ -243,7 +184,6 @@ module Code = struct
     type 'a t = 'a Types.set
 
     let mk_type _ = ()
-
     let empty _ = wrap @@ fun () -> Set (ref Set.Poly.empty)
 
     let add s x =
@@ -274,9 +214,7 @@ module Code = struct
 
   module Tuple = struct
     let mk_type _ _ = ()
-
     let to_tuple x = match to_value x with Tuple x -> x | _ -> assert false
-
     let create x y = wrap @@ fun () -> Tuple (to_value' x, to_value' y)
 
     let fst x =
@@ -305,9 +243,7 @@ module Code = struct
     type (_, _, _) t
 
     let mk_type _ _ _ = ()
-
     let to_tuple x = match to_value x with Tuple_3 x -> x | _ -> assert false
-
     let create x y z = wrap @@ fun () -> Tuple_3 (to_value' x, to_value' y, to_value' z)
 
     let fst x =
@@ -326,7 +262,6 @@ module Code = struct
       x
 
     let tuple_of x f = f (fst x, snd x, thd x)
-
     let of_tuple (x, y, z) = create x y z
 
     let of_sexp x t1_of_sexp t2_of_sexp t3_of_sexp =
@@ -353,9 +288,7 @@ module Code = struct
     type (_, _, _, _) t
 
     let mk_type _ _ _ _ = ()
-
     let to_tuple x = match to_value x with Tuple_4 x -> x | _ -> assert false
-
     let create x y z a = wrap @@ fun () -> Tuple_4 (to_value' x, to_value' y, to_value' z, to_value' a)
 
     let fst x =
@@ -379,7 +312,6 @@ module Code = struct
       x
 
     let tuple_of x f = f (fst x, snd x, thd x, fth x)
-
     let of_tuple (x, y, z, a) = create x y z a
 
     let of_sexp x t1_of_sexp t2_of_sexp t3_of_sexp t4_of_sexp =
@@ -410,49 +342,29 @@ module Code = struct
     type t = float
 
     let type_ = ()
-
     let float x = wrap @@ fun () -> Float x
-
     let float_unop f x = wrap @@ fun () -> Float (f (to_float x))
-
     let float_binop f x x' = wrap @@ fun () -> Float (f (to_float x) (to_float x'))
-
     let cmp_binop f x x' = wrap @@ fun () -> Bool (f (to_float x) (to_float x'))
-
     let of_sexp x = wrap @@ fun () -> Float ([%of_sexp: float] (to_sexp x))
-
     let sexp_of x = wrap @@ fun () -> Sexp ([%sexp_of: float] (to_float x))
 
     open Float
 
     let ( ~- ) x = float_unop ( ~- ) x
-
     let sin x = float_unop sin x
-
     let cos x = float_unop cos x
-
     let ( + ) x y = float_binop ( + ) x y
-
     let ( - ) x y = float_binop ( - ) x y
-
     let ( * ) x y = float_binop ( * ) x y
-
     let ( / ) x y = float_binop ( / ) x y
-
     let ( ** ) x y = float_binop ( ** ) x y
-
     let min x y = float_binop min x y
-
     let max x y = float_binop max x y
-
     let ( > ) x y = cmp_binop ( > ) x y
-
     let ( >= ) x y = cmp_binop ( >= ) x y
-
     let ( < ) x y = cmp_binop ( < ) x y
-
     let ( <= ) x y = cmp_binop ( <= ) x y
-
     let ( = ) x y = cmp_binop ( = ) x y
   end
 
@@ -470,7 +382,6 @@ module Code = struct
     loop lo
 
   let ite c t e = if to_bool c then t () else e ()
-
   let force = function (lazy { value = Unit; _ }) -> () | _ -> failwith "Expected unit"
 
   let seq x y =
@@ -479,9 +390,7 @@ module Code = struct
     to_value' y
 
   let sseq = List.fold_left ~init:unit ~f:seq
-
   let exit = wrap @@ fun () -> raise Exit
-
   let return = wrap @@ fun () -> assert false
 
   let print s =
@@ -490,14 +399,11 @@ module Code = struct
     Unit
 
   let eprint = print
-
   let to_func x = match to_value x with Func x -> x | _ -> assert false
 
   module Func = struct
     let mk_type _ _ = ()
-
     let func _ _ f = wrap @@ fun () -> Func (fun x -> f (to_code x) |> to_value')
-
     let apply f x = wrap' @@ fun () -> (to_func f) (to_value' x)
   end
 

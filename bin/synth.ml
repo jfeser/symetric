@@ -1,8 +1,6 @@
 open! Core
 open Staged_synth
-
 module Core = Cstage_core.Make ()
-
 module Code = Cstage.Code (Core)
 module Deepcoder = Deepcoder.Make (Cstage_array.ArenaArray (Core)) (Code)
 

@@ -18,9 +18,7 @@ module T = struct
     iter r.lo
 
   let iter = `Custom iter
-
   let length r = r.hi - r.lo
-
   let length = `Custom length
 end
 
@@ -28,5 +26,4 @@ include T
 include Container.Make0 (T)
 
 let create lo hi = { lo; hi }
-
 let mem { lo; hi } x = lo <= x && x < hi

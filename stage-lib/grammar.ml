@@ -13,7 +13,6 @@ module Bind = struct
 end
 
 type nonterm = string [@@deriving compare, hash, sexp]
-
 type 'n term = Nonterm of 'n | App of string * 'n term list | As of 'n term * Bind.t [@@deriving compare, hash, sexp]
 
 let to_preorder t =
@@ -70,7 +69,6 @@ module Untyped_term = struct
   and pp_args args = Fmt.(iter ~sep:comma (fun f l -> List.iter ~f l) pp args)
 
   let rec size = function Nonterm _ -> 1 | App (_, ts) -> 1 + List.sum (module Int) ~f:size ts | As (t, _) -> size t
-
   let n_holes t = non_terminals t |> List.length
 
   let rec to_string = function
@@ -93,9 +91,7 @@ module Term = struct
   open Untyped_term
 
   let nonterm n = Nonterm n
-
   let app n ts = App (n, ts)
-
   let as_ t n = As (t, n)
 
   let rec load = function
@@ -104,17 +100,11 @@ module Term = struct
     | _ -> failwith "unexpected sexp"
 
   let non_terminals = non_terminals
-
   let size = size
-
   let n_holes = n_holes
-
   let to_string = to_string
-
   let with_holes = with_holes
-
   let map = map
-
   let bindings = bindings
 end
 
@@ -122,24 +112,17 @@ module Rule = struct
   type 's t = { lhs : nonterm; rhs : Untyped_term.t; sem : 's list [@sexp.omit_nil] } [@@deriving compare, hash, sexp]
 
   let pp fmt { lhs; rhs; _ } = Fmt.fmt "@[<hov 2>@[%s@]@ ->@ @[%a@]@]" fmt lhs Untyped_term.pp rhs
-
   let lhs { lhs; _ } = lhs
-
   let rhs { rhs; _ } = rhs
-
   let semantics { sem; _ } = sem
-
   let create lhs rhs sem = { lhs; rhs; sem }
-
   let of_tuple (lhs, rhs) = create lhs rhs []
 end
 
 type 's t = 's Rule.t list [@@deriving compare, sexp]
 
 let of_list = List.map ~f:Rule.of_tuple
-
 let rhs g s = List.filter_map g ~f:(fun r -> if String.(s = Rule.lhs r) then Some (Rule.rhs r) else None)
-
 let lhs g = List.map g ~f:Rule.lhs |> List.dedup_and_sort ~compare:[%compare: nonterm]
 
 let rec product = function

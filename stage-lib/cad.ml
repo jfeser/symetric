@@ -2,15 +2,10 @@ open Types
 
 module type Deps = sig
   include Sigs.CODE
-
   module Set : Cstage_set.S with type 'a code := 'a t and type 'a ctype := 'a ctype
-
   module Array : Cstage_array.S with type 'a code := 'a t and type 'a ctype := 'a ctype
-
   module Float : Cstage_float.S with type 'a code := 'a t and type 'a ctype := 'a ctype
-
   module Tuple_3 : Cstage_tuple.Tuple_3.S with type 'a code := 'a t and type 'a ctype := 'a ctype
-
   module Tuple_4 : Cstage_tuple.Tuple_4.S with type 'a code := 'a t and type 'a ctype := 'a ctype
 end
 
@@ -18,11 +13,8 @@ module Make (C : Deps) = struct
   module Lang = struct
     module Value = struct
       type value = Value
-
       type offset_t = C.Int.t * C.Float.t
-
       type vectors_t = (C.Float.t (* x *), C.Float.t (* y *), C.Float.t (* z *)) C.Tuple_3.t C.Array.t
-
       type sphere_t = (C.Float.t (* x *), C.Float.t (* y *), C.Float.t (* z *), C.Float.t (* r *)) C.Tuple_4.t
 
       type cylinder_t =
@@ -67,11 +59,8 @@ module Make (C : Deps) = struct
         | Cuboid_z_offset _ -> Fmt.pf fmt "cuboid-z-offset"
 
       let examples_t = C.Array.mk_type C.Bool.type_
-
       let offset_t = C.Tuple.mk_type C.Int.type_ C.Float.type_
-
       let vectors_t : vectors_t C.ctype = C.Array.mk_type @@ C.Tuple_3.mk_type C.Float.type_ C.Float.type_ C.Float.type_
-
       let sphere_t : sphere_t C.ctype = C.Tuple_4.mk_type C.Float.type_ C.Float.type_ C.Float.type_ C.Float.type_
 
       let cylinder_t : cylinder_t C.ctype =
@@ -86,17 +75,11 @@ module Make (C : Deps) = struct
         failwith @@ sprintf "Expected %s but got %s" expected got
 
       let to_examples = function Examples x -> x | x -> err "examples" x
-
       let to_vectors = function Vectors x -> x | x -> err "vectors" x
-
       let to_sphere = function Sphere x -> x | x -> err "sphere" x
-
       let to_cylinder = function Cylinder x -> x | x -> err "cylinder" x
-
       let to_cuboid = function Cuboid x -> x | x -> err "cuboid" x
-
       let to_bool = function Bool x -> x | x -> err "bool" x
-
       let to_int = function Int x -> x | x -> err "int" x
 
       let to_offset = function
@@ -155,11 +138,9 @@ module Make (C : Deps) = struct
 
       module Key = struct
         type value = t
-
         type t = K : (_ C.t -> value) Variant.t -> t
 
         let sexp_of_t (K _) = assert false
-
         let key = Univ_map.Key.create ~name:"cad.value" [%sexp_of: t]
       end
 
@@ -177,7 +158,6 @@ module Make (C : Deps) = struct
     open Value
 
     type value = Value.t
-
     type 'a code = 'a C.t
 
     let fresh = Fresh.create ()
@@ -259,7 +239,6 @@ module Make (C : Deps) = struct
       | e -> Error.create "Unexpected expression." e [%sexp_of: Grammar.Untyped_term.t] |> Error.raise
 
     and eval_examples ctx x = eval ctx x |> to_examples
-
     and eval_offset ctx x = eval ctx x |> to_offset |> C2.snd
 
     let eval ctx expr =
@@ -341,11 +320,8 @@ module Make (C : Deps) = struct
 
   module Cache = struct
     type value = Lang.Value.t
-
     type 'a code = 'a C.t
-
     type cache = bool C.Array.t C.Set.t C.Array.t * int C.Set.t C.Array.t
-
     type t = cache C.t
 
     let max_size = 50
@@ -373,9 +349,7 @@ module Make (C : Deps) = struct
       | _ -> unit
 
     let print_size _ = failwith "print_size"
-
     let code_of = Fun.id
-
     let of_code = Fun.id
   end
 end

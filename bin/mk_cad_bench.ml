@@ -7,7 +7,6 @@ let main size =
   let module Code = Cstage.Code (Core) in
   let module Code = struct
     module Core = Cstage_core.Make ()
-
     include Core
     include Cstage.Code (Core)
     module Set = Cstage_set.Hash_set (Core)
@@ -19,9 +18,7 @@ let main size =
   let module Cad = Cad.Make (Code) in
   let module Sketch = struct
     let background = [ "S"; "V"; "C"; "CO"; "U"; "UOX"; "UOY"; "UOZ" ]
-
     let input = "V"
-
     let output = "E0"
   end in
   let open Synth.Make (Sketch) (Code) (Cad.Lang) (Cad.Cache) in

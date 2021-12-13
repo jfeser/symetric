@@ -13,13 +13,9 @@ module type Lang_intf = sig
     type t [@@deriving compare, hash, sexp]
 
     val cost : t -> int
-
     val arity : t -> int
-
     val args_type : t -> Type.t list
-
     val ret_type : t -> Type.t
-
     val is_commutative : t -> bool
   end
 
@@ -31,26 +27,19 @@ module type Lang_intf = sig
     end
 
     val eval : Ctx.t -> Op.t -> t list -> t
-
     val is_error : t -> bool
   end
 end
 
 module type Domain_pred_intf = sig
   type concrete
-
   type op
-
   type ctx
-
   type t [@@deriving compare, hash, sexp]
 
   val cost : [ `Concrete of concrete | `Pred of t ] -> int
-
   val lift : concrete -> t Iter.t
-
   val complete : t -> t Iter.t
-
   val eval : t -> concrete -> bool
 
   val transfer :
@@ -131,7 +120,6 @@ struct
               | `Concrete v' -> [%compare.equal: Value.t] v v')
 
       let length = function Bottom -> 0 | Preds ps -> Set.length ps
-
       let singleton p = of_iter @@ Iter.singleton p
     end
 
@@ -199,7 +187,6 @@ struct
           type t = Args | And of int | Pred of int * [ Pred.t | `True ] [@@deriving compare, hash, sexp]
 
           let arity = function Args -> n_args | And _ -> 2 | Pred _ -> 0
-
           let ret_type : _ -> Type.t = function Args -> Args | And slot -> Pred slot | Pred (slot, _) -> Pred slot
 
           let args_type = function
@@ -208,7 +195,6 @@ struct
             | Pred _ -> []
 
           let is_commutative _ = false
-
           let cost = function Pred (_, `True) -> 1 | Pred (_, (#Pred.t as p)) -> Pred.cost p | Args | And _ -> 1
         end
 

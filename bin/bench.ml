@@ -6,16 +6,13 @@ module type LANG = sig
 
   module Value : sig
     type t
-
     type value
 
     val sexp_of : t -> Sexp.t code
-
     val random : ?state:Random.State.t -> Grammar.nonterm -> int -> t
   end
 
   val grammar : (Value.t, bool code) Semantics.t Grammar.t
-
   val eval : Value.t Map.M(String).t -> [ `Closed ] Grammar.Term.t -> Value.t
 end
 

@@ -26,15 +26,10 @@ let generate_benchmarks ?(max_states = 100_000) ops ectx cost type_ =
   |> Iter.map (Search_state.program_exn search_state type_)
 
 let run_abs = false
-
 let run_abs_v2 = true
-
 let run_local = false
-
 let run_local_no_dist_close = false
-
 let run_local_no_dist_far = false
-
 let time_if cond f = if cond then Synth_utils.time f else ""
 
 let () =

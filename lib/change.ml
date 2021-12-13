@@ -1,6 +1,5 @@
 module M (K : sig
   type t
-
   type comparator_witness
 end) =
 struct

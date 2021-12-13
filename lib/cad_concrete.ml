@@ -6,5 +6,4 @@ module Value = Cad_conc
 module Bench = Cad_bench
 
 type symb = Cad_symb.t
-
 type bench = Cad_bench.t

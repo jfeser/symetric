@@ -40,7 +40,6 @@ let pp fmt = function
   | Offset x -> Fmt.pf fmt "offset_%f" @@ Offset.offset x
 
 let to_string = Fmt.to_to_string pp
-
 let arity = function Sphere _ | Offset _ -> 0 | Union | Inter | Sub | Cylinder _ -> 2 | Cuboid _ -> 6
 
 let ret_type = function

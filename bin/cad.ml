@@ -5,7 +5,6 @@ module Lang = Cad_ext
 open Lang
 
 let size = Scene.Size.create ~xres:13 ~yres:20 ()
-
 let mk_ectx () = Value.Ctx.create size
 
 let generate_benchmarks ?(max_states = 1_000) ops ectx cost type_ =
@@ -15,7 +14,6 @@ let generate_benchmarks ?(max_states = 1_000) ops ectx cost type_ =
   let synth =
     object
       inherit synthesizer config as super
-
       method! insert_states cost states = super#insert_states cost @@ List.take (List.permute states) max_states
     end
   in
@@ -26,21 +24,13 @@ let generate_benchmarks ?(max_states = 1_000) ops ectx cost type_ =
   |> Iter.map (Search_state.program_exn search_state type_)
 
 let two_circle = Op.(union (circle 3 12 4) (circle 17 11 6))
-
 let three_circle = Op.(union (circle 5 15 5) @@ union (circle 15 15 5) (circle 25 15 5))
-
 let four_circle = Op.(union (circle 5 15 5) @@ union (circle 15 15 5) @@ union (circle 25 15 5) (circle 20 5 5))
-
 let circle_repl = Op.(repl 10 10 5 (circle 5 5 5))
-
 let circle = Op.(circle 6 4 5)
-
 let letter_e = Op.(union (rect 0 0 5 19) (repl 0 8 3 @@ rect 0 0 13 4))
-
 let simple_e = Op.(repl 0 8 3 @@ rect 7 5 13 9)
-
 let fence = Op.(union (repl 7 0 10 (rect 0 0 2 15)) (repl 0 7 2 (rect 0 4 30 5)))
-
 let checkerboard = Op.(repl 0 8 4 (union (repl 9 0 4 (rect 0 0 3 3)) (repl 9 0 3 (rect 4 4 8 7))))
 
 let benchmarks =
@@ -85,13 +75,9 @@ harness void main(int i) {
   | _ -> assert false
 
 let run_abs = false
-
 let run_local = true
-
 let run_local_no_dist_close = false
-
 let run_local_no_dist_far = false
-
 let time_if cond f = if cond then Synth_utils.time f else ""
 
 let () =

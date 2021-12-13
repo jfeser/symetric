@@ -12,7 +12,5 @@ let reserve a n =
     a := a')
 
 let get_some_exn a = A.get_some_exn !a
-
 let set_some a = A.set_some !a
-
 let get a = A.get !a

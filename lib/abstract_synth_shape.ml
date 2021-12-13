@@ -11,7 +11,6 @@ module Simple_abstract_value = struct
     type t = { n_pos : int; show_color : bool; show_sides : bool }
 
     let create n_pos = { n_pos; show_color = false; show_sides = false }
-
     let of_params _ = { n_pos = 5; show_color = false; show_sides = false }
   end
 
@@ -67,7 +66,6 @@ module Mask_abstract_value = struct
     type t = { n_pos : int; mask : (bool * bool) array }
 
     let create n_pos = { n_pos; mask = Array.create ~len:n_pos (false, false) }
-
     let of_params _ = create 5
   end
 
@@ -132,7 +130,6 @@ module Correct_mask_abstract_value = struct
     type t = { scene : Shape.Value.scene }
 
     let create scene = { scene }
-
     let of_params _ = failwith "unimplemented"
   end
 
@@ -157,7 +154,6 @@ module Correct_mask_abstract_value = struct
         Scene (Cow_array.map2_exn s ctx.scene ~f:(fun v v' -> [%compare.equal: (Shape.color * int) option] v v'))
 
   let refine _ _ _ = None
-
   let is_error _ = false
 end
 

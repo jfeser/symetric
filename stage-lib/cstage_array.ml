@@ -3,13 +3,10 @@ open Types
 
 module type S = sig
   type 'a code
-
   type 'a ctype
-
   type 'a t
 
   val mk_type : 'a ctype -> 'a t ctype
-
   val elem_type : 'a t ctype -> 'a ctype
 
   module O : sig
@@ -17,67 +14,42 @@ module type S = sig
   end
 
   val const : 'a t ctype -> 'a code Array.t -> 'a t code
-
   val get : 'a t code -> int code -> 'a code
-
   val set : 'a t code -> int code -> 'a code -> unit code
-
   val length : 'a t code -> int code
-
   val fold : 'a t code -> init:'b code -> f:('b code -> 'a code -> 'b code) -> 'b code
-
   val iter : 'a t code -> f:('a code -> unit code) -> unit code
-
   val sub : 'a t code -> int code -> int code -> 'a t code
-
   val init : int code -> (int code -> 'a code) -> 'a t code
-
   val map : 'a t code -> f:('a code -> 'b code) -> 'b t code
-
   val map2 : 'a t code -> 'b t code -> f:('a code -> 'b code -> 'c code) -> 'c t code
-
   val of_sexp : sexp code -> (sexp code -> 'a code) -> 'a t code
-
   val sexp_of : 'a t code -> ('a code -> sexp code) -> sexp code
 end
 
 module type Base = sig
   type typ
-
   type expr
 
   val mk_type : typ -> typ
-
   val create : typ -> expr -> expr
-
   val length : expr -> expr
-
   val set : expr -> expr -> expr -> expr
-
   val get : expr -> expr -> expr
 end
 
 module type Derived = sig
   type typ
-
   type expr
 
   val const : typ -> expr array -> expr
-
   val init : expr -> (expr -> expr) -> expr
-
   val map : expr -> f:(expr -> expr) -> expr
-
   val map2 : expr -> expr -> f:(expr -> expr -> expr) -> expr
-
   val sub : expr -> expr -> expr -> expr
-
   val fold : expr -> init:expr -> f:(expr -> expr -> expr) -> expr
-
   val iter : expr -> f:(expr -> expr) -> expr
-
   val of_sexp : expr -> (expr -> expr) -> expr
-
   val sexp_of : expr -> (expr -> expr) -> expr
 
   module O : sig
@@ -87,11 +59,9 @@ end
 
 module type S_ = sig
   type typ
-
   type expr
 
   include Base with type typ := typ and type expr := expr
-
   include Derived with type typ := typ and type expr := expr
 
   val elem_type : typ -> typ
@@ -117,7 +87,6 @@ module Derived (C : Cstage_core.S) (B : Base with type expr = C.expr and type ty
     |> no_effect |> with_comment "Array.init"
 
   let map arr ~f = init (length arr) (fun i -> let_ (get arr i) f)
-
   let map2 a1 a2 ~f = let_ (Int.min (length a1) (length a2)) @@ fun n -> init n (fun i -> f (get a1 i) (get a2 i))
 
   let sub a start len =
@@ -157,11 +126,8 @@ module Array (C : Cstage_core.S) = struct
   open C
 
   type 'a t
-
   type 'a code = 'a C.t
-
   type typ = C.typ
-
   type 'a ctype = 'a C.ctype
 
   let elem_t = Univ_map.Key.create ~name:"elem_t" [%sexp_of: typ]
@@ -173,22 +139,16 @@ module Array (C : Cstage_core.S) = struct
 
   module Base = struct
     type typ = C.typ
-
     type expr = C.expr
 
     let mk_type e = Type.create ~name:(sprintf "std::vector<%s>" (Type.name e)) |> Type.add_exn ~key:elem_t ~data:e
-
     let create t n = fresh_decl ~init:n t
-
     let length x = unop "((int)((%s).size()))" Int.type_ x
-
     let set a i x = eformat ~has_effect:true "0" unit_t "$(a)[$(i)] = $(x);" [ ("a", C a); ("i", C i); ("x", C x) ]
-
     let get a x = eformat "($(a)[$(x)])" (elem_type a.etype) "" [ ("a", C a); ("x", C x) ]
   end
 
   include (Base : Base with type typ := C.typ and type expr := C.expr)
-
   include Derived (C) (Base)
 end
 
@@ -198,33 +158,23 @@ module ArenaArray (C : Cstage_core.S) = struct
   module A = Array (C)
 
   type 'a t
-
   type typ = C.typ
-
   type 'a ctype = 'a C.ctype
-
   type 'a code = 'a C.t
 
   (** Number of elements in the arena. *)
   let default_size = 500_000
 
   let no_effect e = { e with eeffect = false }
-
   let elem_k = Univ_map.Key.create ~name:"elem_t" [%sexp_of: typ]
-
   let arena_k = Univ_map.Key.create ~name:"arena" [%sexp_of: expr]
-
   let arena_offset_k = Univ_map.Key.create ~name:"arena_offset" [%sexp_of: expr]
-
   let elem_type t = Univ_map.find_exn t elem_k
-
   let arena t = Univ_map.find_exn t arena_k
-
   let arena_offset t = Univ_map.find_exn t arena_offset_k
 
   module Base = struct
     type typ = C.typ
-
     type expr = C.expr
 
     let mk_type e =
@@ -240,14 +190,11 @@ module ArenaArray (C : Cstage_core.S) = struct
       sseq [ eformat "0" unit_t "$(offset) += $(len);" ctx; arr ]
 
     let length x = unop "((int)((%s).len))" Int.type_ x
-
     let set a i x = eformat ~has_effect:true "0" unit_t "$(a).ptr[$(i)] = $(x);" [ ("a", C a); ("i", C i); ("x", C x) ]
-
     let get a x = eformat "($(a).ptr[$(x)])" (elem_type a.etype) "" [ ("a", C a); ("x", C x) ]
   end
 
   include (Base : Base with type typ := C.typ and type expr := C.expr)
-
   include Derived (C) (Base)
 
   let sub a start len =
@@ -268,28 +215,20 @@ module ReversibleArray (C : Cstage_core.S) (A : S_ with type expr = C.expr and t
   open C
 
   type 'a code = 'a C.t
-
   type typ = C.typ
-
   type 'a ctype = 'a C.ctype
-
   type 'a t
 
   let elem_k = Univ_map.Key.create ~name:"elem_t" [%sexp_of: typ]
-
   let arena_offset_k = Univ_map.Key.create ~name:"arena_offset" [%sexp_of: expr]
-
   let elem_type t = Univ_map.find_exn t elem_k
 
   module Base = struct
     type typ = C.typ
-
     type expr = C.expr
 
     let mk_type e = Tuple.mk_type (A.mk_type e) Bool.type_
-
     let create t l = Tuple.create (A.create t l) (C.Bool.bool false)
-
     let length x = A.length (Tuple.fst x)
 
     let set a i x =
@@ -302,7 +241,6 @@ module ReversibleArray (C : Cstage_core.S) (A : S_ with type expr = C.expr and t
   end
 
   include (Base : Base with type typ := C.typ and type expr := C.expr)
-
   include Derived (C) (Base)
 
   let reverse a = Tuple.create (Tuple.fst a) (Bool.not (Tuple.snd a))

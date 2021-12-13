@@ -7,7 +7,6 @@ module Log = Utils.Make_log (struct
 end)
 
 let prune = ref true
-
 and debug = ref false
 
 let param =
@@ -45,7 +44,6 @@ struct
       [@@deriving compare, hash, sexp]
 
       type arg = { id : int; n_args : int } [@@deriving compare, hash, sexp]
-
       type t = State of state | Code of code | Arg of arg [@@deriving compare, hash, sexp]
     end
 
@@ -53,11 +51,8 @@ struct
     include Comparator.Make (T)
 
     let pp fmt v = Sexp.pp_hum fmt @@ [%sexp_of: t] v
-
     let to_state = function State s -> s | _ -> failwith "Not a state"
-
     let to_code = function Code s -> s | _ -> failwith "Not a code"
-
     let equal = [%compare.equal: t]
   end
 
@@ -72,9 +67,7 @@ struct
 
     module X = struct
       let graph_attributes _ = []
-
       let default_vertex_attributes _ = []
-
       let vertex_name v = [%sexp_of: V.t] v |> Sexp.to_string |> sprintf "%S"
 
       let vertex_label = function
@@ -88,9 +81,7 @@ struct
         shape @ label
 
       let get_subgraph _ = None
-
       let default_edge_attributes _ = []
-
       let edge_attributes (_, idx, _) = if idx >= 0 then [ `Label (sprintf "%d" idx) ] else []
     end
 
@@ -105,19 +96,13 @@ struct
         (G)
         (struct
           type vertex = E.vertex
-
           type edge = E.t
-
           type g = t
-
           type data = bool
 
           let direction = Graph.Fixpoint.Forward
-
           let equal = Bool.( = )
-
           let join = ( || )
-
           let analyze _ x = x
         end)
 
@@ -126,28 +111,20 @@ struct
         (G)
         (struct
           type vertex = E.vertex
-
           type edge = E.t
-
           type g = t
-
           type data = bool
 
           let direction = Graph.Fixpoint.Backward
-
           let equal = Bool.( = )
-
           let join = ( || )
-
           let analyze _ x = x
         end)
 
     module Topo = Graph.Topological.Make_stable (G)
 
     let filter_vertex g ~f = fold_vertex (fun v g -> if f v then remove_vertex g v else g) g g
-
     let add_edges g vs = List.fold_left ~init:g ~f:(fun g (v, v') -> add_edge g v v') vs
-
     let reverse g = fold_edges (fun v v' g -> add_edge (remove_edge g v v') v' v) g g
   end
 

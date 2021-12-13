@@ -18,9 +18,7 @@ let time ?(repeat = 10) f =
 exception Break
 
 let break _ = raise Break
-
 let () = Caml.Sys.(set_signal sigint (Signal_handle break))
-
 let print_json = Yojson.Basic.to_channel Out_channel.stdout
 
 let run_synth constr params print () =

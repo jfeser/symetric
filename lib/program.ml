@@ -11,7 +11,6 @@ let rec pp pp_op fmt (Apply (op, args)) =
   else Fmt.pf fmt "@[<hov 2>%a(@,%a@,)@]" pp_op op Fmt.(list ~sep:comma @@ pp pp_op) args
 
 let apply ?(args = []) op = Apply (op, args)
-
 let rec eval oeval (Apply (op, args)) = oeval op (List.map args ~f:(eval oeval))
 
 let eval_parts oeval p =
@@ -25,9 +24,7 @@ let eval_parts oeval p =
   Queue.to_list parts
 
 let rec size (Apply (_, args)) = 1 + List.sum (module Int) args ~f:size
-
 let rec count ~f (Apply (op, args)) = (if f op then 1 else 0) + List.sum (module Int) args ~f:(count ~f)
-
 let rec ops (Apply (op, args)) = op :: List.concat_map args ~f:ops
 
 let rec ops_iter (Apply (op, args)) f =

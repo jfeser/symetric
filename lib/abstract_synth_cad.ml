@@ -15,7 +15,6 @@ let abs_value ?(range_width = 5) size =
           Scene.to_iter size s |> Iter.filter_map (fun ((x, y), v) -> if v then Some (Pixel_on (x, y)) else None)
 
     type arg = [ `True | `Concrete of Value.t | `Pred of t ]
-
     type ret = [ `False | `Concrete of Value.t | `Pred of t ]
 
     let all_ints : [> `Concrete of Value.t ] -> _ = function

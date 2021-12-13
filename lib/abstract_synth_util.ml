@@ -14,19 +14,13 @@ end
 
 module type Domain_atomic_intf = sig
   type concrete
-
   type op
-
   type ctx
-
   type t [@@deriving compare, hash, sexp]
 
   val cost : [ `Concrete of concrete | `Pred of t ] -> int
-
   val lift : concrete -> t Iter.t
-
   val complete : t -> t Iter.t
-
   val eval : t -> concrete -> bool
 end
 
@@ -65,7 +59,6 @@ module Predicate_domain (Value : Value_intf) (Domain_pred : Domain_atomic_intf w
     of_iter (Iter.cons (`Concrete conc) domain)
 
   let and_ p p' = match (p, p') with Bottom, _ | _, Bottom -> Bottom | Preds ps, Preds ps' -> Preds (Set.union ps ps')
-
   let and_many = Iter.fold and_ (Preds (Set.empty (module Atomic)))
 
   let complete = function
@@ -88,6 +81,5 @@ module Predicate_domain (Value : Value_intf) (Domain_pred : Domain_atomic_intf w
         Set.for_all ps ~f:(function `Pred p -> Domain_pred.eval p v | `Concrete v' -> [%compare.equal: Value.t] v v')
 
   let length = function Bottom -> 0 | Preds ps -> Set.length ps
-
   let singleton p = of_iter @@ Iter.singleton p
 end

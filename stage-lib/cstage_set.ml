@@ -3,35 +3,25 @@ open Types
 
 module type S = sig
   type 'a t
-
   type 'a code
-
   type 'a ctype
 
   val mk_type : 'a ctype -> 'a set ctype
-
   val empty : 'a set ctype -> 'a set code
-
   val add : 'a set code -> 'a code -> unit code
-
   val iter : 'a set code -> ('a code -> unit code) -> unit code
-
   val fold : 'a set code -> init:'b code -> f:('b code -> 'a code -> 'b code) -> 'b code
-
   val of_sexp : 'a set ctype -> sexp code -> (sexp code -> 'a code) -> 'a set code
-
   val sexp_of : 'a set code -> ('a code -> sexp code) -> sexp code
 end
 
 module Base_set
     (C : Cstage_core.S) (T : sig
       val mk_type : 'a C.ctype -> 'a set C.ctype
-
       val elem_type : 'a set C.ctype -> 'a C.ctype
     end) =
 struct
   let mk_type = T.mk_type
-
   let elem_type = T.elem_type
 
   module Int = Cstage_int.Int (C)
@@ -90,9 +80,7 @@ module Ordered_set (C : Cstage_core.S) =
       open C
 
       let elem_t = Univ_map.Key.create ~name:"elem_t" [%sexp_of: typ]
-
       let elem_type t = Univ_map.find_exn t elem_t
-
       let mk_type e = Type.create ~name:(sprintf "std::set<%s >" (Type.name e)) |> Type.add_exn ~key:elem_t ~data:e
     end)
 
@@ -103,7 +91,6 @@ module Hash_set (C : Cstage_core.S) =
       open C
 
       let elem_t = Univ_map.Key.create ~name:"elem_t" [%sexp_of: typ]
-
       let elem_type t = Univ_map.find_exn t elem_t
 
       let mk_type e =
