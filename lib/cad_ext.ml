@@ -5,12 +5,12 @@ module Type = struct
 end
 
 module Op = struct
-  type t = Union | Inter | Circle | Rect | Repl | Int of int | Rep_count of int [@@deriving compare, hash, sexp]
+  type t = Union | Inter | Circle | Rect | Repl | Sub | Int of int | Rep_count of int [@@deriving compare, hash, sexp]
 
   let cost _ = 1
 
   let ret_type : _ -> Type.t = function
-    | Union | Inter | Circle | Rect | Repl -> Scene
+    | Union | Inter | Circle | Rect | Repl | Sub -> Scene
     | Int _ -> Int
     | Rep_count _ -> Rep_count
 
@@ -18,32 +18,23 @@ module Op = struct
     | Circle -> [ Int; Int; Int ]
     | Rect -> [ Int; Int; Int; Int ]
     | Repl -> [ Scene; Int; Int; Rep_count ]
-    | Union | Inter -> [ Scene; Scene ]
+    | Union | Inter | Sub -> [ Scene; Scene ]
     | Int _ -> []
     | Rep_count _ -> []
 
   let arity op = List.length @@ args_type op
-
   let is_commutative = function Union | Inter -> true | _ -> false
-
   let pp fmt x = Sexp.pp_hum fmt @@ [%sexp_of: t] x
 
   open Program.T
 
   let int x = Apply (Int x, [])
-
   let rc x = Apply (Rep_count x, [])
-
   let circle x y r = Apply (Circle, [ int x; int y; int r ])
-
   let rect lx ly rx ry = Apply (Rect, [ int lx; int ly; int rx; int ry ])
-
   let empty = circle 0 0 0
-
   let union x y = Apply (Union, [ x; y ])
-
   let inter x y = Apply (Inter, [ x; y ])
-
   let repl dx dy c p = Apply (Repl, [ p; int dx; int dy; rc c ])
 end
 
@@ -91,12 +82,15 @@ module Value = struct
         Error
     | Rect, [ Int lo_left_x; Int lo_left_y; Int hi_right_x; Int hi_right_y ] ->
         Scene (S.init size ~f:(fun _ x y -> lo_left_x <= x && lo_left_y <= y && hi_right_x >= x && hi_right_y >= y))
-    | (Inter | Union), ([ Error; _ ] | [ _; Error ]) -> Error
+    | (Inter | Union | Sub), ([ Error; _ ] | [ _; Error ]) -> Error
     | Inter, [ Scene s; Scene s' ] ->
         let s'' = S.create (Bitarray.and_ (S.pixels s) (S.pixels s')) in
         if S.equal s s'' || S.equal s' s'' then Error else Scene s''
     | Union, [ Scene s; Scene s' ] ->
         let s'' = S.create (Bitarray.or_ (S.pixels s) (S.pixels s')) in
+        if S.equal s s'' || S.equal s' s'' then Error else Scene s''
+    | Sub, [ Scene s; Scene s' ] ->
+        let s'' = S.create (Bitarray.and_ (S.pixels s) (Bitarray.not @@ S.pixels s')) in
         if S.equal s s'' || S.equal s' s'' then Error else Scene s''
     | Repl, [ Error; Int _; Int _; Rep_count _ ] -> Error
     | Repl, [ Scene _; Int dx; Int dy; Rep_count c ] when (dx = 0 && dy = 0) || c <= 1 -> Error

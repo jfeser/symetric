@@ -12,11 +12,8 @@ module type Lang_intf = sig
     type t [@@deriving compare, hash, sexp]
 
     val cost : t -> int
-
     val arity : t -> int
-
     val args_type : t -> Type.t list
-
     val ret_type : t -> Type.t
   end
 
@@ -178,7 +175,6 @@ module Make (Lang : Lang_intf) = struct
     program_of_op_args_exn ctx p.op p.args
 
   and program_of_class_exn ctx (class_ : TValue.t) = program_exn ctx class_.type_ class_.value
-
   and program_of_op_args_exn ctx op args = Apply (op, List.map2_exn (Op.args_type op) args ~f:(program_exn ctx))
 
   let rec random_program_exn ctx type_ value =
@@ -205,7 +201,6 @@ module Make (Lang : Lang_intf) = struct
     |> List.find_map ~f:(fun (k, vs) -> if Queue.mem vs v ~equal:[%compare.equal: Value.t] then Some k.cost else None)
 
   let n_states { values; _ } = H.length values
-
   let n_transitions { paths; _ } = H.fold ~init:0 ~f:(fun ~key:_ ~data sum -> sum + Queue.length data) paths
 
   let replace i f prog =
@@ -462,13 +457,11 @@ module Make (Lang : Lang_intf) = struct
     let%bind _, best_path =
       let all_paths = H.find_exn ss.paths class_ in
       let eligible_paths =
-        Iter.of_queue all_paths
-        |> Iter.filter (fun (p : Path.t) -> p.cost <= cost)
-        |> Iter.map (fun (p : Path.t) -> (dist p.value, p))
-        |> Iter.to_list
+        Iter.of_queue all_paths |> Iter.filter (fun (p : Path.t) -> cost > 1 || List.is_empty p.args) |> Iter.to_list
       in
       let n_sample = max 1 (List.length eligible_paths / 2) in
       Iter.of_list eligible_paths |> Iter.sample n_sample |> Iter.of_array
+      |> Iter.map (fun (p : Path.t) -> (dist p.value, p))
       |> Iter.min ~lt:(fun (d, _) (d', _) -> Float.(d < d'))
     in
     List.zip_exn (Op.args_type best_path.op) best_path.args

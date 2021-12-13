@@ -6,17 +6,22 @@ module S = Synth.Search_state
 open Std
 
 let size = Scene.Size.create ~xres:13 ~yres:20 ()
-
 let read = false
 
 let () =
   Random.init 0;
   let ectx = Value.Ctx.create size in
-  let thresh = 0.15 in
+  let thresh = 0.2 in
   let distance v v' =
     match (v, v') with
     | Value.Int x, Value.Int x' -> Float.of_int (abs (x - x')) *. 0.3
     | Scene x, Scene x' -> Scene.jaccard x x'
+    | _ -> Float.infinity
+  in
+  let target_distance v v' =
+    match (v, v') with
+    | Value.Int x, Value.Int x' -> Float.of_int (abs (x - x')) *. 0.3
+    | Scene x, Scene x' -> Bitarray.weighted_jaccard (Scene.pixels x) (Scene.pixels x')
     | _ -> Float.infinity
   in
 
@@ -46,41 +51,37 @@ let () =
   in
 
   let ops =
-    Op.[ Union; Circle; Rect; Repl ]
+    Op.[ Union; Circle; Rect; Repl; Sub ]
     @ (List.range 0 (max size.xres size.yres) |> List.map ~f:(fun i -> Op.Int i))
-    @ (List.range 1 5 |> List.map ~f:(fun i -> Op.Rep_count i))
+    @ (List.range 2 5 |> List.map ~f:(fun i -> Op.Rep_count i))
   in
   let search_state =
-    if not read then (
-      let filler =
-        object
-          inherit
-            Synth.synthesizer (Synth.Ctx.create ~distance ~search_thresh:(Top_k 0) ~thresh ectx ops target_value) as super
+    let filler =
+      object
+        inherit
+          Synth.synthesizer (Synth.Ctx.create ~distance ~search_thresh:(Top_k 0) ~thresh ectx ops target_value) as super
 
-          method generate_states cost =
-            let orig = super#generate_states cost in
-            let filtered =
-              List.filter orig ~f:(fun (v, _, _) ->
-                  match v with
-                  | Scene s ->
-                      Bitarray.hamming_weight (Bitarray.and_ (Scene.pixels target_scene) (Scene.pixels s)) > 0
-                      && Bitarray.hamming_weight
-                           (Bitarray.and_ (Scene.pixels target_edges) (Scene.pixels @@ Scene.edges size s))
-                         > 0
-                  | _ -> true)
-            in
-            print_s [%message (List.length orig : int) (List.length filtered : int)];
-            filtered
-        end
-      in
-      for i = 0 to 100 do
-        print_s [%message (i : int)];
-        filler#fill i
-      done;
-      let search_state = filler#get_search_state in
-      Out_channel.with_file "search_state.sexp" ~f:(fun ch -> Sexp.output ch @@ [%sexp_of: S.t] search_state);
-      search_state)
-    else In_channel.with_file "search_state.sexp" ~f:(fun ch -> [%of_sexp: S.t] @@ Sexp.input_sexp ch)
+        method generate_states cost =
+          let orig = super#generate_states cost in
+          let filtered =
+            List.filter orig ~f:(fun (v, _, _) ->
+                match v with
+                | Scene s ->
+                    Bitarray.hamming_weight (Bitarray.and_ (Scene.pixels target_scene) (Scene.pixels s)) > 0
+                    && Bitarray.hamming_weight
+                         (Bitarray.and_ (Scene.pixels target_edges) (Scene.pixels @@ Scene.edges size s))
+                       > 0
+                | _ -> true)
+          in
+          print_s [%message (List.length orig : int) (List.length filtered : int)];
+          filtered
+      end
+    in
+    for i = 0 to 22 do
+      print_s [%message (i : int)];
+      filler#fill i
+    done;
+    filler#get_search_state
   in
   S.print_stats search_state;
 
@@ -90,15 +91,15 @@ let () =
   |> Iter.map (fun ((key : S.Attr.t), data) ->
          Iter.of_queue data |> Iter.map (fun v -> (distance target_value v, S.TValue.{ value = v; type_ = key.type_ })))
   |> Iter.concat
-  |> Iter.top_k ~cmp:(fun (d, _) (d', _) -> [%compare: float] d' d) 30
+  |> Iter.top_k ~cmp:(fun (d, _) (d', _) -> [%compare: float] d' d) 100
+  |> Iter.sort ~cmp:(fun (d, _) (d', _) -> [%compare: float] d d')
   |> Iter.iter (fun (d, (tv : S.TValue.t)) ->
          match tv.value with
          | Value.Scene s ->
              Fmt.pr "Searching (d=%f):\n%a\n%!" d Scene.pp (size, s);
-             (* S.to_grammar search_state Op.pp S.TValue.{ value = v; type_ = key.type_ }; *)
              let rec repeat n =
                if n > 0 then (
-                 S.local_greedy search_state 10 (Value.eval ectx) (distance target_value) tv
+                 S.local_greedy search_state 6 (Value.eval ectx) (distance target_value) tv
                  |> Option.iter ~f:(fun p ->
                         (match Program.eval (Value.eval ectx) p with
                         | Scene s as v ->
@@ -114,5 +115,5 @@ let () =
                         (* print_s [%message "failure" (p : Op.t Program.t)] *));
                  repeat (n - 1))
              in
-             repeat 10
+             repeat 100
          | _ -> ())

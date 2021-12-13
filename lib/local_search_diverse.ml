@@ -15,13 +15,9 @@ module type Lang_intf = sig
     type t [@@deriving compare, hash, sexp]
 
     val cost : t -> int
-
     val arity : t -> int
-
     val args_type : t -> Type.t list
-
     val ret_type : t -> Type.t
-
     val is_commutative : t -> bool
   end
 
@@ -33,9 +29,7 @@ module type Lang_intf = sig
     end
 
     val pp : Ctx.t -> t Fmt.t
-
     val is_error : t -> bool
-
     val eval : Ctx.t -> Op.t -> t list -> t
   end
 end
@@ -133,11 +127,8 @@ module Make (Lang : Lang_intf) = struct
   class synthesizer (ctx : Ctx.t) =
     object (self)
       val mutable upper_bound = 0
-
       val close_states = Hashtbl.create (module Value)
-
       val search_state = Search_state.create ()
-
       method get_search_state = search_state
 
       method local_search ~target size value op args =
@@ -248,7 +239,9 @@ module Make (Lang : Lang_intf) = struct
             @@ List.filter states ~f:(fun (v, _, op, _, _) ->
                    not @@ Search_state.mem search_state { value = v; type_ = Op.ret_type op }));
 
-          let reference = Search_state.states ~type_ search_state |> Iter.to_list |> Vpt.create ctx.distance `Random in
+          let reference =
+            Search_state.states ~type_ search_state |> Iter.to_list |> Vpt.create ctx.distance (`Good 10)
+          in
           let insert key states =
             List.iter states ~f:(fun (value, op, args) -> Search_state.insert ~key search_state cost value op args)
           in

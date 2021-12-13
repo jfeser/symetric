@@ -11,8 +11,8 @@ module Size = struct
 
   (** Returns a sequence of the pixels and pixel centers for a canvas of
    `size`. Starts from the top left and continues left to right. *)
-  let pixel_seq size =
-    Seq.unfold
+  let pixels size =
+    Gen.unfold
       (fun ((px, py) as state) ->
         if py < 0 then None
         else if px = size.xres - 1 then
@@ -26,7 +26,7 @@ module Size = struct
   let%expect_test "" =
     for _ = 0 to 10 do
       let xres = 1 + Random.int 10 and yres = 1 + Random.int 10 in
-      [%test_result: int] (Seq.length @@ pixel_seq @@ create ~xres ~yres ()) ~expect:(xres * yres)
+      [%test_result: int] (Gen.length @@ pixels @@ create ~xres ~yres ()) ~expect:(xres * yres)
     done
 end
 
@@ -41,30 +41,17 @@ let[@inline] pixels x = value x
 
 let init (size : Size.t) ~f =
   let len = size.xres * size.yres in
-  Bitarray.init_fold len ~init:(Size.pixel_seq size) ~f:(fun pixels idx ->
-      let (ptx, pty), pixels =
-        match pixels () with
-        | Seq.Cons (x, xs) -> (x, xs)
-        | Nil -> raise_s [%message (len : int) (size : Size.t) (idx : int)]
-      in
-      let ret = f idx ptx pty in
-      (pixels, ret))
+  let pixels = Size.pixels size in
+  Bitarray.init len ~f:(fun idx ->
+      let ptx, pty = Option.value_exn (pixels ()) in
+      f idx ptx pty)
   |> create
 
 let npixels s = Bitarray.length @@ pixels s
 
 let to_iter (size : Size.t) s f =
-  let (_ : _ Seq.t * int) =
-    Bitarray.fold (pixels s)
-      ~init:(Size.pixel_seq size, 0)
-      ~f:(fun (pix, idx) v ->
-        let p, ps =
-          match pix () with Seq.Cons (p, ps) -> (p, ps) | Nil -> raise_s [%message (size : Size.t) (idx : int)]
-        in
-        f (p, v);
-        (ps, idx + 1))
-  in
-  ()
+  let pixel_gen = Size.pixels size in
+  Bitarray.iteri (pixels s) ~f:(fun idx v -> f (Option.value_exn (pixel_gen ()), v))
 
 let pp fmt ((size : Size.t), x) =
   Bitarray.iteri (pixels x) ~f:(fun i b ->
@@ -72,9 +59,7 @@ let pp fmt ((size : Size.t), x) =
       if i mod size.xres = size.xres - 1 then Fmt.pf fmt "\n")
 
 let get x = Bitarray.get (pixels x)
-
 let[@inline] hamming c c' = Bitarray.hamming_distance (pixels c) (pixels c')
-
 let is_empty s = Bitarray.is_empty (pixels s)
 
 let jaccard c c' =

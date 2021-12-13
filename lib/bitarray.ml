@@ -1,15 +1,12 @@
 type buf = int array [@@deriving compare, sexp]
 
 let hash_fold_buf = Hash.Builtin.(hash_fold_array_frozen hash_fold_int)
-
 let hash_buf = Hash.of_fold hash_fold_buf
 
 type t = { len : int; buf : buf } [@@deriving compare, hash, sexp]
 
 let length t = t.len
-
 let bits_per_word = 63
-
 let nwords len = (len / bits_per_word) + if len mod bits_per_word > 0 then 1 else 0
 
 let create len v =
@@ -47,7 +44,6 @@ let of_list x =
   init_fold (List.length x) ~f:(fun xs _ -> match xs with x :: xs' -> (xs', x) | [] -> assert false) ~init:x
 
 let get t i = (t.buf.(i / bits_per_word) lsr (i mod bits_per_word)) land 1 > 0
-
 let to_list x = List.init (length x) ~f:(get x)
 
 let fold { len; buf } ~f ~init =
@@ -83,17 +79,11 @@ let%expect_test "iteri-in-bounds" =
   create len false |> iteri ~f:(fun i _ -> [%test_pred: int] (fun i -> 0 <= i && i < len) i)
 
 let is_empty a = Array.exists a.buf ~f:(fun x -> x <> 0)
-
 let not a = { a with buf = Array.map a.buf ~f:lnot }
-
 let and_ a b = { len = a.len; buf = Array.map2_exn a.buf b.buf ~f:( land ) }
-
 let or_ a b = { len = a.len; buf = Array.map2_exn a.buf b.buf ~f:( lor ) }
-
 let xor a b = { len = a.len; buf = Array.map2_exn a.buf b.buf ~f:( lxor ) }
-
 let hamming_weight x = Array.sum (module Int) x.buf ~f:Int.popcount
-
 let hamming_distance a b = Array.fold2_exn a.buf b.buf ~f:(fun ct w w' -> ct + Int.popcount (w lxor w')) ~init:0
 
 let weighted_jaccard ?(pos_weight = 0.5) a b =

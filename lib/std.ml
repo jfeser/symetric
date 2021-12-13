@@ -14,7 +14,6 @@ let rec update l ~f =
       | None -> ( match update ~f xs with Some xs' -> Some (x :: xs') | None -> None))
 
 let rec repeat ~f i x = if i <= 0 then [ x ] else x :: repeat (i - 1) ~f (f x)
-
 let unsafe_to_list a = List.init (Option_array.length a) ~f:(Option_array.unsafe_get_some_assuming_some a)
 
 module Option = struct
@@ -39,7 +38,6 @@ module List = struct
     insert xs
 
   let product l = List.reduce_exn l ~f:( * )
-
   let group_by m l = Hashtbl.of_alist_multi m l |> Hashtbl.to_alist
 end
 
@@ -53,11 +51,8 @@ module Iter = struct
   include Iter
 
   let sexp_of_t sexp_of_elem iter = [%sexp_of: elem list] @@ Iter.to_list iter
-
   let of_queue q k = Queue.iter q ~f:k
-
   let of_set s k = Core.Set.iter ~f:k s
-
   let of_hashtbl x k = Hashtbl.iteri ~f:(fun ~key ~data -> k (key, data)) x
 
   let to_set (type t w) m iter =
