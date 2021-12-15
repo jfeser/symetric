@@ -12,6 +12,7 @@ module type Lang_intf = sig
   module Op : sig
     type t [@@deriving compare, hash, sexp]
 
+    val pp : t Fmt.t
     val cost : t -> int
     val arity : t -> int
     val args_type : t -> Type.t list
@@ -73,6 +74,7 @@ struct
     module T = struct
       type t = Bottom | Preds of Set.M(Pred).t [@@deriving compare, equal, hash, sexp]
 
+      let pp = Fmt.nop
       let true_ = Preds (Set.empty (module Pred))
 
       let of_iter iter =
@@ -186,6 +188,7 @@ struct
         module Op = struct
           type t = Args | And of int | Pred of int * [ Pred.t | `True ] [@@deriving compare, hash, sexp]
 
+          let pp = Fmt.nop
           let arity = function Args -> n_args | And _ -> 2 | Pred _ -> 0
           let ret_type : _ -> Type.t = function Args -> Args | And slot -> Pred slot | Pred (slot, _) -> Pred slot
 
@@ -211,6 +214,7 @@ struct
             | _ -> assert false
 
           let is_error = function Pred p -> length p > k | _ -> false
+          let pp = Fmt.nop
         end
       end in
       let open Conjunct_lang in

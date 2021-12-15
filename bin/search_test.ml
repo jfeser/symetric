@@ -55,6 +55,7 @@ let () =
     @ (List.range 0 (max size.xres size.yres) |> List.map ~f:(fun i -> Op.Int i))
     @ (List.range 2 5 |> List.map ~f:(fun i -> Op.Rep_count i))
   in
+  let max_cost = 22 in
   let search_state =
     let filler =
       object
@@ -77,7 +78,7 @@ let () =
           filtered
       end
     in
-    for i = 0 to 22 do
+    for i = 0 to max_cost do
       print_s [%message (i : int)];
       filler#fill i
     done;
@@ -99,20 +100,27 @@ let () =
              Fmt.pr "Searching (d=%f):\n%a\n%!" d Scene.pp (size, s);
              let rec repeat n =
                if n > 0 then (
-                 S.local_greedy search_state 6 (Value.eval ectx) (distance target_value) tv
-                 |> Option.iter ~f:(fun p ->
-                        (match Program.eval (Value.eval ectx) p with
-                        | Scene s as v ->
-                            Fmt.pr "Before local (d=%f):\n%a\n%!" (distance target_value v) Scene.pp (size, s)
-                        | _ -> ());
-                        let found_value = Program.eval (Value.eval ectx) @@ local p in
-                        (match found_value with
-                        | Scene s ->
-                            Fmt.pr "After local (d=%f):\n%a\n%!" (distance target_value found_value) Scene.pp (size, s)
-                        | _ -> ());
-                        if [%compare.equal: Value.t] target_value found_value then
-                          print_s [%message "success" (p : Op.t Program.t)]
-                        (* print_s [%message "failure" (p : Op.t Program.t)] *));
+                 (* let p_basic = S.program_of_class_exn search_state tv in *)
+                 (* let p_basic_local = local p_basic in *)
+                 (* print_s [%message (p_basic_local : Op.t Program.t)]; *)
+                 (* (match Program.eval (Value.eval ectx) @@ local p_basic_local with *)
+                 (* | Scene s as v -> Fmt.pr "After local (d=%f):\n%a\n%!" (distance target_value v) Scene.pp (size, s) *)
+                 (* | _ -> ()); *)
+                 let p =
+                   S.local_greedy (Value.pp ectx) search_state (Int.ceil_log2 max_cost) (Value.eval ectx)
+                     (distance target_value) tv
+                   |> Option.value_exn
+                 in
+                 (match Program.eval (Value.eval ectx) p with
+                 | Scene s as v -> Fmt.pr "Before local (d=%f):\n%a\n%!" (distance target_value v) Scene.pp (size, s)
+                 | _ -> ());
+                 let found_value = Program.eval (Value.eval ectx) @@ local p in
+                 (match found_value with
+                 | Scene s -> Fmt.pr "After local (d=%f):\n%a\n%!" (distance target_value found_value) Scene.pp (size, s)
+                 | _ -> ());
+                 if [%compare.equal: Value.t] target_value found_value then
+                   print_s [%message "success" (p : Op.t Program.t)]
+                   (* print_s [%message "failure" (p : Op.t Program.t)] *);
                  repeat (n - 1))
              in
              repeat 100

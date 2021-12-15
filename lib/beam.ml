@@ -10,6 +10,7 @@ module type Lang_intf = sig
   module Op : sig
     type t [@@deriving compare, hash, sexp]
 
+    val pp : t Fmt.t
     val cost : t -> int
     val arity : t -> int
     val args_type : t -> Type.t list
@@ -24,6 +25,7 @@ module type Lang_intf = sig
       type t
     end
 
+    val pp : t Fmt.t
     val eval : Ctx.t -> Op.t -> t list -> t
     val is_error : t -> bool
     val distance : t -> t -> float
@@ -85,13 +87,13 @@ module Make (Lang : Lang_intf) = struct
         |> Iter.map Tuple.T2.get2
 
       method insert_states cost states =
-        Iter.iter (fun (state, op, args) -> Search_state.insert search_state cost state op args) states;
+        Iter.iter (fun (state, op, args) -> Search_state.insert search_state ~cost state op args) states;
         ctx.bank_size := Float.of_int @@ Search_state.length search_state
 
       method check_states =
         Iter.map (fun ((s, op, args) as state) ->
             (if [%compare.equal: Value.t] s ctx.goal then
-             let p = Search_state.program_of_op_args_exn search_state op args in
+             let p = Search_state.program_of_op_args_exn search_state (Int.ceil_log2 max_cost) op args in
              raise (Done p));
             state)
 

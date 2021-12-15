@@ -10,6 +10,7 @@ module type Lang_intf = sig
   module Op : sig
     type t [@@deriving compare, hash, sexp]
 
+    val pp : t Fmt.t
     val cost : t -> int
     val arity : t -> int
     val args_type : t -> Type.t list
@@ -24,6 +25,7 @@ module type Lang_intf = sig
       type t
     end
 
+    val pp : t Fmt.t
     val eval : Ctx.t -> Op.t -> t list -> t
     val is_error : t -> bool
   end
@@ -77,13 +79,13 @@ module Make (Lang : Lang_intf) = struct
       method generate_states cost = Gen.generate_states Search_state.search eval_ctx search_state ops cost
 
       method insert_states cost states =
-        List.iter states ~f:(fun (state, op, args) -> Search_state.insert search_state cost state op args);
+        List.iter states ~f:(fun (state, op, args) -> Search_state.insert search_state ~cost state op args);
         ctx.bank_size := Float.of_int @@ Search_state.length search_state
 
       method check_states states =
         List.iter states ~f:(fun (s, op, args) ->
             if ctx.goal op s then
-              let p = Search_state.program_of_op_args_exn search_state op args in
+              let p = Search_state.program_of_op_args_exn search_state (Int.ceil_log2 max_cost) op args in
               raise (Done p))
 
       method fill cost =

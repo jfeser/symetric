@@ -14,6 +14,7 @@ module type Lang_intf = sig
   module Op : sig
     type t [@@deriving compare, hash, sexp]
 
+    val pp : t Fmt.t
     val cost : t -> int
     val arity : t -> int
     val args_type : t -> Type.t list
@@ -130,10 +131,7 @@ module Make (Lang : Lang_intf) = struct
       val close_states = Hashtbl.create (module Value)
       val search_state = Search_state.create ()
       method get_search_state = search_state
-
-      method local_search ~target size value op args =
-        Search_state.local_search ~max_tabu:ctx.tabu_length search_state (Value.eval ctx.ectx) ctx.distance target size
-          value op args
+      method local_search ~target size value op args = failwith "unimplemented"
 
       (* Local_search.of_unnormalize_tabu ~max_tabu:ctx.tabu_length ~target ~dist:ctx.distance *)
       (*   (module Op) *)
@@ -168,7 +166,7 @@ module Make (Lang : Lang_intf) = struct
           search_states
           |> Iter.filter (fun (_, (_, op, _)) -> [%compare.equal: Type.t] Type.output (Op.ret_type op))
           |> Iter.find_map (fun (_, (value, op, args)) ->
-                 let center = Search_state.random_program_of_op_args_exn search_state op args in
+                 let center = Search_state.random_program_of_op_args_exn search_state (Int.ceil_log2 size) op args in
                  ctx.on_close_state center value;
 
                  let last_state = ref None in
@@ -224,7 +222,7 @@ module Make (Lang : Lang_intf) = struct
           |> List.filter_map ~f:(function
                | value, ((_, op, args) :: _ as states) ->
                    if Search_state.mem search_state { value; type_ = Op.ret_type op } then (
-                     List.iter states ~f:(fun (_, op, args) -> Search_state.insert search_state cost value op args);
+                     List.iter states ~f:(fun (_, op, args) -> Search_state.insert search_state ~cost value op args);
                      None)
                    else Some (value, ref false, op, args, states)
                | _, [] -> None)
@@ -243,7 +241,7 @@ module Make (Lang : Lang_intf) = struct
             Search_state.states ~type_ search_state |> Iter.to_list |> Vpt.create ctx.distance (`Good 10)
           in
           let insert key states =
-            List.iter states ~f:(fun (value, op, args) -> Search_state.insert ~key search_state cost value op args)
+            List.iter states ~f:(fun (value, op, args) -> Search_state.insert ~key search_state ~cost value op args)
           in
           List.fold states ~init:[] ~f:(fun kept (v, _, _, _, states) ->
               let inserted = ref false in

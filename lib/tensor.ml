@@ -73,6 +73,7 @@ module Op = struct
 
   let cost _ = 1
   let is_commutative _ = false
+  let pp = Fmt.nop
 end
 
 module Value = struct
@@ -88,6 +89,8 @@ module Value = struct
 
   include T
   include Comparator.Make (T)
+
+  let pp = Fmt.nop
 
   module Op_args = struct
     type nonrec t = Op.t * t list [@@deriving compare, hash, sexp]

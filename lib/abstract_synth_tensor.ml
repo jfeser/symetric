@@ -34,6 +34,8 @@ module Abs_value = struct
   include T
   include Comparator.Make (T)
 
+  let pp = Fmt.nop
+
   module Ctx = struct
     type nonrec t = {
       preds : Set.M(Pred).t;
