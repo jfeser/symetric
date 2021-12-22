@@ -5,27 +5,20 @@ module Synth = Local_search_diverse.Make (Cad_ext)
 module S = Synth.Search_state
 open Std
 
-let size = Scene.Size.create ~xres:13 ~yres:20 ()
+let size = Scene.Size.create ~xres:20 ~yres:13 ()
 let read = false
 
-let () =
-  Random.init 0;
+let run ~max_cost ~thresh target =
+  Random.self_init ();
+
   let ectx = Value.Ctx.create size in
-  let thresh = 0.2 in
   let distance v v' =
     match (v, v') with
     | Value.Int x, Value.Int x' -> Float.of_int (abs (x - x')) *. 0.3
     | Scene x, Scene x' -> Scene.jaccard x x'
     | _ -> Float.infinity
   in
-  let target_distance v v' =
-    match (v, v') with
-    | Value.Int x, Value.Int x' -> Float.of_int (abs (x - x')) *. 0.3
-    | Scene x, Scene x' -> Bitarray.weighted_jaccard (Scene.pixels x) (Scene.pixels x')
-    | _ -> Float.infinity
-  in
 
-  let target = Op.(union (union (rect 0 0 3 19) (rect (size.xres - 3) 0 19 19)) (repl 0 8 3 @@ rect 0 0 13 4)) in
   let target_value = Program.eval (Value.eval ectx) target in
   let target_scene = match target_value with Scene s -> s | _ -> assert false in
   let target_edges = Scene.edges size target_scene in
@@ -55,7 +48,6 @@ let () =
     @ (List.range 0 (max size.xres size.yres) |> List.map ~f:(fun i -> Op.Int i))
     @ (List.range 2 5 |> List.map ~f:(fun i -> Op.Rep_count i))
   in
-  let max_cost = 22 in
   let search_state =
     let filler =
       object
@@ -111,17 +103,26 @@ let () =
                      (distance target_value) tv
                    |> Option.value_exn
                  in
-                 (match Program.eval (Value.eval ectx) p with
-                 | Scene s as v -> Fmt.pr "Before local (d=%f):\n%a\n%!" (distance target_value v) Scene.pp (size, s)
-                 | _ -> ());
+                 (* (match Program.eval (Value.eval ectx) p with *)
+                 (* | Scene s as v -> Fmt.pr "Before local (d=%f):\n%a\n%!" (distance target_value v) Scene.pp (size, s) *)
+                 (* | _ -> ()); *)
                  let found_value = Program.eval (Value.eval ectx) @@ local p in
-                 (match found_value with
-                 | Scene s -> Fmt.pr "After local (d=%f):\n%a\n%!" (distance target_value found_value) Scene.pp (size, s)
-                 | _ -> ());
+                 (* (match found_value with *)
+                 (* | Scene s -> Fmt.pr "After local (d=%f):\n%a\n%!" (distance target_value found_value) Scene.pp (size, s) *)
+                 (* | _ -> ()); *)
                  if [%compare.equal: Value.t] target_value found_value then
-                   print_s [%message "success" (p : Op.t Program.t)]
+                   raise_s [%message "success" (p : Op.t Program.t)]
                    (* print_s [%message "failure" (p : Op.t Program.t)] *);
                  repeat (n - 1))
              in
-             repeat 100
+             repeat 10
          | _ -> ())
+
+let () =
+  let open Command.Let_syntax in
+  Command.basic ~summary:"Generate a synthesizer."
+    [%map_open
+      let max_cost = flag "-cost" (optional_with_default 22 int) ~doc:" the maximum size of program to evaluate"
+      and thresh = flag "-thresh" (optional_with_default 0.2 float) ~doc:"distance threshold to trigger grouping" in
+      fun () -> run ~max_cost ~thresh @@ Cad_ext.parse @@ Sexp.input_sexp In_channel.stdin]
+  |> Command.run

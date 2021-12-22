@@ -1,5 +1,4 @@
 open Std
-open Program.T
 
 module type Lang_intf = sig
   module Type : sig
@@ -296,22 +295,17 @@ module Make (Lang : Lang_intf) = struct
 
   let rec local_greedy value_pp ss max_height eval dist (class_ : TValue.t) =
     let open Option.Let_syntax in
-    Fmt.pr "Searching class (max_height=%d)\n%a@.%!" max_height value_pp class_.value;
     let all_paths = (H.find_exn ss.paths class_).paths in
     assert (List.exists all_paths ~f:(fun p -> [%compare.equal: Value.t] p.value class_.value));
     let eligible_paths =
       Iter.of_list all_paths |> Iter.filter (fun (p : Path.t) -> p.height <= max_height) |> Iter.to_list
     in
-    Fmt.pr "%d paths@.%!" @@ List.length eligible_paths;
     let n_sample = max 1 (List.length eligible_paths / 2) in
     let%bind best_dist, best_path =
       Iter.of_list eligible_paths |> Iter.sample n_sample |> Iter.of_array
       |> Iter.map (fun (p : Path.t) -> (dist p.value, p))
       |> Iter.min ~lt:(fun (d, _) (d', _) -> Float.(d < d'))
     in
-    Fmt.pr "dist=%f\n" best_dist;
-    Fmt.pr "%a@." Path.pp best_path;
-    Fmt.pr "%a@." value_pp best_path.value;
     List.zip_exn (Op.args_type best_path.op) best_path.args
     |> List.mapi ~f:(fun i (arg_type, arg_value) ->
            let arg_class = TValue.{ value = arg_value; type_ = arg_type } in

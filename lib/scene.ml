@@ -51,7 +51,7 @@ let npixels s = Bitarray.length @@ pixels s
 
 let to_iter (size : Size.t) s f =
   let pixel_gen = Size.pixels size in
-  Bitarray.iteri (pixels s) ~f:(fun idx v -> f (Option.value_exn (pixel_gen ()), v))
+  Bitarray.iteri (pixels s) ~f:(fun _ v -> f (Option.value_exn (pixel_gen ()), v))
 
 let pp fmt ((size : Size.t), x) =
   Bitarray.iteri (pixels x) ~f:(fun i b ->
@@ -81,7 +81,7 @@ let crop ~old:(size : Size.t) ~new_:(size' : Size.t) s = init size' ~f:(fun _ x 
 
 let edges (size : Size.t) s =
   let get x y = if x < 0 || x >= size.xres || y < 0 || y >= size.yres then false else get s @@ Size.offset size x y in
-  init size ~f:(fun i x y -> get x y && not (get (x - 1) y && get (x + 1) y && get x (y - 1) && get x (y + 1)))
+  init size ~f:(fun _ x y -> get x y && not (get (x - 1) y && get (x + 1) y && get x (y - 1) && get x (y + 1)))
 
 let corners (size : Size.t) s =
   let pix = pixels s in

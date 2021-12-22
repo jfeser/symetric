@@ -70,7 +70,7 @@ module Value = struct
     match (op, args) with
     | Int x, [] -> Int x
     | Rep_count x, [] -> Rep_count x
-    | Circle, [ Int center_x; Int center_y; Int radius ] when radius = 0 -> Error
+    | Circle, [ Int _; Int _; Int radius ] when radius = 0 -> Error
     | Circle, [ Int center_x; Int center_y; Int radius ] ->
         let s =
           S.init size ~f:(fun _ x y ->
@@ -119,3 +119,24 @@ module Value = struct
     in
     find_or_eval
 end
+
+let rec parse =
+  let open Program.T in
+  let open Op in
+  function
+  | Sexp.List [ Atom op; e; e' ] ->
+      let op =
+        match String.lowercase op with
+        | "+" | "union" -> Union
+        | "&" | "inter" -> Inter
+        | "-" | "sub" -> Sub
+        | _ -> raise_s [%message "unexpected operator" op]
+      in
+      Apply (op, [ parse e; parse e' ])
+  | Sexp.List [ Atom op; x; y; r ] when String.(lowercase op = "circle") ->
+      circle ([%of_sexp: int] x) ([%of_sexp: int] y) ([%of_sexp: int] r)
+  | Sexp.List [ Atom op; x; y; x'; y' ] when String.(lowercase op = "rect") ->
+      rect ([%of_sexp: int] x) ([%of_sexp: int] y) ([%of_sexp: int] x') ([%of_sexp: int] y')
+  | Sexp.List [ Atom op; e; x; y; c ] when String.(lowercase op = "repl") ->
+      repl ([%of_sexp: int] x) ([%of_sexp: int] y) ([%of_sexp: int] c) (parse e)
+  | s -> raise_s [%message "unexpected" (s : Sexp.t)]
