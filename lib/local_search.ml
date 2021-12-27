@@ -29,25 +29,6 @@ module Pattern = struct
         List.filter_map leaf_ops ~f:(fun op2 ->
             Option.some_if (not ([%compare.equal: Op.t] op1 op2)) (Apply (op1, []), Apply (op2, []))))
 
-  let union_leaf_patterns ops =
-    let module Op = Cad_op in
-    List.filter ops ~f:(fun op -> Op.arity op = 0)
-    |> List.map ~f:(fun op -> (Var 0, Apply (Op.union, [ Var 0; Apply (op, []) ])))
-
-  let close_leaf_patterns ?(radius = 10.0) ops =
-    let module Op = Cad_op in
-    let leaf_ops = List.filter ops ~f:(fun op -> Op.arity op = 0) in
-    List.concat_map leaf_ops ~f:(fun op1 ->
-        List.filter_map leaf_ops ~f:(fun op2 ->
-            let are_close () =
-              Option.map2 (Op.center op1) (Op.center op2) ~f:(fun c1 c2 ->
-                  let d = Vector2.l2_dist c1 c2 in
-                  Float.(d <= radius))
-              |> Option.value ~default:false
-            in
-            let are_different () = not ([%compare.equal: Op.t] op1 op2) in
-            Option.some_if (are_different () && are_close ()) (Apply (op1, []), Apply (op2, []))))
-
   let rename_patterns ?(max_arity = Int.max_value) (type op) (module Op : Op_intf.S with type t = op) ops =
     let ops = List.filter ops ~f:(fun op -> Op.arity op <= max_arity) in
     List.concat_map ops ~f:(fun op1 ->
@@ -55,16 +36,6 @@ module Pattern = struct
         |> List.map ~f:(fun op2 ->
                let args = List.init (Op.arity op1) ~f:(fun i -> Var i) in
                (Apply (op1, args), Apply (op2, args))))
-
-  let push_pull_replicate ops =
-    let open Cad in
-    let repls = List.filter ops ~f:(fun op -> match Op.value op with Op.Replicate _ -> true | _ -> false) in
-    List.concat_map [ Op.union; Op.inter ] ~f:(fun binary ->
-        List.concat_map repls ~f:(fun r ->
-            [
-              (apply binary [ apply r [ Var 0 ]; Var 1 ], apply r [ apply binary [ Var 0; Var 1 ] ]);
-              (apply binary [ Var 0; apply r [ Var 1 ] ], apply r [ apply binary [ Var 0; Var 1 ] ]);
-            ]))
 
   module type Comparable = sig
     type t [@@deriving compare]
@@ -153,18 +124,6 @@ let of_rules ?n ?target ~dist m_op rules eval =
     Option.value ~default:term @@ List.hd @@ sampler.get_sample ()
   in
   let score = match target with Some t -> fun p -> dist t @@ eval p | None -> Fun.const 1.0 in
-  let search center k = Sample.stochastic ?n ~propose ~score center k in
-  search
-
-let of_rules_root_only ?n ?target m_op rules eval =
-  let propose term =
-    let sampler = Sample.Incremental.reservoir 1 in
-    List.iter rules ~f:(fun rule ->
-        Option.iter ~f:sampler.add @@ Pattern.rewrite_root m_op rule term;
-        Option.iter ~f:sampler.add @@ Pattern.rewrite_root m_op (Rule.flip rule) term);
-    Option.value ~default:term @@ List.hd @@ sampler.get_sample ()
-  in
-  let score = match target with Some t -> fun p -> Cad_conc.jaccard t @@ eval p | None -> Fun.const 1.0 in
   let search center k = Sample.stochastic ?n ~propose ~score center k in
   search
 

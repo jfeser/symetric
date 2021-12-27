@@ -2,18 +2,9 @@
  (name staged_synth)
  (libraries core core_kernel.hash_heap core_kernel.pairing_heap
    core.bigstring_unix combinat fmt tree_diff iter oseq vpt logs gen owl
-   yojson ocamlgraph torch)
+   yojson ocamlgraph torch bitarray)
  (preprocess
   (pps ppx_jane))
  (inline_tests)
  (flags :standard -g -open Core -w -9)
- (instrumentation
-  (backend landmarks)))
-
-(copy_files ../etc/{*.cpp,*.hpp})
-
-(alias
- (name runtest)
- (deps
-  (glob_files *.cpp)
-  (glob_files *.hpp)))
+ (instrumentation (backend landmarks)))

@@ -301,7 +301,7 @@ module Make (Lang : Lang_intf) = struct
       Iter.of_list all_paths |> Iter.filter (fun (p : Path.t) -> p.height <= max_height) |> Iter.to_list
     in
     let n_sample = max 1 (List.length eligible_paths / 2) in
-    let%bind best_dist, best_path =
+    let%bind _, best_path =
       Iter.of_list eligible_paths |> Iter.sample n_sample |> Iter.of_array
       |> Iter.map (fun (p : Path.t) -> (dist p.value, p))
       |> Iter.min ~lt:(fun (d, _) (d', _) -> Float.(d < d'))

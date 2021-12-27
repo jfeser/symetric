@@ -13,6 +13,7 @@ let abs_value ?(range_width = 5) size =
       | Int _ -> Iter.empty (* Iter.(0 -- (range_width - 1)) |> Iter.map (fun offset -> Range (x - offset)) *)
       | Scene s ->
           Scene.to_iter size s |> Iter.filter_map (fun ((x, y), v) -> if v then Some (Pixel_on (x, y)) else None)
+      | _ -> failwith "unimplemented"
 
     type arg = [ `True | `Concrete of Value.t | `Pred of t ]
     type ret = [ `False | `Concrete of Value.t | `Pred of t ]

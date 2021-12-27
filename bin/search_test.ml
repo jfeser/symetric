@@ -5,7 +5,7 @@ module Synth = Local_search_diverse.Make (Cad_ext)
 module S = Synth.Search_state
 open Std
 
-let size = Scene.Size.create ~xres:20 ~yres:13 ()
+let size = Scene.Size.create ~xres:12 ~yres:20 ()
 let read = false
 
 let run ~max_cost ~thresh target =
@@ -54,7 +54,7 @@ let run ~max_cost ~thresh target =
         inherit
           Synth.synthesizer (Synth.Ctx.create ~distance ~search_thresh:(Top_k 0) ~thresh ectx ops target_value) as super
 
-        method generate_states cost =
+        method! generate_states cost =
           let orig = super#generate_states cost in
           let filtered =
             List.filter orig ~f:(fun (v, _, _) ->

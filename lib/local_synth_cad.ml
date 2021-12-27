@@ -41,41 +41,8 @@ let unnormalize =
       [ circle x y ((hx - lx) / 2); circle x y ((hy - ly) / 2) ]
   | _ -> []
 
-let synth ?(use_normalize = true) ?(use_distance = `True) size prog (target : Scene.t) (ops : Op.t list) =
+let synth ?(use_distance = `True) size _prog (target : Scene.t) (ops : Op.t list) =
   let ectx = Value.Ctx.create size in
-
-  let eval = Program.eval (Value.eval ectx) in
-
-  let unnormalize = if use_normalize then Some unnormalize else None in
-
-  let normalize : Op.t Program.t -> Op.t Program.t =
-   fun p ->
-    let open Op in
-    match eval p with
-    | Int x -> Apply (Int (Int.round_nearest x ~to_multiple_of:10), [])
-    | Scene s -> (
-        if Bitarray.(hamming_weight @@ and_ (Scene.pixels s) (not (Scene.pixels target))) > 0 then empty
-        else
-          match p with
-          | Apply (Circle, [ Apply (Int x, []); Apply (Int y, []); Apply (Int r, []) ]) as c ->
-              let lx = Int.round_down ~to_multiple_of:5 @@ (x - r)
-              and ly = Int.round_down ~to_multiple_of:5 @@ (y - r)
-              and hx = Int.round_up ~to_multiple_of:5 @@ (x + r)
-              and hy = Int.round_up ~to_multiple_of:5 @@ (y + r) in
-              Apply (Union, [ c; Apply (Rect, [ int lx; int ly; int hx; int hy ]) ])
-          | Apply (Rect, [ Apply (Int lx, []); Apply (Int ly, []); Apply (Int hx, []); Apply (Int hy, []) ]) ->
-              Apply
-                ( Rect,
-                  [
-                    Apply (Int (Int.round_down lx ~to_multiple_of:5), []);
-                    Apply (Int (Int.round_down ly ~to_multiple_of:5), []);
-                    Apply (Int (Int.round_up hx ~to_multiple_of:5), []);
-                    Apply (Int (Int.round_up hy ~to_multiple_of:5), []);
-                  ] )
-          | Apply (Repl, [ p; dx; dy; _ ]) -> Apply (Repl, [ p; dx; dy; Apply (Int 5, []) ])
-          | p -> p)
-  in
-  let normalize = Option.some_if use_normalize normalize in
 
   let target = Value.Scene target in
 

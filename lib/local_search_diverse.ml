@@ -131,7 +131,7 @@ module Make (Lang : Lang_intf) = struct
       val close_states = Hashtbl.create (module Value)
       val search_state = Search_state.create ()
       method get_search_state = search_state
-      method local_search ~target size value op args = failwith "unimplemented"
+      method local_search ~target:_ _size _value _op _args = failwith "unimplemented"
 
       (* Local_search.of_unnormalize_tabu ~max_tabu:ctx.tabu_length ~target ~dist:ctx.distance *)
       (*   (module Op) *)
@@ -196,7 +196,7 @@ module Make (Lang : Lang_intf) = struct
         (* Group new states by type and insert *)
         List.map new_states ~f:(fun ((_, op, _) as state) -> (Op.ret_type op, state))
         |> List.group_by (module Type)
-        |> List.iter ~f:(fun (type_, states) ->
+        |> List.iter ~f:(fun (type_, _) ->
                let new_states, time = with_time (fun () -> self#insert_states_ cost type_ new_states) in
                if ctx.verbose then
                  Fmt.epr "Inserted %d %a states in %a.\n%!" (List.length new_states) Sexp.pp

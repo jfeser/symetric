@@ -1,4 +1,12 @@
 - for tensor benchmarks, much of the improvement comes from reducing the number of vectors that will never be used
-  - vectors of size k grow as (num ints)^k, if the target program has max vector size k', anything larger than k' can be discarded completely
-  - its cheaper to guess that than it is to search through those vectors exhaustively
-* TODO Investigate knuth-bendix for grouping
+  - vectors of size k grow as (num ints)^k, if the target program has max vector
+    size k', anything larger than k' can be discarded completely
+  - its cheaper to guess that than it is to search through those vectors
+    exhaustively
+* DONE dump test cases for vantage point trees (query & reference sets)
+* DONE try using neighbor queries for finding range results
+* DONE figure out dual tree algorithm for range results
+* DONE Use VP tree to query reference and to cluster the query points (pack together vantage point w/ close points when they are close enough)
+* DONE Local search using search state
+** DONE Random program selection needs to be depth bounded or cost bounded
+** DONE Modify search state to make this possible

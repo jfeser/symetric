@@ -1,32 +1,4 @@
 (executable
- (name tensor)
- (modules tensor)
- (libraries core iter staged_synth)
- (preprocess
-  (pps ppx_jane)))
-
-(executable
- (name cad)
- (modules cad)
- (libraries core iter staged_synth)
- (preprocess
-  (pps ppx_jane)))
-
-(executable
- (name local_search_test)
- (modules local_search_test)
- (libraries core iter staged_synth)
- (preprocess
-  (pps ppx_jane)))
-
-(executable
- (name vp_test)
- (modules vp_test)
- (libraries core iter staged_synth vpt core_bench)
- (preprocess
-  (pps ppx_jane)))
-
-(executable
  (name search_test)
  (modules search_test)
  (libraries core iter staged_synth vpt core_bench)
