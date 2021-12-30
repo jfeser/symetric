@@ -27,7 +27,8 @@ end
 module Gen_list (Lang : Lang_intf) = struct
   open Lang
 
-  let unsafe_to_list a = List.init (Option_array.length a) ~f:(Option_array.unsafe_get_some_assuming_some a)
+  let unsafe_to_list a =
+    List.init (Option_array.length a) ~f:(Option_array.unsafe_get_some_assuming_some a)
 
   let make_edge params op args =
     let state = Value.eval params op args in
@@ -64,14 +65,28 @@ end
 module Gen_iter (Lang : Lang_intf) = struct
   open Lang
 
-  let unsafe_to_list a = List.init (Option_array.length a) ~f:(Option_array.unsafe_get_some_assuming_some a)
+  let unsafe_to_list a =
+    List.init (Option_array.length a) ~f:(Option_array.unsafe_get_some_assuming_some a)
+
   let make_edge params op args = (Value.eval params op args, op, args)
   let max_arity = 10
   let args = Array.init max_arity ~f:(fun i -> Option_array.create ~len:i)
 
-  let generate_args search params ss op costs f =
+  let generate_args_1 search params ss op c t f =
+    search ss ~cost:c ~type_:t (fun v ->
+        let args = [ v ] in
+        let state = Value.eval params op [ v ] in
+        if not (Value.is_error state) then f (state, op, args))
+
+  let generate_args_2 search params ss op c1 t1 c2 t2 f =
+    search ss ~cost:c1 ~type_:t1 (fun v ->
+        search ss ~cost:c2 ~type_:t2 (fun v' ->
+            let args = [ v; v' ] in
+            let state = Value.eval params op args in
+            if not (Value.is_error state) then f (state, op, args)))
+
+  let generate_args_n search params ss op costs types_ f =
     let arity = Op.arity op in
-    let types_ = Op.args_type op |> Array.of_list in
     let args = args.(arity) in
     let rec build_args arg_idx =
       if arg_idx >= arity then f @@ make_edge params op @@ unsafe_to_list args
@@ -83,10 +98,18 @@ module Gen_iter (Lang : Lang_intf) = struct
     in
     build_args 0
 
+  let generate_args search params ss op costs f =
+    match (costs, Op.args_type op) with
+    | [| c |], [ t ] -> generate_args_1 search params ss op c t f
+    | [| c1; c2 |], [ t1; t2 ] -> generate_args_2 search params ss op c1 t1 c2 t2 f
+    | c, t -> generate_args_n search params ss op c (Array.of_list t) f
+
   let generate_states search params ss ops cost f =
     let op_iter = Iter.of_list ops in
     if cost = 1 then
-      op_iter |> Iter.filter (fun op -> Op.arity op = 0) |> Iter.iter (fun op -> f @@ make_edge params op [])
+      op_iter
+      |> Iter.filter (fun op -> Op.arity op = 0)
+      |> Iter.iter (fun op -> f @@ make_edge params op [])
     else if cost > 1 then
       let arg_cost = cost - 1 in
       op_iter
@@ -95,7 +118,8 @@ module Gen_iter (Lang : Lang_intf) = struct
              arity > 0 && arity < cost)
       |> Iter.iter (fun op ->
              let costs =
-               if Op.is_commutative op then Combinat.partitions ~n:arg_cost ~k:(Op.arity op)
+               if Op.is_commutative op then
+                 Combinat.partitions ~n:arg_cost ~k:(Op.arity op)
                else Combinat.compositions ~n:arg_cost ~k:(Op.arity op)
              in
              costs (fun costs -> generate_args search params ss op costs f))

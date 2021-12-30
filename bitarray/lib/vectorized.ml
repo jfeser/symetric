@@ -6,7 +6,9 @@ type t = { buf : buf; len : int } [@@deriving compare, hash, sexp]
 let[@inline] ceil_div x y = (x + y - 1) / y
 let[@inline] length x = x.len
 let bits_per_word = 8
-let[@inline] nwords len = ceil_div len 64 * (64 / bits_per_word)
+let bits_per_vword = 32
+let[@inline] nwords len = ceil_div len bits_per_vword * (bits_per_vword / bits_per_word)
+let[@inline] vwords t = String.length t.buf / (bits_per_vword / bits_per_word)
 let[@inline] create_buf len = Bytes.make (nwords len) '\x00'
 
 let create len init =
@@ -15,65 +17,53 @@ let create len init =
   let buf = String.make nwords init_word in
   { buf; len }
 
-external bitarray_and : buf -> buf -> buf -> (int[@untagged]) -> unit = "" "bitarray_and_stub" [@@noalloc]
-external bitarray_or : buf -> buf -> buf -> (int[@untagged]) -> unit = "" "bitarray_or_stub" [@@noalloc]
-external bitarray_xor : buf -> buf -> buf -> (int[@untagged]) -> unit = "" "bitarray_xor_stub" [@@noalloc]
-external bitarray_any : buf -> (int[@untagged]) -> bool = "" "bitarray_any_stub" [@@noalloc]
-external bitarray_not : buf -> buf -> (int[@untagged]) -> unit = "" "bitarray_not_stub" [@@noalloc]
+external bitarray_and : string -> string -> bytes -> (int[@untagged]) -> unit = "" "bitarray_and_stub" [@@noalloc]
+external bitarray_or : string -> string -> bytes -> (int[@untagged]) -> unit = "" "bitarray_or_stub" [@@noalloc]
+external bitarray_xor : string -> string -> bytes -> (int[@untagged]) -> unit = "" "bitarray_xor_stub" [@@noalloc]
+external bitarray_any : string -> (int[@untagged]) -> bool = "" "bitarray_any_stub" [@@noalloc]
+external bitarray_not : string -> bytes -> (int[@untagged]) -> unit = "" "bitarray_not_stub" [@@noalloc]
 
-external bitarray_hamming_weight : buf -> (int[@untagged]) -> (int[@untagged]) = "" "bitarray_hamming_weight_stub"
+external bitarray_hamming_weight : string -> (int[@untagged]) -> (int[@untagged]) = "" "bitarray_hamming_weight_stub"
   [@@noalloc]
 
-external bitarray_hamming_distance : buf -> buf -> (int[@untagged]) -> (int[@untagged])
+external bitarray_hamming_distance : string -> string -> (int[@untagged]) -> (int[@untagged])
   = "" "bitarray_hamming_distance_stub"
   [@@noalloc]
 
 external bitarray_replicate :
-  buf ->
+  string ->
   (int[@untagged]) ->
   (int[@untagged]) ->
   (int[@untagged]) ->
   (int[@untagged]) ->
   (int[@untagged]) ->
-  buf ->
+  bytes ->
   (int[@untagged]) ->
   unit = "" "bitarray_replicate_stub"
   [@@noalloc]
 
-let and_ a b =
+let[@inline] binary op a b =
   assert (a.len = b.len);
-  let c = create a.len false in
-  bitarray_and a.buf b.buf c.buf (a.len / 64);
-  c
+  let buf = create_buf a.len in
+  op a.buf b.buf buf (vwords a);
+  { buf = Bytes.unsafe_to_string ~no_mutation_while_string_reachable:buf; len = a.len }
 
-let or_ a b =
-  assert (a.len = b.len);
-  let c = create a.len false in
-  bitarray_or a.buf b.buf c.buf (a.len / 64);
-  c
+let unary op a =
+  let buf = create_buf a.len in
+  op a.buf buf (vwords a);
+  { buf = Bytes.unsafe_to_string ~no_mutation_while_string_reachable:buf; len = a.len }
 
-let xor a b =
-  assert (a.len = b.len);
-  let c = create a.len false in
-  bitarray_xor a.buf b.buf c.buf (a.len / 64);
-  c
-
-let not_ a =
-  let r = create a.len false in
-  bitarray_not a.buf r.buf (a.len / 64);
-  r
-
-let hamming_weight a = bitarray_hamming_weight a.buf (a.len / 64)
-
-let%test_unit "hamming-weight" =
-  [%test_result: int] ~expect:(bits_per_word * 4) (hamming_weight @@ create 4 true);
-  [%test_result: int] ~expect:0 (hamming_weight @@ create 4 false)
+let and_ = binary bitarray_and
+let or_ = binary bitarray_or
+let xor = binary bitarray_xor
+let not_ = unary bitarray_not
+let hamming_weight a = bitarray_hamming_weight a.buf (vwords a)
 
 let hamming_distance a b =
   assert (a.len = b.len);
-  bitarray_hamming_distance a.buf b.buf (a.len / 64)
+  bitarray_hamming_distance a.buf b.buf (vwords a)
 
-let any a = bitarray_any a.buf (a.len / 64)
+let any a = bitarray_any a.buf (vwords a)
 let none a = not (any a)
 let is_empty = none
 let[@inline] read_bit w b = (Char.to_int w lsr b) land 1 > 0
@@ -133,57 +123,21 @@ let weighted_jaccard ?(pos_weight = 0.5) a b =
   +. (Float.of_int (hamming_weight (not @@ and_ (not a) (not b))) *. (1.0 -. pos_weight)))
   /. (Float.of_int @@ length a)
 
-(* let[@inline] set_word t i x = t.buf.{i} <- x *)
-(* let[@inline] get_word t i = t.buf.{i} *)
-
-(* let shift_right x n = *)
-(*   assert (n >= 0); *)
-(*   if n = 0 then x *)
-(*   else if n >= bits_per_word * length x then create (length x) false *)
-(*   else *)
-(*     let word_offset = n / bits_per_word and bit_offset = n mod bits_per_word in *)
-(*     let ret = create (length x) false in *)
-(*     for i = 0 to word_offset - 1 do *)
-(*       set_word ret i 0L *)
-(*     done; *)
-(*     set_word ret word_offset Int64.(get_word x 0 lsr bit_offset); *)
-(*     for i = word_offset + 1 to length ret - 1 do *)
-(*       let high_word = get_word x (i - word_offset - 1) in *)
-(*       let low_word = get_word x (i - word_offset) in *)
-(*       let ls = bits_per_word - bit_offset in *)
-(*       set_word ret i Int64.((high_word lsl ls) lor (low_word lsr bit_offset)) *)
-(*     done; *)
-(*     ret *)
-
-(* let%test_unit "shift-right" = *)
-(*   let x = create 4 true in *)
-(*   for i = 0 to bits_per_word * 4 do *)
-(*     [%test_result: int] ~expect:((bits_per_word * 4) - i) (hamming_weight (shift_right x i)) *)
-(*   done *)
-
-(* let shift_left x n = *)
-(*   assert (n >= 0); *)
-(*   if n = 0 then x *)
-(*   else if n >= bits_per_word * length x then create (length x) false *)
-(*   else *)
-(*     let word_offset = n / bits_per_word and bit_offset = n mod bits_per_word in *)
-(*     let ret = create (length x) false in *)
-(*     for i = 0 to word_offset - 1 do *)
-(*       set_word ret i 0L *)
-(*     done; *)
-(*     set_word ret word_offset Int64.(get_word x 0 lsr bit_offset); *)
-(*     for i = word_offset + 1 to length ret - 1 do *)
-(*       let high_word = get_word x (i - word_offset - 1) in *)
-(*       let low_word = get_word x (i - word_offset) in *)
-(*       let ls = bits_per_word - bit_offset in *)
-(*       set_word ret i Int64.((high_word lsl ls) lor (low_word lsr bit_offset)) *)
-(*     done; *)
-(*     ret *)
-
 let replicate ~w ~h t ~dx ~dy ~ct =
-  let t' = create t.len false in
-  bitarray_replicate t.buf dx dy ct w h t'.buf t.len;
-  t'
+  assert (w >= 0 && h >= 0 && t.len = w * h && ct >= 0);
+  let buf = create_buf t.len in
+  bitarray_replicate t.buf dx dy ct w h buf (vwords t);
+  { buf = Bytes.unsafe_to_string ~no_mutation_while_string_reachable:buf; len = t.len }
 
 let init_bitmap = Shared.init_bitmap init_fold
 let pp_bitmap = Shared.pp_bitmap iteri
+
+let%test_unit "hamming-weight" =
+  for _ = 0 to 100 do
+    let len = Random.int_incl 8 256 in
+    let bits = List.init len ~f:(fun _ -> Random.bool ()) in
+    let expect = List.sum (module Int) bits ~f:(fun b -> if b then 1 else 0) in
+    let v = of_list bits in
+    let actual = hamming_weight v in
+    [%test_result: int] ~expect actual
+  done

@@ -14,9 +14,12 @@ let () =
   let hamming_native = Bench.Test.create ~name:"hamming-native" (fun () -> Native.hamming_weight n1) in
   let hamming_vect = Bench.Test.create ~name:"hamming-vect" (fun () -> Vectorized.hamming_weight v1) in
 
+  let rep_native = Bench.Test.create ~name:"rep-native" (fun () -> Native.replicate ~w:16 ~h:16 n1 ~dx:1 ~dy:2 ~ct:5) in
+  let rep_vect = Bench.Test.create ~name:"rep-vect" (fun () -> Vectorized.replicate ~w:16 ~h:16 v1 ~dx:1 ~dy:2 ~ct:5) in
   Command.run
     (Bench.make_command
        [
+         Bench.Test.create_group ~name:"replicate" [ rep_vect; rep_native ];
          Bench.Test.create_group ~name:"and" [ and_native; and_vect ];
          Bench.Test.create_group ~name:"hamming" [ hamming_native; hamming_vect ];
        ])

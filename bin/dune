@@ -1,6 +1,6 @@
 (executable
- (name search_test)
- (modules search_test)
- (libraries core iter staged_synth vpt core_bench)
+ (name metric_synth_cad)
+ (modules metric_synth_cad)
+ (libraries core staged_synth)
  (preprocess
   (pps ppx_jane)))

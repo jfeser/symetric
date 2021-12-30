@@ -13,14 +13,15 @@ let%test_unit "of_list" =
     assert false)
 
 let%test_unit "replicate" =
-  let w = 10 and h = 10 and dx = 1 and dy = 2 and ct = 4 in
+  let w = 10 and h = 10 and dx = 0 and dy = 2 and ct = 5 in
   let s = List.init (w * h) ~f:(fun i -> i = 90) in
   let n = N.of_list s in
   let v = V.of_list s in
   let n' = N.replicate ~w ~h n ~dx ~dy ~ct in
+  Fmt.pr "Native:\n%a\n@." (N.pp_bitmap ~w) n';
   let v' = V.replicate ~w ~h v ~dx ~dy ~ct in
+  Fmt.pr "Vectorized:\n%a\n@." (V.pp_bitmap ~w) v';
   let nl = N.to_list n' and vl = V.to_list v' in
   if not @@ [%compare.equal: bool list] nl vl then (
-    Fmt.pr "Input:\n%a\n@." (V.pp_bitmap ~w) v;
     Fmt.pr "Expected:\n%a\nActual:\n%a\n@." (N.pp_bitmap ~w) n' (V.pp_bitmap ~w) v';
     assert false)

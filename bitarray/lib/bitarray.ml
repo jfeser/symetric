@@ -24,6 +24,6 @@ module type S = sig
   val replicate : w:int -> h:int -> t -> dx:int -> dy:int -> ct:int -> t
 end
 
-include Vectorized
+include Native
 module Native = Native
 module Vectorized = Vectorized

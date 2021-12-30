@@ -1,4 +1,5 @@
 #include <stdbool.h>
+#include <stdio.h>
 #include <caml/mlvalues.h>
 #include <caml/memory.h>
 
@@ -49,9 +50,8 @@ intnat bitarray_hamming_distance_stub(value b1, value b2, intnat len) {
                                    len);
 }
 
-value bitarray_replicate_stub(value b1, intnat x, intnat y, intnat ct, intnat w,
-                               intnat h, value b2, intnat len) {
-  bitarray_replicate((word_t*)(String_val(b1)), x, y, ct, w, h,
-                     (word_t*)(String_val(b2)), len);
+CAMLprim value bitarray_replicate_stub(value b1, intnat x, intnat y, intnat ct, intnat w,
+                                       intnat h, value b2, intnat len) {
+  bitarray_replicate((String_val(b1)), x, y, ct, w, h, (String_val(b2)), len);
   return Val_unit;
 }

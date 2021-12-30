@@ -94,8 +94,8 @@ module Value = struct
         if S.equal s s'' || S.equal s' s'' then Error else Scene s''
     | Repl, [ Error; Int _; Int _; Rep_count _ ] -> Error
     | Repl, [ Scene _; Int dx; Int dy; Rep_count c ] when (dx = 0 && dy = 0) || c <= 1 -> Error
-    | Repl, [ Scene s; Int dx; Int dy; Rep_count c ] ->
-        let s' = S.init size ~f:(fun _ -> replicate_is_set size s dx dy c) in
+    | Repl, [ Scene s; Int dx; Int dy; Rep_count ct ] ->
+        let s' = S.create @@ Bitarray.replicate ~w:size.xres ~h:size.yres (S.pixels s) ~dx ~dy ~ct in
         if S.equal s s' then Error else Scene s'
     | _ -> raise_s [%message "unexpected arguments" (op : Op.t) (args : t list)]
 

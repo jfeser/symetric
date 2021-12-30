@@ -237,26 +237,41 @@ module Make (Lang : Lang_intf) = struct
             @@ List.filter states ~f:(fun (v, _, op, _, _) ->
                    not @@ Search_state.mem search_state { value = v; type_ = Op.ret_type op }));
 
-          let reference =
-            Search_state.states ~type_ search_state |> Iter.to_list |> Vpt.create ctx.distance (`Good 10)
-          in
+          (* let reference = *)
+          (*   Search_state.states ~type_ search_state |> Iter.to_list |> Vpt.create ctx.distance (`Good 10) *)
+          (* in *)
+          let reference = Search_state.states ~type_ search_state |> Iter.to_list in
+          print_s [%message (List.length reference : int)];
           let insert key states =
             List.iter states ~f:(fun (value, op, args) -> Search_state.insert ~key search_state ~cost value op args)
           in
-          List.fold states ~init:[] ~f:(fun kept (v, _, _, _, states) ->
-              let inserted = ref false in
-              Vpt.neighbors ctx.distance v ctx.thresh reference
-              |> Iter.iter (fun v' ->
-                     inserted := true;
-                     insert v' states);
-              List.iter kept ~f:(fun v' ->
-                  if Float.(ctx.distance v v' < ctx.thresh) then (
-                    inserted := true;
-                    insert v' states));
-              if !inserted then kept
-              else (
-                insert v states;
-                v :: kept)))
+
+          let n_found_vp = ref 0 and n_found_list = ref 0 in
+          let kept =
+            List.fold states ~init:[] ~f:(fun kept (v, _, _, _, states) ->
+                let inserted_vp = ref false in
+                let n_insertions = ref 0 in
+                List.iter reference ~f:(fun v' ->
+                    if Float.(ctx.distance v v' < ctx.thresh) then (
+                      inserted_vp := true;
+                      insert v' states;
+                      incr n_insertions));
+                if !inserted_vp then incr n_found_vp;
+
+                let inserted_list = ref false in
+                List.iter kept ~f:(fun v' ->
+                    if Float.(ctx.distance v v' < ctx.thresh) then (
+                      inserted_list := true;
+                      insert v' states));
+                if !inserted_list then incr n_found_list;
+
+                if !inserted_vp || !inserted_list then kept
+                else (
+                  insert v states;
+                  v :: kept))
+          in
+          Fmt.epr "Found in vp: %d, found in list: %d, kept: %d\n%!" !n_found_vp !n_found_list (List.length kept);
+          kept)
 
       method check_states states =
         List.find_map states ~f:(fun (s, op, args) ->
