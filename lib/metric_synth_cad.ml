@@ -251,7 +251,7 @@ let cmd =
   Command.basic ~summary:"Solve CAD problems with metric synthesis."
     [%map_open
       let max_cost =
-        flag "-cost"
+        flag "-max-cost"
           (optional_with_default 22 int)
           ~doc:" the maximum size of program to evaluate"
       and group_threshold =
@@ -274,7 +274,7 @@ let cmd =
         flag "-scene-width" (optional_with_default 12 int) ~doc:" scene width in pixels"
       and scene_height =
         flag "-scene-height" (optional_with_default 20 int) ~doc:" scene height in pixels"
-      and verbose = flag "-scene-height" no_arg ~doc:" scene height in pixels" in
+      and verbose = flag "-verbose" no_arg ~doc:" increase verbosity" in
       fun () ->
         set_params ~max_cost ~group_threshold ~local_search_steps ~scene_width
           ~scene_height ~backward_pass_repeats ~filter ~verbose

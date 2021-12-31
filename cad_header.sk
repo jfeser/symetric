@@ -1,0 +1,5 @@
+struct Example {
+  int x;
+  int y;
+  bit v;
+}

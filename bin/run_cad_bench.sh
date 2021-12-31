@@ -1,20 +1,26 @@
 #!/usr/bin/env bash
 
-WORKDIR=/home/feser/work/ocaml-workspace/staged-synth
-BUILD_DIR="$WORKDIR/_build/default/"
-EXE=bin/lazy_cegis.exe
-FULL_EXE=$BUILD_DIR/$EXE
+BASE_DIR=$HOME/work/ocaml-workspace/staged-synth
+BUILD_DIR="$BASE_DIR/_build/default/"
+RUNS_DIR="$BASE_DIR/runs"
 
-dune build --profile=release "$EXE"
-rm -f jobs
-find bench/random_small_pat_size_8_leaf_only -type f > $WORKDIR/jobs
+cd $BASE_DIR
+dune build --profile=release "bin/metric_synth_cad.exe"
+dune build --profile=release "bin/enumerate_cad.exe"
 
-# parallel --eta --joblog "$WORKDIR/joblog" --timeout 600 --colsep ' ' \
-#          "$FULL_EXE cad-baseline -max-cost 11 -print-json true {1} 2> /dev/null" \
-#          :::: $WORKDIR/jobs \
-#     >> "$WORKDIR/baseline_results"
+# Create a new dated directory and move to it
+RUN_DIR=$RUNS_DIR/$(date '+%Y-%m-%d-%H:%M:%S')
+mkdir -p $RUN_DIR
+cd $RUN_DIR
 
-parallel --eta --joblog "$WORKDIR/joblog" --timeout 600 --colsep ' ' \
-         "$FULL_EXE cad-local -max-cost 9 -print-json true -rule-sets close-leaf,union-leaf,push-pull-replicate -distance {2} {1} 2> /dev/null" \
-         :::: $WORKDIR/jobs ::: jaccard feature \
-         >> "$WORKDIR/local_results_size_8_custom_rules"
+# Run metric synthesis
+parallel --eta --joblog metric_joblog --timeout 600 --colsep ' ' \
+         "$BUILD_DIR/bin/metric_synth_cad.exe -max-cost {1} -group-threshold {2} < {3} > metric-{1}-{2}-{3/}.json 2> metric-{1}-{2}-{3/}.log" ::: 8 16 24 ::: 0.1 0.2 0.3 ::: $BASE_DIR/bench/cad_ext/*
+
+# Run enumerator
+parallel --eta --joblog metric_joblog --timeout 600 --colsep ' ' \
+         "$BUILD_DIR/bin/enumerate_cad.exe -max-cost {1} < {2} > enumerate-{1}-{2/}.json 2> enumerate-{1}-{2/}.log" ::: 8 16 24 ::: $BASE_DIR/bench/cad_ext/*
+
+# Run sketch
+parallel --eta --joblog metric_joblog --timeout 600 --colsep ' ' \
+         "$BUILD_DIR/bin/enumerate_cad.exe -max-cost {1} < {2} > enumerate-{1}-{2/}.json 2> enumerate-{1}-{2/}.log" ::: 8 16 24 ::: $BASE_DIR/bench/cad_ext/*

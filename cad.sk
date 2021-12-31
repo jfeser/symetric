@@ -1,14 +1,8 @@
 #define DEPTH 3
 
-adt Vector {
+struct Vector {
   int x;
   int y;
-}
-
-adt Example {
-  int x;
-  int y;
-  bit v;
 }
 
 adt Program {
@@ -63,7 +57,7 @@ bit eval(Program p, Vector v) {
   case Repl: {
     bit ret = false;
     for (int count = 0; count < p.c && !ret; count++) {
-      ret = ret || eval(p, new Vector(x = v.x - p.dx * count, y = v.y - p.dy * count), d - 1);
+      ret = ret || eval(p, new Vector(x = v.x - p.dx * count, y = v.y - p.dy * count));
     }
     return ret;
   }

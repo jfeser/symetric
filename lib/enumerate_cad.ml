@@ -82,7 +82,7 @@ let cmd =
   Command.basic ~summary:"Solve CAD problems with enumeration."
     [%map_open
       let max_cost =
-        flag "-cost"
+        flag "-max-cost"
           (optional_with_default 22 int)
           ~doc:" the maximum size of program to evaluate"
       and filter =
