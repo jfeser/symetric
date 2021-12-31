@@ -4,3 +4,17 @@
  (libraries core staged_synth)
  (preprocess
   (pps ppx_jane)))
+
+(executable
+ (name cad_to_sketch)
+ (modules cad_to_sketch)
+ (libraries core fmt staged_synth)
+ (preprocess
+  (pps ppx_jane)))
+
+(executable
+ (name enumerate_cad)
+ (modules enumerate_cad)
+ (libraries core staged_synth)
+ (preprocess
+  (pps ppx_jane)))

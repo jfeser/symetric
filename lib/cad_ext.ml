@@ -5,7 +5,8 @@ module Type = struct
 end
 
 module Op = struct
-  type t = Union | Inter | Circle | Rect | Repl | Sub | Int of int | Rep_count of int [@@deriving compare, hash, sexp]
+  type t = Union | Inter | Circle | Rect | Repl | Sub | Int of int | Rep_count of int
+  [@@deriving compare, hash, sexp]
 
   let cost _ = 1
 
@@ -39,7 +40,8 @@ module Op = struct
 end
 
 module Value = struct
-  type t = Int of int | Rep_count of int | Scene of Scene.t | Error [@@deriving compare, hash, sexp]
+  type t = Int of int | Rep_count of int | Scene of Scene.t | Error
+  [@@deriving compare, hash, sexp]
 
   module Ctx = struct
     type t = { size : Scene.Size.t }
@@ -59,7 +61,8 @@ module Value = struct
     let rec loop count x y =
       if count <= 0 then false
       else
-        ((x >= 0 && x < size.xres && y >= 0 && y < size.yres) && Scene.get scene (Scene.Size.offset size x y))
+        (x >= 0 && x < size.xres && y >= 0 && y < size.yres)
+        && Scene.get scene (Scene.Size.offset size x y)
         || loop (count - 1) (x - dx) (y - dy)
     in
     loop count x y
@@ -74,14 +77,17 @@ module Value = struct
     | Circle, [ Int center_x; Int center_y; Int radius ] ->
         let s =
           S.init size ~f:(fun _ x y ->
-              ((x - center_x) * (x - center_x)) + ((y - center_y) * (y - center_y)) <= radius * radius)
+              ((x - center_x) * (x - center_x)) + ((y - center_y) * (y - center_y))
+              <= radius * radius)
         in
         Scene s
     | Rect, [ Int lo_left_x; Int lo_left_y; Int hi_right_x; Int hi_right_y ]
       when lo_left_x >= hi_right_x || lo_left_y >= hi_right_y ->
         Error
     | Rect, [ Int lo_left_x; Int lo_left_y; Int hi_right_x; Int hi_right_y ] ->
-        Scene (S.init size ~f:(fun _ x y -> lo_left_x <= x && lo_left_y <= y && hi_right_x >= x && hi_right_y >= y))
+        Scene
+          (S.init size ~f:(fun _ x y ->
+               lo_left_x <= x && lo_left_y <= y && hi_right_x >= x && hi_right_y >= y))
     | (Inter | Union | Sub), ([ Error; _ ] | [ _; Error ]) -> Error
     | Inter, [ Scene s; Scene s' ] ->
         let s'' = S.create (Bitarray.and_ (S.pixels s) (S.pixels s')) in
@@ -93,9 +99,13 @@ module Value = struct
         let s'' = S.create (Bitarray.and_ (S.pixels s) (Bitarray.not @@ S.pixels s')) in
         if S.equal s s'' || S.equal s' s'' then Error else Scene s''
     | Repl, [ Error; Int _; Int _; Rep_count _ ] -> Error
-    | Repl, [ Scene _; Int dx; Int dy; Rep_count c ] when (dx = 0 && dy = 0) || c <= 1 -> Error
+    | Repl, [ Scene _; Int dx; Int dy; Rep_count c ] when (dx = 0 && dy = 0) || c <= 1 ->
+        Error
     | Repl, [ Scene s; Int dx; Int dy; Rep_count ct ] ->
-        let s' = S.create @@ Bitarray.replicate ~w:size.xres ~h:size.yres (S.pixels s) ~dx ~dy ~ct in
+        let s' =
+          S.create
+          @@ Bitarray.replicate ~w:size.xres ~h:size.yres (S.pixels s) ~dx ~dy ~ct
+        in
         if S.equal s s' then Error else Scene s'
     | _ -> raise_s [%message "unexpected arguments" (op : Op.t) (args : t list)]
 
@@ -136,7 +146,25 @@ let rec parse =
   | Sexp.List [ Atom op; x; y; r ] when String.(lowercase op = "circle") ->
       circle ([%of_sexp: int] x) ([%of_sexp: int] y) ([%of_sexp: int] r)
   | Sexp.List [ Atom op; x; y; x'; y' ] when String.(lowercase op = "rect") ->
-      rect ([%of_sexp: int] x) ([%of_sexp: int] y) ([%of_sexp: int] x') ([%of_sexp: int] y')
+      rect
+        ([%of_sexp: int] x)
+        ([%of_sexp: int] y)
+        ([%of_sexp: int] x')
+        ([%of_sexp: int] y')
   | Sexp.List [ Atom op; e; x; y; c ] when String.(lowercase op = "repl") ->
       repl ([%of_sexp: int] x) ([%of_sexp: int] y) ([%of_sexp: int] c) (parse e)
   | s -> raise_s [%message "unexpected" (s : Sexp.t)]
+
+open Sexp
+
+let serialize_op : Op.t -> _ = function
+  | Union -> Atom "union"
+  | Inter -> Atom "inter"
+  | Sub -> Atom "sub"
+  | Circle -> Atom "circle"
+  | Rect -> Atom "rect"
+  | Repl -> Atom "repl"
+  | Int x | Rep_count x -> Atom (sprintf "%d" x)
+
+let rec serialize (Program.Apply (op, args)) =
+  List (serialize_op op :: List.map args ~f:serialize)

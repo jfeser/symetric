@@ -9,12 +9,14 @@ module Params = struct
     ectx : Value.Ctx.t;
     local_search_steps : int;
     target : Scene.t;
+    target_edges : Scene.t;
     group_threshold : float;
     operators : Op.t list;
     filter : bool;
     max_cost : int;
     backward_pass_repeats : int;
     verbose : bool;
+    search_state : S.t;
   }
 end
 
@@ -22,10 +24,8 @@ let params = Set_once.create ()
 let[@inline] size () = (Set_once.get_exn params [%here]).Params.size
 let[@inline] ectx () = (Set_once.get_exn params [%here]).Params.ectx
 let[@inline] target () = (Set_once.get_exn params [%here]).Params.target
-let target_edges = lazy (Scene.edges (size ()) (target ()))
-let[@inline] target_edges () = Lazy.force target_edges
-let search_state = lazy (S.create ())
-let[@inline] search_state () = Lazy.force search_state
+let[@inline] target_edges () = (Set_once.get_exn params [%here]).Params.target_edges
+let[@inline] search_state () = (Set_once.get_exn params [%here]).Params.search_state
 let[@inline] group_threshold () = (Set_once.get_exn params [%here]).Params.group_threshold
 let[@inline] operators () = (Set_once.get_exn params [%here]).Params.operators
 let[@inline] filter () = (Set_once.get_exn params [%here]).Params.filter
@@ -36,6 +36,8 @@ let[@inline] backward_pass_repeats () =
 
 let[@inline] local_search_steps () =
   (Set_once.get_exn params [%here]).Params.local_search_steps
+
+let runtime = ref Time.Span.zero
 
 let distance (v : Value.t) (v' : Value.t) =
   match (v, v') with Scene x, Scene x' -> Scene.jaccard x x' | _ -> Float.infinity
@@ -151,6 +153,7 @@ let fill_search_space () =
   done
 
 let synthesize () =
+  let start_time = Time.now () in
   let search_state = search_state ()
   and target = Value.Scene (target ())
   and ectx = ectx ()
@@ -159,30 +162,34 @@ let synthesize () =
   fill_search_space ();
 
   let exception Done of Op.t Program.t in
-  try
-    Iter.of_hashtbl search_state.values
-    |> Iter.map (fun ((key : S.Attr.t), data) ->
-           Iter.of_queue data
-           |> Iter.map (fun v ->
-                  (distance target v, S.TValue.{ value = v; type_ = key.type_ })))
-    |> Iter.concat
-    |> Iter.top_k ~cmp:(fun (d, _) (d', _) -> [%compare: float] d' d) 100
-    |> Iter.sort ~cmp:(fun (d, _) (d', _) -> [%compare: float] d d')
-    |> Iter.iter (fun (_, (tv : S.TValue.t)) ->
-           match tv.value with
-           | Value.Scene _ ->
-               for _ = 1 to backward_pass_repeats do
-                 let p =
-                   S.local_greedy (Value.pp ectx) search_state (Int.ceil_log2 max_cost)
-                     (Value.eval ectx) (distance target) tv
-                   |> Option.value_exn
-                 in
-                 let found_value = Program.eval (Value.eval ectx) @@ local_search p in
-                 if [%compare.equal: Value.t] target found_value then raise (Done p)
-               done
-           | _ -> ());
-    None
-  with Done p -> Some p
+  let ret =
+    try
+      Iter.of_hashtbl search_state.values
+      |> Iter.map (fun ((key : S.Attr.t), data) ->
+             Iter.of_queue data
+             |> Iter.map (fun v ->
+                    (distance target v, S.TValue.{ value = v; type_ = key.type_ })))
+      |> Iter.concat
+      |> Iter.top_k ~cmp:(fun (d, _) (d', _) -> [%compare: float] d' d) 100
+      |> Iter.sort ~cmp:(fun (d, _) (d', _) -> [%compare: float] d d')
+      |> Iter.iter (fun (_, (tv : S.TValue.t)) ->
+             match tv.value with
+             | Value.Scene _ ->
+                 for _ = 1 to backward_pass_repeats do
+                   let p =
+                     S.local_greedy (Value.pp ectx) search_state (Int.ceil_log2 max_cost)
+                       (Value.eval ectx) (distance target) tv
+                     |> Option.value_exn
+                   in
+                   let found_value = Program.eval (Value.eval ectx) @@ local_search p in
+                   if [%compare.equal: Value.t] target found_value then raise (Done p)
+                 done
+             | _ -> ());
+      None
+    with Done p -> Some p
+  in
+  runtime := Time.diff (Time.now ()) start_time;
+  ret
 
 let set_params ~scene_width ~scene_height ~group_threshold ~max_cost ~local_search_steps
     ~backward_pass_repeats ~filter ~verbose target =
@@ -209,9 +216,35 @@ let set_params ~scene_width ~scene_height ~group_threshold ~max_cost ~local_sear
         backward_pass_repeats;
         filter;
         verbose;
+        search_state = S.create ();
+        target_edges = Scene.edges size target_scene;
       }
 
-let print_output _ = ()
+let print_output m_prog =
+  let program_size =
+    Option.map m_prog ~f:(fun p -> Float.of_int @@ Program.size p)
+    |> Option.value ~default:Float.nan
+  in
+  let program_json =
+    Option.map m_prog ~f:(fun p -> `String (Sexp.to_string @@ Cad_ext.serialize p))
+    |> Option.value ~default:`Null
+  in
+  let open Yojson in
+  Basic.to_channel Out_channel.stdout
+    (`Assoc
+      [
+        ("method", `String "metric");
+        ("scene_width", `Int (size ()).xres);
+        ("scene_height", `Int (size ()).yres);
+        ("local_search_steps", `Int (local_search_steps ()));
+        ("group_threshold", `Float (group_threshold ()));
+        ("filter", `Bool (filter ()));
+        ("max_cost", `Int (max_cost ()));
+        ("backward_pass_repeats", `Int (backward_pass_repeats ()));
+        ("program_size", `Float program_size);
+        ("runtime", `Float (Time.Span.to_sec !runtime));
+        ("program", program_json);
+      ])
 
 let cmd =
   let open Command.Let_syntax in

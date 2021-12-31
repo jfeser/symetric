@@ -20,10 +20,14 @@ module Tensor = struct
 
   module T = Owl.Dense.Ndarray.D
 
-  let to_owl t = T.of_array (Array.of_list @@ List.map ~f:Float.of_int t.elems) (Array.of_list t.shape)
+  let to_owl t =
+    T.of_array (Array.of_list @@ List.map ~f:Float.of_int t.elems) (Array.of_list t.shape)
 
   let of_owl arr =
-    { elems = T.to_array arr |> Array.to_list |> List.map ~f:Float.to_int; shape = T.shape arr |> Array.to_list }
+    {
+      elems = T.to_array arr |> Array.to_list |> List.map ~f:Float.to_int;
+      shape = T.shape arr |> Array.to_list;
+    }
 
   let reshape t shape =
     try
@@ -33,14 +37,20 @@ module Tensor = struct
     with _ -> raise_s [%message (shape : int list)]
 
   let permute t dims =
-    if [%compare.equal: int list] (List.sort ~compare:[%compare: int] dims) (List.init (n_dims t) ~f:(fun i -> i + 1))
+    if
+      [%compare.equal: int list]
+        (List.sort ~compare:[%compare: int] dims)
+        (List.init (n_dims t) ~f:(fun i -> i + 1))
     then
       let axis = List.map dims ~f:(fun d -> d - 1) |> Array.of_list in
       try Some (of_owl @@ T.transpose ~axis @@ to_owl t)
-      with Failure msg -> raise_s [%message (msg : string) (t.shape : int list) (axis : int array)]
+      with Failure msg ->
+        raise_s [%message (msg : string) (t.shape : int list) (axis : int array)]
     else None
 
-  let flip t axis = if axis >= 0 && axis < n_dims t then Some (of_owl @@ T.flip ~axis @@ to_owl t) else None
+  let flip t axis =
+    if axis >= 0 && axis < n_dims t then Some (of_owl @@ T.flip ~axis @@ to_owl t)
+    else None
 end
 
 module Op = struct
@@ -54,7 +64,10 @@ module Op = struct
   include T
   include Comparator.Make (T)
 
-  let ret_type = function Id _ | Reshape | Permute | Flip -> Type.Tensor | Cons | Vec -> Vector | Int _ -> Int
+  let ret_type = function
+    | Id _ | Reshape | Permute | Flip -> Type.Tensor
+    | Cons | Vec -> Vector
+    | Int _ -> Int
 
   let args_type = function
     | Id _ | Int _ -> []
@@ -84,13 +97,14 @@ module Value = struct
   end
 
   module T = struct
-    type t = Tensor of Tensor.t | Vector of Vector.t | Int of int | Error [@@deriving compare, equal, hash, sexp]
+    type t = Tensor of Tensor.t | Vector of Vector.t | Int of int | Error
+    [@@deriving compare, equal, hash, sexp]
   end
 
   include T
   include Comparator.Make (T)
 
-  let pp = Fmt.nop
+  let pp _ = Fmt.nop
 
   module Op_args = struct
     type nonrec t = Op.t * t list [@@deriving compare, hash, sexp]
@@ -104,7 +118,9 @@ module Value = struct
   end
 
   let eval _ op args =
-    let of_tensor_opt m = Option.value ~default:Error @@ Option.map ~f:(fun t -> Tensor t) m in
+    let of_tensor_opt m =
+      Option.value ~default:Error @@ Option.map ~f:(fun t -> Tensor t) m
+    in
     match (op, args) with
     | Op.Id t, [] -> Tensor t
     | Reshape, [ Tensor m; Vector v ] -> of_tensor_opt @@ Tensor.reshape m v
@@ -134,7 +150,10 @@ include struct
   open Dumb_params
 
   let spec = Spec.create ()
-  let _ = (Spec.add spec @@ Param.const_str ~name:"lang" name : (string, Param.bound) Param.t)
+
+  let _ =
+    (Spec.add spec @@ Param.const_str ~name:"lang" name : (string, Param.bound) Param.t)
+
   let bench = Spec.add spec @@ Bench.param (module Op) (module Value)
 end
 

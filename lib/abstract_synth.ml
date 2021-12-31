@@ -62,7 +62,8 @@ struct
 
     module Pred = struct
       module T = struct
-        type t = [ `Concrete of Value.t | `Pred of Domain_pred.t ] [@@deriving compare, hash, sexp]
+        type t = [ `Concrete of Value.t | `Pred of Domain_pred.t ]
+        [@@deriving compare, hash, sexp]
       end
 
       include T
@@ -89,14 +90,18 @@ struct
       let to_iter = function
         | Bottom -> Iter.empty
         | Preds ps ->
-            Iter.cons `True @@ Iter.map (function #Pred.t as p -> p) @@ (Iter.of_set ps :> [> Pred.t ] Iter.t)
+            Iter.cons `True
+            @@ Iter.map (function #Pred.t as p -> p)
+            @@ (Iter.of_set ps :> [> Pred.t ] Iter.t)
 
       let lift conc =
         let domain = Domain_pred.lift conc |> Iter.map (fun p -> `Pred p) in
         of_iter (Iter.cons (`Concrete conc) domain)
 
       let and_ p p' =
-        match (p, p') with Bottom, _ | _, Bottom -> Bottom | Preds ps, Preds ps' -> Preds (Set.union ps ps')
+        match (p, p') with
+        | Bottom, _ | _, Bottom -> Bottom
+        | Preds ps, Preds ps' -> Preds (Set.union ps ps')
 
       let and_many = Iter.fold and_ true_
 
@@ -105,13 +110,18 @@ struct
         | Preds ps ->
             Iter.of_set ps
             |> Iter.map (function
-                 | `Concrete v as p -> and_ (Preds (Set.singleton (module Pred) p)) @@ lift v
-                 | `Pred p -> Domain_pred.complete p |> Iter.map (fun p -> `Pred p) |> of_iter)
+                 | `Concrete v as p ->
+                     and_ (Preds (Set.singleton (module Pred) p)) @@ lift v
+                 | `Pred p ->
+                     Domain_pred.complete p |> Iter.map (fun p -> `Pred p) |> of_iter)
             |> and_many
 
       let implies p p' =
         let p = complete p and p' = complete p' in
-        match (p, p') with Bottom, _ -> true | _, Bottom -> false | Preds ps, Preds ps' -> Set.is_subset ps' ~of_:ps
+        match (p, p') with
+        | Bottom, _ -> true
+        | _, Bottom -> false
+        | Preds ps, Preds ps' -> Set.is_subset ps' ~of_:ps
 
       let contains p v =
         match p with
@@ -133,32 +143,43 @@ struct
         preds : Set.M(Pred).t;
         max_conjuncts : int;
         ectx : (Value.Ctx.t[@opaque]); [@compare.ignore]
-        refine_log : ((Op.t * Value.t * t) Program.t * Set.M(Pred).t * Set.M(Pred).t) Queue.t;
+        refine_log :
+          ((Op.t * Value.t * t) Program.t * Set.M(Pred).t * Set.M(Pred).t) Queue.t;
       }
       [@@deriving compare, sexp]
 
       let create ?(max_conjuncts = 3) ectx =
-        { preds = Set.empty (module Pred); max_conjuncts; ectx; refine_log = Queue.create () }
+        {
+          preds = Set.empty (module Pred);
+          max_conjuncts;
+          ectx;
+          refine_log = Queue.create ();
+        }
     end
 
     (** Implements the abstract transfer function for conjunctions of atomic predicates. *)
     let eval (ctx : Ctx.t) op args =
       let transfer = Domain_pred.transfer ctx.ectx op in
-      List.map args ~f:to_iter |> Iter.list_product |> Iter.map transfer |> Iter.map Iter.of_list |> Iter.concat
-      |> of_iter
+      List.map args ~f:to_iter |> Iter.list_product |> Iter.map transfer
+      |> Iter.map Iter.of_list |> Iter.concat |> of_iter
 
     (** Restricts the abstract transfer to only use the predicates that we have
        discovered through refinement. *)
     let eval_restricted ctx op args =
-      match eval ctx op args with Bottom as p -> p | Preds ps -> Preds (Set.inter ctx.preds ps)
+      match eval ctx op args with
+      | Bottom as p -> p
+      | Preds ps -> Preds (Set.inter ctx.preds ps)
 
     let conjuncts ~k l =
       let k = min k (List.length l) in
       let ret =
         Iter.(0 -- k)
-        |> Iter.map (fun k -> if k = 0 then Iter.empty else Iter.map Array.to_list @@ Combinat.combinations ~k l)
+        |> Iter.map (fun k ->
+               if k = 0 then Iter.empty
+               else Iter.map Array.to_list @@ Combinat.combinations ~k l)
         |> Iter.concat
-        |> Iter.map (fun cs -> (List.sum (module Int) cs ~f:Pred.cost, of_iter @@ Iter.of_list cs))
+        |> Iter.map (fun cs ->
+               (List.sum (module Int) cs ~f:Pred.cost, of_iter @@ Iter.of_list cs))
       in
       ret
 
@@ -186,11 +207,16 @@ struct
         end
 
         module Op = struct
-          type t = Args | And of int | Pred of int * [ Pred.t | `True ] [@@deriving compare, hash, sexp]
+          type t = Args | And of int | Pred of int * [ Pred.t | `True ]
+          [@@deriving compare, hash, sexp]
 
           let pp = Fmt.nop
           let arity = function Args -> n_args | And _ -> 2 | Pred _ -> 0
-          let ret_type : _ -> Type.t = function Args -> Args | And slot -> Pred slot | Pred (slot, _) -> Pred slot
+
+          let ret_type : _ -> Type.t = function
+            | Args -> Args
+            | And slot -> Pred slot
+            | Pred (slot, _) -> Pred slot
 
           let args_type = function
             | Args -> List.init n_args ~f:(fun slot -> Type.Pred slot)
@@ -198,7 +224,11 @@ struct
             | Pred _ -> []
 
           let is_commutative _ = false
-          let cost = function Pred (_, `True) -> 1 | Pred (_, (#Pred.t as p)) -> Pred.cost p | Args | And _ -> 1
+
+          let cost = function
+            | Pred (_, `True) -> 1
+            | Pred (_, (#Pred.t as p)) -> Pred.cost p
+            | Args | And _ -> 1
         end
 
         module Value = struct
@@ -208,13 +238,14 @@ struct
 
           let eval _ op args =
             match (op, args) with
-            | Op.Args, preds -> Args (List.map preds ~f:(function Pred p -> p | _ -> assert false))
+            | Op.Args, preds ->
+                Args (List.map preds ~f:(function Pred p -> p | _ -> assert false))
             | And _, [ Pred p; Pred p' ] -> Pred (and_ p p')
             | Pred (_, p), [] -> Pred (singleton p)
             | _ -> assert false
 
           let is_error = function Pred p -> length p > k | _ -> false
-          let pp = Fmt.nop
+          let pp _ = Fmt.nop
         end
       end in
       let open Conjunct_lang in
@@ -222,7 +253,11 @@ struct
       let ops =
         Op.Args
         :: List.concat_mapi too_strong ~f:(fun slot conc ->
-               let pred_ops = lift conc |> to_iter |> Iter.map (fun p -> Op.Pred (slot, p)) |> Iter.to_list in
+               let pred_ops =
+                 lift conc |> to_iter
+                 |> Iter.map (fun p -> Op.Pred (slot, p))
+                 |> Iter.to_list
+               in
                Op.And slot :: pred_ops)
       in
       print_s [%message (ops : Op.t list)];
@@ -263,7 +298,9 @@ struct
     let strengthen = _strengthen
 
     let strengthen_root (ctx : Ctx.t) too_strong too_weak target =
-      if debug then eprint_s [%message "strengthening program root" (too_strong : Value.t) (too_weak : t)];
+      if debug then
+        eprint_s
+          [%message "strengthening program root" (too_strong : Value.t) (too_weak : t)];
       let new_pred =
         match
           strengthen ~k:ctx.max_conjuncts [ too_strong ] [ too_weak ] (function
@@ -275,13 +312,22 @@ struct
       in
       new_pred
 
-    let rec strengthen_program (ctx : Ctx.t) (Program.Apply ((op, conc, abs), args) as p) out =
-      if debug then eprint_s [%message "strengthening program" (p : (Op.t * Value.t * t) Program.t) (out : t)];
+    let rec strengthen_program (ctx : Ctx.t) (Program.Apply ((op, conc, abs), args) as p)
+        out =
+      if debug then
+        eprint_s
+          [%message
+            "strengthening program" (p : (Op.t * Value.t * t) Program.t) (out : t)];
       let args' =
         if List.is_empty args then []
         else
-          let args_conc, args_abs = List.map args ~f:(fun (Program.Apply ((_, c, a), _)) -> (c, a)) |> List.unzip in
-          let out' = strengthen ~k:ctx.max_conjuncts args_conc args_abs (fun cs -> implies (eval ctx op cs) out) in
+          let args_conc, args_abs =
+            List.map args ~f:(fun (Program.Apply ((_, c, a), _)) -> (c, a)) |> List.unzip
+          in
+          let out' =
+            strengthen ~k:ctx.max_conjuncts args_conc args_abs (fun cs ->
+                implies (eval ctx op cs) out)
+          in
           List.map2_exn args out' ~f:(strengthen_program ctx)
       in
       Program.Apply ((op, conc, abs, out), args')
@@ -290,8 +336,11 @@ struct
       (* Annotate program with concrete & restricted abstract values. *)
       let rec eval_all (ctx : Ctx.t) (Program.Apply (op, args)) =
         let args' = List.map args ~f:(eval_all ctx) in
-        let args_conc, args_abs = List.map args' ~f:(fun (Program.Apply ((_, c, a), _)) -> (c, a)) |> List.unzip in
-        let conc = Value.eval ctx.ectx op args_conc and abs = eval_restricted ctx op args_abs in
+        let args_conc, args_abs =
+          List.map args' ~f:(fun (Program.Apply ((_, c, a), _)) -> (c, a)) |> List.unzip
+        in
+        let conc = Value.eval ctx.ectx op args_conc
+        and abs = eval_restricted ctx op args_abs in
         Apply ((op, conc, abs), args')
       in
       let p = eval_all ctx p in
@@ -323,6 +372,7 @@ struct
 
         (* When searching, only consider the predicates in the context *)
         let eval = eval_restricted
+        let pp _ = Fmt.nop
       end
     end in
     let exception Done of int * Abs.Op.t Program.t in
@@ -333,7 +383,8 @@ struct
           Synth.Ctx.create ctx ops
           @@ `Pred
                (fun op s ->
-                 [%compare.equal: Abs.Type.t] (Abs.Op.ret_type op) Abs.Type.output && Abs.Value.contains s target)
+                 [%compare.equal: Abs.Type.t] (Abs.Op.ret_type op) Abs.Type.output
+                 && Abs.Value.contains s target)
         in
         let synth = new Synth.synthesizer sctx in
         match synth#run with
@@ -352,13 +403,20 @@ struct
       match ctx' with
       | Some ctx' ->
           if [%compare.equal: Abs.Value.Ctx.t] ctx ctx' then
-            raise_s [%message "refinement failed" (ctx : Abs.Value.Ctx.t) (ctx' : Abs.Value.Ctx.t)];
+            raise_s
+              [%message
+                "refinement failed" (ctx : Abs.Value.Ctx.t) (ctx' : Abs.Value.Ctx.t)];
           loop (iters + 1) ctx'
       | None -> failwith "refinement failed"
     in
     let ctx = Abs.Value.Ctx.create ectx in
     (try ignore (loop 0 ctx : Abs_value.Ctx.t)
      with Done (iters, p) ->
-       eprint_s [%message "synthesis completed" (iters : int) (Program.size p : int) (p : Abs.Op.t Program.t)]);
+       eprint_s
+         [%message
+           "synthesis completed"
+             (iters : int)
+             (Program.size p : int)
+             (p : Abs.Op.t Program.t)]);
     ctx.refine_log
 end

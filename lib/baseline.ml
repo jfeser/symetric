@@ -25,7 +25,7 @@ module type Lang_intf = sig
       type t
     end
 
-    val pp : t Fmt.t
+    val pp : Ctx.t -> t Fmt.t
     val eval : Ctx.t -> Op.t -> t list -> t
     val is_error : t -> bool
   end
@@ -60,7 +60,9 @@ module Make (Lang : Lang_intf) = struct
         goal =
           (match goal with
           | `Value v ->
-              fun op v' -> [%compare.equal: Type.t] (Op.ret_type op) Type.output && [%compare.equal: Value.t] v v'
+              fun op v' ->
+                [%compare.equal: Type.t] (Op.ret_type op) Type.output
+                && [%compare.equal: Value.t] v v'
           | `Pred p -> p);
         bank_size = Stats.add_probe_exn stats "bank-size";
         found_program = ref false;
@@ -76,16 +78,22 @@ module Make (Lang : Lang_intf) = struct
       val eval_ctx = ctx.ectx
       val ops = ctx.ops
       method get_search_state = search_state
-      method generate_states cost = Gen.generate_states Search_state.search eval_ctx search_state ops cost
+
+      method generate_states cost =
+        Gen.generate_states Search_state.search eval_ctx search_state ops cost
 
       method insert_states cost states =
-        List.iter states ~f:(fun (state, op, args) -> Search_state.insert search_state ~cost state op args);
+        List.iter states ~f:(fun (state, op, args) ->
+            Search_state.insert search_state ~cost state op args);
         ctx.bank_size := Float.of_int @@ Search_state.length search_state
 
       method check_states states =
         List.iter states ~f:(fun (s, op, args) ->
             if ctx.goal op s then
-              let p = Search_state.program_of_op_args_exn search_state (Int.ceil_log2 max_cost) op args in
+              let p =
+                Search_state.program_of_op_args_exn search_state (Int.ceil_log2 max_cost)
+                  op args
+              in
               raise (Done p))
 
       method fill cost =

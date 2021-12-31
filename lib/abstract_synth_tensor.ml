@@ -8,10 +8,12 @@ module Abs_value = struct
       type any_pred = [ `False ] [@@deriving compare, hash, sexp]
       type int_pred = [ any_pred | `Int of int ] [@@deriving compare, hash, sexp]
 
-      type vector_pred = [ any_pred | `Len of int | `Elems of int list | `Concrete_v of Value.Vector.t ]
+      type vector_pred =
+        [ any_pred | `Len of int | `Elems of int list | `Concrete_v of Value.Vector.t ]
       [@@deriving compare, hash, sexp]
 
-      type tensor_pred = [ any_pred | `N_dims of int | `N_elems of int | `Concrete_t of Value.Tensor.t ]
+      type tensor_pred =
+        [ any_pred | `N_dims of int | `N_elems of int | `Concrete_t of Value.Tensor.t ]
       [@@deriving compare, hash, sexp]
 
       type t = [ int_pred | vector_pred | tensor_pred ] [@@deriving compare, hash, sexp]
@@ -27,20 +29,22 @@ module Abs_value = struct
     type t = Set.M(Pred).t [@@deriving compare, equal, hash, sexp]
 
     let of_list l =
-      if List.mem ~equal:[%compare.equal: Pred.t] l `False then Set.singleton (module Pred) `False
+      if List.mem ~equal:[%compare.equal: Pred.t] l `False then
+        Set.singleton (module Pred) `False
       else Set.of_list (module Pred) l
   end
 
   include T
   include Comparator.Make (T)
 
-  let pp = Fmt.nop
+  let pp _ = Fmt.nop
 
   module Ctx = struct
     type nonrec t = {
       preds : Set.M(Pred).t;
       ectx : (Value.Ctx.t[@opaque]);
-      refine_log : ((Op.t * Value.t * t) Program.t * Set.M(Pred).t * Set.M(Pred).t) Queue.t;
+      refine_log :
+        ((Op.t * Value.t * t) Program.t * Set.M(Pred).t * Set.M(Pred).t) Queue.t;
     }
     [@@deriving sexp]
 
@@ -55,16 +59,28 @@ module Abs_value = struct
   end
 
   let relevant = function
-    | Value.Tensor t -> [ `N_dims (Tensor.n_dims t); `N_elems (Tensor.n_elems t); `Concrete_t t ]
-    | Vector v -> [ `Len (List.length v); `Concrete_v v; `Elems (List.dedup_and_sort ~compare:[%compare: int] v) ]
+    | Value.Tensor t ->
+        [ `N_dims (Tensor.n_dims t); `N_elems (Tensor.n_elems t); `Concrete_t t ]
+    | Vector v ->
+        [
+          `Len (List.length v);
+          `Concrete_v v;
+          `Elems (List.dedup_and_sort ~compare:[%compare: int] v);
+        ]
     | Error -> [ `False ]
     | Int x -> [ `Int x ]
 
   let complete vs =
     Set.to_list vs
     |> List.concat_map ~f:(function
-         | `Concrete_v v as p -> [ p; `Len (List.length v); `Elems (List.dedup_and_sort ~compare:[%compare: int] v) ]
-         | `Concrete_t t as p -> [ p; `N_dims (Tensor.n_dims t); `N_elems (Tensor.n_elems t) ]
+         | `Concrete_v v as p ->
+             [
+               p;
+               `Len (List.length v);
+               `Elems (List.dedup_and_sort ~compare:[%compare: int] v);
+             ]
+         | `Concrete_t t as p ->
+             [ p; `N_dims (Tensor.n_dims t); `N_elems (Tensor.n_elems t) ]
          | p -> [ p ])
     |> Set.of_list (module Pred)
 
@@ -100,7 +116,10 @@ module Abs_value = struct
     | Int x -> not (Set.for_all p ~f:(eval_int_pred x))
     | Error -> not (Set.for_all p ~f:eval_error_pred)
 
-  let contains abs conc = match conc with Value.Tensor t' -> Set.for_all abs ~f:(eval_tensor_pred t') | _ -> false
+  let contains abs conc =
+    match conc with
+    | Value.Tensor t' -> Set.for_all abs ~f:(eval_tensor_pred t')
+    | _ -> false
 
   let eval (ctx : Ctx.t) op args =
     match (op, args) with
@@ -128,15 +147,25 @@ module Abs_value = struct
           Iter.product (Iter.of_set m) (Iter.of_set v)
           |> Iter.map (function
                | `Concrete_t t', `Concrete_v v' -> (
-                   match Value.eval ctx.ectx Op.Reshape [ Value.Tensor t'; Value.Vector v' ] with
-                   | Tensor t'' -> [ `Concrete_t t''; `N_dims (Tensor.n_dims t''); `N_elems (Tensor.n_elems t'') ]
+                   match
+                     Value.eval ctx.ectx Op.Reshape [ Value.Tensor t'; Value.Vector v' ]
+                   with
+                   | Tensor t'' ->
+                       [
+                         `Concrete_t t'';
+                         `N_dims (Tensor.n_dims t'');
+                         `N_elems (Tensor.n_elems t'');
+                       ]
                    | Error -> [ `False ]
                    | _ -> failwith "expected a tensor")
-               | `N_elems n, `Concrete_v v -> if List.length v > 0 && n = prod v then [ `N_elems n ] else [ `False ]
-               | `Concrete_t t, `Elems v -> if prod v > Tensor.n_elems t then [ `False ] else []
+               | `N_elems n, `Concrete_v v ->
+                   if List.length v > 0 && n = prod v then [ `N_elems n ] else [ `False ]
+               | `Concrete_t t, `Elems v ->
+                   if prod v > Tensor.n_elems t then [ `False ] else []
                | _ -> [])
         in
-        Iter.append_l [ m_preds; v_preds; pair_preds ] |> Iter.to_list |> List.concat |> of_list
+        Iter.append_l [ m_preds; v_preds; pair_preds ]
+        |> Iter.to_list |> List.concat |> of_list
     | Permute, [ m; v ] ->
         let is_permutation v =
           let v = List.sort ~compare:[%compare: int] v in
@@ -147,7 +176,8 @@ module Abs_value = struct
           Iter.of_set m
           |> Iter.map (function
                | (`False | `N_elems _ | `N_dims _) as p -> [ p ]
-               | `Concrete_t t -> [ `N_elems (Tensor.n_elems t); `N_dims (Tensor.n_dims t) ]
+               | `Concrete_t t ->
+                   [ `N_elems (Tensor.n_elems t); `N_dims (Tensor.n_dims t) ]
                | #Pred.int_pred | #Pred.vector_pred -> failwith "unexpected predicate")
         in
         let v_preds =
@@ -156,7 +186,8 @@ module Abs_value = struct
                | `False as p -> [ p ]
                | `Len l -> [ `N_dims l ]
                | `Elems v -> if is_permutation v then [] else [ `False ]
-               | `Concrete_v v -> if is_permutation v then [ `N_dims (List.length v) ] else [ `False ]
+               | `Concrete_v v ->
+                   if is_permutation v then [ `N_dims (List.length v) ] else [ `False ]
                | #Pred.int_pred | #Pred.tensor_pred -> failwith "unexpected predicate")
         in
 
@@ -164,21 +195,26 @@ module Abs_value = struct
           Iter.product (Iter.of_set m) (Iter.of_set v)
           |> Iter.map (function
                | `Concrete_t t, `Len i ->
-                   if Tensor.n_dims t = i then [ `N_dims i; `N_elems (Tensor.n_elems t) ] else [ `False ]
+                   if Tensor.n_dims t = i then [ `N_dims i; `N_elems (Tensor.n_elems t) ]
+                   else [ `False ]
                | `Concrete_t t, `Concrete_v v -> (
-                   match Value.eval ctx.ectx Op.Permute [ Value.Tensor t; Value.Vector v ] with
+                   match
+                     Value.eval ctx.ectx Op.Permute [ Value.Tensor t; Value.Vector v ]
+                   with
                    | Tensor t' -> [ `Concrete_t t' ]
                    | Error -> [ `False ]
                    | _ -> failwith "expected a tensor")
                | `N_dims n, `Len i -> if n = i then [ `N_dims n ] else [ `False ]
                | `Concrete_t t, `Elems v ->
-                   if is_permutation v && List.length v = Tensor.n_dims t then [] else [ `False ]
+                   if is_permutation v && List.length v = Tensor.n_dims t then []
+                   else [ `False ]
                | `N_dims n, `Elems v | `N_dims n, `Concrete_v v ->
                    if List.length v = n then [ `N_dims n ] else [ `False ]
                | _ -> [])
         in
 
-        Iter.append_l [ m_preds; v_preds; pair_preds ] |> Iter.to_list |> List.concat |> of_list
+        Iter.append_l [ m_preds; v_preds; pair_preds ]
+        |> Iter.to_list |> List.concat |> of_list
     | Flip, [ m; x ] ->
         Iter.product (Iter.of_set m) (Iter.of_set x)
         |> Iter.map (function
@@ -189,7 +225,8 @@ module Abs_value = struct
                  | Error -> [ `False ]
                  | _ -> failwith "expected a tensor")
              | (#Pred.tensor_pred as p), #Pred.int_pred -> [ p ]
-             | (#Pred.vector_pred | #Pred.int_pred), (#Pred.tensor_pred | #Pred.vector_pred)
+             | ( (#Pred.vector_pred | #Pred.int_pred),
+                 (#Pred.tensor_pred | #Pred.vector_pred) )
              | #Pred.tensor_pred, (#Pred.tensor_pred | #Pred.vector_pred)
              | (#Pred.int_pred | #Pred.vector_pred), #Pred.int_pred ->
                  failwith "unexpected predicate")
@@ -210,15 +247,21 @@ module Abs_value = struct
           |> Iter.map (function
                | `False, #Pred.vector_pred | #Pred.int_pred, `False -> [ `False ]
                | `Int x, `Concrete_v xs ->
-                   [ `Concrete_v (x :: xs); `Elems (List.dedup_and_sort ~compare:[%compare: int] (x :: xs)) ]
-               | `Int x, `Elems xs -> [ `Elems (List.dedup_and_sort ~compare:[%compare: int] (x :: xs)) ]
+                   [
+                     `Concrete_v (x :: xs);
+                     `Elems (List.dedup_and_sort ~compare:[%compare: int] (x :: xs));
+                   ]
+               | `Int x, `Elems xs ->
+                   [ `Elems (List.dedup_and_sort ~compare:[%compare: int] (x :: xs)) ]
                | _ -> [])
         in
         Iter.append_l [ ps_preds; pair_preds ] |> Iter.to_list |> List.concat |> of_list
     | Vec, [ x ] ->
         [ `Len 1 ]
         @ (Set.to_list x
-          |> List.concat_map ~f:(function `Int x -> [ `Len 1; `Concrete_v [ x ]; `Elems [ x ] ] | _ -> []))
+          |> List.concat_map ~f:(function
+               | `Int x -> [ `Len 1; `Concrete_v [ x ]; `Elems [ x ] ]
+               | _ -> []))
         |> of_list
     | Int x, [] -> Set.singleton (module Pred) (`Int x)
     | op, args -> raise_s [%message "unexpected arguments" (op : Op.t) (args : t list)]
@@ -227,7 +270,9 @@ module Abs_value = struct
     let k = min k (List.length l) in
     let ret =
       Iter.(0 -- k)
-      |> Iter.map (fun k -> if k = 0 then Iter.empty else Iter.map Array.to_list @@ Combinat.combinations ~k l)
+      |> Iter.map (fun k ->
+             if k = 0 then Iter.empty
+             else Iter.map Array.to_list @@ Combinat.combinations ~k l)
       |> Iter.concat
       |> Iter.map (fun cs -> (List.sum (module Int) cs ~f:Pred.cost, cs))
       (* |> Iter.persistent *)
@@ -238,25 +283,32 @@ module Abs_value = struct
   let conjuncts = function
     | [] -> Iter.empty
     | [ x ] -> conjuncts x |> Iter.map (fun (c, x) -> (c, [ x ]))
-    | [ x; x' ] -> Iter.product (conjuncts x) (conjuncts x') |> Iter.map (fun ((c, x), (c', x')) -> (c + c', [ x; x' ]))
+    | [ x; x' ] ->
+        Iter.product (conjuncts x) (conjuncts x')
+        |> Iter.map (fun ((c, x), (c', x')) -> (c + c', [ x; x' ]))
     | _ -> assert false
 
   let strengthen too_strong too_weak implies =
     let candidates =
-      List.map too_strong ~f:relevant |> conjuncts
+      List.map too_strong ~f:relevant
+      |> conjuncts
       |> Iter.sort ~cmp:(fun (c, _) (c', _) -> [%compare: int] c c')
       |> Iter.map (fun (cost, cs) -> (cost, List.map cs ~f:of_list))
       |> Iter.to_list
     in
     (* print_s [%message (too_weak : t list) (candidates : (int * t list) list)]; *)
-    let candidates = List.map ~f:(fun (_, cs) -> List.map2_exn cs too_weak ~f:Set.union) candidates in
+    let candidates =
+      List.map ~f:(fun (_, cs) -> List.map2_exn cs too_weak ~f:Set.union) candidates
+    in
     List.find_exn candidates ~f:implies
 
   let strengthen_root too_strong too_weak target =
     (*     print_s [%message "strengthen root" (too_strong : Value.t) (too_weak : Set.M(Pred).t) (target : Value.t)]; *)
     let new_pred =
       match
-        strengthen [ too_strong ] [ too_weak ] (function [ p ] -> implies_not_value p target | _ -> assert false)
+        strengthen [ too_strong ] [ too_weak ] (function
+          | [ p ] -> implies_not_value p target
+          | _ -> assert false)
       with
       | [ p ] -> p
       | _ -> assert false
@@ -268,7 +320,9 @@ module Abs_value = struct
     let args' =
       if List.is_empty args then []
       else
-        let args_conc, args_abs = List.map args ~f:(fun (Program.Apply ((_, c, a), _)) -> (c, a)) |> List.unzip in
+        let args_conc, args_abs =
+          List.map args ~f:(fun (Program.Apply ((_, c, a), _)) -> (c, a)) |> List.unzip
+        in
         let out' =
           strengthen args_conc args_abs (fun cs ->
               let v = eval ctx op cs in
@@ -281,8 +335,11 @@ module Abs_value = struct
 
   let rec eval_all (ctx : Ctx.t) (Program.Apply (op, args)) =
     let args' = List.map args ~f:(eval_all ctx) in
-    let args_conc, args_abs = List.map args' ~f:(fun (Program.Apply ((_, c, a), _)) -> (c, a)) |> List.unzip in
-    let conc = Value.eval ctx.ectx op args_conc and abs = eval ctx op args_abs |> Set.inter ctx.preds in
+    let args_conc, args_abs =
+      List.map args' ~f:(fun (Program.Apply ((_, c, a), _)) -> (c, a)) |> List.unzip
+    in
+    let conc = Value.eval ctx.ectx op args_conc
+    and abs = eval ctx op args_abs |> Set.inter ctx.preds in
     Apply ((op, conc, abs), args')
 
   let refine (ctx : Ctx.t) (target : Value.t) p : Ctx.t option =
@@ -292,7 +349,9 @@ module Abs_value = struct
     let p' = strengthen_program ctx p (strengthen_root conc abs target) in
     (* print_s [%message "new program" (p' : (Op.t * Value.t * t * t) Program.t)]; *)
     let preds =
-      Program.ops p' |> List.concat_map ~f:(fun (_, _, _, ps) -> Set.to_list ps) |> Set.of_list (module Pred)
+      Program.ops p'
+      |> List.concat_map ~f:(fun (_, _, _, ps) -> Set.to_list ps)
+      |> Set.of_list (module Pred)
     in
     Queue.enqueue ctx.refine_log (p, ctx.preds, preds);
 
@@ -315,14 +374,17 @@ let synth target ops =
         Synth.Ctx.create ctx ops
         @@ `Pred
              (fun op s ->
-               [%compare.equal: Abs.Type.t] (Abs.Op.ret_type op) Abs.Type.output && Abs.Value.contains s target)
+               [%compare.equal: Abs.Type.t] (Abs.Op.ret_type op) Abs.Type.output
+               && Abs.Value.contains s target)
       in
       let synth =
         object
           inherit Synth.synthesizer sctx as super
 
           method! generate_states cost =
-            super#generate_states cost |> List.map ~f:(fun (value, op, args) -> (Set.inter value ctx.preds, op, args))
+            super#generate_states cost
+            |> List.map ~f:(fun (value, op, args) ->
+                   (Set.inter value ctx.preds, op, args))
         end
       in
 
@@ -342,7 +404,9 @@ let synth target ops =
     match ctx' with
     | Some ctx' ->
         if [%compare.equal: Abs_value.t] ctx.preds ctx'.preds then
-          raise_s [%message "refinement failed" (ctx : Abs.Value.Ctx.t) (ctx' : Abs.Value.Ctx.t)];
+          raise_s
+            [%message
+              "refinement failed" (ctx : Abs.Value.Ctx.t) (ctx' : Abs.Value.Ctx.t)];
         (* print_s [%message (Set.diff ctx'.preds ctx.preds : Set.M(Abs_value.Pred).t)]; *)
         loop (iters + 1) ctx'
     | None -> failwith "refinement failed"
@@ -350,5 +414,10 @@ let synth target ops =
   let ctx = Abs.Value.Ctx.create () in
   (try ignore (loop 0 ctx : Abs_value.Ctx.t)
    with Done (iters, p) ->
-     eprint_s [%message "synthesis completed" (iters : int) (Program.size p : int) (p : Abs.Op.t Program.t)]);
+     eprint_s
+       [%message
+         "synthesis completed"
+           (iters : int)
+           (Program.size p : int)
+           (p : Abs.Op.t Program.t)]);
   ctx.refine_log
