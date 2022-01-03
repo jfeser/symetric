@@ -17,16 +17,31 @@ let create len init =
   let buf = String.make nwords init_word in
   { buf; len }
 
-external bitarray_and : string -> string -> bytes -> (int[@untagged]) -> unit = "" "bitarray_and_stub" [@@noalloc]
-external bitarray_or : string -> string -> bytes -> (int[@untagged]) -> unit = "" "bitarray_or_stub" [@@noalloc]
-external bitarray_xor : string -> string -> bytes -> (int[@untagged]) -> unit = "" "bitarray_xor_stub" [@@noalloc]
-external bitarray_any : string -> (int[@untagged]) -> bool = "" "bitarray_any_stub" [@@noalloc]
-external bitarray_not : string -> bytes -> (int[@untagged]) -> unit = "" "bitarray_not_stub" [@@noalloc]
-
-external bitarray_hamming_weight : string -> (int[@untagged]) -> (int[@untagged]) = "" "bitarray_hamming_weight_stub"
+external bitarray_and : string -> string -> bytes -> (int[@untagged]) -> unit
+  = "" "bitarray_and_stub"
   [@@noalloc]
 
-external bitarray_hamming_distance : string -> string -> (int[@untagged]) -> (int[@untagged])
+external bitarray_or : string -> string -> bytes -> (int[@untagged]) -> unit
+  = "" "bitarray_or_stub"
+  [@@noalloc]
+
+external bitarray_xor : string -> string -> bytes -> (int[@untagged]) -> unit
+  = "" "bitarray_xor_stub"
+  [@@noalloc]
+
+external bitarray_any : string -> (int[@untagged]) -> bool = "" "bitarray_any_stub"
+  [@@noalloc]
+
+external bitarray_not : string -> bytes -> (int[@untagged]) -> unit
+  = "" "bitarray_not_stub"
+  [@@noalloc]
+
+external bitarray_hamming_weight : string -> (int[@untagged]) -> (int[@untagged])
+  = "" "bitarray_hamming_weight_stub"
+  [@@noalloc]
+
+external bitarray_hamming_distance :
+  string -> string -> (int[@untagged]) -> (int[@untagged])
   = "" "bitarray_hamming_distance_stub"
   [@@noalloc]
 
@@ -86,27 +101,32 @@ let fold { len; buf } ~f ~init =
 
 let init_fold ~f ~init len =
   let buf = create_buf len in
-  let nwords = ceil_div len bits_per_word in
-  let i = ref 0 and state = ref init in
-  for w = 0 to nwords - 2 do
+  let return_buf buf =
+    { buf = Bytes.unsafe_to_string ~no_mutation_while_string_reachable:buf; len }
+  in
+  if len = 0 then return_buf buf
+  else
+    let nwords = ceil_div len bits_per_word in
+    let i = ref 0 and state = ref init in
+    for w = 0 to nwords - 2 do
+      let x = ref 0 in
+      for b = 0 to bits_per_word - 1 do
+        let state', value = f !state !i in
+        x := !x + (Bool.to_int value lsl b);
+        incr i;
+        state := state'
+      done;
+      Bytes.set buf w @@ Char.of_int_exn !x
+    done;
     let x = ref 0 in
-    for b = 0 to bits_per_word - 1 do
+    for b = 0 to len - !i - 1 do
       let state', value = f !state !i in
       x := !x + (Bool.to_int value lsl b);
       incr i;
       state := state'
     done;
-    Bytes.set buf w @@ Char.of_int_exn !x
-  done;
-  let x = ref 0 in
-  for b = 0 to len - !i - 1 do
-    let state', value = f !state !i in
-    x := !x + (Bool.to_int value lsl b);
-    incr i;
-    state := state'
-  done;
-  Bytes.set buf (nwords - 1) @@ Char.of_int_exn !x;
-  { buf = Bytes.unsafe_to_string ~no_mutation_while_string_reachable:buf; len }
+    Bytes.set buf (nwords - 1) @@ Char.of_int_exn !x;
+    return_buf buf
 
 let get t i =
   let w = i / bits_per_word and b = i mod bits_per_word in
@@ -120,7 +140,8 @@ let not = not_
 
 let weighted_jaccard ?(pos_weight = 0.5) a b =
   ((Float.of_int (hamming_weight (not @@ and_ a b)) *. pos_weight)
-  +. (Float.of_int (hamming_weight (not @@ and_ (not a) (not b))) *. (1.0 -. pos_weight)))
+  +. (Float.of_int (hamming_weight (not @@ and_ (not a) (not b))) *. (1.0 -. pos_weight))
+  )
   /. (Float.of_int @@ length a)
 
 let replicate ~w ~h t ~dx ~dy ~ct =

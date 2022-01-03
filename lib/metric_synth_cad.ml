@@ -30,6 +30,7 @@ let[@inline] group_threshold () = (Set_once.get_exn params [%here]).Params.group
 let[@inline] operators () = (Set_once.get_exn params [%here]).Params.operators
 let[@inline] filter () = (Set_once.get_exn params [%here]).Params.filter
 let[@inline] max_cost () = (Set_once.get_exn params [%here]).Params.max_cost
+let[@inline] verbose () = (Set_once.get_exn params [%here]).Params.verbose
 
 let[@inline] backward_pass_repeats () =
   (Set_once.get_exn params [%here]).Params.backward_pass_repeats
@@ -86,21 +87,26 @@ let insert_states_nonempty ~cost ~type_ states =
     |> List.permute
   in
 
-  (* let reference = *)
-  (*   S.states ~type_ search_state |> Iter.to_list |> Vpt.create ctx.distance (`Good 10) *)
-  (* in *)
-  let reference = S.states ~type_ search_state |> Iter.to_list in
+  let reference_vp =
+    S.states ~type_ search_state |> Iter.to_list |> Vpt.create distance (`Good 10)
+  in
+  let reference_list = S.states ~type_ search_state |> Iter.to_list in
+
+  let list_time = Time.Span.zero in
+  let[@inline] lookup_list v f =
+    let start_time = Time.now () in
+    List.iter reference_list ~f:(fun v' -> if Float.(distance v v' < thresh) then f v')
+  in
 
   let n_found_vp = ref 0 and n_found_list = ref 0 in
   let (_ : _) =
     List.fold states ~init:[] ~f:(fun kept (v, _, _, _, states) ->
         let inserted_vp = ref false in
         let n_insertions = ref 0 in
-        List.iter reference ~f:(fun v' ->
-            if Float.(distance v v' < thresh) then (
-              inserted_vp := true;
-              insert v' states;
-              incr n_insertions));
+        lookup_list v (fun v' ->
+            inserted_vp := true;
+            insert v' states;
+            incr n_insertions);
         if !inserted_vp then incr n_found_vp;
 
         let inserted_list = ref false in
@@ -141,9 +147,11 @@ let fill_search_space () =
   and search_state = search_state ()
   and ops = operators ()
   and filter = filter ()
-  and max_cost = max_cost () in
+  and max_cost = max_cost ()
+  and verbose = verbose () in
 
   for cost = 1 to max_cost do
+    if verbose then Fmt.epr "Generating states of cost %d.\n%!" cost;
     let states = Gen.generate_states S.search_iter ectx search_state ops cost in
     let states = if filter then filter_states states else states in
     states

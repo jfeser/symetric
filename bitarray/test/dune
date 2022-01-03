@@ -1,0 +1,5 @@
+(library
+ (name bitarray_test)
+ (libraries core bitarray base_quickcheck)
+ (preprocess (pps ppx_jane))
+ (inline_tests))

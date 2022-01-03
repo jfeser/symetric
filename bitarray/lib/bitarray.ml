@@ -22,8 +22,9 @@ module type S = sig
   val hamming_distance : t -> t -> int
   val weighted_jaccard : ?pos_weight:float -> t -> t -> float
   val replicate : w:int -> h:int -> t -> dx:int -> dy:int -> ct:int -> t
+  val pp_bitmap : w:int -> Format.formatter -> t -> unit
 end
 
-include Native
+include Vectorized
 module Native = Native
 module Vectorized = Vectorized
