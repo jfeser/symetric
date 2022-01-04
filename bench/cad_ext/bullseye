@@ -1,0 +1,1 @@
+(union (sub (circle 6 10 8) (circle 6 10 6)) (sub (circle 6 10 4) (circle 6 10 1)))
