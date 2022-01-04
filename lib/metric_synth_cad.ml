@@ -87,15 +87,14 @@ let insert_states_nonempty ~cost ~type_ states =
     |> List.permute
   in
 
-  let reference_vp =
-    S.states ~type_ search_state |> Iter.to_list |> Vpt.create distance (`Good 10)
-  in
   let reference_list = S.states ~type_ search_state |> Iter.to_list in
 
-  let list_time = Time.Span.zero in
-  let[@inline] lookup_list v f =
+  let list_time = ref Time.Span.zero in
+  let[@inline] lookup_list v =
     let start_time = Time.now () in
-    List.iter reference_list ~f:(fun v' -> if Float.(distance v v' < thresh) then f v')
+    let ret = List.filter reference_list ~f:(fun v' -> Float.(distance v v' < thresh)) in
+    (list_time := Time.(Span.( + ) !list_time @@ diff (now ()) start_time));
+    ret
   in
 
   let n_found_vp = ref 0 and n_found_list = ref 0 in
@@ -103,7 +102,8 @@ let insert_states_nonempty ~cost ~type_ states =
     List.fold states ~init:[] ~f:(fun kept (v, _, _, _, states) ->
         let inserted_vp = ref false in
         let n_insertions = ref 0 in
-        lookup_list v (fun v' ->
+        let close_existing = lookup_list v in
+        List.iter close_existing ~f:(fun v' ->
             inserted_vp := true;
             insert v' states;
             incr n_insertions);

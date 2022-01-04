@@ -1,16 +1,22 @@
 open Core
 open Staged_synth
+open Cad_ext
 
-let print_bench fn =
-  let bench = Cad.Bench.load fn in
-  Cad_conc.pprint Fmt.stdout bench.output
-
-let cli =
-  let open Command in
-  let open Let_syntax in
-  basic ~summary:"Print benchmark"
+let () =
+  let open Command.Let_syntax in
+  Command.basic ~summary:"Print a CAD benchmark."
     [%map_open
-      let fn = anon ("file" %: string) in
-      fun () -> print_bench fn]
-
-let () = Command.run cli
+      let scene_width =
+        flag "-scene-width" (optional_with_default 12 int) ~doc:" scene width in pixels"
+      and scene_height =
+        flag "-scene-height" (optional_with_default 20 int) ~doc:" scene height in pixels"
+      in
+      fun () ->
+        let ectx =
+          Value.Ctx.create @@ Scene.Size.create ~xres:scene_width ~yres:scene_height ()
+        in
+        Fmt.pr "%a\n" (Value.pp ectx)
+        @@ Program.eval (Value.eval ectx)
+        @@ parse
+        @@ Sexp.input_sexp In_channel.stdin]
+  |> Command.run
