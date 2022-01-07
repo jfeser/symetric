@@ -3,6 +3,7 @@ open! Core
 type buf = string [@@deriving compare, hash, sexp]
 type t = { buf : buf; len : int } [@@deriving compare, hash, sexp]
 
+let hash_seed = String.init 128 ~f:(fun _ -> Core.Random.char ())
 let[@inline] ceil_div x y = (x + y - 1) / y
 let[@inline] length x = x.len
 let bits_per_word = 8
@@ -57,6 +58,10 @@ external bitarray_replicate :
   unit = "" "bitarray_replicate_stub"
   [@@noalloc]
 
+external bitarray_hash : string -> string -> (int[@untagged]) -> (int[@untagged])
+  = "" "bitarray_hash_stub"
+  [@@noalloc]
+
 let[@inline] binary op a b =
   assert (a.len = b.len);
   let buf = create_buf a.len in
@@ -67,6 +72,10 @@ let unary op a =
   let buf = create_buf a.len in
   op a.buf buf (vwords a);
   { buf = Bytes.unsafe_to_string ~no_mutation_while_string_reachable:buf; len = a.len }
+
+let vec_hash x =
+  assert (String.length x.buf <= 128);
+  bitarray_hash x.buf hash_seed (vwords x)
 
 let and_ = binary bitarray_and
 let or_ = binary bitarray_or

@@ -8,11 +8,9 @@
 typedef int32_t word_t;
 
 value bitarray_and_stub(value b1, value b2, value b3, intnat len) {
-  bitarray_and((word_t*)(String_val(b1)),
-               (word_t*)(String_val(b2)),
-               (word_t*)(String_val(b3)),
-               len);
-  return Val_unit;
+  for (int i = 0; i < len; i++) {
+    ((word_t*) b3)[i] = ((word_t*)b1)[i] & ((word_t*)b2)[i];
+  }
 }
 
 value bitarray_or_stub(value b1, value b2, value b3, intnat len) {
@@ -54,4 +52,15 @@ CAMLprim value bitarray_replicate_stub(value b1, intnat x, intnat y, intnat ct, 
                                        intnat h, value b2, intnat len) {
   bitarray_replicate((String_val(b1)), x, y, ct, w, h, (String_val(b2)), len);
   return Val_unit;
+}
+
+CAMLprim intnat bitarray_hash_stub(value d, value k, intnat len) {
+  int *dd = (int*)d;
+  int *kk = (int*)k;
+  long sum = 0;
+  for (int i = 0; i < len; i += 2) {
+    sum += (dd[i] + kk[i]) * (dd[i + 1] + kk[i + 1]);
+  }
+  return sum;
+  /* return bitarray_hash(String_val(d), String_val(k), len); */
 }

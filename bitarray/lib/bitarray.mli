@@ -27,4 +27,9 @@ end
 
 include S
 module Native : S
-module Vectorized : S
+
+module Vectorized : sig
+  include S
+
+  val vec_hash : t -> int
+end

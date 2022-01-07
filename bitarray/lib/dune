@@ -3,7 +3,8 @@
  (libraries core fmt)
  (foreign_stubs
   (language c)
-  (names bitarray_stubs))
+  (names bitarray_stubs)
+  (flags :standard -O3 -march=native))
  (foreign_archives bitarray)
  (preprocess (pps ppx_jane))
  (inline_tests))

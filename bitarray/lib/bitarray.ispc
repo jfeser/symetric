@@ -93,4 +93,52 @@ export void bitarray_replicate(const uniform word_t a[],
   }
 }
 
+/* export uniform int bitarray_hash(const uniform int32 data[],  */
+/*                                  const uniform int32 key[], */
+/*                                  const uniform int len)  */
+/* { */
+/*   int64 ret; */
+/*   foreach (i = 0 ... len / 2) { */
+/*     ret = (data[2 * i] + key[2 * i]) * (data[2 * i + 1] + key[2 * i + 1]); */
+/*   } */
+/*   return reduce_add(ret); */
+/* } */
 
+/* export uniform int bitarray_hash(uniform int32 data[], uniform int32 key[], uniform int len) { */
+/*     int64 sum = 0; */
+/*     for (uniform int i = 0; i < len; i += 2) { */
+/*         int32 d0; */
+/*         int32 d1; */
+/*         aos_to_soa2(&data[i], &d0, &d1); */
+/*         int32 k0; */
+/*         int32 k1; */
+/*         aos_to_soa2(&key[i], &k0, &k1); */
+/*         sum += (int64)(d0 + k0) * (int64)(d1 + k1); */
+/*     } */
+/*     return reduce_add(sum); */
+/* } */
+
+export uniform int bitarray_hash(uniform int32 data[], uniform int32 key[], uniform int len) {
+    int64 sum = 0;
+    for (uniform int i = 0; i < len; i += programCount) {
+        int32 d0 = data[programIndex];
+        int32 d1 = (&data[i + programCount])[programIndex];
+        int32 k0 = key[programIndex];
+        int32 k1 = (&key[i + programCount])[programIndex];
+
+        #if TARGET_WIDTH == 4
+            const varying int vPerm = { 1, 3, 5, 7 };
+        #elif TARGET_WIDTH == 8
+            const varying int vPerm = { 1, 3, 5, 7, 9, 11, 13, 15 };
+        #elif TARGET_WIDTH == 16
+            const varying int vPerm = { 1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31 };
+        #endif
+
+        int32 d0x = shuffle(d0, d1, vPerm - 1);
+        int32 d1x = shuffle(d0, d1, vPerm);
+        int32 k0x = shuffle(k0, k1, vPerm - 1);
+        int32 k1x = shuffle(k0, k1, vPerm);
+        sum += (int64)(d0x * k0x) + (int64)(d1x * k1x);
+    }
+    return reduce_add(sum);
+}
