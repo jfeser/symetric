@@ -113,3 +113,8 @@ module Array = struct
     let a' = Array.sorted_copy a ~compare in
     a'.(Array.length a' / 2)
 end
+
+let ( <. ) = Float.( < )
+let ( >. ) = Float.( > )
+let ( <=. ) = Float.( <= )
+let ( >=. ) = Float.( >= )

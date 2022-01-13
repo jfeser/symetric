@@ -31,3 +31,8 @@ module List : sig
   val product : int t -> int
   val group_by : 'a Base.Hashtbl.Key.t -> ('a * 'b) t -> ('a * 'b t) t
 end
+
+val ( <. ) : float -> float -> bool
+val ( >. ) : float -> float -> bool
+val ( <=. ) : float -> float -> bool
+val ( >=. ) : float -> float -> bool

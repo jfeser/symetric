@@ -332,6 +332,15 @@ module Make (Lang : Lang_intf) = struct
     to_grammar ();
     Fmt.pr "@]"
 
+  let validate ss eval dist thresh =
+    Hashtbl.iteri ss.paths ~f:(fun ~key ~data ->
+        List.iter data.paths ~f:(fun path ->
+            [%test_result: Value.t] ~message:"cached operator output" ~expect:path.value
+              (eval path.op path.args);
+            [%test_pred: Value.t * Value.t] ~message:"grouping is within threshold"
+              (fun (v, v') -> dist v v' <. thresh)
+              (key.value, path.value)))
+
   let rec local_greedy value_pp ss max_height eval dist (class_ : TValue.t) =
     let open Option.Let_syntax in
     let all_paths = (H.find_exn ss.paths class_).paths in

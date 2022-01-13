@@ -17,6 +17,8 @@ module Params = struct
     backward_pass_repeats : int;
     verbose : bool;
     search_state : S.t;
+    target_program : Op.t Program.t;
+    validate : bool;
   }
 end
 
@@ -31,6 +33,8 @@ let[@inline] operators () = (Set_once.get_exn params [%here]).Params.operators
 let[@inline] filter () = (Set_once.get_exn params [%here]).Params.filter
 let[@inline] max_cost () = (Set_once.get_exn params [%here]).Params.max_cost
 let[@inline] verbose () = (Set_once.get_exn params [%here]).Params.verbose
+let[@inline] target_program () = (Set_once.get_exn params [%here]).Params.target_program
+let[@inline] validate () = (Set_once.get_exn params [%here]).Params.validate
 
 let[@inline] backward_pass_repeats () =
   (Set_once.get_exn params [%here]).Params.backward_pass_repeats
@@ -41,7 +45,9 @@ let[@inline] local_search_steps () =
 let runtime = ref Time.Span.zero
 
 let distance (v : Value.t) (v' : Value.t) =
-  match (v, v') with Scene x, Scene x' -> Scene.jaccard x x' | _ -> Float.infinity
+  match (v, v') with
+  | Scene x, Scene x' -> Scene.jaccard x x'
+  | v, v' -> if [%compare.equal: Value.t] v v' then 0.0 else Float.infinity
 
 let local_search p =
   let target = Value.Scene (target ())
@@ -150,6 +156,8 @@ let fill_search_space () =
   and max_cost = max_cost ()
   and verbose = verbose () in
 
+  if verbose then Fmt.epr "Goal:\n%a\n%!" Scene.pp (size (), target ());
+
   for cost = 1 to max_cost do
     if verbose then Fmt.epr "Generating states of cost %d.\n%!" cost;
     let states = Gen.generate_states S.search_iter ectx search_state ops cost in
@@ -168,8 +176,12 @@ let synthesize () =
   and max_cost = max_cost ()
   and backward_pass_repeats = backward_pass_repeats () in
   fill_search_space ();
+  if validate () then
+    S.validate search_state (Value.eval ectx) distance (group_threshold ());
 
   let exception Done of Op.t Program.t in
+  if verbose () then Fmt.epr "Starting backwards pass.\n%!";
+  ignore (S.find_term search_state (target_program ()) : _);
   let ret =
     try
       Iter.of_hashtbl search_state.values
@@ -180,7 +192,9 @@ let synthesize () =
       |> Iter.concat
       |> Iter.top_k ~cmp:(fun (d, _) (d', _) -> [%compare: float] d' d) 100
       |> Iter.sort ~cmp:(fun (d, _) (d', _) -> [%compare: float] d d')
-      |> Iter.iter (fun (_, (tv : S.TValue.t)) ->
+      |> Iter.iteri (fun i (_, (tv : S.TValue.t)) ->
+             if verbose () then Fmt.epr "Searching candidate %d.\n%!" i;
+
              match tv.value with
              | Value.Scene _ ->
                  for _ = 1 to backward_pass_repeats do
@@ -200,7 +214,7 @@ let synthesize () =
   ret
 
 let set_params ~scene_width ~scene_height ~group_threshold ~max_cost ~local_search_steps
-    ~backward_pass_repeats ~filter ~verbose target =
+    ~backward_pass_repeats ~filter ~verbose ~validate target =
   let size = Scene.Size.create ~xres:scene_width ~yres:scene_height () in
   let ectx = Value.Ctx.create size in
   let target_value = Program.eval (Value.eval ectx) target in
@@ -214,6 +228,7 @@ let set_params ~scene_width ~scene_height ~group_threshold ~max_cost ~local_sear
   Set_once.set_exn params [%here]
     Params.
       {
+        validate;
         local_search_steps;
         size;
         ectx;
@@ -226,6 +241,7 @@ let set_params ~scene_width ~scene_height ~group_threshold ~max_cost ~local_sear
         verbose;
         search_state = S.create ();
         target_edges = Scene.edges size target_scene;
+        target_program = target;
       }
 
 let print_output m_prog =
@@ -282,10 +298,11 @@ let cmd =
         flag "-scene-width" (optional_with_default 12 int) ~doc:" scene width in pixels"
       and scene_height =
         flag "-scene-height" (optional_with_default 20 int) ~doc:" scene height in pixels"
-      and verbose = flag "-verbose" no_arg ~doc:" increase verbosity" in
+      and verbose = flag "-verbose" no_arg ~doc:" increase verbosity"
+      and validate = flag "-validate" no_arg ~doc:" turn on validation" in
       fun () ->
         set_params ~max_cost ~group_threshold ~local_search_steps ~scene_width
-          ~scene_height ~backward_pass_repeats ~filter ~verbose
+          ~scene_height ~backward_pass_repeats ~filter ~verbose ~validate
         @@ Cad_ext.parse
         @@ Sexp.input_sexp In_channel.stdin;
         synthesize () |> print_output]
