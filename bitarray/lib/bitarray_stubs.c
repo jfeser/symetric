@@ -11,21 +11,20 @@ value bitarray_and_stub(value b1, value b2, value b3, intnat len) {
   for (int i = 0; i < len; i++) {
     ((word_t*) b3)[i] = ((word_t*)b1)[i] & ((word_t*)b2)[i];
   }
+  return Val_unit;
 }
 
 value bitarray_or_stub(value b1, value b2, value b3, intnat len) {
-  bitarray_or((word_t*)(String_val(b1)),
-              (word_t*)(String_val(b2)),
-              (word_t*)(String_val(b3)),
-              len);
+  for (int i = 0; i < len; i++) {
+    ((word_t*) b3)[i] = ((word_t*)b1)[i] | ((word_t*)b2)[i];
+  }
   return Val_unit;
 }
 
 value bitarray_xor_stub(value b1, value b2, value b3, intnat len) {
-  bitarray_xor((word_t*)(String_val(b1)),
-               (word_t*)(String_val(b2)),
-               (word_t*)(String_val(b3)),
-               len);
+  for (int i = 0; i < len; i++) {
+    ((word_t*) b3)[i] = ((word_t*)b1)[i] ^ ((word_t*)b2)[i];
+  }
   return Val_unit;
 }
 
@@ -34,7 +33,9 @@ value bitarray_any_stub(value b, intnat len) {
 }
 
 value bitarray_not_stub(value b1, value b2, intnat len) {
-  bitarray_not((word_t*)(String_val(b1)), (word_t*)(String_val(b2)), len);
+  for (int i = 0; i < len; i++) {
+    ((word_t*) b2)[i] = ~((word_t*)b1)[i];
+  }
   return Val_unit;
 }
 
@@ -59,8 +60,7 @@ CAMLprim intnat bitarray_hash_stub(value d, value k, intnat len) {
   int *kk = (int*)k;
   long sum = 0;
   for (int i = 0; i < len; i += 2) {
-    sum += (dd[i] + kk[i]) * (dd[i + 1] + kk[i + 1]);
+    sum += (long)(dd[i] + kk[i]) * (long)(dd[i + 1] + kk[i + 1]);
   }
   return sum;
-  /* return bitarray_hash(String_val(d), String_val(k), len); */
 }

@@ -70,41 +70,41 @@ let%test_unit "hamming distance" =
       [%test_result: int] ~expect:(N.hamming_distance n n') (V.hamming_distance v v'))
     (module Bit_list_equal_len_pair)
 
-let w = 8
-and h = 8
+let w = 16
+and h = 16
+
+(* let%test_unit "replicate" = *)
+(*   Test.run_exn *)
+(*     ~f:(fun a -> *)
+(*       let n = N.of_list a *)
+(*       and v = V.of_list a *)
+(*       and dx = Random.int_incl (-5) 5 *)
+(*       and dy = Random.int_incl (-5) 5 *)
+(*       and ct = Random.int_incl 1 5 in *)
+(*       let n_ret = N.replicate ~w ~h ~dx ~dy ~ct n *)
+(*       and v_ret = V.replicate ~w ~h ~dx ~dy ~ct v in *)
+(*       if Core.not ([%compare.equal: Bit_list.t] (N.to_list n_ret) (V.to_list v_ret)) then ( *)
+(*         Format.printf "Dx=%d Dy=%d Ct=%d\nInput:\n%a\nExpected:\n%a\nGot:\n%a\n@." dx dy *)
+(*           ct (N.pp_bitmap ~w) n (N.pp_bitmap ~w) n_ret (V.pp_bitmap ~w) v_ret; *)
+(*         assert false)) *)
+(*     (module struct *)
+(*       type t = bool list [@@deriving compare, quickcheck, sexp] *)
+
+(*       let quickcheck_generator = Generator.(list_with_length ~length:(w * h) bool) *)
+
+(*       let quickcheck_shrinker = *)
+(*         Shrinker.create (fun l -> *)
+(*             Sequence.unfold ~init:l ~f:(fun l -> *)
+(*                 let l' = List.map l ~f:(fun v -> if v then Random.bool () else v) in *)
+(*                 if Core.not (List.exists l ~f:Fun.id) then None else Some (l', l'))) *)
+(*     end) *)
 
 let%test_unit "replicate" =
-  Test.run_exn
-    ~f:(fun a ->
-      let n = N.of_list a
-      and v = V.of_list a
-      and dx = Random.int_incl (-5) 5
-      and dy = Random.int_incl (-5) 5
-      and ct = Random.int_incl 1 5 in
-      let n_ret = N.replicate ~w ~h ~dx ~dy ~ct n
-      and v_ret = V.replicate ~w ~h ~dx ~dy ~ct v in
-      if Core.not ([%compare.equal: Bit_list.t] (N.to_list n_ret) (V.to_list v_ret)) then (
-        Format.printf "Dx=%d Dy=%d Ct=%d\nInput:\n%a\nExpected:\n%a\nGot:\n%a\n@." dx dy
-          ct (N.pp_bitmap ~w) n (N.pp_bitmap ~w) n_ret (V.pp_bitmap ~w) v_ret;
-        assert false))
-    (module struct
-      type t = bool list [@@deriving compare, quickcheck, sexp]
-
-      let quickcheck_generator = Generator.(list_with_length ~length:(w * h) bool)
-
-      let quickcheck_shrinker =
-        Shrinker.create (fun l ->
-            Sequence.unfold ~init:l ~f:(fun l ->
-                let l' = List.map l ~f:(fun v -> if v then Random.bool () else v) in
-                if Core.not (List.exists l ~f:Fun.id) then None else Some (l', l')))
-    end)
-
-let%test_unit "replicate" =
-  let dx = 1 and dy = -2 and ct = 4 and l = List.init (8 * 8) ~f:(fun i -> i = 24) in
+  let dx = 1 and dy = -4 and ct = 2 and l = List.init (h * w) ~f:(fun i -> i = 24) in
   let n = N.of_list l and v = V.of_list l in
   let n_ret = N.replicate ~w ~h ~dx ~dy ~ct n
   and v_ret = V.replicate ~w ~h ~dx ~dy ~ct v in
-  if Core.not ([%compare.equal: Bit_list.t] (N.to_list n_ret) (V.to_list v_ret)) then (
-    Format.printf "Dx=%d Dy=%d Ct=%d\nInput:\n%a\nExpected:\n%a\nGot:\n%a\n@." dx dy ct
-      (N.pp_bitmap ~w) n (N.pp_bitmap ~w) n_ret (V.pp_bitmap ~w) v_ret;
-    assert false)
+  (* if Core.not ([%compare.equal: Bit_list.t] (N.to_list n_ret) (V.to_list v_ret)) then *)
+  Format.printf "Dx=%d Dy=%d Ct=%d\nInput:\n%a\nExpected:\n%a\nGot:\n%a\n@." dx dy ct
+    (N.pp_bitmap ~w) n (N.pp_bitmap ~w) n_ret (V.pp_bitmap ~w) v_ret;
+  assert false

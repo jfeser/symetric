@@ -49,13 +49,9 @@ export uniform int bitarray_hamming_distance(uniform word_t a[], uniform word_t 
 }
 
 inline bool read_bit(const uniform word_t x[], const int b, const uniform int len) {
-  int i = b / 32;
-  int j = b % 32;
-  if (i < 0 || i >= len) {
-    return false;
-  } else {
-    return ((x[i] >> j) & 1);
-  }
+  int i = b >> 5; // div by word_size = 32
+  int j = b & (32 - 1); // mod by word size
+  return ((x[i] >> j) & 1);
 }
 
 inline int offset(int x, int y, uniform int w, uniform int h) {
@@ -93,52 +89,35 @@ export void bitarray_replicate(const uniform word_t a[],
   }
 }
 
-/* export uniform int bitarray_hash(const uniform int32 data[],  */
-/*                                  const uniform int32 key[], */
-/*                                  const uniform int len)  */
-/* { */
-/*   int64 ret; */
-/*   foreach (i = 0 ... len / 2) { */
-/*     ret = (data[2 * i] + key[2 * i]) * (data[2 * i + 1] + key[2 * i + 1]); */
-/*   } */
-/*   return reduce_add(ret); */
-/* } */
+// TODO: wrapping translation
+export void bitarray_translate(const uniform word_t a[],
+                               const uniform int dx,
+                               const uniform int dy,
+                               const uniform int w,
+                               const uniform int h,
+                               uniform word_t r[],
+                               const uniform int len)
+{
+    foreach (word_idx = 0 ... len) {
+        int start_bit = 32 * word_idx;
+        // get the x,y coords of the least significant bit in the word
+        int x = start_bit % w;
+        int y = h - 1 - (start_bit / w);
+        // get the shifted coords of the lsb
+        int xx = x - dx;
+        int yy = y - dy;
+        // what is the bit offset of the shifted coords? the word that contains
+        // this offset (and maybe the next word) will be the source for the
+        // shift
+        int read_word_bit = offset(xx, yy, w, h);
+        int read_word1 = read_word_bit / 32;
+        int read_word2 = read_word1 + 1;
 
-/* export uniform int bitarray_hash(uniform int32 data[], uniform int32 key[], uniform int len) { */
-/*     int64 sum = 0; */
-/*     for (uniform int i = 0; i < len; i += 2) { */
-/*         int32 d0; */
-/*         int32 d1; */
-/*         aos_to_soa2(&data[i], &d0, &d1); */
-/*         int32 k0; */
-/*         int32 k1; */
-/*         aos_to_soa2(&key[i], &k0, &k1); */
-/*         sum += (int64)(d0 + k0) * (int64)(d1 + k1); */
-/*     } */
-/*     return reduce_add(sum); */
-/* } */
+        word_t w1 = (read_word1 >= 0 && read_word1 < len) ? a[read_word1] : 0;
+        word_t w2 = (read_word2 >= 0 && read_word2 < len) ? a[read_word2] : 0;
 
-export uniform int bitarray_hash(uniform int32 data[], uniform int32 key[], uniform int len) {
-    int64 sum = 0;
-    for (uniform int i = 0; i < len; i += programCount) {
-        int32 d0 = data[programIndex];
-        int32 d1 = (&data[i + programCount])[programIndex];
-        int32 k0 = key[programIndex];
-        int32 k1 = (&key[i + programCount])[programIndex];
-
-        #if TARGET_WIDTH == 4
-            const varying int vPerm = { 1, 3, 5, 7 };
-        #elif TARGET_WIDTH == 8
-            const varying int vPerm = { 1, 3, 5, 7, 9, 11, 13, 15 };
-        #elif TARGET_WIDTH == 16
-            const varying int vPerm = { 1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31 };
-        #endif
-
-        int32 d0x = shuffle(d0, d1, vPerm - 1);
-        int32 d1x = shuffle(d0, d1, vPerm);
-        int32 k0x = shuffle(k0, k1, vPerm - 1);
-        int32 k1x = shuffle(k0, k1, vPerm);
-        sum += (int64)(d0x * k0x) + (int64)(d1x * k1x);
+        int k = read_word_bit % 32;
+        // take the low k bits of w1 and the high 32-k bits of w2 
+        r[word_idx] = (w1 << (32 - k)) | (w2 >> k);
     }
-    return reduce_add(sum);
 }

@@ -1,3 +1,5 @@
+let memoize = true
+
 module Type = struct
   type t = Int | Rep_count | Scene | Error [@@deriving compare, hash, sexp]
 
@@ -110,24 +112,26 @@ module Value = struct
     | _ -> raise_s [%message "unexpected arguments" (op : Op.t) (args : t list)]
 
   let eval =
-    let module Key = struct
-      module T = struct
-        type nonrec t = Op.t * t list [@@deriving compare, hash, sexp]
-      end
+    if memoize then
+      let module Key = struct
+        module T = struct
+          type nonrec t = Op.t * t list [@@deriving compare, hash, sexp]
+        end
 
-      include T
-      include Comparable.Make (T)
-    end in
-    let tbl = Hashtbl.create (module Key) in
-    let find_or_eval (ctx : Ctx.t) op args =
-      match Hashtbl.find tbl (op, args) with
-      | Some v -> v
-      | None ->
-          let v = eval_unmemoized ctx op args in
-          Hashtbl.set tbl ~key:(op, args) ~data:v;
-          v
-    in
-    find_or_eval
+        include T
+        include Comparable.Make (T)
+      end in
+      let tbl = Hashtbl.create (module Key) in
+      let find_or_eval (ctx : Ctx.t) op args =
+        match Hashtbl.find tbl (op, args) with
+        | Some v -> v
+        | None ->
+            let v = eval_unmemoized ctx op args in
+            Hashtbl.set tbl ~key:(op, args) ~data:v;
+            v
+      in
+      find_or_eval
+    else eval_unmemoized
 end
 
 let rec parse =

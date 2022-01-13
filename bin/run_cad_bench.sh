@@ -15,7 +15,7 @@ cd $RUN_DIR
 
 # Run metric synthesis
 parallel --eta --joblog metric_joblog --timeout 600 --colsep ' ' \
-         "$BUILD_DIR/bin/metric_synth_cad.exe -max-cost {1} -group-threshold {2} < {3} > metric-{1}-{2}-{3/}.json 2> metric-{1}-{2}-{3/}.log" ::: 8 16 24 ::: 0.1 0.2 0.3 ::: $BASE_DIR/bench/cad_ext/*
+         "$BUILD_DIR/bin/metric_synth_cad.exe -max-cost {1} -group-threshold {2} < {3} > metric-{1}-{2}-{3/}.json 2> metric-{1}-{2}-{3/}.log" ::: 8 16 24 32 36 ::: 0.1 0.2 0.3 ::: $BASE_DIR/bench/cad_ext/*
 
 # Run enumerator
 parallel --eta --joblog metric_joblog --timeout 600 --colsep ' ' \

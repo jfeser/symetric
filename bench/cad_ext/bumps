@@ -1,1 +1,1 @@
-(union (rect 3 4 8 15) (repl (repl (circle 4 4 2) 0 6 3) 3 0 2))
+(union (rect 3 4 8 15) (repl (repl (circle 3 3 2) 0 6 3) 5 0 2))
