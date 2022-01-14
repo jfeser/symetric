@@ -29,7 +29,7 @@ module type Lang_intf = sig
       type t
     end
 
-    val pp : Ctx.t -> t Fmt.t
+    val pp : t Fmt.t
     val is_error : t -> bool
     val eval : Ctx.t -> Op.t -> t list -> t
   end
@@ -92,9 +92,11 @@ module Make (Lang : Lang_intf) = struct
       best : (float * Value.t option) ref;
     }
 
-    let create ?(on_close_state = fun _ _ -> ()) ?(after_local_search = fun _ _ -> ()) ?(on_groups = fun _ -> ())
-        ?find_term ?(on_existing = fun _ _ -> ()) ?(search_width = 10) ?(tabu_length = 1000) ?(verbose = false) ?stats
-        ?(unnormalize = fun _ -> []) ?(normalize = Fun.id) ~search_thresh ~distance ?(thresh = 0.1) ectx ops output =
+    let create ?(on_close_state = fun _ _ -> ()) ?(after_local_search = fun _ _ -> ())
+        ?(on_groups = fun _ -> ()) ?find_term ?(on_existing = fun _ _ -> ())
+        ?(search_width = 10) ?(tabu_length = 1000) ?(verbose = false) ?stats
+        ?(unnormalize = fun _ -> []) ?(normalize = Fun.id) ~search_thresh ~distance
+        ?(thresh = 0.1) ectx ops output =
       let stats = Option.value_lazy stats ~default:(lazy (Stats.create ())) in
 
       {
@@ -159,14 +161,20 @@ module Make (Lang : Lang_intf) = struct
               let k = Float.(to_int (p *. of_int (List.length new_states))) in
               top_k k new_states
         in
-        let search_states = search_states |> Iter.filter (fun (d, _) -> Float.(d < infinity)) in
+        let search_states =
+          search_states |> Iter.filter (fun (d, _) -> Float.(d < infinity))
+        in
 
         let examined = ref 0 in
         let solution =
           search_states
-          |> Iter.filter (fun (_, (_, op, _)) -> [%compare.equal: Type.t] Type.output (Op.ret_type op))
+          |> Iter.filter (fun (_, (_, op, _)) ->
+                 [%compare.equal: Type.t] Type.output (Op.ret_type op))
           |> Iter.find_map (fun (_, (value, op, args)) ->
-                 let center = Search_state.random_program_of_op_args_exn search_state (Int.ceil_log2 size) op args in
+                 let center =
+                   Search_state.random_program_of_op_args_exn search_state
+                     (Int.ceil_log2 size) op args
+                 in
                  ctx.on_close_state center value;
 
                  let last_state = ref None in
@@ -197,9 +205,12 @@ module Make (Lang : Lang_intf) = struct
         List.map new_states ~f:(fun ((_, op, _) as state) -> (Op.ret_type op, state))
         |> List.group_by (module Type)
         |> List.iter ~f:(fun (type_, _) ->
-               let new_states, time = with_time (fun () -> self#insert_states_ cost type_ new_states) in
+               let new_states, time =
+                 with_time (fun () -> self#insert_states_ cost type_ new_states)
+               in
                if ctx.verbose then
-                 Fmt.epr "Inserted %d %a states in %a.\n%!" (List.length new_states) Sexp.pp
+                 Fmt.epr "Inserted %d %a states in %a.\n%!" (List.length new_states)
+                   Sexp.pp
                    ([%sexp_of: Type.t] type_)
                    Time.Span.pp time);
 
@@ -222,7 +233,8 @@ module Make (Lang : Lang_intf) = struct
           |> List.filter_map ~f:(function
                | value, ((_, op, args) :: _ as states) ->
                    if Search_state.mem search_state { value; type_ = Op.ret_type op } then (
-                     List.iter states ~f:(fun (_, op, args) -> Search_state.insert search_state ~cost value op args);
+                     List.iter states ~f:(fun (_, op, args) ->
+                         Search_state.insert search_state ~cost value op args);
                      None)
                    else Some (value, ref false, op, args, states)
                | _, [] -> None)
@@ -235,7 +247,8 @@ module Make (Lang : Lang_intf) = struct
             Fmt.epr "Distinct states: %d.\n%!" @@ List.length states;
             Fmt.epr "New states: %d.\n%!" @@ List.length
             @@ List.filter states ~f:(fun (v, _, op, _, _) ->
-                   not @@ Search_state.mem search_state { value = v; type_ = Op.ret_type op }));
+                   not
+                   @@ Search_state.mem search_state { value = v; type_ = Op.ret_type op }));
 
           (* let reference = *)
           (*   Search_state.states ~type_ search_state |> Iter.to_list |> Vpt.create ctx.distance (`Good 10) *)
@@ -243,7 +256,8 @@ module Make (Lang : Lang_intf) = struct
           let reference = Search_state.states ~type_ search_state |> Iter.to_list in
           print_s [%message (List.length reference : int)];
           let insert key states =
-            List.iter states ~f:(fun (value, op, args) -> Search_state.insert ~key search_state ~cost value op args)
+            List.iter states ~f:(fun (value, op, args) ->
+                Search_state.insert ~key search_state ~cost value op args)
           in
 
           let n_found_vp = ref 0 and n_found_list = ref 0 in
@@ -270,7 +284,8 @@ module Make (Lang : Lang_intf) = struct
                   insert v states;
                   v :: kept))
           in
-          Fmt.epr "Found in vp: %d, found in list: %d, kept: %d\n%!" !n_found_vp !n_found_list (List.length kept);
+          Fmt.epr "Found in vp: %d, found in list: %d, kept: %d\n%!" !n_found_vp
+            !n_found_list (List.length kept);
           kept)
 
       method check_states states =
@@ -282,9 +297,12 @@ module Make (Lang : Lang_intf) = struct
       method generate_states cost =
         if ctx.verbose then Fmt.epr "Generating states of cost %d...\n%!" cost;
         let new_states, gen_time =
-          with_time (fun () -> Gen.generate_states Search_state.search ctx.ectx search_state ctx.ops cost)
+          with_time (fun () ->
+              Gen.generate_states Search_state.search ctx.ectx search_state ctx.ops cost)
         in
-        if ctx.verbose then Fmt.epr "Generated %d states in %a.\n%!" (List.length new_states) Time.Span.pp gen_time;
+        if ctx.verbose then
+          Fmt.epr "Generated %d states in %a.\n%!" (List.length new_states) Time.Span.pp
+            gen_time;
         new_states
 
       method run =
@@ -302,11 +320,14 @@ module Make (Lang : Lang_intf) = struct
                ctx.states_grouped := 0;
 
                let ret, time =
-                 with_time (fun () -> Iter.(0 -- upper_bound) |> Iter.iter (fun cost -> self#fill cost))
+                 with_time (fun () ->
+                     Iter.(0 -- upper_bound) |> Iter.iter (fun cost -> self#fill cost))
                in
                if ctx.verbose then
-                 Fmt.epr "Completed iteration in %a. (search %a) (grouping %a %d/%d)\n%!" Time.Span.pp time Time.Span.pp
-                   !(ctx.search_close_states_time) Time.Span.pp !(ctx.sample_states_time) !(ctx.groups_created)
+                 Fmt.epr "Completed iteration in %a. (search %a) (grouping %a %d/%d)\n%!"
+                   Time.Span.pp time Time.Span.pp
+                   !(ctx.search_close_states_time)
+                   Time.Span.pp !(ctx.sample_states_time) !(ctx.groups_created)
                    !(ctx.states_grouped);
                ret)
     end

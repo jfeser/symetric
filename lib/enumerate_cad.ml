@@ -4,9 +4,9 @@ module Synth = Baseline.Make (Cad_ext)
 
 module Params = struct
   type t = {
-    size : Scene.Size.t;
+    size : Scene2d.Dim.t;
     ectx : Value.Ctx.t;
-    target : Scene.t;
+    target : Scene2d.t;
     operators : Op.t list;
     filter : bool;
     max_cost : int;
@@ -64,7 +64,7 @@ let print_output m_prog =
       ])
 
 let set_params ~scene_width ~scene_height ~max_cost ~filter ~verbose target =
-  let size = Scene.Size.create ~xres:scene_width ~yres:scene_height () in
+  let size = Scene2d.Dim.create ~xres:scene_width ~yres:scene_height () in
   let ectx = Value.Ctx.create size in
   let target_value = Program.eval (Value.eval ectx) target in
   let target_scene = match target_value with Scene s -> s | _ -> assert false in

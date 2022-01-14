@@ -3,7 +3,7 @@ open Staged_synth
 open Cad_ext
 
 let convert ~width ~height prog =
-  let size = Scene.Size.create ~xres:width ~yres:height () in
+  let size = Scene2d.Dim.create ~xres:width ~yres:height () in
   let ectx = Value.Ctx.create size in
   let target_value = Program.eval (Value.eval ectx) prog in
   let target_scene = match target_value with Scene s -> s | _ -> assert false in
@@ -11,7 +11,7 @@ let convert ~width ~height prog =
   Fmt.pr "int NUM_DATA = %d;\n" n;
   Fmt.pr "Example[NUM_DATA] examples = {\n";
   let is_first = ref true in
-  Scene.to_iter size target_scene (fun ((x, y), v) ->
+  Scene2d.to_iter size target_scene (fun ((x, y), v) ->
       if !is_first then is_first := false else Fmt.pr ", ";
       Fmt.pr "new Example(x = %d, y = %d, v = %d)\n" x y (if v then 1 else 0));
   Fmt.pr "}\n";

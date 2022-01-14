@@ -25,7 +25,6 @@ module type Lang_intf = sig
       type t
     end
 
-    val pp : Ctx.t -> t Fmt.t
     val eval : Ctx.t -> Op.t -> t list -> t
     val is_error : t -> bool
   end

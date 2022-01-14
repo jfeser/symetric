@@ -13,9 +13,9 @@ let () =
       in
       fun () ->
         let ectx =
-          Value.Ctx.create @@ Scene.Size.create ~xres:scene_width ~yres:scene_height ()
+          Value.Ctx.create @@ Scene2d.Dim.create ~xres:scene_width ~yres:scene_height ()
         in
-        Fmt.pr "%a\n" (Value.pp ectx)
+        Fmt.pr "%a\n" Value.pp
         @@ Program.eval (Value.eval ectx)
         @@ parse
         @@ Sexp.input_sexp In_channel.stdin]

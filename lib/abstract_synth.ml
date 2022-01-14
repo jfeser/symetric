@@ -245,7 +245,6 @@ struct
             | _ -> assert false
 
           let is_error = function Pred p -> length p > k | _ -> false
-          let pp _ = Fmt.nop
         end
       end in
       let open Conjunct_lang in
@@ -372,7 +371,6 @@ struct
 
         (* When searching, only consider the predicates in the context *)
         let eval = eval_restricted
-        let pp _ = Fmt.nop
       end
     end in
     let exception Done of int * Abs.Op.t Program.t in

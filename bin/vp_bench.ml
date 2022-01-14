@@ -6,7 +6,7 @@ let dist_calls = ref 0
 
 let distance (v : Value.t) (v' : Value.t) =
   incr dist_calls;
-  match (v, v') with Scene x, Scene x' -> Scene.jaccard x x' | _ -> Float.infinity
+  match (v, v') with Scene x, Scene x' -> Scene2d.jaccard x x' | _ -> Float.infinity
 
 module B = Bst.Bisec_tree.Make (struct
   type t = Value.t
@@ -38,7 +38,7 @@ let () =
 
   let reference_lhs = mk_hashes 100 (12 * 20) 20 in
   List.iter reference ~f:(function
-    | Scene s -> insert reference_lhs @@ Scene.pixels s
+    | Scene s -> insert reference_lhs @@ Scene2d.pixels s
     | _ -> ());
 
   let[@inline] lookup_list v =
@@ -50,7 +50,7 @@ let () =
   let[@inline] lookup_bst v = B.neighbors v thresh reference_bst in
   let[@inline] lookup_bst_closest v = B.nearest_neighbor v reference_bst in
   let[@inline] lookup_lhs = function
-    | Value.Scene s -> lookup reference_lhs @@ Scene.pixels s
+    | Value.Scene s -> lookup reference_lhs @@ Scene2d.pixels s
     | _ -> []
   in
 

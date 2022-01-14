@@ -5,11 +5,10 @@ module Gen = Generate.Gen_iter (Cad_ext)
 
 module Params = struct
   type t = {
-    size : Scene.Size.t;
+    size : Scene2d.Dim.t;
     ectx : Value.Ctx.t;
     local_search_steps : int;
-    target : Scene.t;
-    target_edges : Scene.t;
+    target : Scene2d.t;
     group_threshold : float;
     operators : Op.t list;
     max_cost : int;
@@ -25,7 +24,6 @@ let params = Set_once.create ()
 let[@inline] size () = (Set_once.get_exn params [%here]).Params.size
 let[@inline] ectx () = (Set_once.get_exn params [%here]).Params.ectx
 let[@inline] target () = (Set_once.get_exn params [%here]).Params.target
-let[@inline] target_edges () = (Set_once.get_exn params [%here]).Params.target_edges
 let[@inline] search_state () = (Set_once.get_exn params [%here]).Params.search_state
 let[@inline] group_threshold () = (Set_once.get_exn params [%here]).Params.group_threshold
 let[@inline] operators () = (Set_once.get_exn params [%here]).Params.operators
@@ -44,7 +42,7 @@ let runtime = ref Time.Span.zero
 
 let distance (v : Value.t) (v' : Value.t) =
   match (v, v') with
-  | Scene x, Scene x' -> Scene.jaccard x x'
+  | Scene x, Scene x' -> Scene2d.jaccard x x'
   | v, v' -> if [%compare.equal: Value.t] v v' then 0.0 else Float.infinity
 
 let local_search p =
@@ -58,7 +56,7 @@ let local_search p =
     (function
       | Apply (Int x, []) ->
           if x = 0 then [ Apply (Int (x + 1), []) ]
-          else if x = max size.Scene.Size.xres size.yres then [ Apply (Int (x - 1), []) ]
+          else if x = max size.Scene2d.Dim.xres size.yres then [ Apply (Int (x - 1), []) ]
           else [ Apply (Int (x + 1), []); Apply (Int (x - 1), []) ]
       | _ -> [])
     (Program.eval (Value.eval ectx))
@@ -138,7 +136,7 @@ let fill_search_space () =
   and max_cost = max_cost ()
   and verbose = verbose () in
 
-  if verbose then Fmt.epr "Goal:\n%a\n%!" Scene.pp (size (), target ());
+  if verbose then Fmt.epr "Goal:\n%a\n%!" Scene2d.pp (target ());
 
   for cost = 1 to max_cost do
     if verbose then Fmt.epr "Generating states of cost %d.\n%!" cost;
@@ -179,7 +177,7 @@ let synthesize () =
              | Value.Scene _ ->
                  for _ = 1 to backward_pass_repeats do
                    let p =
-                     S.local_greedy (Value.pp ectx) search_state (Int.ceil_log2 max_cost)
+                     S.local_greedy Value.pp search_state (Int.ceil_log2 max_cost)
                        (Value.eval ectx) (distance target) tv
                      |> Option.value_exn
                    in
@@ -195,7 +193,7 @@ let synthesize () =
 
 let set_params ~scene_width ~scene_height ~group_threshold ~max_cost ~local_search_steps
     ~backward_pass_repeats ~verbose ~validate target =
-  let size = Scene.Size.create ~xres:scene_width ~yres:scene_height () in
+  let size = Scene2d.Dim.create ~xres:scene_width ~yres:scene_height () in
   let ectx = Value.Ctx.create size in
   let target_value = Program.eval (Value.eval ectx) target in
   let target_scene = match target_value with Scene s -> s | _ -> assert false in
@@ -219,7 +217,6 @@ let set_params ~scene_width ~scene_height ~group_threshold ~max_cost ~local_sear
         backward_pass_repeats;
         verbose;
         search_state = S.create ();
-        target_edges = Scene.edges size target_scene;
         target_program = target;
       }
 
@@ -268,10 +265,6 @@ let cmd =
         flag "-backward-pass-repeats"
           (optional_with_default 10 int)
           ~doc:" number of times to run backward pass"
-      and filter =
-        flag "-use-filter"
-          (optional_with_default true bool)
-          ~doc:" use heuristic filtering"
       and scene_width =
         flag "-scene-width" (optional_with_default 12 int) ~doc:" scene width in pixels"
       and scene_height =
