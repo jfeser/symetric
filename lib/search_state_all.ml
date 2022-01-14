@@ -43,35 +43,77 @@ module Make (Lang : Lang_intf) = struct
     let create cost type_ = { cost; type_ }
   end
 
-  module TValue = struct
-    type t = { type_ : Type.t; value : Value.t } [@@deriving compare, hash, sexp]
+  module Class = struct
+    module T = struct
+      type t = { type_ : Type.t; value : Value.t } [@@deriving compare, hash, sexp]
+    end
+
+    include T
+    include Comparator.Make (T)
+
+    let create v t = { type_ = t; value = v }
   end
 
-  module Path = struct
-    type t = { cost : int; height : int; op : Op.t; args : Value.t list; value : Value.t }
+  module Path0 = struct
+    type t = {
+      op : Op.t;
+      args : Class.t list;
+      value : Value.t;
+      mutable cost : int;
+      mutable height : int;
+    }
     [@@deriving sexp]
 
+    let[@inline] create value op args = { value; op; args; cost = -1; height = -1 }
+
     let pp =
-      let open Fmt in
       let open Fmt.Dump in
-      record [ field "cost" (fun x -> x.cost) int; field "op" (fun x -> x.op) Op.pp ]
+      record [ field "op" (fun x -> x.op) Op.pp ]
   end
 
-  type paths = { paths : Path.t list; min_cost : int; min_height : int } [@@deriving sexp]
-
-  type t = { values : Value.t Queue.t H.M(Attr).t; paths : paths H.M(TValue).t }
+  type paths = { paths : Path0.t list; min_cost : int; min_height : int }
   [@@deriving sexp]
 
-  let create () = { values = H.create (module Attr); paths = H.create (module TValue) }
+  type t = { classes : Class.t list H.M(Attr).t; paths : paths H.M(Class).t }
+  [@@deriving sexp]
 
-  let pp_dot fmt { values; paths } =
+  module Path : sig
+    type ctx
+    type t = Path0.t [@@deriving sexp]
+
+    val create : Value.t -> Op.t -> Class.t list -> t
+    val cost : ctx -> t -> int
+    val height : ctx -> t -> int
+  end
+  with type ctx := t = struct
+    include Path0
+
+    let cost ctx p =
+      (if p.cost < 0 then
+       let args_cost =
+         List.sum (module Int) p.args ~f:(fun c -> (H.find_exn ctx.paths c).min_cost)
+       in
+       p.cost <- Op.cost p.op + args_cost);
+      p.cost
+
+    let height ctx p =
+      (if p.height < 0 then
+       let args_height =
+         List.map p.args ~f:(fun c -> (H.find_exn ctx.paths c).min_height)
+         |> List.max_elt ~compare |> Option.value ~default:0
+       in
+       p.height <- 1 + args_height);
+      p.height
+  end
+
+  let create () = { classes = H.create (module Attr); paths = H.create (module Class) }
+
+  let pp_dot fmt { classes; paths } =
     let node_ids =
-      H.to_alist values
-      |> List.concat_map ~f:(fun (a, vs) ->
-             Queue.to_list vs
-             |> List.map ~f:(fun v -> TValue.{ value = v; type_ = a.type_ }))
+      H.to_alist classes
+      |> List.concat_map ~f:(fun (_, vs) -> vs)
       |> List.mapi ~f:(fun i v -> (v, i))
-      |> Hashtbl.of_alist_exn (module TValue)
+      |> Hashtbl.of_alist_exn (module Class)
     in
     let module Edge = struct
       module T = struct
@@ -89,9 +131,7 @@ module Make (Lang : Lang_intf) = struct
           List.fold ~init:edges
             ~f:(fun edges (path : Path.t) ->
               let edge =
-                ( List.map2_exn (Op.args_type path.op) path.args ~f:(fun t v ->
-                      H.find_exn node_ids TValue.{ type_ = t; value = v }),
-                  H.find_exn node_ids key )
+                (List.map path.args ~f:(H.find_exn node_ids), H.find_exn node_ids key)
               in
               match Map.add edges ~key:edge ~data:!id with
               | `Ok m ->
@@ -109,8 +149,8 @@ module Make (Lang : Lang_intf) = struct
     Fmt.pf fmt "}"
 
   let search_iter ctx ~cost ~type_ =
-    match H.find ctx.values @@ Attr.create cost type_ with
-    | Some q -> Iter.of_queue q
+    match H.find ctx.classes @@ Attr.create cost type_ with
+    | Some q -> Iter.of_list q |> Iter.map (fun c -> c.Class.value)
     | None -> Iter.empty
 
   let search ctx ~cost ~type_ = search_iter ctx ~cost ~type_ |> Iter.to_list
@@ -126,7 +166,7 @@ module Make (Lang : Lang_intf) = struct
                        | { op = op'; args = []; _ } -> [%compare.equal: Op.t] op op'
                        | _ -> false)
                      paths.paths
-                 then Some v.value
+                 then Some v
                  else None)
         in
         print_s [%message (op : Op.t) (List.length all_values : int)];
@@ -135,7 +175,7 @@ module Make (Lang : Lang_intf) = struct
     | Apply (op, args) ->
         let args = List.map args ~f:(find_term ctx) in
         let arg_sets =
-          List.map args ~f:(fun (Apply ((_, vs), _)) -> Set.of_list (module Value) vs)
+          List.map args ~f:(fun (Apply ((_, vs), _)) -> Set.of_list (module Class) vs)
         in
         let all_outputs =
           H.to_alist ctx.paths
@@ -147,190 +187,85 @@ module Make (Lang : Lang_intf) = struct
                            [%compare.equal: Op.t] op op'
                            && List.for_all2_exn arg_sets args ~f:Set.mem)
                      paths.paths
-                 then Some v.value
+                 then Some v
                  else None)
         in
         print_s [%message (op : Op.t) (List.length all_outputs : int)];
 
         Apply ((op, all_outputs), args)
 
-  let mem ctx = H.mem ctx.paths
+  let insert_class_members ctx class_ members =
+    let new_paths =
+      List.map members ~f:(fun (value, op, args) -> Path.create value op args)
+    in
+    H.update ctx.paths class_ ~f:(function
+      | Some ps -> { ps with paths = new_paths @ ps.paths }
+      | None -> failwith "class not present in search space")
 
-  (* TODO: should take a batch of inputs instead of a single input *)
-  let insert ?cost ?height ?key ctx state op inputs =
-    let key = Option.value key ~default:state in
-    let type_ = Op.ret_type op in
-    let tvalue = TValue.{ type_; value = key } in
+  let insert_class ctx value op args =
+    let args = List.map2_exn args (Op.args_type op) ~f:Class.create in
     let cost =
-      match cost with
-      | Some c -> c
-      | None ->
-          let args_cost =
-            List.zip_exn (Op.args_type op) inputs
-            |> List.sum
-                 (module Int)
-                 ~f:(fun (t, v) ->
-                   (H.find_exn ctx.paths TValue.{ type_ = t; value = v }).min_cost)
-          in
-          Op.cost op + args_cost
+      let args_cost =
+        List.sum (module Int) args ~f:(fun c -> (H.find_exn ctx.paths c).min_cost)
+      in
+      Op.cost op + args_cost
     in
     let height =
-      match height with
-      | Some h -> h
-      | None ->
-          let args_height =
-            List.zip_exn (Op.args_type op) inputs
-            |> Iter.of_list
-            |> Iter.map (fun (t, v) ->
-                   (H.find_exn ctx.paths TValue.{ type_ = t; value = v }).min_height)
-            |> Iter.max ~lt:( < ) |> Option.value ~default:0
-          in
-          1 + args_height
+      let args_height =
+        List.map args ~f:(fun c -> (H.find_exn ctx.paths c).min_height)
+        |> List.max_elt ~compare |> Option.value ~default:0
+      in
+      1 + args_height
     in
 
-    (if not (mem ctx tvalue) then
-     let q = H.find_or_add ctx.values (Attr.create cost type_) ~default:Queue.create in
-     Queue.enqueue q state);
-    let new_path = Path.{ cost; height; op; args = inputs; value = state } in
-    H.update ctx.paths tvalue ~f:(function
-      | Some ps -> { ps with paths = new_path :: ps.paths }
-      | None -> { min_cost = cost; min_height = height; paths = [ new_path ] })
+    let class_ = Class.{ type_ = Op.ret_type op; value } in
+    H.update ctx.classes (Attr.create cost class_.type_) ~f:(function
+      | Some cs -> class_ :: cs
+      | None -> [ class_ ]);
 
-  let states ?cost ?type_ ctx =
-    match (cost, type_) with
-    | Some cost, Some type_ -> search ctx ~cost ~type_ |> Iter.of_list
-    | Some cost, None ->
-        fun f ->
-          H.iteri ctx.values ~f:(fun ~key ~data ->
-              if key.cost = cost then Queue.iter data ~f)
-    | None, Some type_ ->
-        fun f ->
-          H.iteri ctx.values ~f:(fun ~key ~data ->
-              if [%compare.equal: Type.t] key.type_ type_ then Queue.iter data ~f)
-    | None, None -> H.keys ctx.paths |> Iter.of_list |> Iter.map (fun v -> v.TValue.value)
+    let new_path = Path.create class_.value op args in
+    H.add_exn ctx.paths ~key:class_
+      ~data:{ min_cost = cost; min_height = height; paths = [ new_path ] }
 
   let length ctx = H.length ctx.paths
 
   let print_stats ctx =
-    H.keys ctx.values
-    |> List.map ~f:(fun a -> (a.cost, a.type_))
-    |> List.sort ~compare:[%compare: int * Type.t]
-    |> List.iter ~f:(fun (cost, type_) ->
-           let n = H.find_exn ctx.values { cost; type_ } |> Queue.length in
-           eprint_s [%message (cost : int) (type_ : Type.t) (n : int)]);
+    H.to_alist ctx.classes
+    |> List.sort ~compare:(fun (a, _) (a', _) ->
+           [%compare: int * Type.t] (a.cost, a.type_) (a'.cost, a'.type_))
+    |> List.iter ~f:(fun (attr, classes) ->
+           eprint_s
+             [%message
+               (attr.cost : int) (attr.type_ : Type.t) (List.length classes : int)]);
     Fmt.epr "Total: %d\n%!" (length ctx)
 
-  let print_contents ctx = print_s [%message (ctx.values : Value.t Queue.t H.M(Attr).t)]
-
-  let rec program_exn ctx max_height type_ value =
+  let rec program_exn ctx max_height class_ =
     let p =
       List.find_exn
-        ~f:(fun p -> p.height <= max_height)
-        (H.find_exn ctx.paths { type_; value }).paths
+        ~f:(fun p -> Path.height ctx p <= max_height)
+        (H.find_exn ctx.paths class_).paths
     in
     program_of_op_args_exn ctx max_height p.op p.args
 
-  and program_of_class_exn ctx max_height (class_ : TValue.t) =
-    program_exn ctx max_height class_.type_ class_.value
-
   and program_of_op_args_exn ctx max_height op args =
-    Apply (op, List.map2_exn (Op.args_type op) args ~f:(program_exn ctx (max_height - 1)))
+    Apply (op, List.map args ~f:(program_exn ctx (max_height - 1)))
 
-  let rec random_program_exn ctx max_height type_ value =
+  let rec random_program_exn ctx max_cost class_ =
     let p =
-      List.random_element_exn
-      @@ List.filter
-           ~f:(fun p -> p.height <= max_height)
-           (H.find_exn ctx.paths { type_; value }).paths
-    in
-    random_program_of_op_args_exn ctx max_height p.op p.args
-
-  and random_program_of_op_args_exn ctx max_height op args =
-    Apply
-      ( op,
-        List.map2_exn (Op.args_type op) args ~f:(random_program_exn ctx (max_height - 1))
-      )
-
-  let rec random_program_exn ctx max_cost type_ value =
-    let p =
-      (H.find_exn ctx.paths { type_; value }).paths
+      (H.find_exn ctx.paths class_).paths
       |> List.filter ~f:(fun p -> p.cost <= max_cost)
       |> List.random_element_exn
     in
-    Apply
-      ( p.op,
-        List.map2_exn (Op.args_type p.op) p.args ~f:(random_program_exn ctx (p.cost - 1))
-      )
+    Apply (p.op, List.map p.args ~f:(random_program_exn ctx (Path.cost ctx p - 1)))
 
   let random_program_exn ?(max_cost = Int.max_value) ctx state =
     random_program_exn ctx max_cost state
 
-  let clear { values; paths } =
-    H.clear values;
+  let clear { classes; paths } =
+    H.clear classes;
     H.clear paths
 
-  let cost_of ctx v =
-    H.to_alist ctx.values
-    |> List.find_map ~f:(fun (k, vs) ->
-           if Queue.mem vs v ~equal:[%compare.equal: Value.t] then Some k.cost else None)
-
-  let n_states { values; _ } = H.length values
-
-  let n_transitions { paths; _ } =
-    H.fold ~init:0 ~f:(fun ~key:_ ~data sum -> sum + List.length data.paths) paths
-
-  let replace i f prog =
-    let rec replace j p =
-      if i = j then f p
-      else
-        let (Apply (op, args)) = p in
-        Apply (op, List.mapi args ~f:(fun k p' -> replace (j + k) p'))
-    in
-    replace 0 prog
-
   let list_set l i x = List.mapi l ~f:(fun j y -> if i = j then x else y)
-
-  let to_grammar ss op_pp (class_ : TValue.t) =
-    let syms = Hashtbl.create (module TValue) in
-    let id = ref 0 in
-    let sym_of class_ =
-      match Hashtbl.find syms class_ with
-      | Some s -> s
-      | None ->
-          let sym = sprintf "x%d" !id in
-          incr id;
-          Hashtbl.set syms ~key:class_ ~data:sym;
-          sym
-    in
-    let printed = Hash_set.create (module TValue) in
-    let to_print = Hash_set.create (module TValue) in
-
-    let rec to_grammar () =
-      match Hash_set.find to_print ~f:(Fun.const true) with
-      | Some class_ when not (Hash_set.mem printed class_) ->
-          Hash_set.add printed class_;
-          Hash_set.remove to_print class_;
-
-          Fmt.pr "@[<hov 4>%s :=@ " @@ sym_of class_;
-          (Hashtbl.find_exn ss.paths class_).paths
-          |> List.iter ~f:(fun p ->
-                 Fmt.pr "@[<hv>%a(" op_pp p.op;
-                 Fmt.pr "%a)@]@ | " (Fmt.list ~sep:Fmt.comma Fmt.string)
-                 @@ List.map2_exn (Op.args_type p.op) p.args ~f:(fun arg_type arg_value ->
-                        let arg_class = TValue.{ value = arg_value; type_ = arg_type } in
-                        if not (Hash_set.mem printed arg_class) then
-                          Hash_set.add to_print arg_class;
-                        sym_of arg_class));
-          Fmt.pr "@]@,";
-          to_grammar ()
-      | Some _ -> to_grammar ()
-      | None -> ()
-    in
-
-    Hash_set.add to_print class_;
-    Fmt.pr "@[<v>";
-    to_grammar ();
-    Fmt.pr "@]"
 
   let validate ss eval dist thresh =
     Hashtbl.iteri ss.paths ~f:(fun ~key ~data ->
@@ -341,7 +276,7 @@ module Make (Lang : Lang_intf) = struct
               (fun (v, v') -> dist v v' <. thresh)
               (key.value, path.value)))
 
-  let rec local_greedy value_pp ss max_height eval dist (class_ : TValue.t) =
+  let rec local_greedy value_pp ss max_height eval dist (class_ : Class.t) =
     let open Option.Let_syntax in
     let all_paths = (H.find_exn ss.paths class_).paths in
     assert (
@@ -357,11 +292,10 @@ module Make (Lang : Lang_intf) = struct
       |> Iter.map (fun (p : Path.t) -> (dist p.value, p))
       |> Iter.min ~lt:(fun (d, _) (d', _) -> Float.(d < d'))
     in
-    List.zip_exn (Op.args_type best_path.op) best_path.args
-    |> List.mapi ~f:(fun i (arg_type, arg_value) ->
-           let arg_class = TValue.{ value = arg_value; type_ = arg_type } in
-           let dist' v = dist (eval best_path.op @@ list_set best_path.args i v) in
-           local_greedy value_pp ss (max_height - 1) eval dist' arg_class)
+    let best_path_arg_values = List.map best_path.args ~f:(fun c -> c.value) in
+    List.mapi best_path.args ~f:(fun i arg_class ->
+        let dist' v = dist (eval best_path.op @@ list_set best_path_arg_values i v) in
+        local_greedy value_pp ss (max_height - 1) eval dist' arg_class)
     |> Option.all
     |> Option.map ~f:(fun arg_progs -> Apply (best_path.op, arg_progs))
 end

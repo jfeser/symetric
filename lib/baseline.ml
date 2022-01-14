@@ -81,9 +81,9 @@ module Make (Lang : Lang_intf) = struct
       method generate_states cost =
         Gen.generate_states Search_state.search eval_ctx search_state ops cost
 
-      method insert_states cost states =
+      method insert_states states =
         List.iter states ~f:(fun (state, op, args) ->
-            Search_state.insert search_state ~cost state op args);
+            Search_state.insert_class search_state state op args);
         ctx.bank_size := Float.of_int @@ Search_state.length search_state
 
       method check_states states =
@@ -97,7 +97,7 @@ module Make (Lang : Lang_intf) = struct
 
       method fill cost =
         let new_states = self#generate_states cost in
-        self#insert_states cost new_states;
+        self#insert_states new_states;
         self#check_states new_states;
         if verbose then (
           Fmt.epr "Finished cost %d\n%!" cost;

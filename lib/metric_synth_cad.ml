@@ -67,6 +67,14 @@ let local_search p =
   |> Option.map ~f:(fun (_, p) -> p)
   |> Option.value ~default:p
 
+let rec group_states find_close add_class v edges =
+  let grouped = ref false in
+  let search_state = search_state () in
+  (find_close v) (fun v' ->
+      S.insert_class_members search_state v' edges;
+      grouped := true);
+  if not !grouped then add_class v
+
 let insert_states_nonempty ~cost ~type_ states =
   let search_state = search_state () and thresh = group_threshold () in
   let insert key states =
@@ -192,8 +200,8 @@ let synthesize () =
   ret
 
 let set_params ~scene_width ~scene_height ~group_threshold ~max_cost ~local_search_steps
-    ~backward_pass_repeats ~verbose ~validate target =
-  let size = Scene2d.Dim.create ~xres:scene_width ~yres:scene_height () in
+    ~backward_pass_repeats ~verbose ~validate ~scaling target =
+  let size = Scene2d.Dim.create ~xres:scene_width ~yres:scene_height ~scaling () in
   let ectx = Value.Ctx.create size in
   let target_value = Program.eval (Value.eval ectx) target in
   let target_scene = match target_value with Scene s -> s | _ -> assert false in
@@ -236,6 +244,7 @@ let print_output m_prog =
         ("method", `String "metric");
         ("scene_width", `Int (size ()).xres);
         ("scene_height", `Int (size ()).yres);
+        ("scaling", `Int (size ()).scaling);
         ("local_search_steps", `Int (local_search_steps ()));
         ("group_threshold", `Float (group_threshold ()));
         ("max_cost", `Int (max_cost ()));
@@ -269,11 +278,13 @@ let cmd =
         flag "-scene-width" (optional_with_default 12 int) ~doc:" scene width in pixels"
       and scene_height =
         flag "-scene-height" (optional_with_default 20 int) ~doc:" scene height in pixels"
+      and scaling =
+        flag "-scaling" (optional_with_default 1 int) ~doc:" scene scaling factor"
       and verbose = flag "-verbose" no_arg ~doc:" increase verbosity"
       and validate = flag "-validate" no_arg ~doc:" turn on validation" in
       fun () ->
         set_params ~max_cost ~group_threshold ~local_search_steps ~scene_width
-          ~scene_height ~backward_pass_repeats ~verbose ~validate
+          ~scene_height ~backward_pass_repeats ~verbose ~validate ~scaling
         @@ Cad_ext.parse
         @@ Sexp.input_sexp In_channel.stdin;
         synthesize () |> print_output]
