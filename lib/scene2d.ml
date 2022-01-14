@@ -3,6 +3,9 @@ open Std
 module Dim = struct
   type t = { xres : int; yres : int; scaling : int } [@@deriving compare, hash, sexp]
 
+  let scaled_xres x = x.xres * x.scaling
+  let scaled_yres x = x.yres * x.scaling
+
   let create ?(scaling = 1) ~xres ~yres () =
     assert (xres > 0 && yres > 0 && scaling >= 1);
     { xres; yres; scaling }
@@ -50,13 +53,19 @@ let of_bitarray dim buf =
 
 let[@inline] pixels x = H.value x.buf
 
-let init (size : Dim.t) ~f =
-  let len = size.xres * size.yres in
-  let pixels = Dim.pixels size in
+let init (dim : Dim.t) ~f =
+  let len = Dim.npixels dim in
+  let xres = Dim.scaled_xres dim and yres = Dim.scaled_yres dim in
+  let y = ref (yres - 1) and x = ref 0 in
   Bitarray.init len ~f:(fun idx ->
-      let ptx, pty = Option.value_exn (pixels ()) in
-      f idx ptx pty)
-  |> of_bitarray size
+      assert (!y >= 0 && !y < yres && !x >= 0 && !x < xres);
+      let ret = f idx !x !y in
+      if !x = xres - 1 then (
+        x := 0;
+        decr y)
+      else incr x;
+      ret)
+  |> of_bitarray dim
 
 let npixels s = Bitarray.length @@ pixels s
 
@@ -65,7 +74,7 @@ let to_iter (size : Dim.t) s f =
   Bitarray.iteri (pixels s) ~f:(fun _ v -> f (Option.value_exn (pixel_gen ()), v))
 
 let pp fmt x =
-  let xres = x.dim.xres in
+  let xres = Dim.scaled_xres x.dim in
   Bitarray.iteri (pixels x) ~f:(fun i b ->
       if b then Fmt.pf fmt "█" else Fmt.pf fmt ".";
       if i mod xres = xres - 1 then Fmt.pf fmt "\n")
@@ -108,10 +117,8 @@ let sub s s' =
 
 let repeat s dx dy ct =
   let dim = s.dim in
-  let dx = dx * dim.scaling
-  and dy = dy * dim.scaling
-  and xres = dim.xres * dim.scaling
-  and yres = dim.yres * dim.scaling in
+  let dx = dx * dim.scaling and dy = dy * dim.scaling in
+  let xres = Dim.scaled_xres dim and yres = Dim.scaled_yres dim in
   of_bitarray s.dim @@ Bitarray.replicate ~w:xres ~h:yres (pixels s) ~dx ~dy ~ct
 
 let ( = ) = [%compare.equal: t]
