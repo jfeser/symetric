@@ -12,7 +12,6 @@ module Params = struct
     target_edges : Scene.t;
     group_threshold : float;
     operators : Op.t list;
-    filter : bool;
     max_cost : int;
     backward_pass_repeats : int;
     verbose : bool;
@@ -30,7 +29,6 @@ let[@inline] target_edges () = (Set_once.get_exn params [%here]).Params.target_e
 let[@inline] search_state () = (Set_once.get_exn params [%here]).Params.search_state
 let[@inline] group_threshold () = (Set_once.get_exn params [%here]).Params.group_threshold
 let[@inline] operators () = (Set_once.get_exn params [%here]).Params.operators
-let[@inline] filter () = (Set_once.get_exn params [%here]).Params.filter
 let[@inline] max_cost () = (Set_once.get_exn params [%here]).Params.max_cost
 let[@inline] verbose () = (Set_once.get_exn params [%here]).Params.verbose
 let[@inline] target_program () = (Set_once.get_exn params [%here]).Params.target_program
@@ -133,26 +131,10 @@ let insert_states ~cost ~type_ = function
   | [] -> ()
   | states -> insert_states_nonempty ~cost ~type_ states
 
-let filter_states states =
-  let target = target () and target_edges = target_edges () and size = size () in
-  Iter.filter
-    (fun (v, _, _) ->
-      match v with
-      | Value.Scene s ->
-          Bitarray.hamming_weight (Bitarray.and_ (Scene.pixels target) (Scene.pixels s))
-          > 0
-          && Bitarray.hamming_weight
-               (Bitarray.and_ (Scene.pixels target_edges)
-                  (Scene.pixels @@ Scene.edges size s))
-             > 0
-      | _ -> true)
-    states
-
 let fill_search_space () =
   let ectx = ectx ()
   and search_state = search_state ()
   and ops = operators ()
-  and filter = filter ()
   and max_cost = max_cost ()
   and verbose = verbose () in
 
@@ -160,9 +142,7 @@ let fill_search_space () =
 
   for cost = 1 to max_cost do
     if verbose then Fmt.epr "Generating states of cost %d.\n%!" cost;
-    let states = Gen.generate_states S.search_iter ectx search_state ops cost in
-    let states = if filter then filter_states states else states in
-    states
+    Gen.generate_states S.search_iter ectx search_state ops cost
     |> Iter.map (fun ((_, op, _) as state) -> (Op.ret_type op, state))
     |> Iter.group_by (module Type)
     |> Iter.iter (fun (type_, states) -> insert_states ~cost ~type_ states)
@@ -214,7 +194,7 @@ let synthesize () =
   ret
 
 let set_params ~scene_width ~scene_height ~group_threshold ~max_cost ~local_search_steps
-    ~backward_pass_repeats ~filter ~verbose ~validate target =
+    ~backward_pass_repeats ~verbose ~validate target =
   let size = Scene.Size.create ~xres:scene_width ~yres:scene_height () in
   let ectx = Value.Ctx.create size in
   let target_value = Program.eval (Value.eval ectx) target in
@@ -237,7 +217,6 @@ let set_params ~scene_width ~scene_height ~group_threshold ~max_cost ~local_sear
         group_threshold;
         max_cost;
         backward_pass_repeats;
-        filter;
         verbose;
         search_state = S.create ();
         target_edges = Scene.edges size target_scene;
@@ -262,7 +241,6 @@ let print_output m_prog =
         ("scene_height", `Int (size ()).yres);
         ("local_search_steps", `Int (local_search_steps ()));
         ("group_threshold", `Float (group_threshold ()));
-        ("filter", `Bool (filter ()));
         ("max_cost", `Int (max_cost ()));
         ("backward_pass_repeats", `Int (backward_pass_repeats ()));
         ("program_size", `Float program_size);
@@ -302,7 +280,7 @@ let cmd =
       and validate = flag "-validate" no_arg ~doc:" turn on validation" in
       fun () ->
         set_params ~max_cost ~group_threshold ~local_search_steps ~scene_width
-          ~scene_height ~backward_pass_repeats ~filter ~verbose ~validate
+          ~scene_height ~backward_pass_repeats ~verbose ~validate
         @@ Cad_ext.parse
         @@ Sexp.input_sexp In_channel.stdin;
         synthesize () |> print_output]
