@@ -1,4 +1,5 @@
 let memoize = true
+let unsound_pruning = false
 
 module Type = struct
   type t = Int | Rep_count | Scene | Error [@@deriving compare, hash, sexp]
@@ -75,19 +76,19 @@ module Value = struct
     | (Inter | Union | Sub), ([ Error; _ ] | [ _; Error ]) -> Error
     | Inter, [ Scene s; Scene s' ] ->
         let s'' = S.inter s s' in
-        if S.(s = s'' || s' = s'') then Error else Scene s''
+        if unsound_pruning && S.(s = s'' || s' = s'') then Error else Scene s''
     | Union, [ Scene s; Scene s' ] ->
         let s'' = S.union s s' in
-        if S.(s = s'' || s' = s'') then Error else Scene s''
+        if unsound_pruning && S.(s = s'' || s' = s'') then Error else Scene s''
     | Sub, [ Scene s; Scene s' ] ->
         let s'' = S.sub s s' in
-        if S.(s = s'' || s' = s'') then Error else Scene s''
+        if unsound_pruning && S.(s = s'' || s' = s'') then Error else Scene s''
     | Repl, [ Error; Int _; Int _; Rep_count _ ] -> Error
     | Repl, [ Scene _; Int dx; Int dy; Rep_count c ] when (dx = 0 && dy = 0) || c <= 1 ->
         Error
     | Repl, [ Scene s; Int dx; Int dy; Rep_count ct ] ->
         let s' = S.repeat s dx dy ct in
-        if S.(s = s') then Error else Scene s'
+        if unsound_pruning && S.(s = s') then Error else Scene s'
     | _ -> raise_s [%message "unexpected arguments" (op : Op.t) (args : t list)]
 
   let eval =
