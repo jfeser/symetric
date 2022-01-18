@@ -69,7 +69,10 @@ let local_search p =
   |> Option.value ~default:p
 
 let group_states_vp type_ states =
-  let distance c c' = distance c.S.Class.value c'.S.Class.value in
+  let distance c c' =
+    let v = c.S.Class.value and v' = c'.S.Class.value in
+    distance v v'
+  in
   let thresh = group_threshold () in
   let create_vp = Vpt.create distance `Random in
   let search_state = search_state () in
@@ -80,7 +83,6 @@ let group_states_vp type_ states =
   let find_close c f =
     if List.length !reference > 100 then (
       reference_vp := create_vp ((Iter.to_list @@ Vpt.iter !reference_vp) @ !reference);
-      print_s [%message (Vpt.length !reference_vp : int)];
       reference := []);
     Iter.append
       (Vpt.neighbors distance c thresh !reference_vp)
@@ -98,18 +100,21 @@ let group_states_vp type_ states =
       if not !grouped then (
         reference := v :: !reference;
         Hashtbl.add_exn groups ~key:v ~data:(e, es)));
+
   groups
 
 let insert_states ~type_ states =
   let search_state = search_state () in
 
-  let states =
-    List.map states ~f:(fun ((v, _, _) as x) -> (v, x))
-    |> List.group_by (module Value)
-    |> List.map ~f:(fun (c, cs) ->
-           ( c,
-             List.map cs ~f:(fun (value, op, args) ->
-                 (value, op, List.map2_exn args (Op.args_type op) ~f:S.Class.create)) ))
+  let distinct_states =
+    List.map states ~f:(fun ((v, _, _) as x) -> (v, x)) |> List.group_by (module Value)
+  in
+
+  let new_distinct_states =
+    List.map distinct_states ~f:(fun (c, cs) ->
+        ( c,
+          List.map cs ~f:(fun (value, op, args) ->
+              (value, op, List.map2_exn args (Op.args_type op) ~f:S.Class.create)) ))
     |> List.filter_map ~f:(function
          | v, (((_, op, _) as edge) :: _ as xs) ->
              let class_ = S.Class.create v (Op.ret_type op) in
@@ -120,26 +125,40 @@ let insert_states ~type_ states =
          | _, [] -> None)
   in
 
-  let start_time = Time.now () in
+  if verbosity () > 0 then
+    Fmt.epr "(%d, %d distinct, %d unseen) states of type %a.\n%!" (List.length states)
+      (List.length distinct_states)
+      (List.length new_distinct_states)
+      Type.pp type_;
 
   let rec best_groups ct best mgps =
-    if ct <= 0 then Option.value_exn mgps
+    if ct <= 0 then Hashtbl.to_alist @@ Option.value_exn @@ mgps
     else
-      let groups = group_states_vp type_ @@ List.permute states in
+      let groups = group_states_vp type_ @@ List.permute new_distinct_states in
       if Hashtbl.length groups < best then
         best_groups (ct - 1) (Hashtbl.length groups) (Some groups)
       else best_groups (ct - 1) best mgps
   in
-  let groups = best_groups 3 Int.max_value None in
+  let groups, group_time =
+    Synth_utils.timed (fun () -> best_groups 1 Int.max_value None)
+  in
 
-  Hashtbl.iteri groups ~f:(fun ~key ~data:((v, op, a), es) ->
-      if not @@ S.mem_class search_state key then (
-        if verbosity () > 3 then Fmt.pr "New group:\n%a\n" Value.pp v;
-        S.insert_class search_state v op @@ List.map ~f:S.Class.value a);
-      S.insert_class_members search_state key es);
+  let retained_groups =
+    List.map groups ~f:(fun ((c, _) as g) ->
+        (distance (S.Class.value c) (Scene (target ())), g))
+    |> List.sort ~compare:[%compare: float * _]
+    |> List.take ~n:500
+    |> List.map ~f:(fun (_, g) -> g)
+  in
 
-  if verbosity () > 1 then
-    eprint_s [%message "group time" (Time.(diff (now ()) start_time) : Time.Span.t)]
+  if verbosity () > 0 then
+    Fmt.epr "(%d groups, %d retained) in %a.\n%!" (List.length groups)
+      (List.length retained_groups) Time.Span.pp group_time;
+
+  List.iter retained_groups ~f:(fun (key, ((v, op, a), es)) ->
+      if not @@ S.mem_class search_state key then
+        S.insert_class search_state v op @@ List.map ~f:S.Class.value a;
+      S.insert_class_members search_state key es)
 
 let fill_search_space () =
   let ectx = ectx ()

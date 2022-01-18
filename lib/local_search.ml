@@ -110,7 +110,7 @@ module Pattern = struct
     let (Apply (op, args)) = t in
     List.iteri args ~f:(fun i t' ->
         rewrite_all op_m rule t' (fun p ->
-            k @@ Program.Apply (op, List.take args i @ (p :: List.drop args (i + 1)))))
+            k @@ Program.Apply (op, List.take args ~n:i @ (p :: List.drop args (i + 1)))))
 end
 
 module Rule = struct
@@ -186,7 +186,7 @@ let rewrite_all unnormalize t k =
     let (Program.Apply (op, args)) = t in
     List.iteri args ~f:(fun i t' ->
         rewrite_all t' (fun p ->
-            k @@ Program.Apply (op, List.take args i @ (p :: List.drop args (i + 1)))))
+            k @@ Program.Apply (op, List.take args ~n:i @ (p :: List.drop args (i + 1)))))
   in
   rewrite_all t k
 

@@ -5,6 +5,7 @@ module Type = struct
   type t = Int | Rep_count | Scene | Error [@@deriving compare, hash, sexp]
 
   let output = Scene
+  let pp fmt x = Sexp.pp fmt @@ [%sexp_of: t] x
 end
 
 module Op = struct
@@ -45,6 +46,9 @@ module Value = struct
   type t = Int of int | Rep_count of int | Scene of Scene2d.t | Error
   [@@deriving compare, hash, sexp]
 
+  let[@inline] is_scene = function Scene _ -> true | _ -> false
+  let[@inline] is_error = function Error -> true | _ -> false
+
   module Ctx = struct
     type t = { size : Scene2d.Dim.t }
 
@@ -56,8 +60,6 @@ module Value = struct
     | Int x -> Fmt.pf fmt "%d" x
     | Rep_count x -> Fmt.pf fmt "%d" x
     | Error -> Fmt.pf fmt "err"
-
-  let is_error = function Error -> true | _ -> false
 
   let eval_unmemoized (ctx : Ctx.t) (op : Op.t) args =
     let module S = Scene2d in

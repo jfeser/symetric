@@ -9,6 +9,7 @@ module List = struct
 
   let product l = List.reduce_exn l ~f:( * )
   let group_by m l = Hashtbl.of_alist_multi m l |> Hashtbl.to_alist
+  let take ~n l = List.take l n
 end
 
 module Iter = struct
@@ -47,8 +48,7 @@ module Iter = struct
 
   let%expect_test "" =
     print_s [%message (top_k (module Int) 3 Iter.(0 -- 10) : int t)];
-    [%expect
-      {| ("top_k (module Int) 3 (let open Iter in 0 -- 10)" (8 9 10)) |}]
+    [%expect {| ("top_k (module Int) 3 (let open Iter in 0 -- 10)" (8 9 10)) |}]
 
   let list_product iters f =
     let rec product acc = function
