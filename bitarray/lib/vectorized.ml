@@ -83,7 +83,7 @@ let xor = binary bitarray_xor
 let not_ = unary bitarray_not
 let hamming_weight a = bitarray_hamming_weight a.buf (vwords a)
 
-let hamming_distance a b =
+let[@inline] hamming_distance a b =
   assert (a.len = b.len);
   bitarray_hamming_distance a.buf b.buf (vwords a)
 
