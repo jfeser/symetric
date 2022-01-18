@@ -388,13 +388,7 @@ struct
         match synth#run with
         | Some p ->
             let v = Program.eval (Lang.Value.eval ctx.ectx) p in
-            if [%compare.equal: Lang.Value.t] v target then (
-              eprint_s
-                [%message
-                  (Synth.Search_state.n_states synth#get_search_state : int)
-                    (Synth.Search_state.n_transitions synth#get_search_state : int)];
-              Synth.Search_state.print_stats synth#get_search_state;
-              raise @@ Done (iters, p))
+            if [%compare.equal: Lang.Value.t] v target then raise @@ Done (iters, p)
             else Abs.Value.refine ctx target p
         | None -> failwith "synthesis failed"
       in

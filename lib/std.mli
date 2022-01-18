@@ -13,7 +13,7 @@ module Iter : sig
   val of_queue : 'a Queue.t -> 'a t
   val of_hashtbl : ('a, 'b) Base.Hashtbl.t -> ('a * 'b) t
   val list_product : 'a t list -> 'a list t
-  val top_k : cmp:('a -> 'a -> int) -> int -> 'a t -> 'a t
+  val top_k : (module Binary_heap.Ordered with type t = 'a) -> int -> 'a t -> 'a t
   val group_by : 'a Base.Hashtbl.Key.t -> ('a * 'b) t -> ('a * 'b list) t
   val min_floor : to_float:('a -> float) -> float -> 'a t -> 'a option
 end

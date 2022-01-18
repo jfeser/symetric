@@ -32,7 +32,7 @@ end
 
 module Make (Lang : Lang_intf) = struct
   open Lang
-  module Search_state = Search_state_all.Make (Lang)
+  module S = Search_state_all.Make (Lang)
   module Gen = Generate.Gen_list (Lang)
 
   exception Done of Op.t Program.t
@@ -73,25 +73,26 @@ module Make (Lang : Lang_intf) = struct
     object (self : 'self)
       val max_cost = ctx.max_cost
       val verbose = ctx.verbose
-      val search_state = Search_state.create ()
+      val search_state = S.create ()
       val eval_ctx = ctx.ectx
       val ops = ctx.ops
       method get_search_state = search_state
 
       method generate_states cost =
-        Gen.generate_states Search_state.search eval_ctx search_state ops cost
+        Gen.generate_states S.search eval_ctx search_state ops cost
 
       method insert_states states =
         List.iter states ~f:(fun (state, op, args) ->
-            Search_state.insert_class search_state state op args);
-        ctx.bank_size := Float.of_int @@ Search_state.length search_state
+            if not (S.mem_class search_state @@ S.Class.create state (Op.ret_type op))
+            then S.insert_class search_state state op args);
+        ctx.bank_size := Float.of_int @@ S.length search_state
 
       method check_states states =
         List.iter states ~f:(fun (s, op, args) ->
             if ctx.goal op s then
               let p =
-                Search_state.program_of_op_args_exn search_state (Int.ceil_log2 max_cost)
-                  op args
+                S.program_of_op_args_exn search_state (Int.ceil_log2 max_cost) op
+                @@ List.map2_exn args (Op.args_type op) ~f:S.Class.create
               in
               raise (Done p))
 
@@ -101,7 +102,7 @@ module Make (Lang : Lang_intf) = struct
         self#check_states new_states;
         if verbose then (
           Fmt.epr "Finished cost %d\n%!" cost;
-          Search_state.print_stats search_state)
+          S.print_stats search_state)
 
       method run =
         try

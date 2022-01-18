@@ -12,5 +12,4 @@ module type S = sig
 
   val eval : Ctx.t -> op -> t list -> t
   val dist : Ctx.t -> t -> t -> float
-  val embed : Ctx.t -> t list -> Torch.Tensor.t
 end

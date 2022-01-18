@@ -1,3 +1,7 @@
 (data_only_dirs etc bench cadtests doc learn notebooks)
 
 (vendored_dirs vendor)
+
+(env
+ (release
+  (ocamlopt_flags (:standard -O3 -noassert))))

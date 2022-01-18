@@ -1,7 +1,8 @@
 open Std
-open Cad_ext
-module S = Search_state_all.Make (Cad_ext)
-module Gen = Generate.Gen_iter (Cad_ext)
+module Lang = Cad_ext
+open Lang
+module S = Search_state_all.Make (Lang)
+module Gen = Generate.Gen_iter (Lang)
 
 module Params = struct
   type t = {
@@ -13,7 +14,7 @@ module Params = struct
     operators : Op.t list;
     max_cost : int;
     backward_pass_repeats : int;
-    verbose : bool;
+    verbosity : int;
     search_state : S.t;
     target_program : Op.t Program.t;
     validate : bool;
@@ -28,7 +29,7 @@ let[@inline] search_state () = (Set_once.get_exn params [%here]).Params.search_s
 let[@inline] group_threshold () = (Set_once.get_exn params [%here]).Params.group_threshold
 let[@inline] operators () = (Set_once.get_exn params [%here]).Params.operators
 let[@inline] max_cost () = (Set_once.get_exn params [%here]).Params.max_cost
-let[@inline] verbose () = (Set_once.get_exn params [%here]).Params.verbose
+let[@inline] verbosity () = (Set_once.get_exn params [%here]).Params.verbosity
 let[@inline] target_program () = (Set_once.get_exn params [%here]).Params.target_program
 let[@inline] validate () = (Set_once.get_exn params [%here]).Params.validate
 
@@ -67,91 +68,93 @@ let local_search p =
   |> Option.map ~f:(fun (_, p) -> p)
   |> Option.value ~default:p
 
-let rec group_states find_close add_class v edges =
-  let grouped = ref false in
+let group_states_vp type_ states =
+  let distance c c' = distance c.S.Class.value c'.S.Class.value in
+  let thresh = group_threshold () in
+  let create_vp = Vpt.create distance `Random in
   let search_state = search_state () in
-  (find_close v) (fun v' ->
-      S.insert_class_members search_state v' edges;
-      grouped := true);
-  if not !grouped then add_class v
+  let reference_vp = ref (create_vp @@ (S.classes ~type_ search_state |> Iter.to_list)) in
+  let reference = ref [] in
+  let groups = Hashtbl.create (module S.Class) in
 
-let insert_states_nonempty ~cost ~type_ states =
-  let search_state = search_state () and thresh = group_threshold () in
-  let insert key states =
-    List.iter states ~f:(fun (value, op, args) ->
-        S.insert ~key search_state ~cost value op args)
+  let find_close c f =
+    if List.length !reference > 100 then (
+      reference_vp := create_vp ((Iter.to_list @@ Vpt.iter !reference_vp) @ !reference);
+      print_s [%message (Vpt.length !reference_vp : int)];
+      reference := []);
+    Iter.append
+      (Vpt.neighbors distance c thresh !reference_vp)
+      (Iter.filter (fun c' -> distance c c' <=. thresh) (Iter.of_list !reference))
+      f
   in
+
+  List.iter states ~f:(fun (v, (e, es)) ->
+      let grouped = ref false in
+      (find_close v) (fun v' ->
+          Hashtbl.update groups v' ~f:(function
+            | None -> (e, es)
+            | Some (e', es') -> (e', (e :: es) @ es'));
+          grouped := true);
+      if not !grouped then (
+        reference := v :: !reference;
+        Hashtbl.add_exn groups ~key:v ~data:(e, es)));
+  groups
+
+let insert_states ~type_ states =
+  let search_state = search_state () in
 
   let states =
     List.map states ~f:(fun ((v, _, _) as x) -> (v, x))
     |> List.group_by (module Value)
-    (* If the state already exists in the space, insert its edges *)
+    |> List.map ~f:(fun (c, cs) ->
+           ( c,
+             List.map cs ~f:(fun (value, op, args) ->
+                 (value, op, List.map2_exn args (Op.args_type op) ~f:S.Class.create)) ))
     |> List.filter_map ~f:(function
-         | value, ((_, op, _) :: _ as states)
-           when S.mem search_state { value; type_ = Op.ret_type op } ->
-             insert value states;
-             None
-         | value, ((_, op, args) :: _ as states) ->
-             Some (value, ref false, op, args, states)
+         | v, (((_, op, _) as edge) :: _ as xs) ->
+             let class_ = S.Class.create v (Op.ret_type op) in
+             if S.mem_class search_state class_ then (
+               S.insert_class_members search_state class_ xs;
+               None)
+             else Some (class_, (edge, xs))
          | _, [] -> None)
-    |> List.permute
   in
 
-  let reference_list = S.states ~type_ search_state |> Iter.to_list in
+  let start_time = Time.now () in
 
-  let list_time = ref Time.Span.zero in
-  let[@inline] lookup_list v =
-    let start_time = Time.now () in
-    let ret = List.filter reference_list ~f:(fun v' -> Float.(distance v v' < thresh)) in
-    (list_time := Time.(Span.( + ) !list_time @@ diff (now ()) start_time));
-    ret
+  let rec best_groups ct best mgps =
+    if ct <= 0 then Option.value_exn mgps
+    else
+      let groups = group_states_vp type_ @@ List.permute states in
+      if Hashtbl.length groups < best then
+        best_groups (ct - 1) (Hashtbl.length groups) (Some groups)
+      else best_groups (ct - 1) best mgps
   in
+  let groups = best_groups 3 Int.max_value None in
 
-  let n_found_vp = ref 0 and n_found_list = ref 0 in
-  let (_ : _) =
-    List.fold states ~init:[] ~f:(fun kept (v, _, _, _, states) ->
-        let inserted_vp = ref false in
-        let n_insertions = ref 0 in
-        let close_existing = lookup_list v in
-        List.iter close_existing ~f:(fun v' ->
-            inserted_vp := true;
-            insert v' states;
-            incr n_insertions);
-        if !inserted_vp then incr n_found_vp;
+  Hashtbl.iteri groups ~f:(fun ~key ~data:((v, op, a), es) ->
+      if not @@ S.mem_class search_state key then (
+        if verbosity () > 3 then Fmt.pr "New group:\n%a\n" Value.pp v;
+        S.insert_class search_state v op @@ List.map ~f:S.Class.value a);
+      S.insert_class_members search_state key es);
 
-        let inserted_list = ref false in
-        List.iter kept ~f:(fun v' ->
-            if Float.(distance v v' < thresh) then (
-              inserted_list := true;
-              insert v' states));
-        if !inserted_list then incr n_found_list;
-
-        if !inserted_vp || !inserted_list then kept
-        else (
-          insert v states;
-          v :: kept))
-  in
-  ()
-
-let insert_states ~cost ~type_ = function
-  | [] -> ()
-  | states -> insert_states_nonempty ~cost ~type_ states
+  if verbosity () > 1 then
+    eprint_s [%message "group time" (Time.(diff (now ()) start_time) : Time.Span.t)]
 
 let fill_search_space () =
   let ectx = ectx ()
   and search_state = search_state ()
   and ops = operators ()
-  and max_cost = max_cost ()
-  and verbose = verbose () in
+  and max_cost = max_cost () in
 
-  if verbose then Fmt.epr "Goal:\n%a\n%!" Scene2d.pp (target ());
+  if verbosity () > 0 then Fmt.epr "Goal:\n%a\n%!" Scene2d.pp (target ());
 
   for cost = 1 to max_cost do
-    if verbose then Fmt.epr "Generating states of cost %d.\n%!" cost;
+    if verbosity () > 0 then Fmt.epr "Generating states of cost %d.\n%!" cost;
     Gen.generate_states S.search_iter ectx search_state ops cost
     |> Iter.map (fun ((_, op, _) as state) -> (Op.ret_type op, state))
     |> Iter.group_by (module Type)
-    |> Iter.iter (fun (type_, states) -> insert_states ~cost ~type_ states)
+    |> Iter.iter (fun (type_, states) -> insert_states ~type_ states)
   done
 
 let synthesize () =
@@ -166,31 +169,44 @@ let synthesize () =
     S.validate search_state (Value.eval ectx) distance (group_threshold ());
 
   let exception Done of Op.t Program.t in
-  if verbose () then Fmt.epr "Starting backwards pass.\n%!";
-  ignore (S.find_term search_state (target_program ()) : _);
+  if verbosity () > 0 then Fmt.epr "Starting backwards pass.\n%!";
+
+  (* let (Apply ((_, classes), _)) = S.find_term search_state (target_program ()) in *)
+  (* Fmt.epr "Solution classes:\n"; *)
+  (* List.iteri classes ~f:(fun i c -> *)
+  (*     Fmt.epr "Class %d (d = %f)\n%!" i (distance target c.value); *)
+  (*     let p = *)
+  (*       S.local_greedy Value.pp search_state (Int.ceil_log2 max_cost) (Value.eval ectx) *)
+  (*         (distance target) c *)
+  (*     in *)
+  (*     Option.iter *)
+  (*       ~f:(fun p -> Fmt.epr "%a\n" Value.pp @@ Program.eval (Value.eval ectx) p) *)
+  (*       p; *)
+  (*     eprint_s [%message (p : Op.t Program.t option)]); *)
   let ret =
     try
-      Iter.of_hashtbl search_state.values
-      |> Iter.map (fun ((key : S.Attr.t), data) ->
-             Iter.of_queue data
-             |> Iter.map (fun v ->
-                    (distance target v, S.TValue.{ value = v; type_ = key.type_ })))
-      |> Iter.concat
-      |> Iter.top_k ~cmp:(fun (d, _) (d', _) -> [%compare: float] d' d) 100
+      S.classes ~type_:Scene search_state
+      |> Iter.map (fun c -> (distance target @@ S.Class.value c, c))
       |> Iter.sort ~cmp:(fun (d, _) (d', _) -> [%compare: float] d d')
-      |> Iter.iteri (fun i (_, (tv : S.TValue.t)) ->
-             if verbose () then Fmt.epr "Searching candidate %d.\n%!" i;
+      |> Iter.iteri (fun i (d, (tv : S.Class.t)) ->
+             if verbosity () > 0 then Fmt.epr "Searching candidate %d (d=%f).\n%!" i d;
+             if verbosity () > 1 then Fmt.epr "%a\n%!" Value.pp tv.value;
 
              match tv.value with
              | Value.Scene _ ->
                  for _ = 1 to backward_pass_repeats do
-                   let p =
-                     S.local_greedy Value.pp search_state (Int.ceil_log2 max_cost)
-                       (Value.eval ectx) (distance target) tv
-                     |> Option.value_exn
-                   in
-                   let found_value = Program.eval (Value.eval ectx) @@ local_search p in
-                   if [%compare.equal: Value.t] target found_value then raise (Done p)
+                   S.local_greedy Value.pp search_state (Int.ceil_log2 max_cost)
+                     (Value.eval ectx) (distance target) tv
+                   |> Option.iter ~f:(fun p ->
+                          let p = local_search p in
+                          (* eprint_s [%message (p : Op.t Program.t)]; *)
+                          let found_value = Program.eval (Value.eval ectx) p in
+
+                          if verbosity () > 2 then
+                            Fmt.epr "Best (d=%f):\n%a\n%!" (distance target found_value)
+                              Value.pp found_value;
+                          if [%compare.equal: Value.t] target found_value then
+                            raise (Done p))
                  done
              | _ -> ());
       None
@@ -200,7 +216,7 @@ let synthesize () =
   ret
 
 let set_params ~scene_width ~scene_height ~group_threshold ~max_cost ~local_search_steps
-    ~backward_pass_repeats ~verbose ~validate ~scaling target =
+    ~backward_pass_repeats ~verbosity ~validate ~scaling target =
   let size = Scene2d.Dim.create ~xres:scene_width ~yres:scene_height ~scaling () in
   let ectx = Value.Ctx.create size in
   let target_value = Program.eval (Value.eval ectx) target in
@@ -223,7 +239,7 @@ let set_params ~scene_width ~scene_height ~group_threshold ~max_cost ~local_sear
         group_threshold;
         max_cost;
         backward_pass_repeats;
-        verbose;
+        verbosity;
         search_state = S.create ();
         target_program = target;
       }
@@ -280,11 +296,12 @@ let cmd =
         flag "-scene-height" (optional_with_default 20 int) ~doc:" scene height in pixels"
       and scaling =
         flag "-scaling" (optional_with_default 1 int) ~doc:" scene scaling factor"
-      and verbose = flag "-verbose" no_arg ~doc:" increase verbosity"
+      and verbosity =
+        flag "-verbosity" (optional_with_default 0 int) ~doc:" set verbosity"
       and validate = flag "-validate" no_arg ~doc:" turn on validation" in
       fun () ->
         set_params ~max_cost ~group_threshold ~local_search_steps ~scene_width
-          ~scene_height ~backward_pass_repeats ~verbose ~validate ~scaling
+          ~scene_height ~backward_pass_repeats ~verbosity ~validate ~scaling
         @@ Cad_ext.parse
         @@ Sexp.input_sexp In_channel.stdin;
         synthesize () |> print_output]

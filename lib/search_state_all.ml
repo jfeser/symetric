@@ -51,7 +51,8 @@ module Make (Lang : Lang_intf) = struct
     include T
     include Comparator.Make (T)
 
-    let create v t = { type_ = t; value = v }
+    let[@inline] create v t = { type_ = t; value = v }
+    let[@inline] value c = c.value
   end
 
   module Path0 = struct
@@ -190,9 +191,20 @@ module Make (Lang : Lang_intf) = struct
                  then Some v
                  else None)
         in
-        print_s [%message (op : Op.t) (List.length all_outputs : int)];
-
         Apply ((op, all_outputs), args)
+
+  let mem_class ctx class_ = H.mem ctx.paths class_
+
+  let classes ctx ?cost ~type_ =
+    match cost with
+    | Some cost ->
+        H.find ctx.classes @@ Attr.create cost type_
+        |> Option.map ~f:Iter.of_list
+        |> Option.value ~default:Iter.empty
+    | None ->
+        fun k ->
+          H.iteri ctx.classes ~f:(fun ~key ~data ->
+              if [%compare.equal: Type.t] key.type_ type_ then List.iter data ~f:k)
 
   let insert_class_members ctx class_ members =
     let new_paths =
@@ -218,7 +230,7 @@ module Make (Lang : Lang_intf) = struct
       1 + args_height
     in
 
-    let class_ = Class.{ type_ = Op.ret_type op; value } in
+    let class_ = Class.create value @@ Op.ret_type op in
     H.update ctx.classes (Attr.create cost class_.type_) ~f:(function
       | Some cs -> class_ :: cs
       | None -> [ class_ ]);
@@ -271,19 +283,17 @@ module Make (Lang : Lang_intf) = struct
     Hashtbl.iteri ss.paths ~f:(fun ~key ~data ->
         List.iter data.paths ~f:(fun path ->
             [%test_result: Value.t] ~message:"cached operator output" ~expect:path.value
-              (eval path.op path.args);
-            [%test_pred: Value.t * Value.t] ~message:"grouping is within threshold"
-              (fun (v, v') -> dist v v' <. thresh)
-              (key.value, path.value)))
+              (eval path.op @@ List.map ~f:Class.value path.args);
+            let d = dist key.value path.value in
+            if d >. thresh then
+              raise_s [%message "grouping not within threshold" (d : float)]))
 
   let rec local_greedy value_pp ss max_height eval dist (class_ : Class.t) =
     let open Option.Let_syntax in
     let all_paths = (H.find_exn ss.paths class_).paths in
-    assert (
-      List.exists all_paths ~f:(fun p -> [%compare.equal: Value.t] p.value class_.value));
     let eligible_paths =
       Iter.of_list all_paths
-      |> Iter.filter (fun (p : Path.t) -> p.height <= max_height)
+      |> Iter.filter (fun (p : Path.t) -> Path.height ss p <= max_height)
       |> Iter.to_list
     in
     let n_sample = max 1 (List.length eligible_paths / 2) in

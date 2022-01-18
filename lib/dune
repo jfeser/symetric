@@ -1,8 +1,7 @@
 (library
  (name staged_synth)
- (libraries core core_kernel.hash_heap core_kernel.pairing_heap
-   core.bigstring_unix combinat fmt tree_diff iter oseq vpt logs gen owl
-   yojson ocamlgraph torch bitarray)
+ (libraries core core.bigstring_unix core_kernel.pairing_heap combinat fmt tree_diff iter oseq vpt logs gen owl
+   yojson ocamlgraph bitarray bheap)
  (preprocess
   (pps ppx_jane))
  (inline_tests)

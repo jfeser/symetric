@@ -26,24 +26,29 @@ module Iter = struct
     let l = to_list iter |> List.sort ~compare:C.comparator.compare in
     Core.Set.of_list m l
 
-  let top_k ~cmp k l f =
+  let top_k (type t) (module M : Binary_heap.Ordered with type t = t) k l f =
+    let module OM = struct
+      type t = M.t option
+
+      let compare = Option.compare M.compare
+    end in
+    let module H = Binary_heap.Make (OM) in
     assert (k >= 0);
     if k > 0 then (
-      let mins = Pairing_heap.create ~min_size:k ~cmp () in
+      let mins = H.create ~dummy:None k in
       l (fun x ->
-          if
-            Pairing_heap.length mins < k
-            || Option.is_some
-               @@ Pairing_heap.pop_if mins (fun x' ->
-                      let c = cmp x' x in
-                      c < 0 || (c = 0 && Random.bool ()))
-          then Pairing_heap.add mins x);
-      Pairing_heap.iter ~f mins)
+          if H.length mins < k then H.add mins (Some x)
+          else
+            let c = M.compare (Option.value_exn @@ H.minimum mins) x in
+            if c < 0 || (c = 0 && Random.bool ()) then (
+              ignore (H.pop_minimum mins : t option);
+              H.add mins (Some x)));
+      H.iter (fun x -> f @@ Option.value_exn x) mins)
 
   let%expect_test "" =
-    print_s [%message (top_k ~cmp:[%compare: int] 3 Iter.(0 -- 10) : int t)];
+    print_s [%message (top_k (module Int) 3 Iter.(0 -- 10) : int t)];
     [%expect
-      {| ("top_k ~cmp:([%compare : int]) 3 (let open Iter in 0 -- 10)" (8 10 9)) |}]
+      {| ("top_k (module Int) 3 (let open Iter in 0 -- 10)" (8 9 10)) |}]
 
   let list_product iters f =
     let rec product acc = function

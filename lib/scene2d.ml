@@ -83,10 +83,15 @@ let get x = Bitarray.get (pixels x)
 let[@inline] hamming c c' = Bitarray.hamming_distance (pixels c) (pixels c')
 let is_empty s = Bitarray.is_empty (pixels s)
 
-let jaccard c c' =
+let[@inline] jaccard c c' =
   let h = hamming c c' in
   let l = Bitarray.length (pixels c) in
   Float.(of_int h / of_int l)
+
+let cosine c c' =
+  let n = Bitarray.hamming_weight (Bitarray.and_ (pixels c) (pixels c')) in
+  let d = Bitarray.hamming_weight (pixels c) * Bitarray.hamming_weight (pixels c') in
+  if d = 0 then 0. else Float.(of_int n / of_int d)
 
 let circle (dim : Dim.t) center_x center_y radius =
   let center_x = center_x * dim.scaling
@@ -94,7 +99,7 @@ let circle (dim : Dim.t) center_x center_y radius =
   and radius = radius * dim.scaling in
   init dim ~f:(fun _ x y ->
       ((x - center_x) * (x - center_x)) + ((y - center_y) * (y - center_y))
-      <= radius * radius)
+      < radius * radius)
 
 let rect (dim : Dim.t) lx ly hx hy =
   let lx = lx * dim.scaling
@@ -120,5 +125,14 @@ let repeat s dx dy ct =
   let dx = dx * dim.scaling and dy = dy * dim.scaling in
   let xres = Dim.scaled_xres dim and yres = Dim.scaled_yres dim in
   of_bitarray s.dim @@ Bitarray.replicate ~w:xres ~h:yres (pixels s) ~dx ~dy ~ct
+
+let translate s dx dy =
+  let dim = s.dim in
+  let dx = dx * dim.scaling and dy = dy * dim.scaling in
+  init dim ~f:(fun _ x y ->
+      let x' = x - dx and y' = y - dy in
+      if x' >= 0 && x' < dim.xres && y' >= 0 && y' < dim.yres then
+        Bitarray.get (pixels s) @@ Dim.offset dim x' y'
+      else false)
 
 let ( = ) = [%compare.equal: t]
