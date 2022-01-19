@@ -96,9 +96,9 @@ let local_search p =
               );
           ]
       | _ -> [])
-    (Program.eval (Value.eval ectx))
+    (Program.eval (Value.eval_memoized ectx))
     p
-  |> Iter.map (fun p -> (distance target (Program.eval (Value.eval ectx) p), p))
+  |> Iter.map (fun p -> (distance target (Program.eval (Value.eval_memoized ectx) p), p))
   |> Iter.take steps
   |> Iter.min_floor ~to_float:(fun (d, _) -> d) 0.0
   |> Option.map ~f:(fun (_, p) -> p)
@@ -177,7 +177,7 @@ let insert_states ~type_ states =
         distance (Scene (target ())) (S.Class.value c))
     |> List.stats
   in
-  print_s [%message "all states" (min : float) (max : float) (mean : float)];
+  eprint_s [%message "all states" (min : float) (max : float) (mean : float)];
 
   if verbosity () > 0 then
     Fmt.epr "(%d, %d distinct, %d unseen) states of type %a.\n%!" (List.length states)
@@ -197,7 +197,7 @@ let insert_states ~type_ states =
     let filtered_states = List.take ~n:ct new_distinct_states in
     let groups = group_states_vp type_ @@ List.permute filtered_states in
     let n_groups = List.length groups in
-    print_s [%message (ct : int) (n_groups : int)];
+    eprint_s [%message (ct : int) (n_groups : int)];
     if n_groups > target_groups_max then adaptive_group 0 (ct / 2)
     else if ct >= n_states || n_groups >= target_groups_min then (
       if verbosity () > 1 then Fmt.epr "grouping states %d\n%!" ct;
@@ -231,7 +231,7 @@ let insert_states ~type_ states =
   in
   let retained_groups = List.take ~n:target_groups group_distances in
   let min, max, mean = List.map retained_groups ~f:(fun (d, _) -> d) |> List.stats in
-  print_s [%message "retained groups" (min : float) (max : float) (mean : float)];
+  eprint_s [%message "retained groups" (min : float) (max : float) (mean : float)];
 
   let retained_groups = List.map ~f:(fun (_, g) -> g) retained_groups in
 
@@ -268,8 +268,8 @@ let backwards_pass class_ =
   match S.Class.value class_ with
   | Value.Scene _ ->
       Iter.forever (fun () ->
-          S.local_greedy Value.pp search_state (Int.ceil_log2 max_cost) (Value.eval ectx)
-            (distance target) class_
+          S.local_greedy Value.pp search_state (Int.ceil_log2 max_cost)
+            (Value.eval_memoized ectx) (distance target) class_
           |> Option.map ~f:local_search)
       |> Iter.filter_map Fun.id
   | _ -> Iter.empty
@@ -380,12 +380,10 @@ let cmd =
   Command.basic ~summary:"Solve CAD problems with metric synthesis."
     [%map_open
       let max_cost =
-        flag "-max-cost"
-          (optional_with_default 22 int)
-          ~doc:" the maximum size of program to evaluate"
+        flag "-max-cost" (required int) ~doc:" the maximum size of program to evaluate"
       and group_threshold =
         flag "-group-threshold"
-          (optional_with_default 0.2 float)
+          (optional_with_default 0.1 float)
           ~doc:"distance threshold to trigger grouping"
       and n_groups =
         flag "-n-groups"
@@ -393,16 +391,16 @@ let cmd =
           ~doc:" number of groups to retain"
       and local_search_steps =
         flag "-local-search-steps"
-          (optional_with_default 10_000 int)
+          (optional_with_default 1_000 int)
           ~doc:" number of steps to run local search"
       and backward_pass_repeats =
         flag "-backward-pass-repeats"
           (optional_with_default 10 int)
           ~doc:" number of times to run backward pass"
       and scene_width =
-        flag "-scene-width" (optional_with_default 12 int) ~doc:" scene width in pixels"
+        flag "-scene-width" (optional_with_default 16 int) ~doc:" scene width in pixels"
       and scene_height =
-        flag "-scene-height" (optional_with_default 20 int) ~doc:" scene height in pixels"
+        flag "-scene-height" (optional_with_default 16 int) ~doc:" scene height in pixels"
       and scaling =
         flag "-scaling" (optional_with_default 1 int) ~doc:" scene scaling factor"
       and verbosity =
