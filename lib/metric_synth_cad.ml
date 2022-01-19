@@ -9,7 +9,7 @@ module Params = struct
     size : Scene2d.Dim.t;
     ectx : Value.Ctx.t;
     local_search_steps : int;
-    target : Scene2d.t;
+    target : Value.t;
     group_threshold : float;
     operators : Op.t list;
     max_cost : int;
@@ -44,14 +44,11 @@ let[@inline] local_search_steps () =
   (Set_once.get_exn params [%here]).Params.local_search_steps
 
 let runtime = ref Time.Span.zero
-
-let distance (v : Value.t) (v' : Value.t) =
-  match (v, v') with
-  | Scene x, Scene x' -> Scene2d.jaccard x x'
-  | v, v' -> if [%compare.equal: Value.t] v v' then 0.0 else Float.infinity
+let distance = Value.distance
+let target_distance v = distance (target ()) v
 
 let local_search p =
-  let target = Value.Scene (target ())
+  let target = target ()
   and size = size ()
   and steps = local_search_steps ()
   and ectx = ectx () in
@@ -98,7 +95,7 @@ let local_search p =
       | _ -> [])
     (Program.eval (Value.eval_memoized ectx))
     p
-  |> Iter.map (fun p -> (distance target (Program.eval (Value.eval_memoized ectx) p), p))
+  |> Iter.map (fun p -> (target_distance (Program.eval (Value.eval_memoized ectx) p), p))
   |> Iter.take steps
   |> Iter.min_floor ~to_float:(fun (d, _) -> d) 0.0
   |> Option.map ~f:(fun (_, p) -> p)
@@ -173,8 +170,7 @@ let insert_states ~type_ states =
   in
 
   let min, max, mean =
-    List.map new_distinct_states ~f:(fun (c, _) ->
-        distance (Scene (target ())) (S.Class.value c))
+    List.map new_distinct_states ~f:(fun (c, _) -> target_distance (S.Class.value c))
     |> List.stats
   in
   eprint_s [%message "all states" (min : float) (max : float) (mean : float)];
@@ -187,7 +183,7 @@ let insert_states ~type_ states =
 
   let new_distinct_states =
     List.map new_distinct_states ~f:(fun ((c, _) as g) ->
-        (distance (Scene (target ())) (S.Class.value c), g))
+        (target_distance (S.Class.value c), g))
     |> List.sort ~compare:[%compare: float * _]
     |> List.map ~f:(fun (_, g) -> g)
   in
@@ -225,8 +221,7 @@ let insert_states ~type_ states =
   prev_group_sample := group_sample;
 
   let group_distances =
-    List.map groups ~f:(fun ((c, _) as g) ->
-        (distance (S.Class.value c) (Scene (target ())), g))
+    List.map groups ~f:(fun ((c, _) as g) -> (target_distance (S.Class.value c), g))
     |> List.sort ~compare:[%compare: float * _]
   in
   let retained_groups = List.take ~n:target_groups group_distances in
@@ -250,7 +245,7 @@ let fill_search_space () =
   and ops = operators ()
   and max_cost = max_cost () in
 
-  if verbosity () > 0 then Fmt.epr "Goal:\n%a\n%!" Scene2d.pp (target ());
+  if verbosity () > 0 then Fmt.epr "Goal:\n%a\n%!" Value.pp (target ());
 
   for cost = 1 to max_cost do
     if verbosity () > 0 then Fmt.epr "Generating states of cost %d.\n%!" cost;
@@ -261,15 +256,12 @@ let fill_search_space () =
   done
 
 let backwards_pass class_ =
-  let search_state = search_state ()
-  and max_cost = max_cost ()
-  and ectx = ectx ()
-  and target = Value.Scene (target ()) in
+  let search_state = search_state () and max_cost = max_cost () and ectx = ectx () in
   match S.Class.value class_ with
   | Value.Scene _ ->
       Iter.forever (fun () ->
           S.local_greedy Value.pp search_state (Int.ceil_log2 max_cost)
-            (Value.eval_memoized ectx) (distance target) class_
+            (Value.eval_memoized ectx) target_distance class_
           |> Option.map ~f:local_search)
       |> Iter.filter_map Fun.id
   | _ -> Iter.empty
@@ -277,7 +269,7 @@ let backwards_pass class_ =
 let synthesize () =
   let start_time = Time.now () in
   let search_state = search_state ()
-  and target = Value.Scene (target ())
+  and target = target ()
   and ectx = ectx ()
   and backward_pass_repeats = backward_pass_repeats () in
   fill_search_space ();
@@ -290,7 +282,7 @@ let synthesize () =
   let ret =
     try
       S.classes ~type_:Scene search_state
-      |> Iter.map (fun c -> (distance target @@ S.Class.value c, c))
+      |> Iter.map (fun c -> (target_distance @@ S.Class.value c, c))
       |> Iter.sort ~cmp:(fun (d, _) (d', _) -> [%compare: float] d d')
       |> Iter.iteri (fun i (d, (class_ : S.Class.t)) ->
              if verbosity () > 0 then Fmt.epr "Searching candidate %d (d=%f).\n%!" i d;
@@ -298,12 +290,12 @@ let synthesize () =
              backwards_pass class_
              |> Iter.take backward_pass_repeats
              |> Iter.min_floor
-                  ~to_float:(fun p -> distance target @@ Program.eval (Value.eval ectx) p)
+                  ~to_float:(fun p -> target_distance @@ Program.eval (Value.eval ectx) p)
                   0.0
              |> Option.iter ~f:(fun p ->
                     let found_value = Program.eval (Value.eval ectx) p in
                     if verbosity () > 1 then (
-                      Fmt.epr "Best (d=%f):\n%a\n%!" (distance target found_value)
+                      Fmt.epr "Best (d=%f):\n%a\n%!" (target_distance found_value)
                         Value.pp found_value;
                       eprint_s [%message (p : Op.t Program.t)]);
                     if [%compare.equal: Value.t] target found_value then raise (Done p)));
@@ -314,18 +306,17 @@ let synthesize () =
   ret
 
 let set_params ~scene_width ~scene_height ~group_threshold ~max_cost ~local_search_steps
-    ~backward_pass_repeats ~verbosity ~validate ~scaling ~n_groups target =
+    ~backward_pass_repeats ~verbosity ~validate ~scaling ~n_groups target_prog =
   let size = Scene2d.Dim.create ~xres:scene_width ~yres:scene_height ~scaling () in
   let ectx = Value.Ctx.create size in
-  let target_value = Program.eval (Value.eval ectx) target in
-  let target_scene = match target_value with Scene s -> s | _ -> assert false in
+  let target = Program.eval (Value.eval ectx) target_prog in
   let operators =
     Op.[ Union; Circle; Rect; Repl; Sub ]
     @ (List.range 0 (max size.xres size.yres) |> List.map ~f:(fun i -> Op.Int i))
     @ (List.range 2 5 |> List.map ~f:(fun i -> Op.Rep_count i))
   in
 
-  List.find (Program.ops target) ~f:(fun op ->
+  List.find (Program.ops target_prog) ~f:(fun op ->
       not @@ List.mem ~equal:[%compare.equal: Op.t] operators op)
   |> Option.iter ~f:(fun op ->
          raise_s [%message "program not in search space" (op : Op.t)]);
@@ -337,14 +328,14 @@ let set_params ~scene_width ~scene_height ~group_threshold ~max_cost ~local_sear
         local_search_steps;
         size;
         ectx;
-        target = target_scene;
+        target;
         operators;
         group_threshold;
         max_cost;
         backward_pass_repeats;
         verbosity;
         search_state = S.create ();
-        target_program = target;
+        target_program = target_prog;
         target_groups = n_groups;
       }
 

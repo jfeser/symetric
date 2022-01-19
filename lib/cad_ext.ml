@@ -120,6 +120,11 @@ module Value = struct
     find_or_eval
 
   let eval = if memoize then eval_memoized else eval_unmemoized
+
+  let distance v v' =
+    match (v, v') with
+    | Scene x, Scene x' -> Scene2d.jaccard x x'
+    | v, v' -> if [%compare.equal: t] v v' then 0.0 else Float.infinity
 end
 
 let rec parse =
