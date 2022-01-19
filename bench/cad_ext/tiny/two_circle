@@ -1,1 +1,1 @@
-(union (circle 5 5 4) (circle 5 10 6))
+(union (circle 6 9 6) (circle 12 3 3))

@@ -1,29 +1,5 @@
 typedef int32 word_t;
 
-export void bitarray_and(uniform word_t a[], uniform word_t b[], uniform word_t c[], uniform int len) {
-  foreach (i = 0 ... len) {
-    c[i] = a[i] & b[i];
-  }
-}
-
-export void bitarray_or(uniform word_t a[], uniform word_t b[], uniform word_t c[], uniform int len) {
-  foreach (i = 0 ... len) {
-    c[i] = a[i] | b[i];
-  }
-}
-
-export void bitarray_xor(uniform word_t a[], uniform word_t b[], uniform word_t c[], uniform int len) {
-  foreach (i = 0 ... len) {
-    c[i] = a[i] ^ b[i];
-  }
-}
-
-export void bitarray_not(uniform word_t a[], uniform word_t b[], uniform int len) {
-  foreach (i = 0 ... len) {
-    b[i] = ~a[i];
-  }
-}
-
 export uniform bool bitarray_any(uniform word_t a[], uniform int len) {
   bool part = false;
   foreach (i = 0 ... len) {
@@ -36,14 +12,6 @@ export uniform int bitarray_hamming_weight(uniform word_t a[], uniform int len) 
   uniform int part = 0;
   for (uniform int i = 0; i < len; i++) {
     part += popcnt(a[i]);
-  }
-  return part;
-}
-
-export uniform int bitarray_hamming_distance(uniform word_t a[], uniform word_t b[], uniform int len) {
-  uniform int part = 0;
-  for (uniform int i = 0; i < len; i++) {
-    part += popcnt((a[i] ^ b[i]));
   }
   return part;
 }

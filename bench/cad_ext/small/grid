@@ -1,1 +1,1 @@
-(repl (repl (sub (circle 2 2 2) (circle 2 2 1)) 4 0 8) 0 4 8)
+(repl (repl (sub (circle 2 2 2) (circle 2 2 1)) 4 0 4) 0 4 4)

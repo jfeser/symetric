@@ -9,7 +9,6 @@ let[@inline] length x = x.len
 let bits_per_word = 8
 let bits_per_vword = 32
 let[@inline] nwords len = ceil_div len bits_per_vword * (bits_per_vword / bits_per_word)
-let[@inline] vwords t = String.length t.buf / (bits_per_vword / bits_per_word)
 let[@inline] create_buf len = Bytes.make (nwords len) '\x00'
 
 let create len init =
@@ -18,31 +17,28 @@ let create len init =
   let buf = String.make nwords init_word in
   { buf; len }
 
-external bitarray_and : string -> string -> bytes -> (int[@untagged]) -> unit
-  = "" "bitarray_and_stub"
+let random len =
+  let nwords = nwords len in
+  let buf = String.init nwords ~f:(fun _ -> Random.char ()) in
+  { buf; len }
+
+external bitarray_and : string -> string -> bytes -> unit = "" "bitarray_and_stub"
   [@@noalloc]
 
-external bitarray_or : string -> string -> bytes -> (int[@untagged]) -> unit
-  = "" "bitarray_or_stub"
+external bitarray_or : string -> string -> bytes -> unit = "" "bitarray_or_stub"
   [@@noalloc]
 
-external bitarray_xor : string -> string -> bytes -> (int[@untagged]) -> unit
-  = "" "bitarray_xor_stub"
+external bitarray_xor : string -> string -> bytes -> unit = "" "bitarray_xor_stub"
   [@@noalloc]
 
-external bitarray_any : string -> (int[@untagged]) -> bool = "" "bitarray_any_stub"
-  [@@noalloc]
+external bitarray_any : string -> bool = "" "bitarray_any_stub" [@@noalloc]
+external bitarray_not : string -> bytes -> unit = "" "bitarray_not_stub" [@@noalloc]
 
-external bitarray_not : string -> bytes -> (int[@untagged]) -> unit
-  = "" "bitarray_not_stub"
-  [@@noalloc]
-
-external bitarray_hamming_weight : string -> (int[@untagged]) -> (int[@untagged])
+external bitarray_hamming_weight : string -> (int[@untagged])
   = "" "bitarray_hamming_weight_stub"
   [@@noalloc]
 
-external bitarray_hamming_distance :
-  string -> string -> (int[@untagged]) -> (int[@untagged])
+external bitarray_hamming_distance : string -> string -> (int[@untagged])
   = "" "bitarray_hamming_distance_stub"
   [@@noalloc]
 
@@ -54,40 +50,38 @@ external bitarray_replicate :
   (int[@untagged]) ->
   (int[@untagged]) ->
   bytes ->
-  (int[@untagged]) ->
   unit = "" "bitarray_replicate_stub"
   [@@noalloc]
 
-external bitarray_hash : string -> string -> (int[@untagged]) -> (int[@untagged])
-  = "" "bitarray_hash_stub"
+external bitarray_hash : string -> string -> (int[@untagged]) = "" "bitarray_hash_stub"
   [@@noalloc]
 
 let[@inline] binary op a b =
   assert (a.len = b.len);
   let buf = create_buf a.len in
-  op a.buf b.buf buf (vwords a);
-  { buf = Bytes.unsafe_to_string ~no_mutation_while_string_reachable:buf; len = a.len }
+  op a.buf b.buf buf;
+  { a with buf = Bytes.unsafe_to_string ~no_mutation_while_string_reachable:buf }
 
-let unary op a =
+let[@inline] unary op a =
   let buf = create_buf a.len in
-  op a.buf buf (vwords a);
-  { buf = Bytes.unsafe_to_string ~no_mutation_while_string_reachable:buf; len = a.len }
+  op a.buf buf;
+  { a with buf = Bytes.unsafe_to_string ~no_mutation_while_string_reachable:buf }
 
 let vec_hash x =
   assert (String.length x.buf <= 128);
-  bitarray_hash x.buf hash_seed (vwords x)
+  bitarray_hash x.buf hash_seed
 
 let and_ = binary bitarray_and
 let or_ = binary bitarray_or
 let xor = binary bitarray_xor
 let not_ = unary bitarray_not
-let hamming_weight a = bitarray_hamming_weight a.buf (vwords a)
+let hamming_weight a = bitarray_hamming_weight a.buf
 
 let[@inline] hamming_distance a b =
   assert (a.len = b.len);
-  bitarray_hamming_distance a.buf b.buf (vwords a)
+  bitarray_hamming_distance a.buf b.buf
 
-let any a = bitarray_any a.buf (vwords a)
+let any a = bitarray_any a.buf
 let none a = not (any a)
 let is_empty = none
 let[@inline] read_bit w b = (Char.to_int w lsr b) land 1 > 0
@@ -156,7 +150,7 @@ let weighted_jaccard ?(pos_weight = 0.5) a b =
 let replicate ~w ~h t ~dx ~dy ~ct =
   assert (w >= 0 && h >= 0 && t.len = w * h && ct >= 0);
   let buf = create_buf t.len in
-  bitarray_replicate t.buf dx dy ct w h buf (vwords t);
+  bitarray_replicate t.buf dx dy ct w h buf;
   { buf = Bytes.unsafe_to_string ~no_mutation_while_string_reachable:buf; len = t.len }
 
 let init_bitmap = Shared.init_bitmap init_fold

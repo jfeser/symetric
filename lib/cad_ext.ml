@@ -67,7 +67,13 @@ module Value = struct
     match (op, args) with
     | Int x, [] -> Int x
     | Rep_count x, [] -> Rep_count x
-    | Circle, [ Int _; Int _; Int radius ] when radius = 0 -> Error
+    | Circle, [ Int x; Int y; Int radius ]
+      when x - radius < 0
+           || x + radius >= size.xres
+           || y - radius < 0
+           || y + radius >= size.yres
+           || radius = 0 ->
+        Error
     | Circle, [ Int center_x; Int center_y; Int radius ] ->
         Scene (S.circle size center_x center_y radius)
     | Rect, [ Int lo_left_x; Int lo_left_y; Int hi_right_x; Int hi_right_y ]

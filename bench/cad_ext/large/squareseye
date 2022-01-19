@@ -1,3 +1,3 @@
-(union (sub (rect 0 0 11 19) (rect 1 1 10 18))
-       (union (sub (rect 2 2 9 17) (rect 3 3 8 16))
-              (sub (rect 4 4 7 15) (rect 5 5 6 14))))
+(union (sub (rect 0 0 11 15) (rect 1 1 10 14))
+       (union (sub (rect 2 2 9 13) (rect 3 3 8 12))
+              (sub (rect 4 4 7 11) (rect 5 5 6 10))))

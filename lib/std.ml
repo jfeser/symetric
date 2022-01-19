@@ -10,6 +10,14 @@ module List = struct
   let product l = List.reduce_exn l ~f:( * )
   let group_by m l = Hashtbl.of_alist_multi m l |> Hashtbl.to_alist
   let take ~n l = List.take l n
+
+  let stats l =
+    let min, max, num, dem =
+      List.fold_left l ~init:(Float.max_value, Float.min_value, 0.0, 0.0)
+        ~f:(fun (min, max, num, dem) x ->
+          (Float.min min x, Float.max max x, num +. x, dem +. 1.0))
+    in
+    (min, max, num /. dem)
 end
 
 module Iter = struct
