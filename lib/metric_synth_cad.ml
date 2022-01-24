@@ -205,14 +205,6 @@ let insert_states ~type_ states =
     else adaptive_group n_groups (ct + target_groups)
   in
 
-  let rec best_groups ct best mgps =
-    if ct <= 0 then Option.value_exn @@ mgps
-    else
-      let groups = group_states_vp type_ @@ List.permute new_distinct_states in
-      let n_groups = List.length groups in
-      if n_groups < best then best_groups (ct - 1) n_groups (Some groups)
-      else best_groups (ct - 1) best mgps
-  in
   let (groups, group_sample), group_time =
     Synth_utils.timed (fun () ->
         adaptive_group 0
@@ -345,7 +337,7 @@ let print_output m_prog =
     |> Option.value ~default:Float.nan
   in
   let program_json =
-    Option.map m_prog ~f:(fun p -> `String (Sexp.to_string @@ Cad_ext.serialize p))
+    Option.map m_prog ~f:(fun p -> `String (Sexp.to_string @@ Lang.serialize p))
     |> Option.value ~default:`Null
   in
   let open Yojson in
@@ -400,6 +392,6 @@ let cmd =
       fun () ->
         set_params ~max_cost ~group_threshold ~local_search_steps ~scene_width
           ~scene_height ~backward_pass_repeats ~verbosity ~validate ~scaling ~n_groups
-        @@ Cad_ext.parse
+        @@ Lang.parse
         @@ Sexp.input_sexp In_channel.stdin;
         synthesize () |> print_output]

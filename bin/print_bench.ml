@@ -1,6 +1,6 @@
 open Core
 open Staged_synth
-open Cad_ext
+open Cad_rel
 
 let () =
   let open Command.Let_syntax in

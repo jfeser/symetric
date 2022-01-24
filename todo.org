@@ -1,5 +1,51 @@
-* TODO Collect 10 benchmarks of different sizes
-* TODO Try using top-k instead of range queries
-** TODO Figure out if vp-trees are needed at all
-* TODO Add switch for overlap & edge filtering
-* 
+* DONE Collect 10 benchmarks of different sizes
+* DONE Try using top-k instead of range queries
+** DONE Figure out if vp-trees are needed at all
+* DONE Add switch for overlap & edge filtering
+* TODO Clarify constraints on the algorithm
+** Background
+ I've been thinking about the algorithm, and it seems to me that it can't
+possibly work in general. 
+
+Right now, the search space that we generate does not depend on the
+input example. We generate programs fron the CAD grammar and group them
+together based on their behavioral similarity _to each other_ rather
+than their similarity to the original image. The reasoning is that a CAD
+scene will be composed of many primitives that have low similarity to
+the final image. We want to collect a diverse set of primitives, rather
+than choosing the primitives that are most similar to the image that we
+want to construct.
+
+Consider a smiley face made up of a large circle with two smaller
+circles subtracted away (for eyes). The small circles are not similar to
+the final image, but they are a vital part of it. Simply collecting
+primitives that are most similar to the final image would give us a
+collection of large circles, and we would not have the components that
+we need.
+
+We assume that the repeated grouping reduces the size of the APVG enough
+for it to be tractable to construct. Furthermore, we assume that once
+the APVG is built, we can use similarity to guide our search through
+it. This means that the APVG must be both significantly smaller than the
+PVG and it must contain at least one group g that is close \delta(g, p)
+<< 0.5 to every CAD program p (up to our bound) [1].
+
+These two assumptions are incompatible. Either the search space is
+intractably large, or our goal is often distant from every group.
+
+
+
+However, the search space doesn't depend on the input image. Therefore,
+the search space must contain a group that is similar to _every_ CAD
+program (up to the bound that we used). Formally, when the search space S
+is built, for every CAD program P (under the bound), there is some group
+G in S such that \delta(P, G) < \epsilon. 
+
+Bottom-up enumerative synthesis suffers from this issue as well
+
+
+
+[1] The expected Jaccard distance between two random vectors is 0.5.
+
+
+

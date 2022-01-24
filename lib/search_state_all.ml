@@ -160,11 +160,11 @@ module Make (Lang : Lang_intf) = struct
     | Apply (op, []) ->
         let all_values =
           H.to_alist ctx.paths
-          |> List.filter_map ~f:(fun (v, paths) ->
+          |> List.filter_map ~f:(fun (v, (paths : paths)) ->
                  if
                    List.exists
                      ~f:(function
-                       | { op = op'; args = []; _ } -> [%compare.equal: Op.t] op op'
+                       | Path0.{ op = op'; args = []; _ } -> [%compare.equal: Op.t] op op'
                        | _ -> false)
                      paths.paths
                  then Some v
@@ -180,7 +180,7 @@ module Make (Lang : Lang_intf) = struct
         in
         let all_outputs =
           H.to_alist ctx.paths
-          |> List.filter_map ~f:(fun (v, paths) ->
+          |> List.filter_map ~f:(fun (v, (paths : paths)) ->
                  if
                    List.exists
                      ~f:(function
@@ -243,9 +243,9 @@ module Make (Lang : Lang_intf) = struct
 
   let print_stats ctx =
     H.to_alist ctx.classes
-    |> List.sort ~compare:(fun (a, _) (a', _) ->
+    |> List.sort ~compare:(fun ((a : Attr.t), _) (a', _) ->
            [%compare: int * Type.t] (a.cost, a.type_) (a'.cost, a'.type_))
-    |> List.iter ~f:(fun (attr, classes) ->
+    |> List.iter ~f:(fun ((attr : Attr.t), classes) ->
            eprint_s
              [%message
                (attr.cost : int) (attr.type_ : Type.t) (List.length classes : int)]);
@@ -265,7 +265,7 @@ module Make (Lang : Lang_intf) = struct
   let rec random_program_exn ctx max_cost class_ =
     let p =
       (H.find_exn ctx.paths class_).paths
-      |> List.filter ~f:(fun p -> p.cost <= max_cost)
+      |> List.filter ~f:(fun (p : Path0.t) -> p.cost <= max_cost)
       |> List.random_element_exn
     in
     Apply (p.op, List.map p.args ~f:(random_program_exn ctx (Path.cost ctx p - 1)))
