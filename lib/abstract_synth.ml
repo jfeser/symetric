@@ -6,12 +6,14 @@ module type Lang_intf = sig
   module Type : sig
     type t [@@deriving compare, hash, sexp]
 
+    val default : t
     val output : t
   end
 
   module Op : sig
     type t [@@deriving compare, hash, sexp]
 
+    val default : t
     val pp : t Fmt.t
     val cost : t -> int
     val arity : t -> int
@@ -27,6 +29,7 @@ module type Lang_intf = sig
       type t
     end
 
+    val default : t
     val eval : Ctx.t -> Op.t -> t list -> t
     val is_error : t -> bool
   end
@@ -75,6 +78,7 @@ struct
     module T = struct
       type t = Bottom | Preds of Set.M(Pred).t [@@deriving compare, equal, hash, sexp]
 
+      let default = Bottom
       let pp = Fmt.nop
       let true_ = Preds (Set.empty (module Pred))
 
@@ -204,12 +208,14 @@ struct
           type t = Args | Pred of int [@@deriving compare, hash, sexp]
 
           let output = Args
+          let default = Args
         end
 
         module Op = struct
           type t = Args | And of int | Pred of int * [ Pred.t | `True ]
           [@@deriving compare, hash, sexp]
 
+          let default = Args
           let pp = Fmt.nop
           let arity = function Args -> n_args | And _ -> 2 | Pred _ -> 0
 
@@ -235,6 +241,8 @@ struct
           type nonrec t = Args of t list | Pred of t [@@deriving compare, hash, sexp]
 
           module Ctx = Unit
+
+          let default = Pred Bottom
 
           let eval _ op args =
             match (op, args) with

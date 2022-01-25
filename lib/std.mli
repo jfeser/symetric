@@ -12,6 +12,7 @@ module Iter : sig
   val to_set : ('a, 'w) Base.Set.comparator -> 'a t -> ('a, 'w) Base.Set.t
   val of_queue : 'a Queue.t -> 'a t
   val of_hashtbl : ('a, 'b) Base.Hashtbl.t -> ('a * 'b) t
+  val of_sek_e : 'a Sek.E.t -> 'a t
   val list_product : 'a t list -> 'a list t
   val top_k : (module Binary_heap.Ordered with type t = 'a) -> int -> 'a t -> 'a t
   val group_by : 'a Base.Hashtbl.Key.t -> ('a * 'b) t -> ('a * 'b list) t

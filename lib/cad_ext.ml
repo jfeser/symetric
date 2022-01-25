@@ -4,6 +4,7 @@ let unsound_pruning = false
 module Type = struct
   type t = Int | Rep_count | Scene | Error [@@deriving compare, hash, sexp]
 
+  let default = Int
   let output = Scene
   let pp fmt x = Sexp.pp fmt @@ [%sexp_of: t] x
 end
@@ -12,6 +13,7 @@ module Op = struct
   type t = Union | Inter | Circle | Rect | Repl | Sub | Int of int | Rep_count of int
   [@@deriving compare, hash, sexp]
 
+  let default = Union
   let cost _ = 1
 
   let ret_type : _ -> Type.t = function
@@ -46,6 +48,7 @@ module Value = struct
   type t = Int of int | Rep_count of int | Scene of Scene2d.t | Error
   [@@deriving compare, hash, sexp]
 
+  let default = Error
   let[@inline] is_scene = function Scene _ -> true | _ -> false
   let[@inline] is_error = function Error -> true | _ -> false
 

@@ -4,12 +4,14 @@ module type Lang_intf = sig
   module Type : sig
     type t [@@deriving compare, hash, sexp]
 
+    val default : t
     val output : t
   end
 
   module Op : sig
     type t [@@deriving compare, hash, sexp]
 
+    val default : t
     val pp : t Fmt.t
     val cost : t -> int
     val arity : t -> int
@@ -25,6 +27,7 @@ module type Lang_intf = sig
       type t
     end
 
+    val default : t
     val eval : Ctx.t -> Op.t -> t list -> t
     val is_error : t -> bool
   end

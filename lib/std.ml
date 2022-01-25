@@ -28,6 +28,7 @@ module Iter = struct
   let of_queue q k = Queue.iter q ~f:k
   let of_set s k = Core.Set.iter ~f:k s
   let of_hashtbl x k = Hashtbl.iteri ~f:(fun ~key ~data -> k (key, data)) x
+  let of_sek_e s k = Sek.E.iter Sek.forward k s
 
   let to_set (type t w) m iter =
     let module C = (val m : Comparator.S with type t = t and type comparator_witness = w)

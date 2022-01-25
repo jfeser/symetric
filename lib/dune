@@ -1,6 +1,6 @@
 (library
  (name staged_synth)
- (libraries core core.bigstring_unix core_kernel.pairing_heap combinat fmt tree_diff vpt logs yojson bitarray bheap gen owl)
+ (libraries core core.bigstring_unix core_kernel.pairing_heap combinat fmt tree_diff vpt logs yojson bitarray bheap gen owl sek)
  (preprocess
   (pps ppx_sexp_conv ppx_hash ppx_compare ppx_sexp_message base_quickcheck.ppx_quickcheck ppx_variants_conv ppx_expect ppx_let ppx_assert ppx_here))
  (inline_tests)

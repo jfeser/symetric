@@ -36,7 +36,22 @@ let%expect_test "" =
     (10 10 10 10 100) |}]
 
 module Incremental = struct
-  type ('a, 'b) t = { add : 'a -> 'b; get_sample : unit -> 'a list }
+  type ('e, 's, 'b) t = { add : 'e -> 'b; get_sample : unit -> 's }
+
+  let weighted ?(state = Random.State.default) () =
+    let heap = ref None in
+    let add v weight =
+      let k =
+        let r = Random.State.float_range state (Float.one_ulp `Up 0.0) 1.0 in
+        -.(Float.log r /. weight)
+      in
+      match !heap with
+      | None -> heap := Some (k, v)
+      | Some (k_max, _) when Float.O.(k < k_max) -> heap := Some (k, v)
+      | Some _ -> ()
+    in
+    let get_sample () = !heap in
+    { add; get_sample }
 
   let weighted_reservoir ?(state = Random.State.default) n =
     let module H = Pairing_heap in
@@ -72,10 +87,6 @@ module Incremental = struct
       incr idx
     and get_sample () = Set.to_list !sample in
     { add; get_sample }
-
-  let of_iter sampler iter =
-    iter sampler.add;
-    sampler.get_sample ()
 end
 
 let stochastic ?(n = 5) ~score ~propose t f =

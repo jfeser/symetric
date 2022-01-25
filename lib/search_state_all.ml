@@ -4,12 +4,14 @@ module type Lang_intf = sig
   module Type : sig
     type t [@@deriving compare, hash, sexp]
 
+    val default : t
     val output : t
   end
 
   module Op : sig
     type t [@@deriving compare, hash, sexp]
 
+    val default : t
     val cost : t -> int
     val arity : t -> int
     val args_type : t -> Type.t list
@@ -19,6 +21,8 @@ module type Lang_intf = sig
 
   module Value : sig
     type t [@@deriving compare, hash, sexp]
+
+    val default : t
   end
 end
 
@@ -51,6 +55,7 @@ module Make (Lang : Lang_intf) = struct
     include T
     include Comparator.Make (T)
 
+    let default = { type_ = Type.default; value = Value.default }
     let[@inline] create v t = { type_ = t; value = v }
     let[@inline] value c = c.value
     let[@inline] type_ c = c.type_
@@ -66,6 +71,9 @@ module Make (Lang : Lang_intf) = struct
     }
     [@@deriving sexp]
 
+    let default =
+      { op = Op.default; args = []; value = Value.default; cost = -1; height = -1 }
+
     let[@inline] create value op args = { value; op; args; cost = -1; height = -1 }
 
     let pp =
@@ -73,10 +81,18 @@ module Make (Lang : Lang_intf) = struct
       record [ field "op" (fun x -> x.op) Op.pp ]
   end
 
-  type paths = { paths : Path0.t list; min_cost : int; min_height : int }
+  type 'a sek_e = 'a Sek.E.t
+
+  let sek_e_of_sexp a_of_sexp s =
+    let default, elems = [%of_sexp: a * a list] s in
+    Sek.E.of_list default elems
+
+  let sexp_of_sek_e sexp_of_a s = [%sexp_of: a * a list] Sek.E.(default s, to_list s)
+
+  type paths = { paths : Path0.t sek_e; min_cost : int; min_height : int }
   [@@deriving sexp]
 
-  type t = { classes : Class.t list H.M(Attr).t; paths : paths H.M(Class).t }
+  type t = { classes : Class.t sek_e H.M(Attr).t; paths : paths H.M(Class).t }
   [@@deriving sexp]
 
   module Path : sig
@@ -84,11 +100,19 @@ module Make (Lang : Lang_intf) = struct
     type t = Path0.t [@@deriving sexp]
 
     val create : Value.t -> Op.t -> Class.t list -> t
+    val op : t -> Op.t
+    val args : t -> Class.t list
+    val value : t -> Value.t
     val cost : ctx -> t -> int
     val height : ctx -> t -> int
+    val default : t
   end
   with type ctx := t = struct
     include Path0
+
+    let op x = x.op
+    let args x = x.args
+    let value x = x.value
 
     let cost ctx p =
       (if p.cost < 0 then
@@ -113,7 +137,7 @@ module Make (Lang : Lang_intf) = struct
   let pp_dot fmt { classes; paths } =
     let node_ids =
       H.to_alist classes
-      |> List.concat_map ~f:(fun (_, vs) -> vs)
+      |> List.concat_map ~f:(fun (_, vs) -> Sek.E.to_list vs)
       |> List.mapi ~f:(fun i v -> (v, i))
       |> Hashtbl.of_alist_exn (module Class)
     in
@@ -130,17 +154,18 @@ module Make (Lang : Lang_intf) = struct
       H.fold
         ~init:(Map.empty (module Edge))
         ~f:(fun ~key ~data:paths edges ->
-          List.fold ~init:edges
-            ~f:(fun edges (path : Path.t) ->
+          Sek.E.fold_left
+            (fun edges (path : Path.t) ->
+              let args = Path.args path in
               let edge =
-                (List.map path.args ~f:(H.find_exn node_ids), H.find_exn node_ids key)
+                (List.map args ~f:(H.find_exn node_ids), H.find_exn node_ids key)
               in
               match Map.add edges ~key:edge ~data:!id with
               | `Ok m ->
                   incr id;
                   m
               | _ -> edges)
-            paths.paths)
+            edges paths.paths)
         paths
     in
     Fmt.pf fmt "digraph {\n";
@@ -150,10 +175,10 @@ module Make (Lang : Lang_intf) = struct
         Fmt.pf fmt "%d [shape=dot];\n" id);
     Fmt.pf fmt "}"
 
-  let search_iter ctx ~cost ~type_ =
+  let search_iter ctx ~cost ~type_ k =
     match H.find ctx.classes @@ Attr.create cost type_ with
-    | Some q -> Iter.of_list q
-    | None -> Iter.empty
+    | Some q -> Sek.E.iter Sek.forward k q
+    | None -> ()
 
   let search ctx ~cost ~type_ =
     search_iter ctx ~cost ~type_ |> Iter.map (fun c -> c.Class.value) |> Iter.to_list
@@ -164,10 +189,10 @@ module Make (Lang : Lang_intf) = struct
           H.to_alist ctx.paths
           |> List.filter_map ~f:(fun (v, (paths : paths)) ->
                  if
-                   List.exists
-                     ~f:(function
-                       | Path0.{ op = op'; args = []; _ } -> [%compare.equal: Op.t] op op'
-                       | _ -> false)
+                   Sek.E.exists
+                     (fun p ->
+                       [%compare.equal: Op.t] op (Path.op p)
+                       && List.is_empty (Path.args p))
                      paths.paths
                  then Some v
                  else None)
@@ -184,11 +209,10 @@ module Make (Lang : Lang_intf) = struct
           H.to_alist ctx.paths
           |> List.filter_map ~f:(fun (v, (paths : paths)) ->
                  if
-                   List.exists
-                     ~f:(function
-                       | { op = op'; args; _ } ->
-                           [%compare.equal: Op.t] op op'
-                           && List.for_all2_exn arg_sets args ~f:Set.mem)
+                   Sek.E.exists
+                     (fun p ->
+                       [%compare.equal: Op.t] op (Path.op p)
+                       && List.for_all2_exn arg_sets (Path.args p) ~f:Set.mem)
                      paths.paths
                  then Some v
                  else None)
@@ -196,15 +220,14 @@ module Make (Lang : Lang_intf) = struct
         Apply ((op, all_outputs), args)
 
   let mem_class ctx class_ = H.mem ctx.paths class_
-  let classes ctx k = H.iter ctx.classes ~f:(List.iter ~f:k)
+  let classes ctx k = H.iter ctx.classes ~f:(Sek.E.iter Sek.forward k)
 
   let insert_class_members ctx class_ members =
     let new_paths =
       List.map members ~f:(fun (value, op, args) -> Path.create value op args)
     in
-    H.update ctx.paths class_ ~f:(function
-      | Some ps -> { ps with paths = new_paths @ ps.paths }
-      | None -> failwith "class not present in search space")
+    let old_paths = (H.find_exn ctx.paths class_).paths in
+    Sek.E.append Sek.front old_paths @@ Sek.E.of_list Path.default new_paths
 
   let insert_class ctx value op args =
     let args = List.map2_exn args (Op.args_type op) ~f:Class.create in
@@ -223,13 +246,15 @@ module Make (Lang : Lang_intf) = struct
     in
 
     let class_ = Class.create value @@ Op.ret_type op in
-    H.update ctx.classes (Attr.create cost class_.type_) ~f:(function
-      | Some cs -> class_ :: cs
-      | None -> [ class_ ]);
+    let classes =
+      H.find_or_add ctx.classes (Attr.create cost class_.type_) ~default:(fun () ->
+          Sek.E.create Class.default)
+    in
+    Sek.E.push Sek.front classes class_;
 
     let new_path = Path.create class_.value op args in
-    H.add_exn ctx.paths ~key:class_
-      ~data:{ min_cost = cost; min_height = height; paths = [ new_path ] }
+    let paths = Sek.E.of_list Path.default [ new_path ] in
+    H.add_exn ctx.paths ~key:class_ ~data:{ min_cost = cost; min_height = height; paths }
 
   let length ctx = H.length ctx.paths
 
@@ -240,13 +265,13 @@ module Make (Lang : Lang_intf) = struct
     |> List.iter ~f:(fun ((attr : Attr.t), classes) ->
            eprint_s
              [%message
-               (attr.cost : int) (attr.type_ : Type.t) (List.length classes : int)]);
+               (attr.cost : int) (attr.type_ : Type.t) (Sek.E.length classes : int)]);
     Fmt.epr "Total: %d\n%!" (length ctx)
 
   let rec program_exn ctx max_height class_ =
     let p =
-      List.find_exn
-        ~f:(fun p -> Path.height ctx p <= max_height)
+      Sek.E.find Sek.forward
+        (fun p -> Path.height ctx p <= max_height)
         (H.find_exn ctx.paths class_).paths
     in
     program_of_op_args_exn ctx max_height p.op p.args
@@ -255,11 +280,11 @@ module Make (Lang : Lang_intf) = struct
     Apply (op, List.map args ~f:(program_exn ctx (max_height - 1)))
 
   let rec random_program_exn ctx max_cost class_ =
-    let p =
+    let low_cost_paths =
       (H.find_exn ctx.paths class_).paths
-      |> List.filter ~f:(fun (p : Path0.t) -> p.cost <= max_cost)
-      |> List.random_element_exn
+      |> Sek.E.filter (fun (p : Path.t) -> p.cost <= max_cost)
     in
+    let p = Sek.E.get low_cost_paths (Random.int @@ Sek.E.length low_cost_paths) in
     Apply (p.op, List.map p.args ~f:(random_program_exn ctx (Path.cost ctx p - 1)))
 
   let random_program_exn ?(max_cost = Int.max_value) ctx state =
@@ -273,31 +298,56 @@ module Make (Lang : Lang_intf) = struct
 
   let validate ss eval dist thresh =
     Hashtbl.iteri ss.paths ~f:(fun ~key ~data ->
-        List.iter data.paths ~f:(fun path ->
-            [%test_result: Value.t] ~message:"cached operator output" ~expect:path.value
+        Sek.E.iter Sek.forward
+          (fun (path : Path.t) ->
+            let value = Path.value path in
+            [%test_result: Value.t] ~message:"cached operator output" ~expect:value
               (eval path.op @@ List.map ~f:Class.value path.args);
-            let d = dist key.value path.value in
+            let d = dist key.value value in
             if d >. thresh then
-              raise_s [%message "grouping not within threshold" (d : float)]))
+              raise_s [%message "grouping not within threshold" (d : float)])
+          data.paths)
 
-  let rec local_greedy value_pp ss max_height eval dist (class_ : Class.t) =
+  let rec local_greedy ss max_height eval dist (class_ : Class.t) =
     let open Option.Let_syntax in
     let all_paths = (H.find_exn ss.paths class_).paths in
     let eligible_paths =
-      Iter.of_list all_paths
-      |> Iter.filter (fun (p : Path.t) -> Path.height ss p <= max_height)
-      |> Iter.to_list
+      Sek.E.filter (fun (p : Path.t) -> Path.height ss p <= max_height) all_paths
     in
-    let n_sample = max 1 (List.length eligible_paths / 2) in
+    let n_sample = max 1 (Sek.E.length eligible_paths / 2) in
     let%bind _, best_path =
-      Iter.of_list eligible_paths |> Iter.sample n_sample |> Iter.of_array
+      Iter.of_sek_e eligible_paths |> Iter.sample n_sample |> Iter.of_array
       |> Iter.map (fun (p : Path.t) -> (dist p.value, p))
       |> Iter.min ~lt:(fun (d, _) (d', _) -> Float.(d < d'))
     in
     let best_path_arg_values = List.map best_path.args ~f:(fun c -> c.value) in
     List.mapi best_path.args ~f:(fun i arg_class ->
         let dist' v = dist (eval best_path.op @@ list_set best_path_arg_values i v) in
-        local_greedy value_pp ss (max_height - 1) eval dist' arg_class)
+        local_greedy ss (max_height - 1) eval dist' arg_class)
     |> Option.all
     |> Option.map ~f:(fun arg_progs -> Apply (best_path.op, arg_progs))
+
+  let rec local_greedy_new ss max_height eval dist (class_ : Class.t) =
+    let open Option.Let_syntax in
+    let%bind _, best_path =
+      let sampler = Sample.Incremental.weighted () in
+
+      (H.find_exn ss.paths class_).paths
+      |> Sek.E.iter Sek.forward (fun (p : Path.t) ->
+             if Path.height ss p <= max_height then sampler.add p (1.0 -. dist p.value));
+      sampler.get_sample ()
+    in
+    let best_path_arg_values = List.map best_path.args ~f:Class.value in
+    let%bind args =
+      List.mapi best_path.args ~f:(fun i arg_class ->
+          let dist' v = dist (eval best_path.op @@ list_set best_path_arg_values i v) in
+          local_greedy_new ss (max_height - 1) eval dist' arg_class)
+      |> Option.all
+    in
+    return (Apply (best_path.op, args))
+
+  let local_greedy =
+    match Sys.getenv "METRIC_LOCAL_GREEDY" with
+    | Some "new" -> local_greedy_new
+    | _ -> local_greedy
 end

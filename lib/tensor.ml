@@ -8,6 +8,7 @@ module Type = struct
   include T
   include Comparator.Make (T)
 
+  let default = Tensor
   let output = Tensor
 end
 
@@ -64,6 +65,8 @@ module Op = struct
   include T
   include Comparator.Make (T)
 
+  let default = Reshape
+
   let ret_type = function
     | Id _ | Reshape | Permute | Flip -> Type.Tensor
     | Cons | Vec -> Vector
@@ -104,6 +107,7 @@ module Value = struct
   include T
   include Comparator.Make (T)
 
+  let default = Error
   let pp _ = Fmt.nop
 
   module Op_args = struct

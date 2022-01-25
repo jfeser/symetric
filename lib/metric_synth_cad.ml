@@ -264,8 +264,8 @@ let backwards_pass class_ =
   match S.Class.value class_ with
   | Value.Scene _ ->
       Iter.forever (fun () ->
-          S.local_greedy Value.pp search_state (Int.ceil_log2 max_cost)
-            (Value.eval_memoized ectx) target_distance class_
+          S.local_greedy search_state (Int.ceil_log2 max_cost) (Value.eval_memoized ectx)
+            target_distance class_
           |> Option.map ~f:local_search)
       |> Iter.filter_map Fun.id
   | _ -> Iter.empty

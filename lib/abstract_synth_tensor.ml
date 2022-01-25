@@ -37,6 +37,7 @@ module Abs_value = struct
   include T
   include Comparator.Make (T)
 
+  let default = Set.empty (module Pred)
   let pp _ = Fmt.nop
 
   module Ctx = struct
