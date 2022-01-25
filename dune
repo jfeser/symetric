@@ -1,4 +1,4 @@
-(data_only_dirs etc bench cadtests doc learn notebooks)
+(data_only_dirs etc bench cadtests doc learn notebooks runs)
 
 (vendored_dirs vendor)
 

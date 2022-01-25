@@ -25,11 +25,25 @@ module Array : sig
   val median : ('a -> 'a -> int) -> 'a t -> 'a
 end
 
+module Non_empty_list : sig
+  type 'a t
+
+  val of_list : 'a list -> 'a t option
+  val of_list_exn : 'a list -> 'a t
+  val to_list : 'a t -> 'a list
+  val of_tuple : 'a * 'a list -> 'a t
+  val to_tuple : 'a t -> 'a * 'a list
+  val ( @ ) : 'a t -> 'a t -> 'a t
+  val map : 'a t -> f:('a -> 'b) -> 'b t
+  val hd : 'a t -> 'a
+  val tl : 'a t -> 'a list
+end
+
 module List : sig
   include module type of List
 
   val product : int t -> int
-  val group_by : 'a Base.Hashtbl.Key.t -> ('a * 'b) t -> ('a * 'b t) t
+  val group_by : 'a Base.Hashtbl.Key.t -> ('a * 'b) t -> ('a * 'b Non_empty_list.t) t
   val take : n:int -> 'a t -> 'a t
   val stats : float list -> float * float * float
 end

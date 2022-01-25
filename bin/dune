@@ -1,7 +1,7 @@
 (executable
  (name metric_synth_cad)
  (modules metric_synth_cad)
- (libraries core staged_synth)
+ (libraries core staged_synth memtrace)
  (preprocess
   (pps ppx_jane)))
 

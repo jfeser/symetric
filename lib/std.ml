@@ -4,20 +4,18 @@ module Option = struct
   let value_lazy ~default = function Some x -> x | None -> Lazy.force default
 end
 
-module List = struct
-  include List
+module Non_empty_list = struct
+  type 'a t = 'a * 'a list [@@deriving compare, hash, sexp]
 
-  let product l = List.reduce_exn l ~f:( * )
-  let group_by m l = Hashtbl.of_alist_multi m l |> Hashtbl.to_alist
-  let take ~n l = List.take l n
-
-  let stats l =
-    let min, max, num, dem =
-      List.fold_left l ~init:(Float.max_value, Float.min_value, 0.0, 0.0)
-        ~f:(fun (min, max, num, dem) x ->
-          (Float.min min x, Float.max max x, num +. x, dem +. 1.0))
-    in
-    (min, max, num /. dem)
+  let of_list = function [] -> None | x :: xs -> Some (x, xs)
+  let of_list_exn = function [] -> failwith "empty list" | x :: xs -> (x, xs)
+  let to_list (x, xs) = x :: xs
+  let of_tuple = Fun.id
+  let to_tuple = Fun.id
+  let ( @ ) (x, xs) (y, ys) = (x, xs @ (y :: ys))
+  let map (x, xs) ~f = (f x, List.map ~f xs)
+  let hd (x, _) = x
+  let tl (_, xs) = xs
 end
 
 module Iter = struct
@@ -107,6 +105,27 @@ module Iter = struct
          tbl)
     in
     fun k -> Hashtbl.iteri (Lazy.force tbl) ~f:(fun ~key ~data -> k (key, data))
+end
+
+module List = struct
+  include List
+
+  let product l = List.reduce_exn l ~f:( * )
+
+  let group_by m l =
+    Hashtbl.of_alist_multi m l |> Iter.of_hashtbl
+    |> Iter.map (fun (k, v) -> (k, Non_empty_list.of_list_exn v))
+    |> Iter.to_list
+
+  let take ~n l = List.take l n
+
+  let stats l =
+    let min, max, num, dem =
+      List.fold_left l ~init:(Float.max_value, Float.min_value, 0.0, 0.0)
+        ~f:(fun (min, max, num, dem) x ->
+          (Float.min min x, Float.max max x, num +. x, dem +. 1.0))
+    in
+    (min, max, num /. dem)
 end
 
 module Array = struct

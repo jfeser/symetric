@@ -75,9 +75,11 @@ let to_iter (size : Dim.t) s f =
 
 let pp fmt x =
   let xres = Dim.scaled_xres x.dim in
+  Fmt.pf fmt "@[<v>";
   Bitarray.iteri (pixels x) ~f:(fun i b ->
       if b then Fmt.pf fmt "█" else Fmt.pf fmt ".";
-      if i mod xres = xres - 1 then Fmt.pf fmt "\n")
+      if i mod xres = xres - 1 then Fmt.pf fmt "@,");
+  Fmt.pf fmt "@]"
 
 let get x = Bitarray.get (pixels x)
 let[@inline] hamming c c' = Bitarray.hamming_distance (pixels c) (pixels c')

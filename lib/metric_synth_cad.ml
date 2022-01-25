@@ -37,6 +37,21 @@ let[@inline] target_groups () = (Set_once.get_exn params [%here]).Params.target_
 let max_repeat_count = 4
 let target_groups_err = 0.5
 
+module Log = struct
+  let start_time = Time.now ()
+
+  let log level msgf =
+    let with_time fmt =
+      Format.fprintf Format.err_formatter
+        ("[%a] @[" ^^ fmt ^^ "@]@.%!")
+        Time.Span.pp
+        (Time.diff (Time.now ()) start_time)
+    in
+    if level >= verbosity () then msgf with_time
+
+  let sexp level lsexp = if level >= verbosity () then eprint_s @@ Lazy.force lsexp
+end
+
 let[@inline] backward_pass_repeats () =
   (Set_once.get_exn params [%here]).Params.backward_pass_repeats
 
@@ -101,6 +116,13 @@ let local_search p =
   |> Option.map ~f:(fun (_, p) -> p)
   |> Option.value ~default:p
 
+type 'v group_result = {
+  groups : (S.Class.t * 'v Non_empty_list.t) list;
+  n_queries : int;
+}
+
+module NList = Non_empty_list
+
 let group_states_vp type_ states =
   let distance c c' =
     let v = c.S.Class.value and v' = c'.S.Class.value in
@@ -113,7 +135,9 @@ let group_states_vp type_ states =
   let reference = ref [] in
   let groups = Hashtbl.create (module S.Class) in
 
+  let n_queries = ref 0 in
   let find_close c f =
+    incr n_queries;
     if List.length !reference > 100 then (
       reference_vp := create_vp ((Iter.to_list @@ Vpt.iter !reference_vp) @ !reference);
       reference := []);
@@ -123,18 +147,21 @@ let group_states_vp type_ states =
       f
   in
 
-  List.iter states ~f:(fun (v, (e, es)) ->
+  List.iter states ~f:(fun (v, g) ->
       let grouped = ref false in
-      (find_close v) (fun v' ->
-          Hashtbl.update groups v' ~f:(function
-            | None -> (e, es)
-            | Some (e', es') -> (e', (e :: es) @ es'));
-          grouped := true);
+      find_close v
+      |> Iter.iter (fun v' ->
+             Hashtbl.update groups v' ~f:(function
+               | None -> g
+               | Some g' ->
+                   (* order matters here: the the first element of g' is the edge corresponding to v' *)
+                   NList.(g' @ g));
+             grouped := true);
       if not !grouped then (
         reference := v :: !reference;
-        Hashtbl.add_exn groups ~key:v ~data:(e, es)));
+        Hashtbl.add_exn groups ~key:v ~data:g));
 
-  Hashtbl.to_alist groups
+  { groups = Hashtbl.to_alist groups; n_queries = !n_queries }
 
 let prev_group_sample = ref (-1)
 
@@ -155,31 +182,30 @@ let insert_states ~type_ states =
   in
 
   let new_distinct_states =
-    List.map distinct_states ~f:(fun (c, cs) ->
-        ( c,
-          List.map cs ~f:(fun (value, op, args) ->
-              (value, op, List.map2_exn args (Op.args_type op) ~f:S.Class.create)) ))
-    |> List.filter_map ~f:(function
-         | v, (((_, op, _) as edge) :: _ as xs) ->
-             let class_ = S.Class.create v (Op.ret_type op) in
-             if S.mem_class search_state class_ then (
-               S.insert_class_members search_state class_ xs;
-               None)
-             else Some (class_, (edge, xs))
-         | _, [] -> None)
+    List.filter_map distinct_states ~f:(fun (key, edges) ->
+        let edges =
+          NList.map edges ~f:(fun (value, op, args) ->
+              (value, op, List.map2_exn args (Op.args_type op) ~f:S.Class.create))
+        in
+        let _, op, _ = NList.hd edges in
+        let class_ = S.Class.create key (Op.ret_type op) in
+        if S.mem_class search_state class_ then (
+          S.insert_class_members search_state class_ @@ NList.to_list edges;
+          None)
+        else Some (class_, edges))
   in
 
   let min, max, mean =
     List.map new_distinct_states ~f:(fun (c, _) -> target_distance (S.Class.value c))
     |> List.stats
   in
-  eprint_s [%message "all states" (min : float) (max : float) (mean : float)];
+  Log.sexp 0 (lazy [%message "all states" (min : float) (max : float) (mean : float)]);
 
-  if verbosity () > 0 then
-    Fmt.epr "(%d, %d distinct, %d unseen) states of type %a.\n%!" (List.length states)
-      (List.length distinct_states)
-      (List.length new_distinct_states)
-      Type.pp type_;
+  Log.log 1 (fun m ->
+      m "(%d, %d distinct, %d unseen) states of type %a." (List.length states)
+        (List.length distinct_states)
+        (List.length new_distinct_states)
+        Type.pp type_);
 
   let new_distinct_states =
     List.map new_distinct_states ~f:(fun ((c, _) as g) ->
@@ -191,12 +217,16 @@ let insert_states ~type_ states =
   let rec adaptive_group prev_ngroups ct =
     let n_states = List.length new_distinct_states in
     let filtered_states = List.take ~n:ct new_distinct_states in
-    let groups = group_states_vp type_ @@ List.permute filtered_states in
+
+    let group_result = group_states_vp type_ @@ List.permute filtered_states in
+    let groups = group_result.groups in
     let n_groups = List.length groups in
-    eprint_s [%message (ct : int) (n_groups : int)];
+
+    Log.sexp 0 (lazy [%message (ct : int) (n_groups : int)]);
+
     if n_groups > target_groups_max then adaptive_group 0 (ct / 2)
     else if ct >= n_states || n_groups >= target_groups_min then (
-      if verbosity () > 1 then Fmt.epr "grouping states %d\n%!" ct;
+      Log.log 2 (fun m -> m "grouping states %d" ct);
       (groups, ct))
     else if prev_ngroups > 0 then
       let t_n = target_groups - n_groups and n_n0 = n_groups - prev_ngroups in
@@ -218,18 +248,21 @@ let insert_states ~type_ states =
   in
   let retained_groups = List.take ~n:target_groups group_distances in
   let min, max, mean = List.map retained_groups ~f:(fun (d, _) -> d) |> List.stats in
-  eprint_s [%message "retained groups" (min : float) (max : float) (mean : float)];
+
+  Log.sexp 0
+    (lazy [%message "retained groups" (min : float) (max : float) (mean : float)]);
 
   let retained_groups = List.map ~f:(fun (_, g) -> g) retained_groups in
 
-  if verbosity () > 0 then
-    Fmt.epr "(%d groups, %d retained) in %a.\n%!" (List.length groups)
-      (List.length retained_groups) Time.Span.pp group_time;
+  Log.log 1 (fun m ->
+      m "(%d groups, %d retained) in %a" (List.length groups)
+        (List.length retained_groups) Time.Span.pp group_time);
 
-  List.iter retained_groups ~f:(fun (key, ((v, op, a), es)) ->
-      if not @@ S.mem_class search_state key then
-        S.insert_class search_state v op @@ List.map ~f:S.Class.value a;
-      S.insert_class_members search_state key es)
+  List.iter retained_groups ~f:(fun (key, edges) ->
+      (if not @@ S.mem_class search_state key then
+       let value, op, args = NList.hd edges in
+       S.insert_class search_state value op @@ List.map ~f:S.Class.value args);
+      S.insert_class_members search_state key @@ NList.to_list edges)
 
 let fill_search_space () =
   let ectx = ectx ()
@@ -237,14 +270,21 @@ let fill_search_space () =
   and ops = operators ()
   and max_cost = max_cost () in
 
-  if verbosity () > 0 then Fmt.epr "Goal:\n%a\n%!" Value.pp (target ());
+  Log.log 1 (fun m -> m "Goal:\n%a" Value.pp (target ()));
 
   for cost = 1 to max_cost do
-    if verbosity () > 0 then Fmt.epr "Generating states of cost %d.\n%!" cost;
-    Gen.generate_states S.search_iter ectx search_state ops cost
-    |> Iter.map (fun ((_, op, _) as state) -> (Op.ret_type op, state))
-    |> Iter.group_by (module Type)
-    |> Iter.iter (fun (type_, states) -> insert_states ~type_ states)
+    Log.log 1 (fun m -> m "Start generating states of cost %d" cost);
+
+    let (), run_time =
+      Synth_utils.timed (fun () ->
+          Gen.generate_states S.search_iter ectx search_state ops cost
+          |> Iter.map (fun ((_, op, _) as state) -> (Op.ret_type op, state))
+          |> Iter.group_by (module Type)
+          |> Iter.iter (fun (type_, states) -> insert_states ~type_ states))
+    in
+
+    Log.log 1 (fun m ->
+        m "Finish generating states of cost %d (runtime=%a)" cost Time.Span.pp run_time)
   done
 
 let backwards_pass class_ =
@@ -269,7 +309,7 @@ let synthesize () =
     S.validate search_state (Value.eval ectx) distance (group_threshold ());
 
   let exception Done of Op.t Program.t in
-  if verbosity () > 0 then Fmt.epr "Starting backwards pass.\n%!";
+  Log.log 1 (fun m -> m "Starting backwards pass");
 
   let ret =
     try
@@ -277,8 +317,9 @@ let synthesize () =
       |> Iter.map (fun c -> (target_distance @@ S.Class.value c, c))
       |> Iter.sort ~cmp:(fun (d, _) (d', _) -> [%compare: float] d d')
       |> Iter.iteri (fun i (d, (class_ : S.Class.t)) ->
-             if verbosity () > 0 then Fmt.epr "Searching candidate %d (d=%f).\n%!" i d;
-             if verbosity () > 1 then Fmt.epr "%a\n%!" Value.pp class_.value;
+             Log.log 1 (fun m -> m "Searching candidate %d (d=%f)" i d);
+             Log.log 2 (fun m -> m "%a" Value.pp class_.value);
+
              backwards_pass class_
              |> Iter.take backward_pass_repeats
              |> Iter.min_floor
@@ -286,10 +327,12 @@ let synthesize () =
                   0.0
              |> Option.iter ~f:(fun p ->
                     let found_value = Program.eval (Value.eval ectx) p in
-                    if verbosity () > 1 then (
-                      Fmt.epr "Best (d=%f):\n%a\n%!" (target_distance found_value)
-                        Value.pp found_value;
-                      eprint_s [%message (p : Op.t Program.t)]);
+
+                    Log.log 2 (fun m ->
+                        m "Best (d=%f):\n%a" (target_distance found_value) Value.pp
+                          found_value);
+                    Log.sexp 2 (lazy [%message (p : Op.t Program.t)]);
+
                     if [%compare.equal: Value.t] target found_value then raise (Done p)));
       None
     with Done p -> Some p
