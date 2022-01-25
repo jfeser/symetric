@@ -116,26 +116,25 @@ let local_search p =
   |> Option.map ~f:(fun (_, p) -> p)
   |> Option.value ~default:p
 
-type 'v group_result = {
-  groups : (S.Class.t * 'v Non_empty_list.t) list;
-  n_queries : int;
-}
+type group_result = { groups : S.Class.t list Hashtbl.M(S.Class).t; n_queries : int }
 
 module NList = Non_empty_list
 
-let group_states_vp type_ states =
+(** return a mapping from representatives to the members of their groups *)
+let group_states_vp states : group_result =
+  let thresh = group_threshold () and search_state = search_state () in
+
   let distance c c' =
-    let v = c.S.Class.value and v' = c'.S.Class.value in
+    let v = S.Class.value c and v' = S.Class.value c' in
     distance v v'
   in
-  let thresh = group_threshold () in
   let create_vp = Vpt.create distance `Random in
-  let search_state = search_state () in
-  let reference_vp = ref (create_vp @@ (S.classes ~type_ search_state |> Iter.to_list)) in
-  let reference = ref [] in
-  let groups = Hashtbl.create (module S.Class) in
 
+  let reference_vp = ref (create_vp @@ (S.classes search_state |> Iter.to_list))
+  and reference = ref []
+  and groups = Hashtbl.create (module S.Class) in
   let n_queries = ref 0 in
+
   let find_close c f =
     incr n_queries;
     if List.length !reference > 100 then (
@@ -147,87 +146,71 @@ let group_states_vp type_ states =
       f
   in
 
-  List.iter states ~f:(fun (v, g) ->
-      let grouped = ref false in
-      find_close v
-      |> Iter.iter (fun v' ->
-             Hashtbl.update groups v' ~f:(function
-               | None -> g
-               | Some g' ->
-                   (* order matters here: the the first element of g' is the edge corresponding to v' *)
-                   NList.(g' @ g));
-             grouped := true);
-      if not !grouped then (
-        reference := v :: !reference;
-        Hashtbl.add_exn groups ~key:v ~data:g));
+  List.iter states ~f:(fun v ->
+      let is_empty =
+        find_close v
+        |> Iter.iter_is_empty (fun c' ->
+               Hashtbl.update groups c' ~f:(function None -> [ v ] | Some vs -> v :: vs))
+      in
+      if is_empty then (
+        Hashtbl.add_exn groups ~key:v ~data:[];
+        reference := v :: !reference));
 
-  { groups = Hashtbl.to_alist groups; n_queries = !n_queries }
+  { groups; n_queries = !n_queries }
 
 let prev_group_sample = ref (-1)
 
-let insert_states ~type_ states =
+let insert_states edges =
   let target_groups = target_groups () in
   let target_groups_min =
     Float.(to_int @@ (of_int target_groups *. (1.0 -. target_groups_err)))
-  in
-
-  let target_groups_max =
+  and target_groups_max =
     Float.(to_int @@ (of_int target_groups *. (1.0 +. target_groups_err)))
   in
 
   let search_state = search_state () in
 
-  let distinct_states =
-    List.map states ~f:(fun ((v, _, _) as x) -> (v, x)) |> List.group_by (module Value)
-  in
+  (* group edges that produce the same state *)
+  let n_states = ref 0 in
+  let distinct_edges = Hashtbl.create (module S.Class) in
+  edges (fun ((value, op, _) as edge) ->
+      let class_ = S.Class.create value (Op.ret_type op) in
+      incr n_states;
+      Hashtbl.update distinct_edges class_ ~f:(function
+        | None -> NList.singleton edge
+        | Some edges -> NList.cons edge edges));
 
-  let new_distinct_states =
-    List.filter_map distinct_states ~f:(fun (key, edges) ->
-        let edges =
-          NList.map edges ~f:(fun (value, op, args) ->
-              (value, op, List.map2_exn args (Op.args_type op) ~f:S.Class.create))
-        in
-        let _, op, _ = NList.hd edges in
-        let class_ = S.Class.create key (Op.ret_type op) in
-        if S.mem_class search_state class_ then (
-          S.insert_class_members search_state class_ @@ NList.to_list edges;
-          None)
-        else Some (class_, edges))
-  in
-
-  let min, max, mean =
-    List.map new_distinct_states ~f:(fun (c, _) -> target_distance (S.Class.value c))
-    |> List.stats
-  in
-  Log.sexp 0 (lazy [%message "all states" (min : float) (max : float) (mean : float)]);
+  Log.sexp 0
+    (lazy
+      (let min, max, mean =
+         Iter.of_hashtbl distinct_edges
+         |> Iter.map (fun (c, _) -> target_distance @@ S.Class.value c)
+         |> Iter.stats
+       in
+       [%message "all states" (min : float) (max : float) (mean : float)]));
 
   Log.log 1 (fun m ->
-      m "(%d, %d distinct, %d unseen) states of type %a." (List.length states)
-        (List.length distinct_states)
-        (List.length new_distinct_states)
-        Type.pp type_);
+      m "(%d, %d distinct) states." !n_states (Hashtbl.length distinct_edges));
 
-  let new_distinct_states =
-    List.map new_distinct_states ~f:(fun ((c, _) as g) ->
-        (target_distance (S.Class.value c), g))
+  let distinct_states =
+    Hashtbl.keys distinct_edges
+    |> List.map ~f:(fun c -> (target_distance @@ S.Class.value c, c))
     |> List.sort ~compare:[%compare: float * _]
-    |> List.map ~f:(fun (_, g) -> g)
+    |> List.map ~f:Tuple.T2.get2
   in
 
   let rec adaptive_group prev_ngroups ct =
-    let n_states = List.length new_distinct_states in
-    let filtered_states = List.take ~n:ct new_distinct_states in
-
-    let group_result = group_states_vp type_ @@ List.permute filtered_states in
+    let n_states = List.length distinct_states in
+    let sample = List.permute @@ List.take ~n:ct distinct_states in
+    let group_result = group_states_vp sample in
     let groups = group_result.groups in
-    let n_groups = List.length groups in
+    let n_groups = Hashtbl.length groups in
 
     Log.sexp 0 (lazy [%message (ct : int) (n_groups : int)]);
 
     if n_groups > target_groups_max then adaptive_group 0 (ct / 2)
-    else if ct >= n_states || n_groups >= target_groups_min then (
-      Log.log 2 (fun m -> m "grouping states %d" ct);
-      (groups, ct))
+    else if ct >= n_states || n_groups >= target_groups_min then
+      (groups, List.length sample)
     else if prev_ngroups > 0 then
       let t_n = target_groups - n_groups and n_n0 = n_groups - prev_ngroups in
       let incr = Float.(to_int (of_int target_groups *. (of_int t_n /. of_int n_n0))) in
@@ -235,34 +218,24 @@ let insert_states ~type_ states =
     else adaptive_group n_groups (ct + target_groups)
   in
 
-  let (groups, group_sample), group_time =
+  let (groups, n_sample), _group_time =
     Synth_utils.timed (fun () ->
         adaptive_group 0
           (if !prev_group_sample > 0 then !prev_group_sample else target_groups))
   in
-  prev_group_sample := group_sample;
+  prev_group_sample := n_sample;
 
-  let group_distances =
-    List.map groups ~f:(fun ((c, _) as g) -> (target_distance (S.Class.value c), g))
-    |> List.sort ~compare:[%compare: float * _]
-  in
-  let retained_groups = List.take ~n:target_groups group_distances in
-  let min, max, mean = List.map retained_groups ~f:(fun (d, _) -> d) |> List.stats in
+  Hashtbl.iteri groups ~f:(fun ~key:class_ ~data:members ->
+      (* insert new representative (some may already exist) *)
+      if not @@ S.mem_class search_state class_ then (
+        let value, op, args = NList.hd @@ Hashtbl.find_exn distinct_edges class_ in
+        S.insert_class search_state value op @@ List.map ~f:S.Class.value args;
 
-  Log.sexp 0
-    (lazy [%message "retained groups" (min : float) (max : float) (mean : float)]);
-
-  let retained_groups = List.map ~f:(fun (_, g) -> g) retained_groups in
-
-  Log.log 1 (fun m ->
-      m "(%d groups, %d retained) in %a" (List.length groups)
-        (List.length retained_groups) Time.Span.pp group_time);
-
-  List.iter retained_groups ~f:(fun (key, edges) ->
-      (if not @@ S.mem_class search_state key then
-       let value, op, args = NList.hd edges in
-       S.insert_class search_state value op @@ List.map ~f:S.Class.value args);
-      S.insert_class_members search_state key @@ NList.to_list edges)
+        let edges =
+          List.concat_map members ~f:(fun c ->
+              NList.to_list @@ Hashtbl.find_exn distinct_edges c)
+        in
+        S.insert_class_members search_state class_ edges))
 
 let fill_search_space () =
   let ectx = ectx ()
@@ -277,15 +250,14 @@ let fill_search_space () =
 
     let (), run_time =
       Synth_utils.timed (fun () ->
-          Gen.generate_states S.search_iter ectx search_state ops cost
-          |> Iter.map (fun ((_, op, _) as state) -> (Op.ret_type op, state))
-          |> Iter.group_by (module Type)
-          |> Iter.iter (fun (type_, states) -> insert_states ~type_ states))
+          Gen.generate_states S.search_iter S.Class.value ectx search_state ops cost
+          |> insert_states)
     in
 
     Log.log 1 (fun m ->
         m "Finish generating states of cost %d (runtime=%a)" cost Time.Span.pp run_time)
-  done
+  done;
+  exit 1
 
 let backwards_pass class_ =
   let search_state = search_state () and max_cost = max_cost () and ectx = ectx () in
@@ -313,7 +285,8 @@ let synthesize () =
 
   let ret =
     try
-      S.classes ~type_:Scene search_state
+      S.classes search_state
+      |> Iter.filter (fun c -> [%compare.equal: Type.t] Scene (S.Class.type_ c))
       |> Iter.map (fun c -> (target_distance @@ S.Class.value c, c))
       |> Iter.sort ~cmp:(fun (d, _) (d', _) -> [%compare: float] d d')
       |> Iter.iteri (fun i (d, (class_ : S.Class.t)) ->

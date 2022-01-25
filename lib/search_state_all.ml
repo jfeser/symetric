@@ -53,6 +53,7 @@ module Make (Lang : Lang_intf) = struct
 
     let[@inline] create v t = { type_ = t; value = v }
     let[@inline] value c = c.value
+    let[@inline] type_ c = c.type_
   end
 
   module Path0 = struct
@@ -151,10 +152,11 @@ module Make (Lang : Lang_intf) = struct
 
   let search_iter ctx ~cost ~type_ =
     match H.find ctx.classes @@ Attr.create cost type_ with
-    | Some q -> Iter.of_list q |> Iter.map (fun c -> c.Class.value)
+    | Some q -> Iter.of_list q
     | None -> Iter.empty
 
-  let search ctx ~cost ~type_ = search_iter ctx ~cost ~type_ |> Iter.to_list
+  let search ctx ~cost ~type_ =
+    search_iter ctx ~cost ~type_ |> Iter.map (fun c -> c.Class.value) |> Iter.to_list
 
   let rec find_term ctx = function
     | Apply (op, []) ->
@@ -194,17 +196,7 @@ module Make (Lang : Lang_intf) = struct
         Apply ((op, all_outputs), args)
 
   let mem_class ctx class_ = H.mem ctx.paths class_
-
-  let classes ctx ?cost ~type_ =
-    match cost with
-    | Some cost ->
-        H.find ctx.classes @@ Attr.create cost type_
-        |> Option.map ~f:Iter.of_list
-        |> Option.value ~default:Iter.empty
-    | None ->
-        fun k ->
-          H.iteri ctx.classes ~f:(fun ~key ~data ->
-              if [%compare.equal: Type.t] key.type_ type_ then List.iter data ~f:k)
+  let classes ctx k = H.iter ctx.classes ~f:(List.iter ~f:k)
 
   let insert_class_members ctx class_ members =
     let new_paths =

@@ -7,15 +7,17 @@ end
 module Non_empty_list = struct
   type 'a t = 'a * 'a list [@@deriving compare, hash, sexp]
 
-  let of_list = function [] -> None | x :: xs -> Some (x, xs)
-  let of_list_exn = function [] -> failwith "empty list" | x :: xs -> (x, xs)
-  let to_list (x, xs) = x :: xs
+  let[@inline] of_list = function [] -> None | x :: xs -> Some (x, xs)
+  let[@inline] of_list_exn = function [] -> failwith "empty list" | x :: xs -> (x, xs)
+  let[@inline] to_list (x, xs) = x :: xs
+  let[@inline] singleton x = (x, [])
+  let[@inline] cons x xs = (x, to_list xs)
   let of_tuple = Fun.id
   let to_tuple = Fun.id
-  let ( @ ) (x, xs) (y, ys) = (x, xs @ (y :: ys))
-  let map (x, xs) ~f = (f x, List.map ~f xs)
-  let hd (x, _) = x
-  let tl (_, xs) = xs
+  let[@inline] ( @ ) (x, xs) (y, ys) = (x, xs @ (y :: ys))
+  let[@inline] map (x, xs) ~f = (f x, List.map ~f xs)
+  let[@inline] hd (x, _) = x
+  let[@inline] tl (_, xs) = xs
 end
 
 module Iter = struct
@@ -105,6 +107,23 @@ module Iter = struct
          tbl)
     in
     fun k -> Hashtbl.iteri (Lazy.force tbl) ~f:(fun ~key ~data -> k (key, data))
+
+  let stats l =
+    let min, max, num, dem =
+      Iter.fold
+        (fun (min, max, num, dem) x ->
+          (Float.min min x, Float.max max x, num +. x, dem +. 1.0))
+        (Float.max_value, Float.min_value, 0.0, 0.0)
+        l
+    in
+    (min, max, num /. dem)
+
+  let iter_is_empty f s =
+    let is_empty = ref true in
+    s (fun x ->
+        is_empty := false;
+        f x);
+    !is_empty
 end
 
 module List = struct
@@ -118,14 +137,6 @@ module List = struct
     |> Iter.to_list
 
   let take ~n l = List.take l n
-
-  let stats l =
-    let min, max, num, dem =
-      List.fold_left l ~init:(Float.max_value, Float.min_value, 0.0, 0.0)
-        ~f:(fun (min, max, num, dem) x ->
-          (Float.min min x, Float.max max x, num +. x, dem +. 1.0))
-    in
-    (min, max, num /. dem)
 end
 
 module Array = struct
