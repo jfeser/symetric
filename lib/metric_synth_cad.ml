@@ -306,6 +306,13 @@ let synthesize () =
   let exception Done of Op.t Program.t in
   Log.log 1 (fun m -> m "Starting backwards pass");
 
+  let (Apply ((_, classes), _) as p) = S.find_term search_state (target_program ()) in
+  Log.sexp 1 (lazy [%message (List.length classes : int)]);
+  Log.sexp 1 (lazy [%message (p : (Op.t * _ list) Program.t)]);
+  Program.iter p ~f:(fun (op, classes) ->
+      print_s [%message (op : Op.t)];
+      List.iter classes ~f:(fun c -> Fmt.pr "%a\n@." Value.pp @@ S.Class.value c));
+
   let ret =
     try
       S.classes search_state
