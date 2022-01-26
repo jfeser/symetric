@@ -102,7 +102,7 @@ module Value = struct
         if unsound_pruning && S.(s = s') then Error else Scene s'
     | _ -> raise_s [%message "unexpected arguments" (op : Op.t) (args : t list)]
 
-  let eval_memoized =
+  let mk_eval_memoized () =
     let module Key = struct
       module T = struct
         type nonrec t = Op.t * t list [@@deriving compare, hash, sexp]
@@ -122,7 +122,7 @@ module Value = struct
     in
     find_or_eval
 
-  let eval = if memoize then eval_memoized else eval_unmemoized
+  let eval = if memoize then mk_eval_memoized () else eval_unmemoized
 
   let distance v v' =
     match (v, v') with

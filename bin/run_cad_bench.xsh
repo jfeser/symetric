@@ -1,6 +1,7 @@
 #!/usr/bin/env xonsh
 
 import glob
+import random
 
 base_dir = $HOME + "/work/ocaml-workspace/staged-synth"
 build_dir = base_dir + "/_build/default/"
@@ -18,14 +19,16 @@ cd @(run_dir)
 jobs = []
 for (d, c) in [('tiny', 10), ('small', 20), ('medium', 30), ('large', 40)]:
     for f in glob.glob(base_dir + '/bench/cad_ext/' + d + '/*'):
-        for gt in [2000]:
+        for gt in [100, 200, 400, 800]:
             for r in range(10):
-                jobs += [(f, c, r, gt)]
+                for t in [0.1, 0.0]:
+                    jobs += [(f, c, r, gt, t)]
+
 print('Jobs: ', len(jobs))
 with open('jobs', 'w') as fl:
-    for (f, c, r, gt) in jobs:
-        fl.write(f'{f} {c} {r} {gt}\n')
+    for (f, c, r, gt, t) in jobs:
+        fl.write(f'{f} {c} {r} {gt} {t}\n')
 
-cmd = build_dir + "/bin/metric_synth_cad.exe -max-cost {2} -verbosity 2 -group-threshold 0.1 -scaling 2 -n-groups {4} < {1} > metric-{2}-{3}-{4}-{1/}.json 2> metric-{2}-{3}-{4}-{1/}.log"
+cmd = build_dir + "/bin/metric_synth_cad.exe -max-cost {2} -verbosity 1 -group-threshold {5} -scaling 2 -n-groups {4} < {1} > metric-{2}-{3}-{4}-{5}-{1/}.json 2> metric-{2}-{3}-{4}-{5}-{1/}.log"
 print('Cmd: ', cmd)
-parallel -j 10 --eta --joblog metric_joblog --timeout 1h --colsep ' ' --memsuspend 8G @(cmd) :::: jobs
+parallel -j 20 --eta --joblog metric_joblog --timeout 10m --colsep ' ' --memsuspend 8G @(cmd) :::: jobs

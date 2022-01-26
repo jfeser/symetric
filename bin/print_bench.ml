@@ -1,15 +1,15 @@
 open Core
 open Staged_synth
-open Cad_rel
+open Cad_ext
 
 let () =
   let open Command.Let_syntax in
   Command.basic ~summary:"Print a CAD benchmark."
     [%map_open
       let scene_width =
-        flag "-scene-width" (optional_with_default 12 int) ~doc:" scene width in pixels"
+        flag "-scene-width" (optional_with_default 16 int) ~doc:" scene width in pixels"
       and scene_height =
-        flag "-scene-height" (optional_with_default 20 int) ~doc:" scene height in pixels"
+        flag "-scene-height" (optional_with_default 16 int) ~doc:" scene height in pixels"
       and scaling =
         flag "-scaling" (optional_with_default 1 int) ~doc:" scene scaling factor"
       in

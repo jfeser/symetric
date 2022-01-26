@@ -9,7 +9,7 @@ import sys
 import pandas as pd
 
 def load(run_dir):
-    header = ['method', 'bench', 'max_cost', 'distance_threshold', 'success', 'runtime', 'program_size']
+    header = ['method', 'bench', 'max_cost', 'n_groups', 'threshold', 'success', 'runtime', 'program_size']
     results = []
     for fn in os.listdir(run_dir):
         if not fn.endswith('.json'):
@@ -25,6 +25,7 @@ def load(run_dir):
         method = bench_params[0]
         max_cost = bench_params[1]
         group_count = bench_params[3]
+        thresh = bench_params[4]
         bench_name = bench_params[-1]
 
         result_row = [method]
@@ -32,7 +33,7 @@ def load(run_dir):
         if method == 'enumerate':
             result_row += [bench_params[-1], int(bench_params[1]), float('nan')]
         elif method == 'metric':
-            result_row += [bench_name, int(max_cost), int(group_count)]
+            result_row += [bench_name, int(max_cost), int(group_count), float(thresh)]
 
         if bench_json is None:
             result_row += [False, float('nan'), float('nan')]

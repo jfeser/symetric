@@ -134,6 +134,19 @@ module Make (Lang : Lang_intf) = struct
 
   let create () = { classes = H.create (module Attr); paths = H.create (module Class) }
 
+  let to_channel ch { classes; paths } =
+    let classes = H.to_alist classes and paths = H.to_alist paths in
+    Marshal.to_channel ch (classes, paths) []
+
+  let of_channel ch =
+    let (classes, paths) =
+      (Marshal.from_channel ch : (Attr.t * Class.t Sek.E.t) list * (Class.t * paths) list)
+    in
+    {
+      classes = H.of_alist_exn (module Attr) classes;
+      paths = H.of_alist_exn (module Class) paths;
+    }
+
   let pp_dot fmt { classes; paths } =
     let node_ids =
       H.to_alist classes
@@ -224,10 +237,11 @@ module Make (Lang : Lang_intf) = struct
 
   let insert_class_members ctx class_ members =
     let new_paths =
-      List.map members ~f:(fun (value, op, args) -> Path.create value op args)
+      List.map ~f:(fun (value, op, args) -> Path.create value op args) members
+      |> Sek.E.of_list Path.default
     in
     let old_paths = (H.find_exn ctx.paths class_).paths in
-    Sek.E.append Sek.front old_paths @@ Sek.E.of_list Path.default new_paths
+    Sek.E.append Sek.front old_paths @@ new_paths
 
   let insert_class ctx value op args =
     let args = List.map2_exn args (Op.args_type op) ~f:Class.create in

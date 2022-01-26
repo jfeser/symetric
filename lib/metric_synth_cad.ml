@@ -15,10 +15,11 @@ module Params = struct
     max_cost : int;
     backward_pass_repeats : int;
     verbosity : int;
-    search_state : S.t;
     target_program : Op.t Program.t;
     validate : bool;
     target_groups : int;
+    dump_search_space : string option;
+    load_search_space : string option;
   }
 end
 
@@ -26,7 +27,6 @@ let params = Set_once.create ()
 let[@inline] size () = (Set_once.get_exn params [%here]).Params.size
 let[@inline] ectx () = (Set_once.get_exn params [%here]).Params.ectx
 let[@inline] target () = (Set_once.get_exn params [%here]).Params.target
-let[@inline] search_state () = (Set_once.get_exn params [%here]).Params.search_state
 let[@inline] group_threshold () = (Set_once.get_exn params [%here]).Params.group_threshold
 let[@inline] operators () = (Set_once.get_exn params [%here]).Params.operators
 let[@inline] max_cost () = (Set_once.get_exn params [%here]).Params.max_cost
@@ -34,8 +34,17 @@ let[@inline] verbosity () = (Set_once.get_exn params [%here]).Params.verbosity
 let[@inline] target_program () = (Set_once.get_exn params [%here]).Params.target_program
 let[@inline] validate () = (Set_once.get_exn params [%here]).Params.validate
 let[@inline] target_groups () = (Set_once.get_exn params [%here]).Params.target_groups
+
+let[@inline] dump_search_space () =
+  (Set_once.get_exn params [%here]).Params.dump_search_space
+
+let[@inline] load_search_space () =
+  (Set_once.get_exn params [%here]).Params.load_search_space
+
+let search_state = ref (S.create ())
+let[@inline] get_search_state () = !search_state
 let max_repeat_count = 4
-let target_groups_err = 0.5
+let target_groups_err = 0.1
 
 module Log = struct
   let start_time = Time.now ()
@@ -67,6 +76,7 @@ let local_search p =
   and size = size ()
   and steps = local_search_steps ()
   and ectx = ectx () in
+  let value_eval = Value.mk_eval_memoized () in
   Local_search.of_unnormalize_tabu ~target ~dist:distance
     (module Op)
     (module Value)
@@ -108,13 +118,14 @@ let local_search p =
               );
           ]
       | _ -> [])
-    (Program.eval (Value.eval_memoized ectx))
+    (Program.eval (value_eval ectx))
     p
-  |> Iter.map (fun p -> (target_distance (Program.eval (Value.eval_memoized ectx) p), p))
+  |> Iter.map (fun p -> (target_distance (Program.eval (value_eval ectx) p), p))
   |> Iter.take steps
-  |> Iter.min_floor ~to_float:(fun (d, _) -> d) 0.0
-  |> Option.map ~f:(fun (_, p) -> p)
-  |> Option.value ~default:p
+  |> Iter.mapi (fun i (d, x) -> (d, i, x))
+  |> Iter.min_floor ~to_float:(fun (d, _, _) -> d) 0.0
+  |> Option.map ~f:(fun (_, i, p) -> (i, p))
+  |> Option.value ~default:(-1, p)
 
 type group_result = { groups : S.Class.t list Hashtbl.M(S.Class).t; n_queries : int }
 
@@ -122,7 +133,7 @@ module NList = Non_empty_list
 
 (** return a mapping from representatives to the members of their groups *)
 let group_states_vp states : group_result =
-  let thresh = group_threshold () and search_state = search_state () in
+  let thresh = group_threshold () in
 
   let distance c c' =
     let v = S.Class.value c and v' = S.Class.value c' in
@@ -130,20 +141,21 @@ let group_states_vp states : group_result =
   in
   let create_vp = Vpt.create distance `Random in
 
-  let reference_vp = ref (create_vp @@ (S.classes search_state |> Iter.to_list))
+  let reference_vp = ref (create_vp @@ (* (S.classes search_state |> Iter.to_list) *) [])
   and reference = ref []
   and groups = Hashtbl.create (module S.Class) in
   let n_queries = ref 0 in
 
   let find_close c f =
     incr n_queries;
-    if List.length !reference > 100 then (
-      reference_vp := create_vp ((Iter.to_list @@ Vpt.iter !reference_vp) @ !reference);
-      reference := []);
-    (Iter.append
-       (Vpt.neighbors distance c thresh !reference_vp)
-       (Iter.filter (fun c' -> distance c c' <=. thresh) (Iter.of_list !reference)))
-      f
+    if thresh >. 0.0 then (
+      if List.length !reference > 100 then (
+        reference_vp := create_vp ((Iter.to_list @@ Vpt.iter !reference_vp) @ !reference);
+        reference := []);
+      (Iter.append
+         (Vpt.neighbors distance c thresh !reference_vp)
+         (Iter.filter (fun c' -> distance c c' <=. thresh) (Iter.of_list !reference)))
+        f)
   in
 
   List.iter states ~f:(fun v ->
@@ -160,7 +172,7 @@ let group_states_vp states : group_result =
 
 let prev_group_sample = ref (-1)
 
-let insert_states edges =
+let insert_states all_edges =
   let target_groups = target_groups () in
   let target_groups_min =
     Float.(to_int @@ (of_int target_groups *. (1.0 -. target_groups_err)))
@@ -168,12 +180,12 @@ let insert_states edges =
     Float.(to_int @@ (of_int target_groups *. (1.0 +. target_groups_err)))
   in
 
-  let search_state = search_state () in
+  let search_state = get_search_state () in
 
   (* group edges that produce the same state *)
   let n_states = ref 0 in
   let distinct_edges = Hashtbl.create (module S.Class) in
-  edges (fun ((value, op, _) as edge) ->
+  all_edges (fun ((value, op, _) as edge) ->
       let class_ = S.Class.create value (Op.ret_type op) in
       incr n_states;
       Hashtbl.update distinct_edges class_ ~f:(function
@@ -192,12 +204,15 @@ let insert_states edges =
   Log.log 1 (fun m ->
       m "(%d, %d distinct) states." !n_states (Hashtbl.length distinct_edges));
 
-  let distinct_states =
-    Hashtbl.keys distinct_edges
-    |> List.map ~f:(fun c -> (target_distance @@ S.Class.value c, c))
-    |> List.sort ~compare:[%compare: float * _]
-    |> List.map ~f:Tuple.T2.get2
+  let distinct_states, sort_time =
+    Synth_utils.timed (fun () ->
+        Hashtbl.keys distinct_edges
+        |> List.map ~f:(fun c -> (target_distance @@ S.Class.value c, c))
+        |> List.sort ~compare:[%compare: float * _]
+        |> List.map ~f:Tuple.T2.get2)
   in
+
+  Log.log 1 (fun m -> m "sort time %a" Time.Span.pp sort_time);
 
   let rec adaptive_group prev_ngroups ct =
     let n_states = List.length distinct_states in
@@ -213,8 +228,10 @@ let insert_states edges =
       (groups, List.length sample)
     else if prev_ngroups > 0 then
       let t_n = target_groups - n_groups and n_n0 = n_groups - prev_ngroups in
-      let incr = Float.(to_int (of_int target_groups *. (of_int t_n /. of_int n_n0))) in
-      adaptive_group n_groups (ct + incr)
+      if n_n0 = 0 then adaptive_group n_groups (ct + target_groups)
+      else
+        let incr = Float.(to_int (of_int target_groups *. (of_int t_n /. of_int n_n0))) in
+        adaptive_group n_groups (ct + incr)
     else adaptive_group n_groups (ct + target_groups)
   in
 
@@ -227,19 +244,18 @@ let insert_states edges =
 
   Hashtbl.iteri groups ~f:(fun ~key:class_ ~data:members ->
       (* insert new representative (some may already exist) *)
-      if not @@ S.mem_class search_state class_ then (
-        let value, op, args = NList.hd @@ Hashtbl.find_exn distinct_edges class_ in
-        S.insert_class search_state value op @@ List.map ~f:S.Class.value args;
+      (if not @@ S.mem_class search_state class_ then
+       let value, op, args = NList.hd @@ Hashtbl.find_exn distinct_edges class_ in
+       S.insert_class search_state value op @@ List.map ~f:S.Class.value args);
 
-        let edges =
-          List.concat_map members ~f:(fun c ->
-              NList.to_list @@ Hashtbl.find_exn distinct_edges c)
-        in
-        S.insert_class_members search_state class_ edges))
+      List.iter members ~f:(fun c ->
+          S.insert_class_members search_state class_
+          @@ NList.to_list
+          @@ Hashtbl.find_exn distinct_edges c))
 
 let fill_search_space () =
   let ectx = ectx ()
-  and search_state = search_state ()
+  and search_state = get_search_state ()
   and ops = operators ()
   and max_cost = max_cost () in
 
@@ -256,15 +272,15 @@ let fill_search_space () =
 
     Log.log 1 (fun m ->
         m "Finish generating states of cost %d (runtime=%a)" cost Time.Span.pp run_time)
-  done;
-  exit 1
+  done
 
 let backwards_pass class_ =
-  let search_state = search_state () and max_cost = max_cost () and ectx = ectx () in
+  let search_state = get_search_state () and max_cost = max_cost () and ectx = ectx () in
   match S.Class.value class_ with
   | Value.Scene _ ->
       Iter.forever (fun () ->
-          S.local_greedy search_state (Int.ceil_log2 max_cost) (Value.eval_memoized ectx)
+          S.local_greedy search_state (Int.ceil_log2 max_cost)
+            (Value.mk_eval_memoized () ectx)
             target_distance class_
           |> Option.map ~f:local_search)
       |> Iter.filter_map Fun.id
@@ -272,11 +288,18 @@ let backwards_pass class_ =
 
 let synthesize () =
   let start_time = Time.now () in
-  let search_state = search_state ()
-  and target = target ()
+  let target = target ()
   and ectx = ectx ()
   and backward_pass_repeats = backward_pass_repeats () in
-  fill_search_space ();
+
+  (match load_search_space () with
+  | Some fn -> In_channel.with_file fn ~f:(fun ch -> search_state := S.of_channel ch)
+  | None ->
+      fill_search_space ();
+      Option.iter (dump_search_space ()) ~f:(fun fn ->
+          Out_channel.with_file fn ~f:(fun ch -> S.to_channel ch @@ get_search_state ())));
+  let search_state = get_search_state () in
+
   if validate () then
     S.validate search_state (Value.eval ectx) distance (group_threshold ());
 
@@ -296,9 +319,10 @@ let synthesize () =
              backwards_pass class_
              |> Iter.take backward_pass_repeats
              |> Iter.min_floor
-                  ~to_float:(fun p -> target_distance @@ Program.eval (Value.eval ectx) p)
+                  ~to_float:(fun (_, p) ->
+                    target_distance @@ Program.eval (Value.eval ectx) p)
                   0.0
-             |> Option.iter ~f:(fun p ->
+             |> Option.iter ~f:(fun (local_search_iters, p) ->
                     let found_value = Program.eval (Value.eval ectx) p in
 
                     Log.log 2 (fun m ->
@@ -306,7 +330,9 @@ let synthesize () =
                           found_value);
                     Log.sexp 2 (lazy [%message (p : Op.t Program.t)]);
 
-                    if [%compare.equal: Value.t] target found_value then raise (Done p)));
+                    if [%compare.equal: Value.t] target found_value then (
+                      Log.log 0 (fun m -> m "local search iters %d" local_search_iters);
+                      raise (Done p))));
       None
     with Done p -> Some p
   in
@@ -314,7 +340,8 @@ let synthesize () =
   ret
 
 let set_params ~scene_width ~scene_height ~group_threshold ~max_cost ~local_search_steps
-    ~backward_pass_repeats ~verbosity ~validate ~scaling ~n_groups target_prog =
+    ~backward_pass_repeats ~verbosity ~validate ~scaling ~n_groups ~dump_search_space
+    ~load_search_space target_prog =
   let size = Scene2d.Dim.create ~xres:scene_width ~yres:scene_height ~scaling () in
   let ectx = Value.Ctx.create size in
   let target = Program.eval (Value.eval ectx) target_prog in
@@ -342,9 +369,10 @@ let set_params ~scene_width ~scene_height ~group_threshold ~max_cost ~local_sear
         max_cost;
         backward_pass_repeats;
         verbosity;
-        search_state = S.create ();
         target_program = target_prog;
         target_groups = n_groups;
+        dump_search_space;
+        load_search_space;
       }
 
 let print_output m_prog =
@@ -380,6 +408,12 @@ let cmd =
     [%map_open
       let max_cost =
         flag "-max-cost" (required int) ~doc:" the maximum size of program to evaluate"
+      and dump_search_space =
+        flag "-dump-search-space" (optional string)
+          ~doc:" dump the search space to a file"
+      and load_search_space =
+        flag "-load-search-space" (optional string)
+          ~doc:" load the search space from a file"
       and group_threshold =
         flag "-group-threshold"
           (optional_with_default 0.1 float)
@@ -408,6 +442,7 @@ let cmd =
       fun () ->
         set_params ~max_cost ~group_threshold ~local_search_steps ~scene_width
           ~scene_height ~backward_pass_repeats ~verbosity ~validate ~scaling ~n_groups
+          ~dump_search_space ~load_search_space
         @@ Lang.parse
         @@ Sexp.input_sexp In_channel.stdin;
         synthesize () |> print_output]
