@@ -22,24 +22,23 @@ let random len =
   let buf = String.init nwords ~f:(fun _ -> Random.char ()) in
   { buf; len }
 
-external bitarray_and : string -> string -> bytes -> unit = "" "bitarray_and_stub"
+external bitarray_and : string -> string -> bytes -> unit = "bitarray_and_stub"
   [@@noalloc]
 
-external bitarray_or : string -> string -> bytes -> unit = "" "bitarray_or_stub"
+external bitarray_or : string -> string -> bytes -> unit = "bitarray_or_stub" [@@noalloc]
+
+external bitarray_xor : string -> string -> bytes -> unit = "bitarray_xor_stub"
   [@@noalloc]
 
-external bitarray_xor : string -> string -> bytes -> unit = "" "bitarray_xor_stub"
-  [@@noalloc]
-
-external bitarray_any : string -> bool = "" "bitarray_any_stub" [@@noalloc]
-external bitarray_not : string -> bytes -> unit = "" "bitarray_not_stub" [@@noalloc]
+external bitarray_any : string -> bool = "bitarray_any_stub" [@@noalloc]
+external bitarray_not : string -> bytes -> unit = "bitarray_not_stub" [@@noalloc]
 
 external bitarray_hamming_weight : string -> (int[@untagged])
-  = "" "bitarray_hamming_weight_stub"
+  = "bitarray_hamming_weight_stub_byte" "bitarray_hamming_weight_stub"
   [@@noalloc]
 
 external bitarray_hamming_distance : string -> string -> (int[@untagged])
-  = "" "bitarray_hamming_distance_stub"
+  = "bitarray_hamming_distance_stub_byte" "bitarray_hamming_distance_stub"
   [@@noalloc]
 
 external bitarray_replicate :
@@ -50,10 +49,11 @@ external bitarray_replicate :
   (int[@untagged]) ->
   (int[@untagged]) ->
   bytes ->
-  unit = "" "bitarray_replicate_stub"
+  unit = "bitarray_replicate_stub_byte" "bitarray_replicate_stub"
   [@@noalloc]
 
-external bitarray_hash : string -> string -> (int[@untagged]) = "" "bitarray_hash_stub"
+external bitarray_hash : string -> string -> (int[@untagged])
+  = "bitarray_hash_stub_byte" "bitarray_hash_stub"
   [@@noalloc]
 
 let[@inline] binary op a b =
