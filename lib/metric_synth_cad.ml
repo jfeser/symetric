@@ -68,6 +68,22 @@ let[@inline] local_search_steps () =
   (Set_once.get_exn params [%here]).Params.local_search_steps
 
 let runtime = ref Time.Span.zero
+
+let similarity (v : Value.t) (v' : Value.t) =
+  match (v, v') with
+  | Scene x, Scene x' ->
+      let target_scene = match target () with Scene t -> t | _ -> assert false in
+
+      let n = Scene2d.(pixels @@ sub target_scene x)
+      and n' = Scene2d.(pixels @@ sub target_scene x') in
+      let p = Scene2d.(pixels @@ sub x target_scene)
+      and p' = Scene2d.(pixels @@ sub x' target_scene) in
+      let union = Bitarray.(hamming_weight (or_ n n') + hamming_weight (or_ p p'))
+      and inter = Bitarray.(hamming_weight (and_ n n') + hamming_weight (and_ p p')) in
+      assert (union >= inter && inter >= 0);
+      if union = 0 then 0.0 else 1.0 -. (Float.of_int inter /. Float.of_int union)
+  | v, v' -> if [%compare.equal: Value.t] v v' then 0.0 else Float.infinity
+
 let distance = Value.distance
 let target_distance v = distance (target ()) v
 
@@ -137,7 +153,7 @@ let group_states_vp states : group_result =
 
   let distance c c' =
     let v = S.Class.value c and v' = S.Class.value c' in
-    distance v v'
+    similarity v v'
   in
   let create_vp = Vpt.create distance `Random in
 
@@ -214,33 +230,51 @@ let insert_states all_edges =
 
   Log.log 1 (fun m -> m "sort time %a" Time.Span.pp sort_time);
 
-  let rec adaptive_group prev_ngroups ct =
-    let n_states = List.length distinct_states in
-    let sample = List.permute @@ List.take ~n:ct distinct_states in
+  let n_states = List.length distinct_states in
+
+  let group n_sample =
+    let sample = List.permute @@ List.take ~n:n_sample distinct_states in
     let group_result = group_states_vp sample in
     let groups = group_result.groups in
+    Log.sexp 0 (lazy [%message (n_sample : int) (Hashtbl.length groups : int)]);
+    groups
+  in
+
+  (* compute an upper bound on n_sample. if a good group is found, return it *)
+  let rec adaptive_group_find_max n_sample =
+    let groups = group n_sample in
     let n_groups = Hashtbl.length groups in
 
-    Log.sexp 0 (lazy [%message (ct : int) (n_groups : int)]);
-
-    if n_groups > target_groups_max then adaptive_group 0 (ct / 2)
-    else if ct >= n_states || n_groups >= target_groups_min then
-      (groups, List.length sample)
-    else if prev_ngroups > 0 then
-      let t_n = target_groups - n_groups and n_n0 = n_groups - prev_ngroups in
-      if n_n0 = 0 then adaptive_group n_groups (ct + target_groups)
-      else
-        let incr = Float.(to_int (of_int target_groups *. (of_int t_n /. of_int n_n0))) in
-        adaptive_group n_groups (ct + incr)
-    else adaptive_group n_groups (ct + target_groups)
+    if n_groups > target_groups_max then First n_sample
+    else if n_sample >= n_states || n_groups >= target_groups_min then
+      Second (groups, Int.min n_states n_sample)
+    else adaptive_group_find_max (n_sample * 2)
   in
 
-  let (groups, n_sample), _group_time =
+  let rec adaptive_group min_sample max_sample =
+    let n_sample = (min_sample + max_sample) / 2 in
+    let groups = group n_sample in
+    let n_groups = Hashtbl.length groups in
+
+    if n_groups > target_groups_max then adaptive_group min_sample n_sample
+    else if n_sample >= n_states || n_groups >= target_groups_min then (groups, n_sample)
+    else adaptive_group n_sample max_sample
+  in
+
+  let groups, _group_time =
     Synth_utils.timed (fun () ->
-        adaptive_group 0
-          (if !prev_group_sample > 0 then !prev_group_sample else target_groups))
+        let n_sample_init =
+          if !prev_group_sample > 0 then !prev_group_sample else target_groups
+        in
+        let groups, n_sample =
+          match adaptive_group_find_max n_sample_init with
+          | First max_sample -> adaptive_group (max_sample / 2) max_sample
+          | Second gs -> gs
+        in
+
+        prev_group_sample := n_sample;
+        groups)
   in
-  prev_group_sample := n_sample;
 
   Hashtbl.iteri groups ~f:(fun ~key:class_ ~data:members ->
       (* insert new representative (some may already exist) *)
@@ -306,10 +340,26 @@ let synthesize () =
   let exception Done of Op.t Program.t in
   Log.log 1 (fun m -> m "Starting backwards pass");
 
-  let (Apply ((_, classes), _) as p) = S.find_term search_state (target_program ()) in
-  Log.sexp 1 (lazy [%message (List.length classes : int)]);
-  Log.sexp 1 (lazy [%message (p : (Op.t * _ list) Program.t)]);
-  Program.iter p ~f:(fun (op, classes) ->
+  let (Apply ((_, pos_classes, neg_classes), _) as p) =
+    S.find_term search_state (target_program ())
+  in
+  let print_classes cs =
+    List.iter cs ~f:(fun c -> Fmt.pr "%a\n@." Value.pp @@ S.Class.value c)
+  in
+  (match p with
+  | Apply ((_, _, _), [ Apply ((_, cs, _), _); Apply ((_, cs', _), _) ]) ->
+      print_endline "first argument";
+      print_classes cs;
+      print_endline "second argument";
+      print_classes cs'
+  | _ -> ());
+
+  List.iter neg_classes ~f:(fun c -> Fmt.pr "%a\n@." Value.pp @@ S.Class.value c);
+  if true then failwith "";
+
+  Log.sexp 1 (lazy [%message (List.length pos_classes : int)]);
+  Log.sexp 1 (lazy [%message (p : (Op.t * _ list * _ list) Program.t)]);
+  Program.iter p ~f:(fun (op, classes, _) ->
       print_s [%message (op : Op.t)];
       List.iter classes ~f:(fun c -> Fmt.pr "%a\n@." Value.pp @@ S.Class.value c));
 

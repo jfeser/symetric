@@ -12,7 +12,7 @@ typedef int32_t word_t;
 CAMLprim value bitarray_and_stub(value b1, value b2, value b3) {
   const word_t *p1 = (const word_t *)String_val(b1),
                *p2 = (const word_t *)String_val(b2);
-  unsigned char *p3 = Bytes_val(b3);
+  word_t *p3 = (word_t*)Bytes_val(b3);
 
   for (int i = 0; i < len(b1); i++) {
     p3[i] = p1[i] & p2[i];
@@ -23,7 +23,7 @@ CAMLprim value bitarray_and_stub(value b1, value b2, value b3) {
 CAMLprim value bitarray_or_stub(value b1, value b2, value b3) {
   const word_t *p1 = (const word_t *)String_val(b1),
                *p2 = (const word_t *)String_val(b2);
-  unsigned char *p3 = Bytes_val(b3);
+   word_t *p3 = (word_t*)Bytes_val(b3);
 
   for (int i = 0; i < len(b1); i++) {
     p3[i] = p1[i] | p2[i];
@@ -34,7 +34,7 @@ CAMLprim value bitarray_or_stub(value b1, value b2, value b3) {
 CAMLprim value bitarray_xor_stub(value b1, value b2, value b3) {
   const word_t *p1 = (const word_t *)String_val(b1),
                *p2 = (const word_t *)String_val(b2);
-  unsigned char *p3 = Bytes_val(b3);
+   word_t *p3 = (word_t*)Bytes_val(b3);
 
   for (int i = 0; i < len(b1); i++) {
     p3[i] = p1[i] ^ p2[i];
@@ -48,7 +48,7 @@ CAMLprim value bitarray_any_stub(value b) {
 
 CAMLprim value bitarray_not_stub(value b1, value b2) {
   const word_t *p1 = (const word_t *)String_val(b1);
-  unsigned char *p2 = Bytes_val(b2);
+   word_t *p2 = (word_t*)Bytes_val(b2);
 
   for (int i = 0; i < len(b1); i++) {
     p2[i] = ~p1[i];

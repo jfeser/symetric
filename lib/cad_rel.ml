@@ -232,7 +232,10 @@ module Value = struct
     match (v, v') with
     | Scene (x, w, h), Scene (x', w', h') ->
         let inter = Scene2d.hamming x x' in
-        let union = x.dim.scaling * Int.max w w' * x.dim.scaling * Int.max h h' in
+        let union =
+          let scaling = (Scene2d.dim x).scaling in
+          scaling * Int.max w w' * scaling * Int.max h h'
+        in
         let ret = Float.of_int inter /. Float.of_int union in
         if inter > union then (
           Fmt.pr "d = %f,\n%a\n%a\n" ret pp v pp v';

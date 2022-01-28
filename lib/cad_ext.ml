@@ -126,7 +126,7 @@ module Value = struct
 
   let distance v v' =
     match (v, v') with
-    | Scene x, Scene x' -> Scene2d.jaccard x x'
+    | Scene x, Scene x' -> Scene2d.jaccard_pixels x x'
     | v, v' -> if [%compare.equal: t] v v' then 0.0 else Float.infinity
 end
 

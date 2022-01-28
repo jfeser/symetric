@@ -198,39 +198,37 @@ module Make (Lang : Lang_intf) = struct
 
   let rec find_term ctx = function
     | Apply (op, []) ->
-        let all_values =
+        let pos_classes, neg_classes =
           H.to_alist ctx.paths
-          |> List.filter_map ~f:(fun (v, (paths : paths)) ->
+          |> List.partition_map ~f:(fun (v, (paths : paths)) ->
                  if
                    Sek.E.exists
                      (fun p ->
                        [%compare.equal: Op.t] op (Path.op p)
                        && List.is_empty (Path.args p))
                      paths.paths
-                 then Some v
-                 else None)
+                 then First v
+                 else Second v)
         in
-        print_s [%message (op : Op.t) (List.length all_values : int)];
-
-        Apply ((op, all_values), [])
+        Apply ((op, pos_classes, neg_classes), [])
     | Apply (op, args) ->
         let args = List.map args ~f:(find_term ctx) in
         let arg_sets =
-          List.map args ~f:(fun (Apply ((_, vs), _)) -> Set.of_list (module Class) vs)
+          List.map args ~f:(fun (Apply ((_, vs, _), _)) -> Set.of_list (module Class) vs)
         in
-        let all_outputs =
+        let pos_classes, neg_classes =
           H.to_alist ctx.paths
-          |> List.filter_map ~f:(fun (v, (paths : paths)) ->
+          |> List.partition_map ~f:(fun (v, (paths : paths)) ->
                  if
                    Sek.E.exists
                      (fun p ->
                        [%compare.equal: Op.t] op (Path.op p)
                        && List.for_all2_exn arg_sets (Path.args p) ~f:Set.mem)
                      paths.paths
-                 then Some v
-                 else None)
+                 then First v
+                 else Second v)
         in
-        Apply ((op, all_outputs), args)
+        Apply ((op, pos_classes, neg_classes), args)
 
   let mem_class ctx class_ = H.mem ctx.paths class_
   let classes ctx k = H.iter ctx.classes ~f:(Sek.E.iter Sek.forward k)
