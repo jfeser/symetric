@@ -1,7 +1,8 @@
 open Std
 
 module Dim = struct
-  type t = { xres : int; yres : int; scaling : int } [@@deriving compare, hash, sexp]
+  type t = { xres : int; yres : int; scaling : int }
+  [@@deriving compare, hash, sexp, yojson]
 
   let scaled_xres x = x.xres * x.scaling
   let scaled_yres x = x.yres * x.scaling

@@ -19,9 +19,9 @@ cd @(run_dir)
 jobs = []
 for (d, c) in [('tiny', 10), ('small', 20), ('medium', 30), ('large', 40)]:
     for f in glob.glob(base_dir + '/bench/cad_ext/' + d + '/*'):
-        for gt in [100, 200, 400, 800]:
+        for gt in [100, 200, 400]:
             for r in range(10):
-                for t in [0.1, 0.0]:
+                for t in [0.4]:
                     jobs += [(f, c, r, gt, t)]
 
 print('Jobs: ', len(jobs))
@@ -30,6 +30,6 @@ with open('jobs', 'w') as fl:
         fl.write(f'{f} {c} {r} {gt} {t}\n')
 
 job_name = "metric-{2}-{3}-{4}-{5}-{1/}"
-cmd = "%s/bin/metric_synth_cad.exe -max-cost {2} -verbosity 1 -group-threshold {5} -scaling 2 -n-groups {4} -dump-search-space %s.bin < {1} > %s.json 2> %s.log" % (build_dir, job_name, job_name, job_name)
+cmd = "%s/bin/metric_synth_cad.exe -max-cost {2} -verbosity 1 -group-threshold {5} -scaling 2 -n-groups {4} -dump-search-space %s.bin -out %s.json < {1} 2> %s.log" % (build_dir, job_name, job_name, job_name)
 print('Cmd: ', cmd)
 parallel -j 20 --eta --joblog metric_joblog --timeout 10m --colsep ' ' --memsuspend 8G @(cmd) :::: jobs

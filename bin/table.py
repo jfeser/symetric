@@ -8,19 +8,37 @@ import sys
 
 import pandas as pd
 
+
 def load(run_dir):
-    header = ['method', 'bench', 'max_cost', 'n_groups', 'threshold', 'success', 'runtime', 'program_size']
+    header = [
+        "method",
+        "bench",
+        "max_cost",
+        "n_groups",
+        "threshold",
+        "success",
+        "runtime",
+        "program_size",
+        "max_cost_generated",
+        "space_contains_target",
+    ]
     results = []
     for fn in os.listdir(run_dir):
-        if not fn.endswith('.json'):
+        if not fn.endswith(".json"):
             continue
-        bench_params = os.path.splitext(fn)[0].split('-')
-        with open(os.path.join(run_dir, fn), 'r') as f:
+        bench_params = os.path.splitext(fn)[0].split("-")
+        with open(os.path.join(run_dir, fn), "r") as f:
+            data = f.read()
+            data = data.replace("}{", "}\n\n{")
+            lines = data.split("\n\n")
             bench_json = None
-            try:
-                bench_json = json.load(f)
-            except json.decoder.JSONDecodeError:
-                pass
+            if lines:
+                json_str = lines[-1]
+                print(json_str)
+                try:
+                    bench_json = json.loads(json_str)
+                except json.decoder.JSONDecodeError:
+                    pass
 
         method = bench_params[0]
         max_cost = bench_params[1]
@@ -30,31 +48,39 @@ def load(run_dir):
 
         result_row = [method]
 
-        if method == 'enumerate':
-            result_row += [bench_params[-1], int(bench_params[1]), float('nan')]
-        elif method == 'metric':
+        if method == "enumerate":
+            result_row += [bench_params[-1], int(bench_params[1]), float("nan")]
+        elif method == "metric":
             result_row += [bench_name, int(max_cost), int(group_count), float(thresh)]
 
         if bench_json is None:
-            result_row += [False, float('nan'), float('nan')]
+            result_row += [False, float("nan"), float("nan"), float("nan"), None]
         else:
-            result_row += [bench_json['program'] is not None, bench_json['runtime'], bench_json['program_size']]
+            result_row += [
+                bench_json["program"] is not None,
+                bench_json["runtime"],
+                bench_json["program_size"],
+                bench_json["max_cost_generated"],
+                bench_json["space_contains_target"],
+            ]
 
         results += [result_row]
 
     df = pd.DataFrame(results, columns=header)
-    df = df.sort_values(['bench', 'method'])
+    df = df.sort_values(["bench", "method"])
     return df
 
 
 def process(df):
     print(df.to_csv())
 
+
 def main(run_dir):
     process(load(run_dir))
-        
-if __name__ == '__main__':
+
+
+if __name__ == "__main__":
     if len(sys.argv) != 2:
-        print('Usage: table.py RUN_DIR')
+        print("Usage: table.py RUN_DIR")
         exit(1)
     main(sys.argv[1])

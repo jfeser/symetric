@@ -4,7 +4,8 @@ module T = struct
   type 'o t = Apply of 'o * 'o t list
 end
 
-type 'o t = 'o T.t = Apply of 'o * 'o t list [@@deriving compare, equal, hash, sexp]
+type 'o t = 'o T.t = Apply of 'o * 'o t list
+[@@deriving compare, equal, hash, sexp, yojson]
 
 let rec pp pp_op fmt (Apply (op, args)) =
   if List.is_empty args then pp_op fmt op
@@ -24,7 +25,10 @@ let eval_parts oeval p =
   Queue.to_list parts
 
 let rec size (Apply (_, args)) = 1 + List.sum (module Int) args ~f:size
-let rec count ~f (Apply (op, args)) = (if f op then 1 else 0) + List.sum (module Int) args ~f:(count ~f)
+
+let rec count ~f (Apply (op, args)) =
+  (if f op then 1 else 0) + List.sum (module Int) args ~f:(count ~f)
+
 let rec ops (Apply (op, args)) = op :: List.concat_map args ~f:ops
 
 let rec ops_iter (Apply (op, args)) f =
@@ -51,7 +55,8 @@ let rec iter_postorder ~f (Apply (op, args)) =
   List.iter args ~f:(iter_postorder ~f);
   f op
 
-let iter ?(order = `Pre) = match order with `Pre -> iter_preorder | `Post -> iter_postorder
+let iter ?(order = `Pre) =
+  match order with `Pre -> iter_preorder | `Post -> iter_postorder
 
 let mapi ?(order = `Pre) ~f p =
   let idx = ref 0 in
@@ -82,7 +87,8 @@ let%expect_test "" =
   [%expect {| (Apply 0 ((Apply 1 ()) (Apply 2 ((Apply 3 ()))))) |}]
 
 let%expect_test "" =
-  test_mapi_iteri (apply () ~args:[ apply () ~args:[ apply () ~args:[ apply () ] ]; apply () ]);
+  test_mapi_iteri
+    (apply () ~args:[ apply () ~args:[ apply () ~args:[ apply () ] ]; apply () ]);
   [%expect {| (Apply 0 ((Apply 1 ((Apply 2 ((Apply 3 ()))))) (Apply 4 ()))) |}]
 
 module Make (Op : sig

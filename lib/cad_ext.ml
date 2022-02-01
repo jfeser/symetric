@@ -11,7 +11,7 @@ end
 
 module Op = struct
   type t = Union | Inter | Circle | Rect | Repl | Sub | Int of int | Rep_count of int
-  [@@deriving compare, hash, sexp]
+  [@@deriving compare, hash, sexp, yojson]
 
   let default = Union
   let cost _ = 1

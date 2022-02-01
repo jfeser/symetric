@@ -4,12 +4,15 @@ open Lang
 module S = Search_state_all.Make (Lang)
 module Gen = Generate.Gen_iter (Lang)
 
+(* constants *)
+let max_repeat_count = 4
+let target_groups_err = 0.1
+
+(* parameters *)
 module Params = struct
   type t = {
     size : Scene2d.Dim.t;
-    ectx : Value.Ctx.t;
     local_search_steps : int;
-    target : Value.t;
     group_threshold : float;
     operators : Op.t list;
     max_cost : int;
@@ -20,13 +23,13 @@ module Params = struct
     target_groups : int;
     dump_search_space : string option;
     load_search_space : string option;
+    output_file : string;
   }
+  [@@deriving yojson]
 end
 
 let params = Set_once.create ()
 let[@inline] size () = (Set_once.get_exn params [%here]).Params.size
-let[@inline] ectx () = (Set_once.get_exn params [%here]).Params.ectx
-let[@inline] target () = (Set_once.get_exn params [%here]).Params.target
 let[@inline] group_threshold () = (Set_once.get_exn params [%here]).Params.group_threshold
 let[@inline] operators () = (Set_once.get_exn params [%here]).Params.operators
 let[@inline] max_cost () = (Set_once.get_exn params [%here]).Params.max_cost
@@ -34,6 +37,7 @@ let[@inline] verbosity () = (Set_once.get_exn params [%here]).Params.verbosity
 let[@inline] target_program () = (Set_once.get_exn params [%here]).Params.target_program
 let[@inline] validate () = (Set_once.get_exn params [%here]).Params.validate
 let[@inline] target_groups () = (Set_once.get_exn params [%here]).Params.target_groups
+let[@inline] output_file () = (Set_once.get_exn params [%here]).Params.output_file
 
 let[@inline] dump_search_space () =
   (Set_once.get_exn params [%here]).Params.dump_search_space
@@ -41,10 +45,11 @@ let[@inline] dump_search_space () =
 let[@inline] load_search_space () =
   (Set_once.get_exn params [%here]).Params.load_search_space
 
-let search_state = ref (S.create ())
-let[@inline] get_search_state () = !search_state
-let max_repeat_count = 4
-let target_groups_err = 0.1
+let[@inline] backward_pass_repeats () =
+  (Set_once.get_exn params [%here]).Params.backward_pass_repeats
+
+let[@inline] local_search_steps () =
+  (Set_once.get_exn params [%here]).Params.local_search_steps
 
 module Log = struct
   let start_time = Time.now ()
@@ -56,18 +61,54 @@ module Log = struct
         Time.Span.pp
         (Time.diff (Time.now ()) start_time)
     in
-    if level >= verbosity () then msgf with_time
+    if level <= verbosity () then msgf with_time
 
-  let sexp level lsexp = if level >= verbosity () then eprint_s @@ Lazy.force lsexp
+  let sexp level lsexp = if level <= verbosity () then eprint_s @@ Lazy.force lsexp
 end
 
-let[@inline] backward_pass_repeats () =
-  (Set_once.get_exn params [%here]).Params.backward_pass_repeats
-
-let[@inline] local_search_steps () =
-  (Set_once.get_exn params [%here]).Params.local_search_steps
-
+let search_state = ref (S.create ())
+let[@inline] get_search_state () = !search_state
 let runtime = ref Time.Span.zero
+let ectx = lazy (Value.Ctx.create (size ()))
+let[@inline] ectx () = Lazy.force ectx
+let target = lazy (Program.eval (Value.eval (ectx ())) @@ target_program ())
+let[@inline] target () = Lazy.force target
+let max_cost_generated = ref 0
+let groups_searched = ref 0
+let space_contains_target = ref None
+
+let write_output m_prog =
+  let program_size =
+    Option.map m_prog ~f:(fun p -> Float.of_int @@ Program.size p)
+    |> Option.value ~default:Float.nan
+  in
+  let program_json =
+    Option.map m_prog ~f:(fun p -> `String (Sexp.to_string @@ Lang.serialize p))
+    |> Option.value ~default:`Null
+  in
+  let open Yojson in
+  let json =
+    `Assoc
+      [
+        ("method", `String "metric");
+        ("scene_width", `Int (size ()).xres);
+        ("scene_height", `Int (size ()).yres);
+        ("scaling", `Int (size ()).scaling);
+        ("local_search_steps", `Int (local_search_steps ()));
+        ("group_threshold", `Float (group_threshold ()));
+        ("max_cost", `Int (max_cost ()));
+        ("backward_pass_repeats", `Int (backward_pass_repeats ()));
+        ("program_size", `Float program_size);
+        ("runtime", `Float (Time.Span.to_sec !runtime));
+        ("program", program_json);
+        ("n_groups", `Int (target_groups ()));
+        ("max_cost_generated", `Int !max_cost_generated);
+        ("groups_searched", `Int !groups_searched);
+        ("space_contains_target", [%yojson_of: bool option] !space_contains_target);
+        ("params", [%yojson_of: Params.t] @@ Set_once.get_exn params [%here]);
+      ]
+  in
+  Out_channel.with_file (output_file ()) ~f:(fun ch -> Safe.to_channel ch json)
 
 let similarity (v : Value.t) (v' : Value.t) =
   match (v, v') with
@@ -160,6 +201,7 @@ let group_states_vp states : group_result =
   let reference_vp = ref (create_vp @@ (* (S.classes search_state |> Iter.to_list) *) [])
   and reference = ref []
   and groups = Hashtbl.create (module S.Class) in
+  let group_radii = Hashtbl.create (module S.Class) in
   let n_queries = ref 0 in
 
   let find_close c f =
@@ -178,12 +220,15 @@ let group_states_vp states : group_result =
       let is_empty =
         find_close v
         |> Iter.iter_is_empty (fun c' ->
-               Hashtbl.update groups c' ~f:(function None -> [ v ] | Some vs -> v :: vs))
+               Hashtbl.update groups c' ~f:(function None -> [ v ] | Some vs -> v :: vs);
+               Hashtbl.update group_radii c' ~f:(function
+                 | None -> (distance c' v, 1)
+                 | Some (n, d) -> (n +. distance c' v, d + 1)))
       in
       if is_empty then (
+        Hashtbl.add_exn group_radii ~key:v ~data:(0.0, 1);
         Hashtbl.add_exn groups ~key:v ~data:[];
         reference := v :: !reference));
-
   { groups; n_queries = !n_queries }
 
 let prev_group_sample = ref (-1)
@@ -256,18 +301,19 @@ let insert_states all_edges =
     let groups = group n_sample in
     let n_groups = Hashtbl.length groups in
 
-    if n_groups > target_groups_max then adaptive_group min_sample n_sample
+    if min_sample >= max_sample then (groups, n_sample)
+    else if n_groups > target_groups_max then adaptive_group min_sample n_sample
     else if n_sample >= n_states || n_groups >= target_groups_min then (groups, n_sample)
     else adaptive_group n_sample max_sample
   in
 
   let groups, _group_time =
     Synth_utils.timed (fun () ->
-        let n_sample_init =
+        let _n_sample_init =
           if !prev_group_sample > 0 then !prev_group_sample else target_groups
         in
         let groups, n_sample =
-          match adaptive_group_find_max n_sample_init with
+          match adaptive_group_find_max target_groups with
           | First max_sample -> adaptive_group (max_sample / 2) max_sample
           | Second gs -> gs
         in
@@ -304,6 +350,7 @@ let fill_search_space () =
           |> insert_states)
     in
 
+    incr max_cost_generated;
     Log.log 1 (fun m ->
         m "Finish generating states of cost %d (runtime=%a)" cost Time.Span.pp run_time)
   done
@@ -312,13 +359,18 @@ let backwards_pass class_ =
   let search_state = get_search_state () and max_cost = max_cost () and ectx = ectx () in
   match S.Class.value class_ with
   | Value.Scene _ ->
+      let eval = Value.mk_eval_memoized () ectx in
       Iter.forever (fun () ->
-          S.local_greedy search_state (Int.ceil_log2 max_cost)
-            (Value.mk_eval_memoized () ectx)
-            target_distance class_
+          S.local_greedy search_state (Int.ceil_log2 max_cost) eval target_distance class_
           |> Option.map ~f:local_search)
-      |> Iter.filter_map Fun.id
   | _ -> Iter.empty
+
+let check_for_target_program () =
+  let p = S.find_term (get_search_state ()) (target_program ()) in
+  Log.sexp 1 (lazy [%message (p : (Op.t * _ list * _) Program.t)]);
+  space_contains_target :=
+    Some
+      (Iter.for_all (fun (_, xs, _) -> List.length xs > 0) (fun f -> Program.iter ~f p))
 
 let synthesize () =
   let start_time = Time.now () in
@@ -332,6 +384,9 @@ let synthesize () =
       fill_search_space ();
       Option.iter (dump_search_space ()) ~f:(fun fn ->
           Out_channel.with_file fn ~f:(fun ch -> S.to_channel ch @@ get_search_state ())));
+
+  check_for_target_program ();
+  write_output None;
   let search_state = get_search_state () in
 
   if validate () then
@@ -340,29 +395,6 @@ let synthesize () =
   let exception Done of Op.t Program.t in
   Log.log 1 (fun m -> m "Starting backwards pass");
 
-  let (Apply ((_, pos_classes, neg_classes), _) as p) =
-    S.find_term search_state (target_program ())
-  in
-  let print_classes cs =
-    List.iter cs ~f:(fun c -> Fmt.pr "%a\n@." Value.pp @@ S.Class.value c)
-  in
-  (match p with
-  | Apply ((_, _, _), [ Apply ((_, cs, _), _); Apply ((_, cs', _), _) ]) ->
-      print_endline "first argument";
-      print_classes cs;
-      print_endline "second argument";
-      print_classes cs'
-  | _ -> ());
-
-  List.iter neg_classes ~f:(fun c -> Fmt.pr "%a\n@." Value.pp @@ S.Class.value c);
-  if true then failwith "";
-
-  Log.sexp 1 (lazy [%message (List.length pos_classes : int)]);
-  Log.sexp 1 (lazy [%message (p : (Op.t * _ list * _ list) Program.t)]);
-  Program.iter p ~f:(fun (op, classes, _) ->
-      print_s [%message (op : Op.t)];
-      List.iter classes ~f:(fun c -> Fmt.pr "%a\n@." Value.pp @@ S.Class.value c));
-
   let ret =
     try
       S.classes search_state
@@ -370,38 +402,42 @@ let synthesize () =
       |> Iter.map (fun c -> (target_distance @@ S.Class.value c, c))
       |> Iter.sort ~cmp:(fun (d, _) (d', _) -> [%compare: float] d d')
       |> Iter.iteri (fun i (d, (class_ : S.Class.t)) ->
+             incr groups_searched;
              Log.log 1 (fun m -> m "Searching candidate %d (d=%f)" i d);
-             Log.log 2 (fun m -> m "%a" Value.pp class_.value);
+             Log.log 2 (fun m -> m "@.%a" Value.pp class_.value);
 
              backwards_pass class_
              |> Iter.take backward_pass_repeats
+             |> Iter.filter_map Fun.id
+             |> Iter.mapi (fun backwards_pass_i (local_search_i, p) ->
+                    ((backwards_pass_i, local_search_i), p))
              |> Iter.min_floor
                   ~to_float:(fun (_, p) ->
                     target_distance @@ Program.eval (Value.eval ectx) p)
                   0.0
-             |> Option.iter ~f:(fun (local_search_iters, p) ->
+             |> Option.iter ~f:(fun ((backwards_pass_iters, local_search_iters), p) ->
                     let found_value = Program.eval (Value.eval ectx) p in
 
                     Log.log 2 (fun m ->
-                        m "Best (d=%f):\n%a" (target_distance found_value) Value.pp
+                        m "Best (d=%f):@.%a" (target_distance found_value) Value.pp
                           found_value);
                     Log.sexp 2 (lazy [%message (p : Op.t Program.t)]);
 
                     if [%compare.equal: Value.t] target found_value then (
                       Log.log 0 (fun m -> m "local search iters %d" local_search_iters);
+                      Log.log 0 (fun m ->
+                          m "backwards pass iters %d" backwards_pass_iters);
                       raise (Done p))));
       None
     with Done p -> Some p
   in
   runtime := Time.diff (Time.now ()) start_time;
-  ret
+  write_output ret
 
 let set_params ~scene_width ~scene_height ~group_threshold ~max_cost ~local_search_steps
     ~backward_pass_repeats ~verbosity ~validate ~scaling ~n_groups ~dump_search_space
-    ~load_search_space target_prog =
+    ~load_search_space ~output_file target_prog =
   let size = Scene2d.Dim.create ~xres:scene_width ~yres:scene_height ~scaling () in
-  let ectx = Value.Ctx.create size in
-  let target = Program.eval (Value.eval ectx) target_prog in
   let operators =
     Op.[ Union; Circle; Rect; Repl; Sub ]
     @ (List.range 0 (max size.xres size.yres) |> List.map ~f:(fun i -> Op.Int i))
@@ -419,8 +455,6 @@ let set_params ~scene_width ~scene_height ~group_threshold ~max_cost ~local_sear
         validate;
         local_search_steps;
         size;
-        ectx;
-        target;
         operators;
         group_threshold;
         max_cost;
@@ -430,34 +464,8 @@ let set_params ~scene_width ~scene_height ~group_threshold ~max_cost ~local_sear
         target_groups = n_groups;
         dump_search_space;
         load_search_space;
+        output_file;
       }
-
-let print_output m_prog =
-  let program_size =
-    Option.map m_prog ~f:(fun p -> Float.of_int @@ Program.size p)
-    |> Option.value ~default:Float.nan
-  in
-  let program_json =
-    Option.map m_prog ~f:(fun p -> `String (Sexp.to_string @@ Lang.serialize p))
-    |> Option.value ~default:`Null
-  in
-  let open Yojson in
-  Basic.to_channel Out_channel.stdout
-    (`Assoc
-      [
-        ("method", `String "metric");
-        ("scene_width", `Int (size ()).xres);
-        ("scene_height", `Int (size ()).yres);
-        ("scaling", `Int (size ()).scaling);
-        ("local_search_steps", `Int (local_search_steps ()));
-        ("group_threshold", `Float (group_threshold ()));
-        ("max_cost", `Int (max_cost ()));
-        ("backward_pass_repeats", `Int (backward_pass_repeats ()));
-        ("program_size", `Float program_size);
-        ("runtime", `Float (Time.Span.to_sec !runtime));
-        ("program", program_json);
-        ("n_groups", `Int (target_groups ()));
-      ])
 
 let cmd =
   let open Command.Let_syntax in
@@ -495,11 +503,12 @@ let cmd =
         flag "-scaling" (optional_with_default 1 int) ~doc:" scene scaling factor"
       and verbosity =
         flag "-verbosity" (optional_with_default 0 int) ~doc:" set verbosity"
-      and validate = flag "-validate" no_arg ~doc:" turn on validation" in
+      and validate = flag "-validate" no_arg ~doc:" turn on validation"
+      and output_file = flag "-out" (required string) ~doc:" output to file" in
       fun () ->
         set_params ~max_cost ~group_threshold ~local_search_steps ~scene_width
           ~scene_height ~backward_pass_repeats ~verbosity ~validate ~scaling ~n_groups
-          ~dump_search_space ~load_search_space
+          ~dump_search_space ~load_search_space ~output_file
         @@ Lang.parse
         @@ Sexp.input_sexp In_channel.stdin;
-        synthesize () |> print_output]
+        synthesize ()]

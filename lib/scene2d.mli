@@ -1,5 +1,6 @@
 module Dim : sig
-  type t = { xres : int; yres : int; scaling : int } [@@deriving compare, hash, sexp]
+  type t = { xres : int; yres : int; scaling : int }
+  [@@deriving compare, hash, sexp, yojson]
 
   val scaled_xres : t -> int
   val scaled_yres : t -> int

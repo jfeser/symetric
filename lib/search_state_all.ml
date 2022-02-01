@@ -323,6 +323,7 @@ module Make (Lang : Lang_intf) = struct
   let rec local_greedy ss max_height eval dist (class_ : Class.t) =
     let open Option.Let_syntax in
     let all_paths = (H.find_exn ss.paths class_).paths in
+
     let eligible_paths =
       Sek.E.filter (fun (p : Path.t) -> Path.height ss p <= max_height) all_paths
     in
