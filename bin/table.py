@@ -9,7 +9,7 @@ import sys
 import pandas as pd
 
 
-def load(run_dir):
+def load_v1(run_dir):
     header = [
         "method",
         "bench",
@@ -64,6 +64,61 @@ def load(run_dir):
                 bench_json["space_contains_target"],
             ]
 
+        results += [result_row]
+
+    df = pd.DataFrame(results, columns=header)
+    df = df.sort_values(["bench", "method"])
+    return df
+
+
+def runtime(results):
+    runtime_variant = results["stats"]["runtime"]
+    if runtime_variant[0] == "Stopped":
+        return runtime_variant[1]
+    else:
+        return None
+
+
+def load(run_dir):
+    header = [
+        "method",
+        "bench",
+        "max_cost",
+        "n_groups",
+        "threshold",
+        "success",
+        "runtime",
+        "program_size",
+        "max_cost_generated",
+        "space_contains_target",
+    ]
+    results = []
+    for fn in os.listdir(run_dir):
+        if not fn.endswith(".json"):
+            continue
+        with open(os.path.join(run_dir, fn), "r") as f:
+            bench_json = json.load(f)
+
+        method = bench_json["method"]
+        max_cost = bench_json["params"]["max_cost"]
+        group_count = bench_json["params"]["target_groups"]
+        thresh = bench_json["params"]["group_threshold"]
+
+        bench_params = os.path.splitext(fn)[0].split("-")
+        bench_name = bench_params[-1]
+
+        result_row = [
+            method,
+            bench_name,
+            int(max_cost),
+            int(group_count),
+            float(thresh),
+            bench_json["program"] is not None,
+            runtime(bench_json),
+            bench_json["program_size"],
+            bench_json["stats"]["max_cost_generated"],
+            bench_json["stats"]["space_contains_target"],
+        ]
         results += [result_row]
 
     df = pd.DataFrame(results, columns=header)
