@@ -21,3 +21,20 @@ val stochastic :
   'a ->
   ('a * float -> unit) ->
   unit
+
+(** Estimate quantiles. Returned quantiles will be within epsilon * N of the
+    true quantiles with probability 1 - delta. *)
+module Quantile_estimator : sig
+  type 'a t [@@deriving yojson_of]
+
+  val create :
+    ?epsilon:float ->
+    ?delta:float ->
+    ?quantiles:float list ->
+    default:'a ->
+    (module Comparable.S with type t = 'a) ->
+    'a t
+
+  val add : 'a t -> 'a -> unit
+  val quantiles : 'a t -> 'a list
+end

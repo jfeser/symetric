@@ -26,6 +26,79 @@ module Params = struct
     output_file : string;
   }
   [@@deriving yojson]
+
+  let create ~scene_width ~scene_height ~group_threshold ~max_cost ~local_search_steps
+      ~backward_pass_repeats ~verbosity ~validate ~scaling ~n_groups ~dump_search_space
+      ~load_search_space ~output_file target_prog =
+    let size = Scene2d.Dim.create ~xres:scene_width ~yres:scene_height ~scaling () in
+    let operators =
+      Op.[ Union; Circle; Rect; Repl; Sub ]
+      @ (List.range 0 (max size.xres size.yres) |> List.map ~f:(fun i -> Op.Int i))
+      @ (List.range 2 5 |> List.map ~f:(fun i -> Op.Rep_count i))
+    in
+
+    List.find (Program.ops target_prog) ~f:(fun op ->
+        not @@ List.mem ~equal:[%compare.equal: Op.t] operators op)
+    |> Option.iter ~f:(fun op ->
+           raise_s [%message "program not in search space" (op : Op.t)]);
+    {
+      validate;
+      local_search_steps;
+      size;
+      operators;
+      group_threshold;
+      max_cost;
+      backward_pass_repeats;
+      verbosity;
+      target_program = target_prog;
+      target_groups = n_groups;
+      dump_search_space;
+      load_search_space;
+      output_file;
+    }
+
+  let cmd =
+    let open Command.Let_syntax in
+    [%map_open
+      let max_cost =
+        flag "-max-cost" (required int) ~doc:" the maximum size of program to evaluate"
+      and dump_search_space =
+        flag "-dump-search-space" (optional string)
+          ~doc:" dump the search space to a file"
+      and load_search_space =
+        flag "-load-search-space" (optional string)
+          ~doc:" load the search space from a file"
+      and group_threshold =
+        flag "-group-threshold"
+          (optional_with_default 0.1 float)
+          ~doc:"distance threshold to trigger grouping"
+      and n_groups =
+        flag "-n-groups"
+          (optional_with_default 1_000 int)
+          ~doc:" number of groups to retain"
+      and local_search_steps =
+        flag "-local-search-steps"
+          (optional_with_default 1_000 int)
+          ~doc:" number of steps to run local search"
+      and backward_pass_repeats =
+        flag "-backward-pass-repeats"
+          (optional_with_default 10 int)
+          ~doc:" number of times to run backward pass"
+      and scene_width =
+        flag "-scene-width" (optional_with_default 16 int) ~doc:" scene width in pixels"
+      and scene_height =
+        flag "-scene-height" (optional_with_default 16 int) ~doc:" scene height in pixels"
+      and scaling =
+        flag "-scaling" (optional_with_default 1 int) ~doc:" scene scaling factor"
+      and verbosity =
+        flag "-verbosity" (optional_with_default 0 int) ~doc:" set verbosity"
+      and validate = flag "-validate" no_arg ~doc:" turn on validation"
+      and output_file = flag "-out" (required string) ~doc:" output to file" in
+      fun () ->
+        let target_prog = Lang.parse @@ Sexp.input_sexp In_channel.stdin in
+        create ~max_cost ~group_threshold ~local_search_steps ~scene_width ~scene_height
+          ~backward_pass_repeats ~verbosity ~validate ~scaling ~n_groups
+          ~dump_search_space ~load_search_space ~output_file target_prog]
 end
 
 let params = Set_once.create ()
@@ -68,14 +141,61 @@ end
 
 let search_state = ref (S.create ())
 let[@inline] get_search_state () = !search_state
-let runtime = ref Time.Span.zero
 let ectx = lazy (Value.Ctx.create (size ()))
 let[@inline] ectx () = Lazy.force ectx
 let target = lazy (Program.eval (Value.eval (ectx ())) @@ target_program ())
 let[@inline] target () = Lazy.force target
-let max_cost_generated = ref 0
-let groups_searched = ref 0
-let space_contains_target = ref None
+
+type time_span = Time.Span.t
+
+let yojson_of_time_span t = `Float (Time.Span.to_sec t)
+
+type time = Time.t
+
+let yojson_of_time t = `String (Time.to_string t)
+
+module Timer = struct
+  type state = Not_started | Started of time | Stopped of time_span
+  [@@deriving yojson_of]
+
+  type t = state ref [@@deriving yojson_of]
+
+  let create () = ref Not_started
+
+  let start x =
+    x :=
+      match !x with
+      | Not_started -> Started (Time.now ())
+      | Started _ as s -> s
+      | Stopped _ -> failwith "timer has stopped"
+
+  let stop x =
+    x :=
+      match !x with
+      | Not_started -> failwith "timer has not started"
+      | Stopped _ as s -> s
+      | Started t -> Stopped (Time.diff (Time.now ()) t)
+end
+
+module Stats = struct
+  type t = {
+    runtime : Timer.t;
+    max_cost_generated : int ref;
+    groups_searched : int ref;
+    space_contains_target : bool option ref;
+  }
+  [@@deriving yojson_of]
+
+  let create () =
+    {
+      runtime = Timer.create ();
+      max_cost_generated = ref 0;
+      groups_searched = ref 0;
+      space_contains_target = ref None;
+    }
+end
+
+let stats = Stats.create ()
 
 let write_output m_prog =
   let program_size =
@@ -91,20 +211,9 @@ let write_output m_prog =
     `Assoc
       [
         ("method", `String "metric");
-        ("scene_width", `Int (size ()).xres);
-        ("scene_height", `Int (size ()).yres);
-        ("scaling", `Int (size ()).scaling);
-        ("local_search_steps", `Int (local_search_steps ()));
-        ("group_threshold", `Float (group_threshold ()));
-        ("max_cost", `Int (max_cost ()));
-        ("backward_pass_repeats", `Int (backward_pass_repeats ()));
-        ("program_size", `Float program_size);
-        ("runtime", `Float (Time.Span.to_sec !runtime));
         ("program", program_json);
-        ("n_groups", `Int (target_groups ()));
-        ("max_cost_generated", `Int !max_cost_generated);
-        ("groups_searched", `Int !groups_searched);
-        ("space_contains_target", [%yojson_of: bool option] !space_contains_target);
+        ("program_size", `Float program_size);
+        ("stats", [%yojson_of: Stats.t] stats);
         ("params", [%yojson_of: Params.t] @@ Set_once.get_exn params [%here]);
       ]
   in
@@ -231,8 +340,6 @@ let group_states_vp states : group_result =
         reference := v :: !reference));
   { groups; n_queries = !n_queries }
 
-let prev_group_sample = ref (-1)
-
 let insert_states all_edges =
   let target_groups = target_groups () in
   let target_groups_min =
@@ -309,16 +416,11 @@ let insert_states all_edges =
 
   let groups, _group_time =
     Synth_utils.timed (fun () ->
-        let _n_sample_init =
-          if !prev_group_sample > 0 then !prev_group_sample else target_groups
-        in
-        let groups, n_sample =
+        let groups, _ =
           match adaptive_group_find_max target_groups with
           | First max_sample -> adaptive_group (max_sample / 2) max_sample
           | Second gs -> gs
         in
-
-        prev_group_sample := n_sample;
         groups)
   in
 
@@ -350,7 +452,8 @@ let fill_search_space () =
           |> insert_states)
     in
 
-    incr max_cost_generated;
+    incr stats.max_cost_generated;
+    write_output None;
     Log.log 1 (fun m ->
         m "Finish generating states of cost %d (runtime=%a)" cost Time.Span.pp run_time)
   done
@@ -368,12 +471,13 @@ let backwards_pass class_ =
 let check_for_target_program () =
   let p = S.find_term (get_search_state ()) (target_program ()) in
   Log.sexp 1 (lazy [%message (p : (Op.t * _ list * _) Program.t)]);
-  space_contains_target :=
+  stats.space_contains_target :=
     Some
       (Iter.for_all (fun (_, xs, _) -> List.length xs > 0) (fun f -> Program.iter ~f p))
 
 let synthesize () =
-  let start_time = Time.now () in
+  Timer.start stats.runtime;
+
   let target = target ()
   and ectx = ectx ()
   and backward_pass_repeats = backward_pass_repeats () in
@@ -402,7 +506,7 @@ let synthesize () =
       |> Iter.map (fun c -> (target_distance @@ S.Class.value c, c))
       |> Iter.sort ~cmp:(fun (d, _) (d', _) -> [%compare: float] d d')
       |> Iter.iteri (fun i (d, (class_ : S.Class.t)) ->
-             incr groups_searched;
+             incr stats.groups_searched;
              Log.log 1 (fun m -> m "Searching candidate %d (d=%f)" i d);
              Log.log 2 (fun m -> m "@.%a" Value.pp class_.value);
 
@@ -431,84 +535,14 @@ let synthesize () =
       None
     with Done p -> Some p
   in
-  runtime := Time.diff (Time.now ()) start_time;
+  Timer.stop stats.runtime;
   write_output ret
-
-let set_params ~scene_width ~scene_height ~group_threshold ~max_cost ~local_search_steps
-    ~backward_pass_repeats ~verbosity ~validate ~scaling ~n_groups ~dump_search_space
-    ~load_search_space ~output_file target_prog =
-  let size = Scene2d.Dim.create ~xres:scene_width ~yres:scene_height ~scaling () in
-  let operators =
-    Op.[ Union; Circle; Rect; Repl; Sub ]
-    @ (List.range 0 (max size.xres size.yres) |> List.map ~f:(fun i -> Op.Int i))
-    @ (List.range 2 5 |> List.map ~f:(fun i -> Op.Rep_count i))
-  in
-
-  List.find (Program.ops target_prog) ~f:(fun op ->
-      not @@ List.mem ~equal:[%compare.equal: Op.t] operators op)
-  |> Option.iter ~f:(fun op ->
-         raise_s [%message "program not in search space" (op : Op.t)]);
-
-  Set_once.set_exn params [%here]
-    Params.
-      {
-        validate;
-        local_search_steps;
-        size;
-        operators;
-        group_threshold;
-        max_cost;
-        backward_pass_repeats;
-        verbosity;
-        target_program = target_prog;
-        target_groups = n_groups;
-        dump_search_space;
-        load_search_space;
-        output_file;
-      }
 
 let cmd =
   let open Command.Let_syntax in
   Command.basic ~summary:"Solve CAD problems with metric synthesis."
     [%map_open
-      let max_cost =
-        flag "-max-cost" (required int) ~doc:" the maximum size of program to evaluate"
-      and dump_search_space =
-        flag "-dump-search-space" (optional string)
-          ~doc:" dump the search space to a file"
-      and load_search_space =
-        flag "-load-search-space" (optional string)
-          ~doc:" load the search space from a file"
-      and group_threshold =
-        flag "-group-threshold"
-          (optional_with_default 0.1 float)
-          ~doc:"distance threshold to trigger grouping"
-      and n_groups =
-        flag "-n-groups"
-          (optional_with_default 1_000 int)
-          ~doc:" number of groups to retain"
-      and local_search_steps =
-        flag "-local-search-steps"
-          (optional_with_default 1_000 int)
-          ~doc:" number of steps to run local search"
-      and backward_pass_repeats =
-        flag "-backward-pass-repeats"
-          (optional_with_default 10 int)
-          ~doc:" number of times to run backward pass"
-      and scene_width =
-        flag "-scene-width" (optional_with_default 16 int) ~doc:" scene width in pixels"
-      and scene_height =
-        flag "-scene-height" (optional_with_default 16 int) ~doc:" scene height in pixels"
-      and scaling =
-        flag "-scaling" (optional_with_default 1 int) ~doc:" scene scaling factor"
-      and verbosity =
-        flag "-verbosity" (optional_with_default 0 int) ~doc:" set verbosity"
-      and validate = flag "-validate" no_arg ~doc:" turn on validation"
-      and output_file = flag "-out" (required string) ~doc:" output to file" in
+      let mk_params = Params.cmd in
       fun () ->
-        set_params ~max_cost ~group_threshold ~local_search_steps ~scene_width
-          ~scene_height ~backward_pass_repeats ~verbosity ~validate ~scaling ~n_groups
-          ~dump_search_space ~load_search_space ~output_file
-        @@ Lang.parse
-        @@ Sexp.input_sexp In_channel.stdin;
+        Set_once.set_exn params [%here] @@ mk_params ();
         synthesize ()]

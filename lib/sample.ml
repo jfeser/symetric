@@ -101,3 +101,50 @@ let stochastic ?(n = 5) ~score ~propose t f =
       if Float.(accept < ratio) then loop (i + 1) t' v' else loop (i + 1) t v)
   in
   loop 0 t (score t)
+
+module Quantile_estimator = struct
+  type state = Filling | Skipping of (float * int)
+
+  type 'a t = {
+    sample : 'a array;
+    quantiles : float list;
+    mutable state : state;
+    mutable i : int;
+  }
+
+  let create (type t) ?(epsilon = 0.1) ?(delta = 0.05)
+      ?(quantiles = [ 0.; 0.25; 0.5; 0.75; 1. ]) ~default
+      (module M : Comparable.S with type t = t) =
+    (* see https://sites.cs.ucsb.edu/~suri/psdir/ency.pdf *)
+    let sample_n = Float.(to_int (log (1. /. delta) /. (epsilon *. epsilon))) in
+    { sample = Array.create ~len:sample_n default; i = 0; state = Filling; quantiles }
+
+  let[@inline] get_w n_sample = Float.(exp (log (Random.float 1.0) /. of_int n_sample))
+  let[@inline] get_next i w = i + Float.(to_int (log (Random.float 1.0) /. log (1. -. w)))
+
+  let add this x =
+    let n_sample = Array.length this.sample in
+    match this.state with
+    | Filling ->
+        assert (this.i < n_sample);
+        this.sample.(this.i) <- x;
+        this.i <- this.i + 1;
+
+        if this.i >= n_sample then
+          let w = get_w n_sample in
+          let next = get_next this.i w in
+          this.state <- Skipping (w, next)
+    | Skipping (w, next) ->
+        if this.i < next then this.i <- this.i + 1
+        else (
+          this.sample.(Random.int n_sample) <- x;
+          let w = w *. get_w n_sample in
+          let next = get_next this.i w in
+          this.state <- Skipping (w, next))
+
+  let quantiles this =
+    let sample_n = Float.of_int @@ Int.min this.i (Array.length this.sample) in
+    List.map this.quantiles ~f:(fun q -> this.sample.(Float.to_int (q *. sample_n)))
+
+  let yojson_of_t yojson_of_a this = [%yojson_of: a list] @@ quantiles this
+end
