@@ -1,0 +1,1 @@
+(union (union (union (circle 8 3 2) (rect 6 3 10 5)) (rect 7 5 9 10)) (rect 4 9 12 10))
