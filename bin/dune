@@ -25,3 +25,10 @@
  (libraries core staged_synth)
  (preprocess
   (pps ppx_jane)))
+
+(executable
+ (name subprograms)
+ (modules subprograms)
+ (libraries core staged_synth)
+ (preprocess
+  (pps ppx_jane)))

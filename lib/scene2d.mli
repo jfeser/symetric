@@ -2,6 +2,8 @@ module Dim : sig
   type t = { xres : int; yres : int; scaling : int }
   [@@deriving compare, hash, sexp, yojson]
 
+  val xres : t -> int
+  val yres : t -> int
   val scaled_xres : t -> int
   val scaled_yres : t -> int
   val create : ?scaling:int -> xres:int -> yres:int -> unit -> t
@@ -9,6 +11,7 @@ module Dim : sig
   val offset : t -> int -> int -> int
   val pixels : t -> (int * int) Gen.t
   val ( = ) : t -> t -> bool
+  val param : t Command.Param.t
 end
 
 type t [@@deriving compare, hash, sexp]

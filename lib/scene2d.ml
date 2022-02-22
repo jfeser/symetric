@@ -4,6 +4,8 @@ module Dim = struct
   type t = { xres : int; yres : int; scaling : int }
   [@@deriving compare, hash, sexp, yojson]
 
+  let[@inline] xres x = x.xres
+  let[@inline] yres x = x.xres
   let scaled_xres x = x.xres * x.scaling
   let scaled_yres x = x.yres * x.scaling
 
@@ -37,6 +39,18 @@ module Dim = struct
     done
 
   let ( = ) = [%compare.equal: t]
+
+  let param =
+    let open Command.Let_syntax in
+    [%map_open
+      let scene_width =
+        flag "-scene-width" (optional_with_default 16 int) ~doc:" scene width in pixels"
+      and scene_height =
+        flag "-scene-height" (optional_with_default 16 int) ~doc:" scene height in pixels"
+      and scaling =
+        flag "-scaling" (optional_with_default 1 int) ~doc:" scene scaling factor"
+      in
+      create ~scaling ~xres:scene_width ~yres:scene_height ()]
 end
 
 module T = struct

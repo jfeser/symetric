@@ -27,13 +27,13 @@ module Params = struct
   }
   [@@deriving yojson]
 
-  let create ~scene_width ~scene_height ~group_threshold ~max_cost ~local_search_steps
-      ~backward_pass_repeats ~verbosity ~validate ~scaling ~n_groups ~dump_search_space
+  let create ~dim:size ~group_threshold ~max_cost ~local_search_steps
+      ~backward_pass_repeats ~verbosity ~validate ~n_groups ~dump_search_space
       ~load_search_space ~output_file target_prog =
-    let size = Scene2d.Dim.create ~xres:scene_width ~yres:scene_height ~scaling () in
     let operators =
       Op.[ Union; Circle; Rect; Repl; Sub ]
-      @ (List.range 0 (max size.xres size.yres) |> List.map ~f:(fun i -> Op.Int i))
+      @ (List.range 0 (max size.Scene2d.Dim.xres size.yres)
+        |> List.map ~f:(fun i -> Op.Int i))
       @ (List.range 2 5 |> List.map ~f:(fun i -> Op.Rep_count i))
     in
 
@@ -84,21 +84,16 @@ module Params = struct
         flag "-backward-pass-repeats"
           (optional_with_default 10 int)
           ~doc:" number of times to run backward pass"
-      and scene_width =
-        flag "-scene-width" (optional_with_default 16 int) ~doc:" scene width in pixels"
-      and scene_height =
-        flag "-scene-height" (optional_with_default 16 int) ~doc:" scene height in pixels"
-      and scaling =
-        flag "-scaling" (optional_with_default 1 int) ~doc:" scene scaling factor"
+      and dim = Scene2d.Dim.param
       and verbosity =
         flag "-verbosity" (optional_with_default 0 int) ~doc:" set verbosity"
       and validate = flag "-validate" no_arg ~doc:" turn on validation"
       and output_file = flag "-out" (required string) ~doc:" output to file" in
       fun () ->
         let target_prog = Lang.parse @@ Sexp.input_sexp In_channel.stdin in
-        create ~max_cost ~group_threshold ~local_search_steps ~scene_width ~scene_height
-          ~backward_pass_repeats ~verbosity ~validate ~scaling ~n_groups
-          ~dump_search_space ~load_search_space ~output_file target_prog]
+        create ~max_cost ~group_threshold ~local_search_steps ~dim ~backward_pass_repeats
+          ~verbosity ~validate ~n_groups ~dump_search_space ~load_search_space
+          ~output_file target_prog]
 end
 
 let params = Set_once.create ()
@@ -150,39 +145,18 @@ type time_span = Time.Span.t
 
 let yojson_of_time_span t = `Float (Time.Span.to_sec t)
 
-type time = Time.t
-
-let yojson_of_time t = `String (Time.to_string t)
-
-module Timer = struct
-  type state = Not_started | Started of time | Stopped of time_span
-  [@@deriving yojson_of]
-
-  type t = state ref [@@deriving yojson_of]
-
-  let create () = ref Not_started
-
-  let start x =
-    x :=
-      match !x with
-      | Not_started -> Started (Time.now ())
-      | Started _ as s -> s
-      | Stopped _ -> failwith "timer has stopped"
-
-  let stop x =
-    x :=
-      match !x with
-      | Not_started -> failwith "timer has not started"
-      | Stopped _ as s -> s
-      | Started t -> Stopped (Time.diff (Time.now ()) t)
-end
-
 module Stats = struct
+  let user_time () = (Unix.times ()).tms_cutime
+  let sys_time () = (Unix.times ()).tms_cstime
+
   type t = {
     runtime : Timer.t;
+    user_time : float Getter.t;
+    sys_time : float Getter.t;
     max_cost_generated : int ref;
     groups_searched : int ref;
     space_contains_target : bool option ref;
+    grouping_time : time_span Sample.Quantile_estimator.t;
   }
   [@@deriving yojson_of]
 
@@ -192,6 +166,10 @@ module Stats = struct
       max_cost_generated = ref 0;
       groups_searched = ref 0;
       space_contains_target = ref None;
+      grouping_time =
+        Sample.Quantile_estimator.create [%compare: Time.Span.t] Time.Span.zero;
+      user_time;
+      sys_time;
     }
 end
 

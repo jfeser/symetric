@@ -72,9 +72,9 @@ module Value = struct
     | Rep_count x, [] -> Rep_count x
     | Circle, [ Int x; Int y; Int radius ]
       when x - radius < 0
-           || x + radius >= size.xres
+           || x + radius >= S.Dim.xres size
            || y - radius < 0
-           || y + radius >= size.yres
+           || y + radius >= S.Dim.yres size
            || radius = 0 ->
         Error
     | Circle, [ Int center_x; Int center_y; Int radius ] ->

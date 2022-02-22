@@ -60,7 +60,7 @@ module Value = struct
     let module S = Scene2d in
     let size = ctx.size in
     let[@inline] scene s w h =
-      let w = Int.min w size.xres and h = Int.min h size.yres in
+      let w = Int.min w (S.Dim.xres size) and h = Int.min h (S.Dim.yres size) in
       Scene (s, w, h)
     in
     match (op, args) with

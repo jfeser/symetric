@@ -31,10 +31,10 @@ module Quantile_estimator : sig
     ?epsilon:float ->
     ?delta:float ->
     ?quantiles:float list ->
-    default:'a ->
-    (module Comparable.S with type t = 'a) ->
+    ('a -> 'a -> int) ->
+    'a ->
     'a t
 
   val add : 'a t -> 'a -> unit
-  val quantiles : 'a t -> 'a list
+  val quantiles : 'a t -> (float * 'a) list
 end
