@@ -17,6 +17,7 @@ module type Lang_intf = sig
     val args_type : t -> Type.t list
     val ret_type : t -> Type.t
     val pp : t Fmt.t
+    val is_commutative : t -> bool
   end
 
   module Value : sig
@@ -196,39 +197,43 @@ module Make (Lang : Lang_intf) = struct
   let search ctx ~cost ~type_ =
     search_iter ctx ~cost ~type_ |> Iter.map (fun c -> c.Class.value) |> Iter.to_list
 
+  let find_leaf_term ctx op =
+    let classes =
+      H.to_alist ctx.paths
+      |> List.filter_map ~f:(fun (v, (paths : paths)) ->
+             Option.some_if
+               (Sek.E.exists
+                  (fun p ->
+                    [%compare.equal: Op.t] op (Path.op p) && List.is_empty (Path.args p))
+                  paths.paths)
+               v)
+    in
+    Apply ((op, classes), [])
+
+  let find_nonleaf_term find_term ctx op args =
+    let args = List.map args ~f:(find_term ctx) in
+    let arg_sets =
+      List.map args ~f:(fun (Apply ((_, vs), _)) -> Set.of_list (module Class) vs)
+    in
+    let pos_classes =
+      H.to_alist ctx.paths
+      |> List.filter_map ~f:(fun (v, (paths : paths)) ->
+             Option.some_if
+               (Sek.E.exists
+                  (fun p ->
+                    [%compare.equal: Op.t] op (Path.op p)
+                    && List.for_all2_exn arg_sets (Path.args p) ~f:Set.mem)
+                  paths.paths)
+               v)
+    in
+    Apply ((op, pos_classes), args)
+
   let rec find_term ctx = function
-    | Apply (op, []) ->
-        let pos_classes, neg_classes =
-          H.to_alist ctx.paths
-          |> List.partition_map ~f:(fun (v, (paths : paths)) ->
-                 if
-                   Sek.E.exists
-                     (fun p ->
-                       [%compare.equal: Op.t] op (Path.op p)
-                       && List.is_empty (Path.args p))
-                     paths.paths
-                 then First v
-                 else Second v)
-        in
-        Apply ((op, pos_classes, neg_classes), [])
-    | Apply (op, args) ->
-        let args = List.map args ~f:(find_term ctx) in
-        let arg_sets =
-          List.map args ~f:(fun (Apply ((_, vs, _), _)) -> Set.of_list (module Class) vs)
-        in
-        let pos_classes, neg_classes =
-          H.to_alist ctx.paths
-          |> List.partition_map ~f:(fun (v, (paths : paths)) ->
-                 if
-                   Sek.E.exists
-                     (fun p ->
-                       [%compare.equal: Op.t] op (Path.op p)
-                       && List.for_all2_exn arg_sets (Path.args p) ~f:Set.mem)
-                     paths.paths
-                 then First v
-                 else Second v)
-        in
-        Apply ((op, pos_classes, neg_classes), args)
+    | Apply (op, []) -> find_leaf_term ctx op
+    | Apply (op, args) when Op.is_commutative op ->
+        let (Apply (_, classes) as term) = find_nonleaf_term find_term ctx op args in
+        if List.is_empty classes then find_nonleaf_term find_term ctx op args else term
+    | Apply (op, args) -> find_nonleaf_term find_term ctx op args
 
   let mem_class ctx class_ = H.mem ctx.paths class_
   let classes ctx k = H.iter ctx.classes ~f:(Sek.E.iter Sek.forward k)
