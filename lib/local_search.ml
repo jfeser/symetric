@@ -197,11 +197,6 @@ let of_unnormalize_tabu (type op value) ?(max_tabu = 1000) ~dist ~target
     type t = { program : Op.t Program.t; value : Value.t }
     [@@deriving compare, hash, sexp]
   end in
-  let module WState = struct
-    type t = float * State.t
-
-    let compare = [%compare: float * _]
-  end in
   let neighbors (t : State.t) =
     let cmp = [%compare: float * _] in
 
@@ -216,7 +211,7 @@ let of_unnormalize_tabu (type op value) ?(max_tabu = 1000) ~dist ~target
     let n_sample = List.length choices / 2 in
     let n_sample = if n_sample > 0 then n_sample else List.length choices in
     Iter.of_list choices |> Iter.sample n_sample |> Iter.of_array
-    |> Iter.top_k (module WState) (max_tabu + 1)
+    |> Iter.top_k ~compare:[%compare: float * _] (max_tabu + 1)
     |> Iter.map (fun (d, x) -> (-.d, x))
     |> Iter.sort ~cmp |> Iter.map Tuple.T2.get2
   in

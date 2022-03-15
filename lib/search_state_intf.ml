@@ -3,16 +3,8 @@ module type S = sig
   type value
   type op
 
-  module Attr : sig
-    type t = { cost : int; type_ : type_ } [@@deriving compare, hash, sexp]
-
-    include Comparator.S with type t := t
-
-    val create : int -> type_ -> t
-  end
-
   module Class : sig
-    type t = { type_ : type_; value : value } [@@deriving compare, hash, sexp]
+    type t [@@deriving compare, hash, sexp]
 
     include Comparator.S with type t := t
 
@@ -22,37 +14,14 @@ module type S = sig
     val type_ : t -> type_
   end
 
-  module Path0 : sig
-    type t = {
-      op : op;
-      args : Class.t list;
-      value : value;
-      mutable cost : int;
-      mutable height : int;
-    }
-    [@@deriving sexp]
-
-    val default : t
-    val create : value -> op -> Class.t list -> t
-    val pp : t Fmt.t
-  end
-
-  type paths = { paths : Path0.t Sek.Ephemeral.t; min_cost : int; min_height : int }
-  [@@deriving sexp]
-
-  type t = {
-    classes : Class.t Sek.Ephemeral.t Hashtbl.M(Attr).t;
-    paths : paths Hashtbl.M(Class).t;
-  }
-  [@@deriving sexp]
+  type t
 
   module Path : sig
     type ctx = t
-    type t = Path0.t
+    type t [@@deriving sexp]
 
-    val t_of_sexp : Ppx_sexp_conv_lib.Sexp.t -> t
-    val sexp_of_t : t -> Ppx_sexp_conv_lib.Sexp.t
     val create : value -> op -> Class.t list -> t
+    val pp : t Fmt.t
     val op : t -> op
     val args : t -> Class.t list
     val value : t -> value
@@ -63,14 +32,27 @@ module type S = sig
   with type ctx := t
 
   val create : unit -> t
+  (** Create a new search state. *)
+
+  (** {0 Access iterators} *)
+
+  val all_paths : t -> Path.t Iter.t
+  (** Iterator over all hyperedges. *)
+
+  val in_paths : t -> Class.t -> Path.t Iter.t
+  (** Iterator over the hyperedges that point to a particular class. *)
+
+  val classes : t -> Class.t Iter.t
+
+  (** {0 Serialization} *)
+
   val to_channel : Out_channel.t -> t -> unit
   val of_channel : In_channel.t -> t
   val pp_dot : Format.formatter -> t -> unit
-  val search_iter : t -> cost:int -> type_:type_ -> (Class.t -> unit) -> unit
+  val search_iter : t -> cost:int -> type_:type_ -> Class.t Iter.t
   val search : t -> cost:int -> type_:type_ -> value list
   val find_term : t -> op Program.t -> (op * Class.t list) Program.t
   val mem_class : t -> Class.t -> bool
-  val classes : t -> (Class.t -> unit) -> unit
   val insert_class_members : t -> Class.t -> (value * op * Class.t list) list -> unit
   val insert_class : t -> value -> op -> value list -> unit
   val length : t -> int
@@ -82,14 +64,6 @@ module type S = sig
 
   val validate :
     t -> (op -> value list -> value) -> (value -> value -> float) -> float -> unit
-
-  val local_greedy_new :
-    t ->
-    int ->
-    (op -> value list -> value) ->
-    (value -> float) ->
-    Class.t ->
-    op Program.t option
 
   val local_greedy :
     t ->

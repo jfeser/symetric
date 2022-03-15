@@ -1,4 +1,4 @@
-exception Eval_error of Sexp.t [@@deriving sexp]
+open Std
 
 module T = struct
   type 'o t = Apply of 'o * 'o t list
@@ -13,69 +13,32 @@ let rec pp pp_op fmt (Apply (op, args)) =
 
 let apply ?(args = []) op = Apply (op, args)
 let rec eval oeval (Apply (op, args)) = oeval op (List.map args ~f:(eval oeval))
-
-let eval_parts oeval p =
-  let parts = Queue.create () in
-  let rec eval oeval (Apply (op, args)) =
-    let part = oeval op (List.map args ~f:(eval oeval)) in
-    Queue.enqueue parts part;
-    part
-  in
-  ignore (eval oeval p : _);
-  Queue.to_list parts
-
 let rec size (Apply (_, args)) = 1 + List.sum (module Int) args ~f:size
-
-let rec count ~f (Apply (op, args)) =
-  (if f op then 1 else 0) + List.sum (module Int) args ~f:(count ~f)
-
 let rec ops (Apply (op, args)) = op :: List.concat_map args ~f:ops
 
-let rec ops_iter (Apply (op, args)) f =
-  f op;
-  List.iter args ~f:(fun a -> ops_iter a f)
-
-let rec map_preorder ~f (Apply (op, args)) =
-  let op' = f op in
-  let args' = List.map args ~f:(map_preorder ~f) in
+let rec map ~f (Apply (op, args)) =
+  let op' = f op args in
+  let args' = List.map args ~f:(map ~f) in
   Apply (op', args')
 
-let rec map_postorder ~f (Apply (op, args)) =
-  let args' = List.map args ~f:(map_postorder ~f) in
-  let op' = f op in
-  Apply (op', args')
+let[@specialize] rec iter (Apply (op, args)) f =
+  f (op, args);
+  List.iter args ~f:(fun p -> iter p f)
 
-let map ?(order = `Pre) = match order with `Pre -> map_preorder | `Post -> map_postorder
-
-let rec iter_preorder ~f (Apply (op, args)) =
-  f op;
-  List.iter args ~f:(iter_preorder ~f)
-
-let rec iter_postorder ~f (Apply (op, args)) =
-  List.iter args ~f:(iter_postorder ~f);
-  f op
-
-let iter ?(order = `Pre) =
-  match order with `Pre -> iter_preorder | `Post -> iter_postorder
-
-let mapi ?(order = `Pre) ~f p =
+let mapi ~f p =
   let idx = ref 0 in
-  map ~order
-    ~f:(fun op ->
+  map
+    ~f:(fun op _ ->
       let ret = f !idx op in
       incr idx;
       ret)
     p
 
-let annotate ?(order = `Pre) p = mapi ~order p ~f:(fun i op -> (i, op))
-
-let iteri ?(order = `Pre) ~f p =
+let iteri ~f p =
   let idx = ref 0 in
-  iter ~order
-    ~f:(fun op ->
+  iter p (fun (op, _) ->
       f !idx op;
       incr idx)
-    p
 
 let test_mapi_iteri p =
   let p' = mapi p ~f:(fun i _ -> i) in
@@ -90,6 +53,20 @@ let%expect_test "" =
   test_mapi_iteri
     (apply () ~args:[ apply () ~args:[ apply () ~args:[ apply () ] ]; apply () ]);
   [%expect {| (Apply 0 ((Apply 1 ((Apply 2 ((Apply 3 ()))))) (Apply 4 ()))) |}]
+
+let rec subprograms p k =
+  k p;
+  let (Apply (_, args)) = p in
+  List.iter args ~f:(fun p' -> subprograms p' k)
+
+let rec commutative_closure ~is_commutative (Apply (op, args)) =
+  let args_iter =
+    let iters = List.map args ~f:(commutative_closure ~is_commutative) in
+    if is_commutative op then
+      Iter.append (Iter.list_product iters) (Iter.list_product @@ List.rev iters)
+    else Iter.list_product iters
+  in
+  Iter.map (fun args -> Apply (op, args)) args_iter
 
 module Make (Op : sig
   type t [@@deriving compare, hash, sexp]

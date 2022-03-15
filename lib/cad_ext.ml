@@ -133,6 +133,11 @@ end
 let rec parse =
   let open Program.T in
   let open Op in
+  let parse_int = function
+    | Sexp.Atom x -> Int.of_string x
+    | Sexp.List [ Atom x ] -> Int.of_string x
+    | s -> raise_s [%message "expected int" (s : Sexp.t)]
+  in
   function
   | Sexp.List [ Atom op; e; e' ] ->
       let op =
@@ -144,15 +149,11 @@ let rec parse =
       in
       Apply (op, [ parse e; parse e' ])
   | Sexp.List [ Atom op; x; y; r ] when String.(lowercase op = "circle") ->
-      circle ([%of_sexp: int] x) ([%of_sexp: int] y) ([%of_sexp: int] r)
+      circle (parse_int x) (parse_int y) (parse_int r)
   | Sexp.List [ Atom op; x; y; x'; y' ] when String.(lowercase op = "rect") ->
-      rect
-        ([%of_sexp: int] x)
-        ([%of_sexp: int] y)
-        ([%of_sexp: int] x')
-        ([%of_sexp: int] y')
+      rect (parse_int x) (parse_int y) (parse_int x') (parse_int y')
   | Sexp.List [ Atom op; e; x; y; c ] when String.(lowercase op = "repl") ->
-      repl ([%of_sexp: int] x) ([%of_sexp: int] y) ([%of_sexp: int] c) (parse e)
+      repl (parse_int x) (parse_int y) (parse_int c) (parse e)
   | s -> raise_s [%message "unexpected" (s : Sexp.t)]
 
 open Sexp

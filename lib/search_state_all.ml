@@ -62,15 +62,30 @@ module Make (Lang : Lang_intf) = struct
     let[@inline] type_ c = c.type_
   end
 
-  module Path0 = struct
-    type t = {
-      op : Op.t;
-      args : Class.t list;
-      value : Value.t;
-      mutable cost : int;
-      mutable height : int;
-    }
-    [@@deriving sexp]
+  type 'a sek_e = 'a Sek.E.t
+
+  let sek_e_of_sexp a_of_sexp s =
+    let default, elems = [%of_sexp: a * a list] s in
+    Sek.E.of_list default elems
+
+  let sexp_of_sek_e sexp_of_a s = [%sexp_of: a * a list] Sek.E.(default s, to_list s)
+
+  type path = {
+    op : Op.t;
+    args : Class.t list;
+    value : Value.t;
+    mutable cost : int;
+    mutable height : int;
+  }
+  [@@deriving sexp]
+
+  type paths = { paths : path sek_e; min_cost : int; min_height : int } [@@deriving sexp]
+
+  type t = { classes : Class.t sek_e H.M(Attr).t; paths : paths H.M(Class).t }
+  [@@deriving sexp]
+
+  module Path = struct
+    type t = path [@@deriving sexp]
 
     let default =
       { op = Op.default; args = []; value = Value.default; cost = -1; height = -1 }
@@ -80,36 +95,6 @@ module Make (Lang : Lang_intf) = struct
     let pp =
       let open Fmt.Dump in
       record [ field "op" (fun x -> x.op) Op.pp ]
-  end
-
-  type 'a sek_e = 'a Sek.E.t
-
-  let sek_e_of_sexp a_of_sexp s =
-    let default, elems = [%of_sexp: a * a list] s in
-    Sek.E.of_list default elems
-
-  let sexp_of_sek_e sexp_of_a s = [%sexp_of: a * a list] Sek.E.(default s, to_list s)
-
-  type paths = { paths : Path0.t sek_e; min_cost : int; min_height : int }
-  [@@deriving sexp]
-
-  type t = { classes : Class.t sek_e H.M(Attr).t; paths : paths H.M(Class).t }
-  [@@deriving sexp]
-
-  module Path : sig
-    type ctx
-    type t = Path0.t [@@deriving sexp]
-
-    val create : Value.t -> Op.t -> Class.t list -> t
-    val op : t -> Op.t
-    val args : t -> Class.t list
-    val value : t -> Value.t
-    val cost : ctx -> t -> int
-    val height : ctx -> t -> int
-    val default : t
-  end
-  with type ctx := t = struct
-    include Path0
 
     let op x = x.op
     let args x = x.args
@@ -230,9 +215,6 @@ module Make (Lang : Lang_intf) = struct
 
   let rec find_term ctx = function
     | Apply (op, []) -> find_leaf_term ctx op
-    | Apply (op, args) when Op.is_commutative op ->
-        let (Apply (_, classes) as term) = find_nonleaf_term find_term ctx op args in
-        if List.is_empty classes then find_nonleaf_term find_term ctx op args else term
     | Apply (op, args) -> find_nonleaf_term find_term ctx op args
 
   let mem_class ctx class_ = H.mem ctx.paths class_
@@ -311,8 +293,6 @@ module Make (Lang : Lang_intf) = struct
     H.clear classes;
     H.clear paths
 
-  let list_set l i x = List.mapi l ~f:(fun j y -> if i = j then x else y)
-
   let validate ss eval dist thresh =
     Hashtbl.iteri ss.paths ~f:(fun ~key ~data ->
         Sek.E.iter Sek.forward
@@ -340,7 +320,7 @@ module Make (Lang : Lang_intf) = struct
     in
     let best_path_arg_values = List.map best_path.args ~f:(fun c -> c.value) in
     List.mapi best_path.args ~f:(fun i arg_class ->
-        let dist' v = dist (eval best_path.op @@ list_set best_path_arg_values i v) in
+        let dist' v = dist (eval best_path.op @@ List.set best_path_arg_values i v) in
         local_greedy ss (max_height - 1) eval dist' arg_class)
     |> Option.all
     |> Option.map ~f:(fun arg_progs -> Apply (best_path.op, arg_progs))
@@ -358,7 +338,7 @@ module Make (Lang : Lang_intf) = struct
     let best_path_arg_values = List.map best_path.args ~f:Class.value in
     let%bind args =
       List.mapi best_path.args ~f:(fun i arg_class ->
-          let dist' v = dist (eval best_path.op @@ list_set best_path_arg_values i v) in
+          let dist' v = dist (eval best_path.op @@ List.set best_path_arg_values i v) in
           local_greedy_new ss (max_height - 1) eval dist' arg_class)
       |> Option.all
     in
@@ -368,4 +348,14 @@ module Make (Lang : Lang_intf) = struct
     match Sys.getenv "METRIC_LOCAL_GREEDY" with
     | Some "new" -> local_greedy_new
     | _ -> local_greedy
+
+  let all_paths ss =
+    Iter.of_hashtbl_data ss.paths
+    |> Iter.map (fun (ps : paths) -> Iter.of_sek_e ps.paths)
+    |> Iter.concat
+
+  let in_paths ss c =
+    Hashtbl.find ss.paths c
+    |> Option.map ~f:(fun (ps : paths) -> Iter.of_sek_e ps.paths)
+    |> Option.value ~default:Iter.empty
 end

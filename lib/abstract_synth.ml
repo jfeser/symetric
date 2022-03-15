@@ -355,8 +355,8 @@ struct
       let (Apply ((_, conc, abs), _)) = p in
       let p' = strengthen_program ctx p (strengthen_root ctx conc abs target) in
       let preds =
-        Program.ops_iter p'
-        |> Iter.map (fun (_, _, _, ps) -> to_iter ps)
+        Program.iter p'
+        |> Iter.map (fun ((_, _, _, ps), _) -> to_iter ps)
         |> Iter.concat
         |> Iter.filter_map (function `True -> None | #Pred.t as p -> Some p)
         |> Iter.to_set (module Pred)

@@ -24,12 +24,13 @@ module Params = struct
     dump_search_space : string option;
     load_search_space : string option;
     output_file : string;
+    use_beam_search : bool;
   }
   [@@deriving yojson]
 
   let create ~dim:size ~group_threshold ~max_cost ~local_search_steps
       ~backward_pass_repeats ~verbosity ~validate ~n_groups ~dump_search_space
-      ~load_search_space ~output_file target_prog =
+      ~load_search_space ~output_file ~use_beam_search target_prog =
     let operators =
       Op.[ Union; Circle; Rect; Repl; Sub ]
       @ (List.range 0 (max size.Scene2d.Dim.xres size.yres)
@@ -55,6 +56,7 @@ module Params = struct
       dump_search_space;
       load_search_space;
       output_file;
+      use_beam_search;
     }
 
   let cmd =
@@ -88,12 +90,13 @@ module Params = struct
       and verbosity =
         flag "-verbosity" (optional_with_default 0 int) ~doc:" set verbosity"
       and validate = flag "-validate" no_arg ~doc:" turn on validation"
+      and use_beam_search = flag "-use-beam-search" no_arg ~doc:" use beam search"
       and output_file = flag "-out" (required string) ~doc:" output to file" in
       fun () ->
         let target_prog = Lang.parse @@ Sexp.input_sexp In_channel.stdin in
         create ~max_cost ~group_threshold ~local_search_steps ~dim ~backward_pass_repeats
           ~verbosity ~validate ~n_groups ~dump_search_space ~load_search_space
-          ~output_file target_prog]
+          ~output_file ~use_beam_search target_prog]
 end
 
 let params = Set_once.create ()
@@ -106,6 +109,7 @@ let[@inline] target_program () = (Set_once.get_exn params [%here]).Params.target
 let[@inline] validate () = (Set_once.get_exn params [%here]).Params.validate
 let[@inline] target_groups () = (Set_once.get_exn params [%here]).Params.target_groups
 let[@inline] output_file () = (Set_once.get_exn params [%here]).Params.output_file
+let[@inline] use_beam_search () = (Set_once.get_exn params [%here]).Params.use_beam_search
 
 let[@inline] dump_search_space () =
   (Set_once.get_exn params [%here]).Params.dump_search_space
@@ -413,6 +417,25 @@ let insert_states all_edges =
           @@ NList.to_list
           @@ Hashtbl.find_exn distinct_edges c))
 
+let insert_states_beam all_edges =
+  let search_state = get_search_state () in
+
+  let module Edge = struct
+    type t = Value.t * Op.t * S.Class.t list [@@deriving compare, hash, sexp]
+  end in
+  all_edges
+  |> Iter.filter (fun (value, op, _) ->
+         let class_ = S.Class.create value (Op.ret_type op) in
+         not (S.mem_class search_state class_))
+  |> Iter.top_k_distinct
+       (module Edge)
+       ~score:(fun (value, _, _) -> -1. *. target_distance value)
+       (target_groups ())
+  |> Iter.iter (fun (value, op, args) ->
+         let class_ = S.Class.create value (Op.ret_type op) in
+         if not (S.mem_class search_state class_) then
+           S.insert_class search_state value op @@ List.map ~f:S.Class.value args)
+
 let fill_search_space () =
   let ectx = ectx ()
   and search_state = get_search_state ()
@@ -426,8 +449,11 @@ let fill_search_space () =
 
     let (), run_time =
       Synth_utils.timed (fun () ->
-          Gen.generate_states S.search_iter S.Class.value ectx search_state ops cost
-          |> insert_states)
+          let states_iter =
+            Gen.generate_states S.search_iter S.Class.value ectx search_state ops cost
+          in
+          if use_beam_search () then insert_states_beam states_iter
+          else insert_states states_iter)
     in
 
     incr stats.max_cost_generated;
@@ -448,10 +474,9 @@ let backwards_pass class_ =
 
 let check_for_target_program () =
   let p = S.find_term (get_search_state ()) (target_program ()) in
-  Log.sexp 1 (lazy [%message (p : (Op.t * _ list * _) Program.t)]);
+  Log.sexp 1 (lazy [%message (p : (Op.t * _ list) Program.t)]);
   stats.space_contains_target :=
-    Some
-      (Iter.for_all (fun (_, xs, _) -> List.length xs > 0) (fun f -> Program.iter ~f p))
+    Some (Iter.for_all (fun (_, xs) -> List.length xs > 0) (Program.iter p))
 
 let synthesize () =
   Timer.start stats.runtime;
@@ -478,40 +503,47 @@ let synthesize () =
   Log.log 1 (fun m -> m "Starting backwards pass");
 
   let ret =
-    try
+    if use_beam_search () then
       S.classes search_state
-      |> Iter.filter (fun c -> [%compare.equal: Type.t] Scene (S.Class.type_ c))
-      |> Iter.map (fun c -> (target_distance @@ S.Class.value c, c))
-      |> Iter.sort ~cmp:(fun (d, _) (d', _) -> [%compare: float] d d')
-      |> Iter.iteri (fun i (d, (class_ : S.Class.t)) ->
-             incr stats.groups_searched;
-             Log.log 1 (fun m -> m "Searching candidate %d (d=%f)" i d);
-             Log.log 2 (fun m -> m "@.%a" Value.pp class_.value);
+      |> Iter.find_pred (fun c -> target_distance @@ S.Class.value c =. 0.)
+      |> Option.bind ~f:(fun c ->
+             backwards_pass c |> Iter.head |> Option.join
+             |> Option.map ~f:(fun (_, p) -> p))
+    else
+      try
+        S.classes search_state
+        |> Iter.filter (fun c -> [%compare.equal: Type.t] Scene (S.Class.type_ c))
+        |> Iter.map (fun c -> (target_distance @@ S.Class.value c, c))
+        |> Iter.sort ~cmp:(fun (d, _) (d', _) -> [%compare: float] d d')
+        |> Iter.iteri (fun i (d, (class_ : S.Class.t)) ->
+               incr stats.groups_searched;
+               Log.log 1 (fun m -> m "Searching candidate %d (d=%f)" i d);
+               Log.log 2 (fun m -> m "@.%a" Value.pp (S.Class.value class_));
 
-             backwards_pass class_
-             |> Iter.take backward_pass_repeats
-             |> Iter.filter_map Fun.id
-             |> Iter.mapi (fun backwards_pass_i (local_search_i, p) ->
-                    ((backwards_pass_i, local_search_i), p))
-             |> Iter.min_floor
-                  ~to_float:(fun (_, p) ->
-                    target_distance @@ Program.eval (Value.eval ectx) p)
-                  0.0
-             |> Option.iter ~f:(fun ((backwards_pass_iters, local_search_iters), p) ->
-                    let found_value = Program.eval (Value.eval ectx) p in
+               backwards_pass class_
+               |> Iter.take backward_pass_repeats
+               |> Iter.filter_map Fun.id
+               |> Iter.mapi (fun backwards_pass_i (local_search_i, p) ->
+                      ((backwards_pass_i, local_search_i), p))
+               |> Iter.min_floor
+                    ~to_float:(fun (_, p) ->
+                      target_distance @@ Program.eval (Value.eval ectx) p)
+                    0.0
+               |> Option.iter ~f:(fun ((backwards_pass_iters, local_search_iters), p) ->
+                      let found_value = Program.eval (Value.eval ectx) p in
 
-                    Log.log 2 (fun m ->
-                        m "Best (d=%f):@.%a" (target_distance found_value) Value.pp
-                          found_value);
-                    Log.sexp 2 (lazy [%message (p : Op.t Program.t)]);
+                      Log.log 2 (fun m ->
+                          m "Best (d=%f):@.%a" (target_distance found_value) Value.pp
+                            found_value);
+                      Log.sexp 2 (lazy [%message (p : Op.t Program.t)]);
 
-                    if [%compare.equal: Value.t] target found_value then (
-                      Log.log 0 (fun m -> m "local search iters %d" local_search_iters);
-                      Log.log 0 (fun m ->
-                          m "backwards pass iters %d" backwards_pass_iters);
-                      raise (Done p))));
-      None
-    with Done p -> Some p
+                      if [%compare.equal: Value.t] target found_value then (
+                        Log.log 0 (fun m -> m "local search iters %d" local_search_iters);
+                        Log.log 0 (fun m ->
+                            m "backwards pass iters %d" backwards_pass_iters);
+                        raise (Done p))));
+        None
+      with Done p -> Some p
   in
   Timer.stop stats.runtime;
   write_output ret

@@ -4,6 +4,10 @@ module Option : sig
   val value_lazy : default:'a Lazy.t -> 'a t -> 'a
 end
 
+module type HASHABLE = sig
+  type t [@@deriving compare, hash, sexp]
+end
+
 module Iter : sig
   include module type of Iter
   include Sexpable.S1 with type 'a t := 'a t
@@ -12,10 +16,14 @@ module Iter : sig
   val to_set : ('a, 'w) Base.Set.comparator -> 'a t -> ('a, 'w) Base.Set.t
   val of_queue : 'a Queue.t -> 'a t
   val of_hashtbl : ('a, 'b) Base.Hashtbl.t -> ('a * 'b) t
+  val of_hashtbl_data : ('a, 'b) Base.Hashtbl.t -> 'b t
   val of_sek_e : 'a Sek.E.t -> 'a t
   val list_product : 'a t list -> 'a list t
-  val top_k : (module Binary_heap.Ordered with type t = 'a) -> int -> 'a t -> 'a t
   val group_by : 'a Base.Hashtbl.Key.t -> ('a * 'b) t -> ('a * 'b list) t
+  val top_k : compare:('a -> 'a -> int) -> int -> 'a t -> 'a t
+
+  val top_k_distinct :
+    (module HASHABLE with type t = 'a) -> score:('a -> float) -> int -> 'a t -> 'a t
 
   val min_floor : to_float:('a -> float) -> float -> 'a t -> 'a option
   (** min_floor ~to_float floor iter returns first minimal element of `iter`
@@ -27,6 +35,11 @@ module Iter : sig
 
   val iter_is_empty : ('a -> unit) -> 'a t -> bool
   (** Consume an iterator. Return `true` if the iterator was empty and false otherwise. *)
+
+  val last : 'a t -> 'a option
+  (** Return the last element of an iterator. May run forever if the iterator is infinite. *)
+
+  val mean : float t -> float option
 end
 
 module Array : sig
@@ -58,9 +71,24 @@ module List : sig
   val product : int t -> int
   val group_by : 'a Base.Hashtbl.Key.t -> ('a * 'b) t -> ('a * 'b Non_empty_list.t) t
   val take : n:int -> 'a t -> 'a t
+  val rank : compare:('a -> 'a -> int) -> 'a t -> int t
+  val set : 'a t -> int -> 'a -> 'a t
+  val insert : 'a t -> int -> 'a -> 'a t
 end
 
 val ( <. ) : float -> float -> bool
 val ( >. ) : float -> float -> bool
 val ( <=. ) : float -> float -> bool
 val ( >=. ) : float -> float -> bool
+val ( =. ) : float -> float -> bool
+
+module Incr_mean : sig
+  type t
+
+  val zero : t
+  val add : t -> float -> t
+  val mean : t -> float
+end
+
+val rank_stability :
+  int -> int list Iter.t -> (float, [> `Not_enough_objects | `No_ranks ]) result
