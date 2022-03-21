@@ -34,8 +34,15 @@
   (pps ppx_jane)))
 
 (executable
- (name overlap)
- (modules overlap)
+ (name similarity)
+ (modules similarity)
+ (libraries core staged_synth)
+ (preprocess
+  (pps ppx_jane)))
+
+(executable
+ (name gen_cad)
+ (modules gen_cad)
  (libraries core staged_synth)
  (preprocess
   (pps ppx_jane)))

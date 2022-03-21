@@ -394,48 +394,7 @@ module Make (Lang : Lang_intf) = struct
     |> Iter.min ~lt:(fun (d, _) (d', _) -> d <. d')
     |> Option.map ~f:(fun (_, p) -> p)
 
-  let rec exhaustive_v2 ss max_height eval dist (class_ : Class.t) =
-    let all_paths = (H.find_exn ss.paths class_).paths in
-
-    Sek.E.filter (fun (p : Path.t) -> Path.height ss p <= max_height) all_paths
-    |> Iter.of_sek_e
-    |> Iter.map (fun (p : Path.t) -> (dist p.value, p))
-    |> Iter.sort ~cmp:(fun (d, _) (d', _) -> [%compare: float] d d')
-    |> Iter.take 4
-    |> Iter.filter_map (fun (_, p) ->
-           let open Option.Let_syntax in
-           let arg_values = List.map p.args ~f:(fun c -> c.value) in
-
-           (* let n_arg_paths = *)
-           (*   List.map p.args ~f:(fun a -> Iter.of_sek_e @@ (H.find_exn ss.paths a).paths) *)
-           (*   |> Iter.list_product *)
-           (*   |> Iter.map (fun a -> (dist (eval p.op @@ List.map ~f:Path.value a), a)) *)
-           (*   |> Iter.min ~lt:(fun (d, _) (d', _) -> d <. d') *)
-           (* in *)
-
-           (* print_s [%message (n_arg_paths : (float * _) option)]; *)
-           let rec select_args arg_values i = function
-             | [] -> Some []
-             | c :: cs ->
-                 let dist' v = dist (eval p.op @@ List.set arg_values i v) in
-                 let%bind arg_prog = exhaustive_v2 ss (max_height - 1) eval dist' c in
-                 let arg_values' = List.set arg_values i @@ Program.eval eval arg_prog in
-                 let%bind rest_progs = select_args arg_values' (i + 1) cs in
-                 return (arg_prog :: rest_progs)
-           in
-
-           let%bind arg_progs = select_args arg_values 0 p.args in
-           let arg_values = List.map arg_progs ~f:(Program.eval eval) in
-           let%bind arg_progs = select_args arg_values 0 p.args in
-           let arg_values = List.map arg_progs ~f:(Program.eval eval) in
-           let%bind arg_progs = select_args arg_values 0 p.args in
-           let prog = Apply (p.op, arg_progs) in
-           let d = dist (Program.eval eval prog) in
-           return (d, prog))
-    |> Iter.min ~lt:(fun (d, _) (d', _) -> d <. d')
-    |> Option.map ~f:(fun (_, p) -> p)
-
-  let local_greedy = exhaustive_v2
+  let local_greedy = exhaustive
 
   let all_paths ss =
     Iter.of_hashtbl_data ss.paths

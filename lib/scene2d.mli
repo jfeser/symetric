@@ -27,6 +27,7 @@ val to_iter : Dim.t -> t -> ((int * int) * bool -> unit) -> unit
 val pp : Format.formatter -> t -> unit [@@ocaml.toplevel_printer]
 val get : t -> int -> bool
 val hamming : t -> t -> int
+val hamming_weight : t -> int
 val is_empty : t -> bool
 val jaccard_canvas : t -> t -> float
 val jaccard_pixels : t -> t -> float
@@ -39,3 +40,5 @@ val sub : t -> t -> t
 val repeat : t -> int -> int -> int -> t
 val translate : t -> int -> int -> t
 val ( = ) : t -> t -> bool
+val corners : t -> t
+val corner_overlap : t -> t -> bool

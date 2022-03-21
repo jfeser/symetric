@@ -28,15 +28,11 @@ module Params = struct
   }
   [@@deriving yojson]
 
-  let create ~dim:size ~group_threshold ~max_cost ~local_search_steps
-      ~backward_pass_repeats ~verbosity ~validate ~n_groups ~dump_search_space
-      ~load_search_space ~output_file ~use_beam_search target_prog =
-    let operators =
-      Op.[ Union; Circle; Rect; Repl; Sub ]
-      @ (List.range 0 (max size.Scene2d.Dim.xres size.yres)
-        |> List.map ~f:(fun i -> Op.Int i))
-      @ (List.range 2 5 |> List.map ~f:(fun i -> Op.Rep_count i))
-    in
+  let create : dim:Scene2d.Dim.t -> _ =
+   fun ~dim:size ~group_threshold ~max_cost ~local_search_steps ~backward_pass_repeats
+       ~verbosity ~validate ~n_groups ~dump_search_space ~load_search_space ~output_file
+       ~use_beam_search target_prog ->
+    let operators = Cad_ext.Op.default_operators ~xres:size.xres ~yres:size.yres in
 
     List.find (Program.ops target_prog) ~f:(fun op ->
         not @@ List.mem ~equal:[%compare.equal: Op.t] operators op)
@@ -205,7 +201,6 @@ let similarity (v : Value.t) (v' : Value.t) =
   match (v, v') with
   | Scene x, Scene x' ->
       let target_scene = match target () with Scene t -> t | _ -> assert false in
-
       let n = Scene2d.(pixels @@ sub target_scene x)
       and n' = Scene2d.(pixels @@ sub target_scene x') in
       let p = Scene2d.(pixels @@ sub x target_scene)
@@ -216,7 +211,11 @@ let similarity (v : Value.t) (v' : Value.t) =
       if union = 0 then 0.0 else 1.0 -. (Float.of_int inter /. Float.of_int union)
   | v, v' -> if [%compare.equal: Value.t] v v' then 0.0 else Float.infinity
 
-let distance = Value.distance
+let distance (v : Value.t) (v' : Value.t) =
+  match (v, v') with
+  (* | Scene x, Scene x' when not Scene2d.(corner_overlap x x') -> Float.infinity *)
+  | v, v' -> Value.distance v v'
+
 let target_distance v = distance (target ()) v
 
 let local_search p =
@@ -333,38 +332,36 @@ let insert_states all_edges =
   let search_state = get_search_state () in
 
   (* group edges that produce the same state *)
-  let n_states = ref 0 in
+  let n_total_states = ref 0 in
   let distinct_edges = Hashtbl.create (module S.Class) in
   all_edges (fun ((value, op, _) as edge) ->
       let class_ = S.Class.create value (Op.ret_type op) in
-      incr n_states;
+      incr n_total_states;
       Hashtbl.update distinct_edges class_ ~f:(function
         | None -> NList.singleton edge
         | Some edges -> NList.cons edge edges));
 
+  let distinct_states, sort_time =
+    Synth_utils.timed (fun () ->
+        Hashtbl.keys distinct_edges
+        |> List.filter_map ~f:(fun c -> Some (target_distance @@ S.Class.value c, c))
+        |> List.sort ~compare:[%compare: float * _])
+  in
+
   Log.sexp 0
     (lazy
       (let min, max, mean =
-         Iter.of_hashtbl distinct_edges
-         |> Iter.map (fun (c, _) -> target_distance @@ S.Class.value c)
-         |> Iter.stats
+         Iter.of_list distinct_states |> Iter.map (fun (d, _) -> d) |> Iter.stats
        in
        [%message "all states" (min : float) (max : float) (mean : float)]));
 
   Log.log 1 (fun m ->
-      m "(%d, %d distinct) states." !n_states (Hashtbl.length distinct_edges));
-
-  let distinct_states, sort_time =
-    Synth_utils.timed (fun () ->
-        Hashtbl.keys distinct_edges
-        |> List.map ~f:(fun c -> (target_distance @@ S.Class.value c, c))
-        |> List.sort ~compare:[%compare: float * _]
-        |> List.map ~f:Tuple.T2.get2)
-  in
+      m "(%d, %d distinct) states." !n_total_states (List.length distinct_states));
 
   Log.log 1 (fun m -> m "sort time %a" Time.Span.pp sort_time);
 
   let n_states = List.length distinct_states in
+  let distinct_states = List.map ~f:Tuple.T2.get2 distinct_states in
 
   let group n_sample =
     let sample = List.permute @@ List.take ~n:n_sample distinct_states in
@@ -503,47 +500,40 @@ let synthesize () =
   Log.log 1 (fun m -> m "Starting backwards pass");
 
   let ret =
-    if use_beam_search () then
+    try
       S.classes search_state
-      |> Iter.find_pred (fun c -> target_distance @@ S.Class.value c =. 0.)
-      |> Option.bind ~f:(fun c ->
-             backwards_pass c |> Iter.head |> Option.join
-             |> Option.map ~f:(fun (_, p) -> p))
-    else
-      try
-        S.classes search_state
-        |> Iter.filter (fun c -> [%compare.equal: Type.t] Scene (S.Class.type_ c))
-        |> Iter.map (fun c -> (target_distance @@ S.Class.value c, c))
-        |> Iter.sort ~cmp:(fun (d, _) (d', _) -> [%compare: float] d d')
-        |> Iter.iteri (fun i (d, (class_ : S.Class.t)) ->
-               incr stats.groups_searched;
-               Log.log 1 (fun m -> m "Searching candidate %d (d=%f)" i d);
-               Log.log 2 (fun m -> m "@.%a" Value.pp (S.Class.value class_));
+      |> Iter.filter (fun c -> [%compare.equal: Type.t] Scene (S.Class.type_ c))
+      |> Iter.map (fun c -> (target_distance @@ S.Class.value c, c))
+      |> Iter.sort ~cmp:(fun (d, _) (d', _) -> [%compare: float] d d')
+      |> Iter.iteri (fun i (d, (class_ : S.Class.t)) ->
+             incr stats.groups_searched;
+             Log.log 1 (fun m -> m "Searching candidate %d (d=%f)" i d);
+             Log.log 2 (fun m -> m "@.%a" Value.pp (S.Class.value class_));
 
-               backwards_pass class_
-               |> Iter.take backward_pass_repeats
-               |> Iter.filter_map Fun.id
-               |> Iter.mapi (fun backwards_pass_i (local_search_i, p) ->
-                      ((backwards_pass_i, local_search_i), p))
-               |> Iter.min_floor
-                    ~to_float:(fun (_, p) ->
-                      target_distance @@ Program.eval (Value.eval ectx) p)
-                    0.0
-               |> Option.iter ~f:(fun ((backwards_pass_iters, local_search_iters), p) ->
-                      let found_value = Program.eval (Value.eval ectx) p in
+             backwards_pass class_
+             |> Iter.take backward_pass_repeats
+             |> Iter.filter_map Fun.id
+             |> Iter.mapi (fun backwards_pass_i (local_search_i, p) ->
+                    ((backwards_pass_i, local_search_i), p))
+             |> Iter.min_floor
+                  ~to_float:(fun (_, p) ->
+                    target_distance @@ Program.eval (Value.eval ectx) p)
+                  0.0
+             |> Option.iter ~f:(fun ((backwards_pass_iters, local_search_iters), p) ->
+                    let found_value = Program.eval (Value.eval ectx) p in
 
-                      Log.log 2 (fun m ->
-                          m "Best (d=%f):@.%a" (target_distance found_value) Value.pp
-                            found_value);
-                      Log.sexp 2 (lazy [%message (p : Op.t Program.t)]);
+                    Log.log 2 (fun m ->
+                        m "Best (d=%f):@.%a" (target_distance found_value) Value.pp
+                          found_value);
+                    Log.sexp 2 (lazy [%message (p : Op.t Program.t)]);
 
-                      if [%compare.equal: Value.t] target found_value then (
-                        Log.log 0 (fun m -> m "local search iters %d" local_search_iters);
-                        Log.log 0 (fun m ->
-                            m "backwards pass iters %d" backwards_pass_iters);
-                        raise (Done p))));
-        None
-      with Done p -> Some p
+                    if [%compare.equal: Value.t] target found_value then (
+                      Log.log 0 (fun m -> m "local search iters %d" local_search_iters);
+                      Log.log 0 (fun m ->
+                          m "backwards pass iters %d" backwards_pass_iters);
+                      raise (Done p))));
+      None
+    with Done p -> Some p
   in
   Timer.stop stats.runtime;
   write_output ret

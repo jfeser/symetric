@@ -61,11 +61,14 @@ let and_ a b = { len = a.len; buf = Array.map2_exn a.buf b.buf ~f:( land ) }
 let or_ a b = { len = a.len; buf = Array.map2_exn a.buf b.buf ~f:( lor ) }
 let xor a b = { len = a.len; buf = Array.map2_exn a.buf b.buf ~f:( lxor ) }
 let hamming_weight x = Array.sum (module Int) x.buf ~f:Int.popcount
-let hamming_distance a b = Array.fold2_exn a.buf b.buf ~f:(fun ct w w' -> ct + Int.popcount (w lxor w')) ~init:0
+
+let hamming_distance a b =
+  Array.fold2_exn a.buf b.buf ~f:(fun ct w w' -> ct + Int.popcount (w lxor w')) ~init:0
 
 let weighted_jaccard ?(pos_weight = 0.5) a b =
   ((Float.of_int (hamming_weight (not @@ and_ a b)) *. pos_weight)
-  +. (Float.of_int (hamming_weight (not @@ and_ (not a) (not b))) *. (1.0 -. pos_weight)))
+  +. (Float.of_int (hamming_weight (not @@ and_ (not a) (not b))) *. (1.0 -. pos_weight))
+  )
   /. (Float.of_int @@ length a)
 
 let%expect_test "init-in-bounds" =
@@ -78,7 +81,8 @@ let%expect_test "init-in-bounds" =
 
 let%expect_test "iteri-in-bounds" =
   let len = 99 in
-  create len false |> iteri ~f:(fun i _ -> [%test_pred: int] (fun i -> 0 <= i && i < len) i)
+  create len false
+  |> iteri ~f:(fun i _ -> [%test_pred: int] (fun i -> 0 <= i && i < len) i)
 
 let%expect_test "" =
   for _ = 0 to 100 do
@@ -99,8 +103,13 @@ let offset ~w ~h ~x ~y = ((h - 1 - y) * w) + x
 let replicate_is_set ~w ~h scene dx dy count x y =
   let rec loop count x y =
     if count <= 0 then false
-    else ((x >= 0 && x < w && y >= 0 && y < h) && get scene (offset ~w ~h ~x ~y)) || loop (count - 1) (x - dx) (y - dy)
+    else
+      ((x >= 0 && x < w && y >= 0 && y < h) && get scene (offset ~w ~h ~x ~y))
+      || loop (count - 1) (x - dx) (y - dy)
   in
   loop count x y
 
-let replicate ~w ~h s ~dx ~dy ~ct = init_bitmap ~w ~h ~f:(fun ~i:_ ~x ~y -> replicate_is_set ~w ~h s dx dy ct x y)
+let replicate ~w ~h s ~dx ~dy ~ct =
+  init_bitmap ~w ~h ~f:(fun ~i:_ ~x ~y -> replicate_is_set ~w ~h s dx dy ct x y)
+
+let corners ~w:_ ~h:_ _ = failwith "unimplemented"

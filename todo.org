@@ -5,7 +5,7 @@
 * TODO Clarify constraints on the algorithm
 ** Background
  I've been thinking about the algorithm, and it seems to me that it can't
-possibly work in general. 
+possibly work in general.
 
 Right now, the search space that we generate does not depend on the
 input example. We generate programs fron the CAD grammar and group them
@@ -39,13 +39,10 @@ However, the search space doesn't depend on the input image. Therefore,
 the search space must contain a group that is similar to _every_ CAD
 program (up to the bound that we used). Formally, when the search space S
 is built, for every CAD program P (under the bound), there is some group
-G in S such that \delta(P, G) < \epsilon. 
+G in S such that \delta(P, G) < \epsilon.
 
 Bottom-up enumerative synthesis suffers from this issue as well
 
 
 
 [1] The expected Jaccard distance between two random vectors is 0.5.
-
-
-

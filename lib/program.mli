@@ -23,3 +23,26 @@ end) : sig
 
   val eval_memoized : (Op.t -> 'a list -> 'a) -> t -> 'a
 end
+
+module type Generate_lang_intf = sig
+  module Type : sig
+    type t [@@deriving compare]
+  end
+
+  module Op : sig
+    type t [@@deriving sexp]
+
+    val args_type : t -> Type.t list
+    val ret_type : t -> Type.t
+    val arity : t -> int
+  end
+end
+
+val generate :
+  (module Generate_lang_intf with type Op.t = 'op and type Type.t = 'type_) ->
+  ?filter:('op t -> bool) ->
+  'type_ ->
+  ?min_height:int ->
+  max_height:int ->
+  'op list ->
+  'op t option

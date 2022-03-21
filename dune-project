@@ -4,12 +4,16 @@
 (package
  (name staged-synth)
  (depends
-  (core_profiler (>= v0.14))
-  (core (>= v0.14))
+  (core (and (>= v0.14) (< v0.15)))
   (ppx_jane (>= v0.14))
   (base_quickcheck (and :with-test (>= v0.14)))
   fmt
-  progress
   landmarks
   memtrace
-  shexp))
+  sek
+  ppx_yojson_conv
+  core_bench
+  owl
+  gen
+  bheap
+  iter))

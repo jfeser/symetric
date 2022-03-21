@@ -99,6 +99,7 @@ def load(run_dir):
         "runtime",
         "program_size",
         "timeout",
+        "local_search_steps",
     ]
     results = []
     for fn in os.listdir(run_dir):
@@ -111,6 +112,7 @@ def load(run_dir):
         max_cost = bench_json["params"]["max_cost"]
         group_count = bench_json["params"]["target_groups"]
         thresh = bench_json["params"]["group_threshold"]
+        local_search_steps = bench_json["params"]["local_search_steps"]
 
         bench_params = os.path.splitext(fn)[0].split("-")
         bench_name = bench_params[1]
@@ -125,6 +127,7 @@ def load(run_dir):
             runtime(bench_json),
             bench_json["program_size"],
             timeout(bench_json),
+            local_search_steps,
         ]
         results += [result_row]
 
@@ -155,7 +158,7 @@ def make_main_table(df, count, main_table):
         )
         print(r"\toprule", file=f)
         print(
-            r"Name & $\gamma$ & \multicolumn{2}{c}{Program Size} & \multicolumn{2}{c}{Success/Failure/Timeout} & \multicolumn{2}{c}{Expected Time} \\",
+            r"Name & \multicolumn{3}{c}{Program Size} & \multicolumn{3}{c}{Success/Failure/Timeout} & \multicolumn{3}{c}{Expected Time} \\",
             file=f,
         )
         print(
@@ -165,7 +168,7 @@ def make_main_table(df, count, main_table):
         for bench in sorted(list(set(df.index.get_level_values(0)))):
             dfb = df.loc[bench]
             is_first_row = True
-            for (n_groups, row) in dfb.iterrows():
+            for ((n_groups, _), row) in dfb.iterrows():
                 if is_first_row:
                     print(bench_name(bench), file=f, end="")
                     is_first_row = False
@@ -238,22 +241,41 @@ def success_by_time(df, method, ngroups):
     )
 
 
-def process(df, main_table):
+def process_metric(df):
     df["runtime"] = df["runtime"].fillna(600)
 
-    df = df[(df["method"] == "beam") | (df["method"] == "metric")]
+    df = df[df["method"] == "metric"]
     gb = df.groupby(by=["bench", "n_groups", "method", "threshold"])
     count = gb.size()
     df = gb.agg(["mean"])
     df["expected_time"] = (1.0 / df["success"]) * df["runtime"]
 
-    import pdb
+    return df.unstack(level=-1), count
 
-    pdb.set_trace()
 
-    df = df.unstack(level=-1)
+def first_true(s):
+    for (i, v) in s.iteritems():
+        if v:
+            return i
+    return s.index[-1]
 
-    make_main_table(df, count, main_table)
+
+def process_beam(df):
+    df = df.sort_values(["bench", "local_search_steps", "n_groups"])
+    gb = df.groupby(["bench", "local_search_steps"])
+    df["runtime_cum"] = gb["runtime"].cumsum()
+    success_idx = gb["success"].agg(first_true)
+    df = df.loc[success_idx]
+    df = df.set_index(["bench", "local_search_steps"])
+    df["any_success"] = gb["success"].any()
+    return df
+
+
+def process(metric_df, beam_df, main_table):
+    metric_df, count = process_metric(metric_df)
+    beam_df = process_beam(beam_df)
+
+    make_main_table(metric_df, count, main_table)
 
     fig = plt.figure()
     ax = fig.add_subplot(1, 1, 1)
@@ -281,13 +303,20 @@ def process(df, main_table):
 
 
 def main(args):
-    process(load(args.run_dir), args.main_table)
+    process(load(args.metric_run_dir), load(args.beam_run_dir), args.main_table)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Produce result tables")
     parser.add_argument(
-        "run_dir", metavar="RUN_DIR", help="directory containing benchmark output"
+        "metric_run_dir",
+        metavar="METRIC_RUN_DIR",
+        help="directory containing benchmark output",
+    )
+    parser.add_argument(
+        "beam_run_dir",
+        metavar="BEAM_RUN_DIR",
+        help="directory containing benchmark output",
     )
     parser.add_argument("--main-table")
     args = parser.parse_args()

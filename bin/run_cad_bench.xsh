@@ -3,8 +3,8 @@
 import glob
 import random
 
-run_metric = True
-run_beam = False
+run_metric = False
+run_beam = True
 run_exhaustive = False
 run_local = False
 
@@ -30,12 +30,13 @@ for _ in range(25):
                     jobs += [(f, c, gt, thresh)]
 
 beam_jobs = []
-for (d, c) in [('tiny', 10), ('small', 20),
-               # ('medium', 30), ('large', 40)
-               ]:
-    for f in glob.glob(base_dir + '/bench/cad_ext/' + d + '/*'):
-        for gt in [12800]:
-            beam_jobs += [(f, c, gt)]
+for gt in [100, 200, 400, 800, 1600, 3200, 6400, 12800]:
+    for (d, c) in [('tiny', 10), ('small', 20),
+                   ('medium', 30), ('large', 40)
+                   ]:
+        for f in glob.glob(base_dir + '/bench/cad_ext/' + d + '/*'):
+            for ls in [0, 500]:
+                beam_jobs += [(f, c, gt, ls)]
 
 
 print('Jobs: ', len(jobs))
@@ -57,7 +58,7 @@ if run_metric:
 
 if run_beam:
     job_name = "beam-{1/}-{#}"
-    cmd = "%s/bin/metric_synth_cad.exe -max-cost {2} -verbosity 1 -n-groups {3} -scaling 2 -use-beam-search -dump-search-space %s.bin -out %s.json < {1} 2> %s.log" % (build_dir, job_name, job_name, job_name)
+    cmd = "%s/bin/metric_synth_cad.exe -max-cost {2} -verbosity 1 -n-groups {3} -scaling 2 -use-beam-search -backward-pass-repeats 1 -local-search-steps {4} -dump-search-space %s.bin -out %s.json < {1} 2> %s.log" % (build_dir, job_name, job_name, job_name)
     print('Cmd: ', cmd)
     parallel -j 20 --eta --joblog beam_joblog --timeout 70m --colsep ' ' --memsuspend 8G @(cmd) :::: beam_jobs
 

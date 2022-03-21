@@ -83,62 +83,60 @@ let backwards_pass target_distance search_state ectx class_ =
   | Value.Scene _ ->
       let eval = Value.mk_eval_memoized () ectx in
       Iter.forever (fun () ->
-          S.local_greedy search_state (Int.ceil_log2 20) eval target_distance class_)
+          S.local_greedy search_state (Int.ceil_log2 30) eval target_distance class_)
   | _ -> Iter.empty
 
 let test_search search_state programs =
   let ectx = Value.Ctx.create (Scene2d.Dim.create ~xres:16 ~yres:16 ~scaling:2 ()) in
 
-  let prog =
-    Iter.of_list programs
-    |> Iter.find_map (fun program ->
-           Program.commutative_closure ~is_commutative:Op.is_commutative program
-           |> Iter.find_map (fun p ->
-                  let p = S.find_term search_state p in
-                  let (Apply ((_, classes), _)) = p in
+  (* let prog = *)
+  (*   Iter.of_list programs *)
+  (*   |> Iter.find_map (fun program -> *)
+  (*          Program.commutative_closure ~is_commutative:Op.is_commutative program *)
+  (*          |> Iter.find_map (fun p -> *)
+  (*                 let p = S.find_term search_state p in *)
+  (*                 let (Apply ((_, classes), _)) = p in *)
 
-                  if not (List.is_empty classes) then Some p else None))
-    |> Option.value_exn
-  in
+  (*                 if not (List.is_empty classes) then Some p else None)) *)
+  (*   |> Option.value_exn *)
+  (* in *)
 
-  let (Apply ((_, _classes, _), _)) =
-    Program.map prog ~f:(fun (op, classes) args ->
-        let relevant_paths =
-          Iter.of_list classes
-          |> Iter.map (fun class_ ->
-                 in_paths search_state class_
-                 |> Iter.filter (fun p ->
-                        [%compare.equal: Op.t] (Path.op p) op
-                        && List.for_all2_exn (Path.args p) args
-                             ~f:(fun c (Apply ((_, arg_classes), _)) ->
-                               List.mem ~equal:[%compare.equal: Class.t] arg_classes c)))
-          |> Iter.concat |> Iter.to_list
-        in
-        (op, classes, relevant_paths))
-  in
-
+  (* let (Apply ((_, _classes, _), _)) = *)
+  (*   Program.map prog ~f:(fun (op, classes) args -> *)
+  (*       let relevant_paths = *)
+  (*         Iter.of_list classes *)
+  (*         |> Iter.map (fun class_ -> *)
+  (*                in_paths search_state class_ *)
+  (*                |> Iter.filter (fun p -> *)
+  (*                       [%compare.equal: Op.t] (Path.op p) op *)
+  (*                       && List.for_all2_exn (Path.args p) args *)
+  (*                            ~f:(fun c (Apply ((_, arg_classes), _)) -> *)
+  (*                              List.mem ~equal:[%compare.equal: Class.t] arg_classes c))) *)
+  (*         |> Iter.concat |> Iter.to_list *)
+  (*       in *)
+  (*       (op, classes, relevant_paths)) *)
+  (* in *)
   let target = Program.eval (Value.eval ectx) (List.hd_exn programs) in
+
   let target_distance v = Value.distance target v in
-  let target_distance_annot v =
+  let _target_distance_annot v =
     Fmt.pr "%a@." Value.pp v;
     target_distance v
   in
 
   let sorted_classes =
-    (* Iter.of_list classes *)
     S.classes search_state
     |> Iter.filter (fun c -> [%compare.equal: Type.t] Scene (S.Class.type_ c))
     |> Iter.map (fun c -> (target_distance @@ S.Class.value c, c))
     |> Iter.sort ~cmp:(fun (d, _) (d', _) -> [%compare: float] d d')
   in
 
-  sorted_classes |> Iter.take 1
+  sorted_classes |> Iter.take 100
   |> Iter.iter (fun (_, (class_ : S.Class.t)) ->
          let found =
-           backwards_pass target_distance_annot search_state ectx class_
+           backwards_pass target_distance search_state ectx class_
            |> Iter.head |> Option.join
          in
-         Fmt.pr "@[Class@,%a@]@." Value.pp (S.Class.value class_);
          Option.iter found ~f:(fun found ->
              Fmt.pr "%a@." (Program.pp Op.pp) found;
              Fmt.pr "@[%a@]@." Value.pp (Program.eval (Value.eval ectx) found)))

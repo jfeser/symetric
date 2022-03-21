@@ -9,6 +9,7 @@ adt Program {
   Circle { int x; int y; int r; }
   Rect { int lx; int ly; int hx; int hy; }
   Union { Program l; Program r; }
+  Sub { Program l; Program r; }
   Repl { Program p; int dx; int dy; int c; }
 }
 
@@ -69,4 +70,4 @@ harness void main(int i) {
   Program solution = gen(DEPTH);
   Vector v = new Vector(x = examples[i].x, y = examples[i].y);
   assert (eval(solution, v) == examples[i].v);
-}                    
+}

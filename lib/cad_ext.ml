@@ -1,5 +1,4 @@
 let memoize = false
-let unsound_pruning = false
 
 module Type = struct
   type t = Int | Rep_count | Scene | Error [@@deriving compare, hash, sexp]
@@ -42,6 +41,11 @@ module Op = struct
   let union x y = Apply (Union, [ x; y ])
   let inter x y = Apply (Inter, [ x; y ])
   let repl dx dy c p = Apply (Repl, [ p; int dx; int dy; rc c ])
+
+  let default_operators ~xres ~yres =
+    [ Union; Circle; Rect; Repl; Sub ]
+    @ (List.range 0 (max xres yres) |> List.map ~f:(fun i -> Int i))
+    @ (List.range 2 5 |> List.map ~f:(fun i -> Rep_count i))
 end
 
 module Value = struct
@@ -53,9 +57,9 @@ module Value = struct
   let[@inline] is_error = function Error -> true | _ -> false
 
   module Ctx = struct
-    type t = { size : Scene2d.Dim.t }
+    type t = { size : Scene2d.Dim.t; unsound_pruning : bool }
 
-    let create size = { size }
+    let create ?(unsound_pruning = false) size = { size; unsound_pruning }
   end
 
   let pp fmt = function
@@ -87,19 +91,19 @@ module Value = struct
     | (Inter | Union | Sub), ([ Error; _ ] | [ _; Error ]) -> Error
     | Inter, [ Scene s; Scene s' ] ->
         let s'' = S.inter s s' in
-        if unsound_pruning && S.(s = s'' || s' = s'') then Error else Scene s''
+        if ctx.unsound_pruning && S.(s = s'' || s' = s'') then Error else Scene s''
     | Union, [ Scene s; Scene s' ] ->
         let s'' = S.union s s' in
-        if unsound_pruning && S.(s = s'' || s' = s'') then Error else Scene s''
+        if ctx.unsound_pruning && S.(s = s'' || s' = s'') then Error else Scene s''
     | Sub, [ Scene s; Scene s' ] ->
         let s'' = S.sub s s' in
-        if unsound_pruning && S.(s = s'' || s' = s'') then Error else Scene s''
+        if ctx.unsound_pruning && S.(s = s'' || s' = s'') then Error else Scene s''
     | Repl, [ Error; Int _; Int _; Rep_count _ ] -> Error
     | Repl, [ Scene _; Int dx; Int dy; Rep_count c ] when (dx = 0 && dy = 0) || c <= 1 ->
         Error
     | Repl, [ Scene s; Int dx; Int dy; Rep_count ct ] ->
         let s' = S.repeat s dx dy ct in
-        if unsound_pruning && S.(s = s') then Error else Scene s'
+        if ctx.unsound_pruning && S.(s = s') then Error else Scene s'
     | _ -> raise_s [%message "unexpected arguments" (op : Op.t) (args : t list)]
 
   let mk_eval_memoized () =

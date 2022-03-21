@@ -52,6 +52,11 @@ external bitarray_replicate :
   unit = "bitarray_replicate_stub_byte" "bitarray_replicate_stub"
   [@@noalloc]
 
+external bitarray_corners :
+  string -> (int[@untagged]) -> (int[@untagged]) -> bytes -> unit
+  = "bitarray_corners_stub_byte" "bitarray_corners_stub"
+  [@@noalloc]
+
 external bitarray_hash : string -> string -> (int[@untagged])
   = "bitarray_hash_stub_byte" "bitarray_hash_stub"
   [@@noalloc]
@@ -151,6 +156,12 @@ let replicate ~w ~h t ~dx ~dy ~ct =
   assert (w >= 0 && h >= 0 && t.len = w * h && ct >= 0);
   let buf = create_buf t.len in
   bitarray_replicate t.buf dx dy ct w h buf;
+  { buf = Bytes.unsafe_to_string ~no_mutation_while_string_reachable:buf; len = t.len }
+
+let corners ~w ~h t =
+  assert (w >= 0 && h >= 0 && t.len = w * h);
+  let buf = create_buf t.len in
+  bitarray_corners t.buf w h buf;
   { buf = Bytes.unsafe_to_string ~no_mutation_while_string_reachable:buf; len = t.len }
 
 let init_bitmap = Shared.init_bitmap init_fold

@@ -18,9 +18,7 @@ let%test_unit "replicate" =
   let n = N.of_list s in
   let v = V.of_list s in
   let n' = N.replicate ~w ~h n ~dx ~dy ~ct in
-  Fmt.pr "Native:\n%a\n@." (N.pp_bitmap ~w) n';
   let v' = V.replicate ~w ~h v ~dx ~dy ~ct in
-  Fmt.pr "Vectorized:\n%a\n@." (V.pp_bitmap ~w) v';
   let nl = N.to_list n' and vl = V.to_list v' in
   if not @@ [%compare.equal: bool list] nl vl then (
     Fmt.pr "Expected:\n%a\nActual:\n%a\n@." (N.pp_bitmap ~w) n' (V.pp_bitmap ~w) v';
