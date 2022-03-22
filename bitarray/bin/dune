@@ -1,4 +1,5 @@
 (executable
  (name bench)
  (libraries bitarray core core_bench)
- (preprocess (pps ppx_jane)))
+ (preprocess
+  (pps ppx_jane)))

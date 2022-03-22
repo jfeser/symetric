@@ -5,7 +5,9 @@ module Make (Op : Op_intf.S) = struct
     buf.(idx) <- op;
     write_args buf (idx + 1) args
 
-  and write_args buf idx = function [] -> idx | x :: xs -> write_args buf (write buf idx x) xs
+  and write_args buf idx = function
+    | [] -> idx
+    | x :: xs -> write_args buf (write buf idx x) xs
 
   let rec read buf idx f =
     let op = buf.(idx) in
@@ -30,6 +32,8 @@ module Make (Op : Op_intf.S) = struct
     let p, _ = read buf 0 (fun op args -> Program.Apply (op, args)) in
     p
 
-  let leaves buf = Array.filter_mapi buf ~f:(fun i op -> if Op.arity op = 0 then Some i else None)
+  let leaves buf =
+    Array.filter_mapi buf ~f:(fun i op -> if Op.arity op = 0 then Some i else None)
+
   let eval eval_op buf = Tuple.T2.get1 @@ read buf 0 eval_op
 end

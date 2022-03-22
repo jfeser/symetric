@@ -3,7 +3,9 @@ open! Core
 let init ~init_fold ~f len = init_fold ~f:(fun () i -> ((), f i)) ~init:() len
 
 let of_list ~init_fold x =
-  init_fold ~f:(fun xs _ -> match xs with x :: xs' -> (xs', x) | [] -> assert false) ~init:x (List.length x)
+  init_fold
+    ~f:(fun xs _ -> match xs with x :: xs' -> (xs', x) | [] -> assert false)
+    ~init:x (List.length x)
 
 let iteri ~fold x ~f =
   (fold x

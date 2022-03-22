@@ -1,7 +1,13 @@
 module Out = struct
-  type t = { close : unit -> unit; flush : unit -> unit; output_substring : string -> pos:int -> len:int -> unit }
+  type t = {
+    close : unit -> unit;
+    flush : unit -> unit;
+    output_substring : string -> pos:int -> len:int -> unit;
+  }
 
-  let nop = { close = Fun.id; flush = Fun.id; output_substring = (fun _ ~pos:_ ~len:_ -> ()) }
+  let nop =
+    { close = Fun.id; flush = Fun.id; output_substring = (fun _ ~pos:_ ~len:_ -> ()) }
+
   let close c = c.close ()
   let flush c = c.flush ()
   let output_substring c buf ~pos ~len = c.output_substring buf ~pos ~len
@@ -32,7 +38,8 @@ module Out = struct
     Format.{ out_string; out_flush; out_newline; out_spaces; out_indent }
 
   let with_file ?binary ?append ?fail_if_exists ?perm fn f =
-    Out_channel.with_file ?binary ?append ?fail_if_exists ?perm fn (fun ch -> f @@ of_out_channel ch)
+    Out_channel.with_file ?binary ?append ?fail_if_exists ?perm fn (fun ch ->
+        f @@ of_out_channel ch)
 
   let tee c c' =
     let close () =

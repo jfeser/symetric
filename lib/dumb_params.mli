@@ -35,9 +35,19 @@ module Param : sig
   val const_str : name:string -> ?json:bool -> string -> (string, free) t
 
   val ids :
-    (module Comparator.S with type t = 't) -> name:string -> doc:string -> (string * 't) list -> ('t list, free) t
+    (module Comparator.S with type t = 't) ->
+    name:string ->
+    doc:string ->
+    (string * 't) list ->
+    ('t list, free) t
 
-  val symbol : name:string -> doc:string -> ?default:'a -> ?json:bool -> ('a * string) list -> ('a, free) t
+  val symbol :
+    name:string ->
+    doc:string ->
+    ?default:'a ->
+    ?json:bool ->
+    ('a * string) list ->
+    ('a, free) t
 end
 
 type t

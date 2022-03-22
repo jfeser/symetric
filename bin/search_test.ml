@@ -52,7 +52,9 @@ let run ~max_cost ~thresh target =
     let filler =
       object
         inherit
-          Synth.synthesizer (Synth.Ctx.create ~distance ~search_thresh:(Top_k 0) ~thresh ectx ops target_value) as super
+          Synth.synthesizer
+            (Synth.Ctx.create ~distance ~search_thresh:(Top_k 0) ~thresh ectx ops
+               target_value) as super
 
         method! generate_states cost =
           let orig = super#generate_states cost in
@@ -60,9 +62,12 @@ let run ~max_cost ~thresh target =
             List.filter orig ~f:(fun (v, _, _) ->
                 match v with
                 | Scene s ->
-                    Bitarray.hamming_weight (Bitarray.and_ (Scene.pixels target_scene) (Scene.pixels s)) > 0
+                    Bitarray.hamming_weight
+                      (Bitarray.and_ (Scene.pixels target_scene) (Scene.pixels s))
+                    > 0
                     && Bitarray.hamming_weight
-                         (Bitarray.and_ (Scene.pixels target_edges) (Scene.pixels @@ Scene.edges size s))
+                         (Bitarray.and_ (Scene.pixels target_edges)
+                            (Scene.pixels @@ Scene.edges size s))
                        > 0
                 | _ -> true)
           in
@@ -78,11 +83,14 @@ let run ~max_cost ~thresh target =
   in
   S.print_stats search_state;
 
-  Fmt.pr "Goal:\n%a\n%!" Scene.pp (size, match target_value with Scene s -> s | _ -> assert false);
+  Fmt.pr "Goal:\n%a\n%!" Scene.pp
+    (size, match target_value with Scene s -> s | _ -> assert false);
 
   Iter.of_hashtbl search_state.values
   |> Iter.map (fun ((key : S.Attr.t), data) ->
-         Iter.of_queue data |> Iter.map (fun v -> (distance target_value v, S.TValue.{ value = v; type_ = key.type_ })))
+         Iter.of_queue data
+         |> Iter.map (fun v ->
+                (distance target_value v, S.TValue.{ value = v; type_ = key.type_ })))
   |> Iter.concat
   |> Iter.top_k ~cmp:(fun (d, _) (d', _) -> [%compare: float] d' d) 100
   |> Iter.sort ~cmp:(fun (d, _) (d', _) -> [%compare: float] d d')
@@ -99,8 +107,8 @@ let run ~max_cost ~thresh target =
                  (* | Scene s as v -> Fmt.pr "After local (d=%f):\n%a\n%!" (distance target_value v) Scene.pp (size, s) *)
                  (* | _ -> ()); *)
                  let p =
-                   S.local_greedy (Value.pp ectx) search_state (Int.ceil_log2 max_cost) (Value.eval ectx)
-                     (distance target_value) tv
+                   S.local_greedy (Value.pp ectx) search_state (Int.ceil_log2 max_cost)
+                     (Value.eval ectx) (distance target_value) tv
                    |> Option.value_exn
                  in
                  (* (match Program.eval (Value.eval ectx) p with *)
@@ -122,7 +130,14 @@ let () =
   let open Command.Let_syntax in
   Command.basic ~summary:"Generate a synthesizer."
     [%map_open
-      let max_cost = flag "-cost" (optional_with_default 22 int) ~doc:" the maximum size of program to evaluate"
-      and thresh = flag "-thresh" (optional_with_default 0.2 float) ~doc:"distance threshold to trigger grouping" in
+      let max_cost =
+        flag "-cost"
+          (optional_with_default 22 int)
+          ~doc:" the maximum size of program to evaluate"
+      and thresh =
+        flag "-thresh"
+          (optional_with_default 0.2 float)
+          ~doc:"distance threshold to trigger grouping"
+      in
       fun () -> run ~max_cost ~thresh @@ Cad_ext.parse @@ Sexp.input_sexp In_channel.stdin]
   |> Command.run

@@ -12,8 +12,12 @@ let iters f =
 let no_total_counter ?message ?pp ?width ?(sampling_interval = 1) () =
   let open Progress in
   let open Line in
-  let box = match width with Some width -> box_fixed width | None -> box_winsize ~fallback:80 in
-  list ((Option.map message ~f:const |> Option.to_list) @ (Option.map pp ~f:(fun f -> f of_pp) |> Option.to_list))
+  let box =
+    match width with Some width -> box_fixed width | None -> box_winsize ~fallback:80
+  in
+  list
+    ((Option.map message ~f:const |> Option.to_list)
+    @ (Option.map pp ~f:(fun f -> f of_pp) |> Option.to_list))
   |> box |> periodic sampling_interval |> accumulator Int64.( + ) 0L |> make ~init:0L
 
 let bar msg = no_total_counter ~message:msg ~pp:iters ()
@@ -58,17 +62,23 @@ module Make (Lang : Lang_intf.S_with_gen) = struct
 @param n number of programs to generate 
 *)
   let random ~size ~n ~dir params =
-    Progress.(with_reporters (bar "samples" / bar "irreducible programs" / tbar "unique programs" (Int64.of_int n)))
+    Progress.(
+      with_reporters
+        (bar "samples" / bar "irreducible programs"
+        / tbar "unique programs" (Int64.of_int n)))
     @@ fun ((samples, irreducible_progs), unique_progs) ->
     Sequence.unfold ~init:() ~f:(fun () -> Some (Gen.random_program params size, ()))
     |> Sequence.filter_map ~f:Fun.id |> sequence_progress samples
-    |> Sequence.filter ~f:(fun (p, _) -> (not (has_noop params p)) && irreducible params p)
+    |> Sequence.filter ~f:(fun (p, _) ->
+           (not (has_noop params p)) && irreducible params p)
     |> sequence_progress irreducible_progs
     |> Sequence.map ~f:(fun (prog, ops) -> (prog, ops, eval_program params prog))
     |> Sequence.unfold_with
          ~init:(Set.empty (module Value))
          ~f:(fun seen ((_, _, out) as x) ->
-           if Set.length seen >= n then Done else if Set.mem seen out then Skip seen else Yield (x, Set.add seen out))
+           if Set.length seen >= n then Done
+           else if Set.mem seen out then Skip seen
+           else Yield (x, Set.add seen out))
     |> sequence_progress unique_progs
     |> Sequence.map ~f:(fun (prog, ops, out) -> Gen.to_bench params ops prog out)
     |> Sequence.iteri ~f:(fun i b -> Bench.save [%string "%{dir}/scene_%{i#Int}.sexp"] b)
@@ -92,5 +102,6 @@ let random_cli (module Lang : Lang_intf.S_with_gen) =
         random params ~size ~n ~dir]
 
 let () =
-  Command.group ~summary:"Dump benchmarks" [ ("cad", random_cli (module Cad)); ("tensor", random_cli (module Tensor)) ]
+  Command.group ~summary:"Dump benchmarks"
+    [ ("cad", random_cli (module Cad)); ("tensor", random_cli (module Tensor)) ]
   |> Command.run

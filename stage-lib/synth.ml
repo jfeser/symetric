@@ -19,12 +19,17 @@ let param =
 
 let to_contexts term args =
   let term, holes = Grammar.Term.with_holes term in
-  let preorder_names = List.map holes ~f:(fun (sym, idx, id) -> (idx, (id, sym))) |> Map.of_alist_exn (module Int) in
+  let preorder_names =
+    List.map holes ~f:(fun (sym, idx, id) -> (idx, (id, sym)))
+    |> Map.of_alist_exn (module Int)
+  in
   let ctx =
     List.map args ~f:(fun (idx, sym, value) ->
         let id, sym' = Map.find_exn preorder_names idx in
         if String.(sym' <> sym) then
-          failwith @@ sprintf "In term %s expected a %s at index %d but got %s" (Gr.Term.to_string term) sym' idx sym;
+          failwith
+          @@ sprintf "In term %s expected a %s at index %d but got %s"
+               (Gr.Term.to_string term) sym' idx sym;
         (id, value))
     |> Map.of_alist_exn (module String)
   in
@@ -40,11 +45,17 @@ struct
     module T = struct
       type state = { cost : int; symbol : string } [@@deriving compare, hash, sexp]
 
-      type code = { cost : int; rule : ((L.Value.t, bool S.t) Semantics.t[@compare.ignore] [@sexp.opaque]) Gr.Rule.t }
+      type code = {
+        cost : int;
+        rule :
+          ((L.Value.t, bool S.t) Semantics.t[@compare.ignore] [@sexp.opaque]) Gr.Rule.t;
+      }
       [@@deriving compare, hash, sexp]
 
       type arg = { id : int; n_args : int } [@@deriving compare, hash, sexp]
-      type t = State of state | Code of code | Arg of arg [@@deriving compare, hash, sexp]
+
+      type t = State of state | Code of code | Arg of arg
+      [@@deriving compare, hash, sexp]
     end
 
     include T
@@ -82,7 +93,9 @@ struct
 
       let get_subgraph _ = None
       let default_edge_attributes _ = []
-      let edge_attributes (_, idx, _) = if idx >= 0 then [ `Label (sprintf "%d" idx) ] else []
+
+      let edge_attributes (_, idx, _) =
+        if idx >= 0 then [ `Label (sprintf "%d" idx) ] else []
     end
 
     include G
@@ -123,7 +136,9 @@ struct
 
     module Topo = Graph.Topological.Make_stable (G)
 
-    let filter_vertex g ~f = fold_vertex (fun v g -> if f v then remove_vertex g v else g) g g
+    let filter_vertex g ~f =
+      fold_vertex (fun v g -> if f v then remove_vertex g v else g) g g
+
     let add_edges g vs = List.fold_left ~init:g ~f:(fun g (v, v') -> add_edge g v v') vs
     let reverse g = fold_edges (fun v v' g -> add_edge (remove_edge g v v') v' v) g g
   end
@@ -131,14 +146,18 @@ struct
   let cache = C.empty ()
 
   let bind_io, iter_inputs, output =
-    let io = Nonlocal_let.let_ S.let_global @@ fun () -> S.Sexp.input () |> S.Sexp.to_list in
+    let io =
+      Nonlocal_let.let_ S.let_global @@ fun () -> S.Sexp.input () |> S.Sexp.to_list
+    in
     let background =
       List.mapi Sketch.background ~f:(fun idx sym ->
           let value =
             Nonlocal_let.let_ S.let_global @@ fun () ->
-            S.let_ (S.Sexp.List.get (io.value ()) (S.Int.int idx) |> S.Sexp.to_list) @@ fun value_sexps ->
+            S.let_ (S.Sexp.List.get (io.value ()) (S.Int.int idx) |> S.Sexp.to_list)
+            @@ fun value_sexps ->
             S.let_ (S.Sexp.List.length value_sexps) @@ fun len ->
-            S.Array.init len (fun vidx -> S.Sexp.List.get value_sexps vidx |> L.Value.of_sexp sym |> L.Value.code_of)
+            S.Array.init len (fun vidx ->
+                S.Sexp.List.get value_sexps vidx |> L.Value.of_sexp sym |> L.Value.code_of)
           in
           (sym, value))
     in
@@ -159,7 +178,8 @@ struct
     and iter_inputs sym f =
       List.filter_map background ~f:(fun (sym', inputs) ->
           if String.(sym = sym') then
-            Option.return @@ S.Array.iter (inputs.value ()) ~f:(fun input -> f @@ L.Value.of_code input)
+            Option.return
+            @@ S.Array.iter (inputs.value ()) ~f:(fun input -> f @@ L.Value.of_code input)
           else None)
       |> S.sseq
     and output () = L.Value.of_code @@ output.value () in
@@ -167,7 +187,9 @@ struct
 
   let cache_iter ~sym ~size ~f cache =
     let open S.Int in
-    match size with 0 -> iter_inputs sym f | size -> C.iter ~sym ~size:(int size) ~f cache
+    match size with
+    | 0 -> iter_inputs sym f
+    | size -> C.iter ~sym ~size:(int size) ~f cache
 
   let debug_print msg = if !debug then S.eprint (msg ^ "\n") else S.unit
 
@@ -178,7 +200,8 @@ struct
       | Gr.Nonterm nt -> print_nt nt
       | App (func, args) ->
           S.print (sprintf "(App %s (" func)
-          :: List.concat_map args ~f:(fun arg -> print_term print_nt arg @ [ S.print " " ])
+          :: List.concat_map args ~f:(fun arg ->
+                 print_term print_nt arg @ [ S.print " " ])
           @ [ S.print "))\n" ]
       | As (t, _) -> print_term print_nt t
 
@@ -187,11 +210,16 @@ struct
       let pterm = Gr.to_preorder (term : _ Gr.Term.t :> Gr.Untyped_term.t) in
       let check_one args =
         let term, eval_ctx =
-          let eval_args = List.map args ~f:(fun (state, idx, v) -> (idx, state.V.symbol, v)) in
+          let eval_args =
+            List.map args ~f:(fun (state, idx, v) -> (idx, state.V.symbol, v))
+          in
           to_contexts term eval_args
         in
         let found =
-          match L.Value.(L.eval eval_ctx (term : _ Gr.Term.t :> Gr.Untyped_term.t) = of_code target) with
+          match
+            L.Value.(
+              L.eval eval_ctx (term : _ Gr.Term.t :> Gr.Untyped_term.t) = of_code target)
+          with
           | `Static b -> S.Bool.bool b
           | `Dyn b -> b
         in
@@ -202,7 +230,9 @@ struct
                 S.sseq
                 @@ print_term
                      (fun (_, idx) ->
-                       let state, _, value = List.find_exn args ~f:(fun (_, idx', _) -> idx = idx') in
+                       let state, _, value =
+                         List.find_exn args ~f:(fun (_, idx', _) -> idx = idx')
+                       in
                        [ reconstruct ctx value state ])
                      pterm;
                 k ();
@@ -212,7 +242,10 @@ struct
       let check_all =
         List.fold_left args ~init:check_one ~f:(fun check (arg_idx, arg_node) ->
             let sym = arg_node.V.symbol and size = arg_node.V.cost in
-            fun ctx -> cache_iter ~sym ~size ~f:(fun value -> check ((arg_node, arg_idx, value) :: ctx)) cache)
+            fun ctx ->
+              cache_iter ~sym ~size
+                ~f:(fun value -> check ((arg_node, arg_idx, value) :: ctx))
+                cache)
       in
       check_all []
 
@@ -223,7 +256,9 @@ struct
       if List.is_empty args then of_args ctx target term [] k
       else
         List.map args ~f:(fun n ->
-            of_args ctx target term (G.succ_e g n |> List.map ~f:(fun (_, i, v) -> (i, V.to_state v))) k)
+            of_args ctx target term
+              (G.succ_e g n |> List.map ~f:(fun (_, i, v) -> (i, V.to_state v)))
+              k)
         |> S.sseq
 
     and of_state ({ graph = g; _ } as ctx) state target k =
@@ -254,7 +289,8 @@ struct
             S.sseq
               [
                 S.print "(Choose (";
-                (of_state { graph = g; cache } state target @@ fun () -> S.sseq [ S.print "))\n"; S.return ]);
+                ( of_state { graph = g; cache } state target @@ fun () ->
+                  S.sseq [ S.print "))\n"; S.return ] );
               ])
       in
       Func.apply func (Tuple.create cache (L.Value.code_of target))
@@ -266,7 +302,10 @@ struct
         match v with
         | State _ ->
             (* Add edges from this node to its grandchildren. *)
-            G.succ g v |> List.concat_map ~f:(G.succ g) |> List.map ~f:(fun v' -> (v, v')) |> G.add_edges g
+            G.succ g v
+            |> List.concat_map ~f:(G.succ g)
+            |> List.map ~f:(fun v' -> (v, v'))
+            |> G.add_edges g
         | _ -> g)
       g g
     |> G.filter_vertex ~f:(fun v -> match v with State _ -> false | _ -> true)
@@ -284,19 +323,22 @@ struct
     let term, ctx = to_contexts term args in
     Gr.Term.bindings term
     |> List.filter ~f:(fun (b, _) -> List.mem binds ~equal:[%compare.equal: Gr.Bind.t] b)
-    |> List.map ~f:(fun (bind, term') -> (bind, L.eval ctx (term' : _ Gr.Term.t :> Gr.Untyped_term.t)))
+    |> List.map ~f:(fun (bind, term') ->
+           (bind, L.eval ctx (term' : _ Gr.Term.t :> Gr.Untyped_term.t)))
     |> Map.of_alist_exn (module Gr.Bind)
 
   let argument_graph rule =
     let module G = Graph.Persistent.Digraph.ConcreteBidirectional (Int) in
     let module Topo = Graph.Topological.Make_stable (G) in
     let indexes_g =
-      List.init ~f:Fun.id (Gr.Term.n_holes @@ Gr.Rule.rhs rule) |> List.fold_left ~init:G.empty ~f:G.add_vertex
+      List.init ~f:Fun.id (Gr.Term.n_holes @@ Gr.Rule.rhs rule)
+      |> List.fold_left ~init:G.empty ~f:G.add_vertex
     in
     let g =
       List.fold_left (Gr.Rule.semantics rule) ~init:indexes_g ~f:(fun g -> function
         | Semantics.Prop { deps; out } ->
-            List.concat_map deps ~f:(binding_deps @@ (Gr.Rule.rhs rule :> Gr.Untyped_term.t))
+            List.concat_map deps
+              ~f:(binding_deps @@ (Gr.Rule.rhs rule :> Gr.Untyped_term.t))
             |> List.fold_left ~init:g ~f:(fun g node -> G.add_edge g node out)
         | _ -> g)
     in
@@ -315,7 +357,8 @@ struct
     and add_arg k v = Hashtbl.set arg_multiedges ~key:(norm k) ~data:v in
 
     let sources =
-      List.map Sketch.background ~f:(fun symbol -> V.State { symbol; cost = 0 }) |> Set.of_list (module V)
+      List.map Sketch.background ~f:(fun symbol -> V.State { symbol; cost = 0 })
+      |> Set.of_list (module V)
     in
 
     (* Add initial states. *)
@@ -347,13 +390,18 @@ struct
           in
           let n_holes = Array.length non_terminals and size = Gr.Term.size term in
           let open Combinat in
-          let parts = Partition.With_zeros.(to_list @@ create ~n:(cost - (size - n_holes)) ~parts:n_holes) in
+          let parts =
+            Partition.With_zeros.(
+              to_list @@ create ~n:(cost - (size - n_holes)) ~parts:n_holes)
+          in
           Log.debug (fun m -> m "Parts %a" Fmt.(Dump.(list @@ list int)) parts);
           let permuted =
             let filter costs =
-              List.for_alli costs ~f:(fun i cost -> G.mem_vertex !g (V.State { symbol = non_terminals.(i); cost }))
+              List.for_alli costs ~f:(fun i cost ->
+                  G.mem_vertex !g (V.State { symbol = non_terminals.(i); cost }))
             in
-            List.concat_map parts ~f:(fun parts -> Permutation.Restricted.(Of_list.(create parts filter |> to_list)))
+            List.concat_map parts ~f:(fun parts ->
+                Permutation.Restricted.(Of_list.(create parts filter |> to_list)))
           in
           (* Log.debug (fun m ->
            *     m "Permuted %a" Fmt.(Dump.(list @@ list int)) permuted); *)
@@ -366,12 +414,15 @@ struct
               let deps =
                 Gr.to_preorder (term :> Gr.Untyped_term.t)
                 |> Gr.non_terminals
-                |> List.map ~f:(fun (symbol, arg_idx) -> (arg_idx, { V.cost = costs.(arg_idx); symbol }))
+                |> List.map ~f:(fun (symbol, arg_idx) ->
+                       (arg_idx, { V.cost = costs.(arg_idx); symbol }))
               in
               match find_arg deps with
               | Some arg -> g := G.add_edge !g rhs_v arg
               | None ->
-                  let all_deps_exist = List.for_all deps ~f:(fun (_, v) -> G.mem_vertex !g (V.State v)) in
+                  let all_deps_exist =
+                    List.for_all deps ~f:(fun (_, v) -> G.mem_vertex !g (V.State v))
+                  in
                   if all_deps_exist then (
                     let arg = V.Arg { id = Fresh.int fresh; n_args = n_holes } in
                     g := G.add_edge !g rhs_v arg;
@@ -390,20 +441,27 @@ struct
        source. *)
     let rec prune_loop g =
       let is_source = Set.mem sources
-      and is_sink = function V.State { symbol } -> String.(symbol = Sketch.output) | _ -> false in
+      and is_sink = function
+        | V.State { symbol } -> String.(symbol = Sketch.output)
+        | _ -> false
+      in
       let sink_reachable = G.Reachability.analyze is_sink g
       and source_reachable = G.Reverse_reachability.analyze is_source g in
       let g' =
         G.fold_vertex
           (fun v g ->
             let should_keep =
-              sink_reachable v && source_reachable v && match v with Arg x -> x.n_args = G.out_degree g v | _ -> true
+              sink_reachable v && source_reachable v
+              && match v with Arg x -> x.n_args = G.out_degree g v | _ -> true
             in
-            if should_keep then g else (* Log.debug (fun m -> m "Pruning vertex %a" V.pp v); *)
-                                    G.remove_vertex g v)
+            if should_keep then g
+            else
+              (* Log.debug (fun m -> m "Pruning vertex %a" V.pp v); *)
+              G.remove_vertex g v)
           g g
       in
-      if G.nb_vertex g > G.nb_vertex g' || G.nb_edges g > G.nb_edges g' then prune_loop g' else g'
+      if G.nb_vertex g > G.nb_vertex g' || G.nb_edges g > G.nb_edges g' then prune_loop g'
+      else g'
     in
 
     if prune then prune_loop g else g
@@ -419,7 +477,9 @@ struct
         S.sseq
           [
             debug_print "Starting reconstruction";
-            Reconstruct.reconstruct { graph = g; cache = cache.value () |> C.code_of } (output ()) state;
+            Reconstruct.reconstruct
+              { graph = g; cache = cache.value () |> C.code_of }
+              (output ()) state;
             S.exit;
           ]
       in
@@ -451,10 +511,12 @@ struct
     let term = Gr.Rule.rhs rule in
     let preds =
       List.filter_map (Gr.Rule.semantics rule) ~f:(function
-        | Semantics.Pred { deps; func } when deps_satisfied term deps bindings -> Some (deps, func)
+        | Semantics.Pred { deps; func } when deps_satisfied term deps bindings ->
+            Some (deps, func)
         | _ -> None)
     in
-    let deps = List.concat_map preds ~f:(fun (deps, _) -> deps) and preds = List.map preds ~f:(fun (_, pred) -> pred) in
+    let deps = List.concat_map preds ~f:(fun (deps, _) -> deps)
+    and preds = List.map preds ~f:(fun (_, pred) -> pred) in
     match preds with
     | [] -> k bindings
     | ps ->
@@ -467,13 +529,17 @@ struct
     let term = Gr.Rule.rhs rule in
     let prop =
       List.find_map (Gr.Rule.semantics rule) ~f:(function
-        | Semantics.Prop { out; deps; func } when out = arg_n && deps_satisfied term deps bindings -> Some (func, deps)
+        | Semantics.Prop { out; deps; func }
+          when out = arg_n && deps_satisfied term deps bindings ->
+            Some (func, deps)
         | _ -> None)
     in
     match prop with
     | Some (f, deps) ->
         Log.debug (fun m -> m "Inserting propagator.");
-        let bindings = (arg_n, arg.V.symbol, f (binding_ctx term deps bindings)) :: bindings in
+        let bindings =
+          (arg_n, arg.V.symbol, f (binding_ctx term deps bindings)) :: bindings
+        in
         k bindings
     | None ->
         cache_iter ~sym:arg.V.symbol ~size:arg.V.cost (cache.value ()) ~f:(fun v ->
@@ -490,12 +556,15 @@ struct
     in
 
     let arg_order = argument_graph rule in
-    Log.debug (fun m -> m "Argument order for %s: %a" (Gr.Term.to_string term) (Fmt.Dump.list Fmt.int) arg_order);
+    Log.debug (fun m ->
+        m "Argument order for %s: %a" (Gr.Term.to_string term) (Fmt.Dump.list Fmt.int)
+          arg_order);
 
     let fill =
       List.fold_left arg_order
         ~init:(fill_with_pred rule @@ fill_inner)
-        ~f:(fun fill arg_n -> fill_with_pred rule @@ fill_with_prop rule arg_n args.(arg_n) @@ fill)
+        ~f:(fun fill arg_n ->
+          fill_with_pred rule @@ fill_with_prop rule arg_n args.(arg_n) @@ fill)
     in
     fill []
 

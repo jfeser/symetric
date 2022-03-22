@@ -1,6 +1,7 @@
 module T = struct
   module T0 = struct
-    type t = { pixels : Bitarray.t; xlen : int; ylen : int } [@@deriving compare, hash, sexp]
+    type t = { pixels : Bitarray.t; xlen : int; ylen : int }
+    [@@deriving compare, hash, sexp]
   end
 
   include Hash_cached.Make (T0)

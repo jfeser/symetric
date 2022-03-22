@@ -7,4 +7,5 @@ let add_probe_exn ?(init = Float.nan) stats name =
   Hashtbl.add_exn stats ~key:name ~data;
   data
 
-let to_json stats = `Assoc (Hashtbl.to_alist stats |> List.map ~f:(fun (k, v) -> (k, `Float !v)))
+let to_json stats =
+  `Assoc (Hashtbl.to_alist stats |> List.map ~f:(fun (k, v) -> (k, `Float !v)))

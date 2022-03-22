@@ -6,7 +6,8 @@
   (names bitarray_stubs)
   (flags :standard -O3 -march=native -Wall))
  (foreign_archives bitarray)
- (preprocess (pps ppx_jane))
+ (preprocess
+  (pps ppx_jane))
  (inline_tests))
 
 (rule

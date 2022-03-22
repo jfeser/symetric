@@ -4,7 +4,14 @@ module type S = sig
   type mark = unit -> bool
 
   type typ = Univ_map.t [@@deriving sexp_of]
-  and expr = { ebody : string; ret : string; etype : typ; efree : (string * mark) list; eeffect : bool }
+
+  and expr = {
+    ebody : string;
+    ret : string;
+    etype : typ;
+    efree : (string * mark) list;
+    eeffect : bool;
+  }
 
   type var_decl = { vname : string; vtype : typ; init : expr option }
 
@@ -37,7 +44,9 @@ module type S = sig
 
   type fmt_arg = C of expr | S of string
 
-  val eformat : ?has_effect:bool -> string -> typ -> string -> (string * fmt_arg) list -> expr
+  val eformat :
+    ?has_effect:bool -> string -> typ -> string -> (string * fmt_arg) list -> expr
+
   val unit_t : typ
 
   module Func : sig
@@ -57,8 +66,19 @@ module type S = sig
   val expr_of_var : var_decl -> expr
   val unit : expr
   val to_string : expr -> string
-  val unop : (string -> string, unit, string, string, string, string) format6 -> typ -> expr -> expr
-  val binop : (string -> string -> string, unit, string, string, string, string) format6 -> typ -> expr -> expr -> expr
+
+  val unop :
+    (string -> string, unit, string, string, string, string) format6 ->
+    typ ->
+    expr ->
+    expr
+
+  val binop :
+    (string -> string -> string, unit, string, string, string, string) format6 ->
+    typ ->
+    expr ->
+    expr ->
+    expr
 
   module Sexp : sig
     val type_ : typ
@@ -119,7 +139,13 @@ module Make () : S = struct
 
   type typ = Univ_map.t [@@deriving sexp_of]
 
-  and expr = { ebody : string; ret : string; etype : typ; efree : (string * (mark[@opaque])) list; eeffect : bool }
+  and expr = {
+    ebody : string;
+    ret : string;
+    etype : typ;
+    efree : (string * (mark[@opaque])) list;
+    eeffect : bool;
+  }
   [@@deriving sexp_of]
 
   type var_decl = { vname : string; vtype : typ; init : expr option }
@@ -161,18 +187,22 @@ module Make () : S = struct
           | S v -> String.substr_replace_all fmt ~pattern:pat ~with_:v
           | C v -> String.substr_replace_all fmt ~pattern:pat ~with_:v.ret)
     in
-    (if String.contains fmt '$' then Error.(create "Incomplete template." fmt [%sexp_of: string] |> raise));
+    (if String.contains fmt '$' then
+     Error.(create "Incomplete template." fmt [%sexp_of: string] |> raise));
     fmt
 
   let eformat ?(has_effect = false) ret_fmt etype body_fmt args =
     let ebody =
       let arg_bodies =
-        List.map args ~f:(fun (_, arg) -> match arg with C v -> v.ebody | _ -> "") |> String.concat ~sep:" "
+        List.map args ~f:(fun (_, arg) -> match arg with C v -> v.ebody | _ -> "")
+        |> String.concat ~sep:" "
       in
       arg_bodies ^ format body_fmt args
     and ret = format ret_fmt args
     and efree = List.concat_map args ~f:(function _, C { efree; _ } -> efree | _ -> [])
-    and eeffect = List.exists args ~f:(function _, C { eeffect; _ } -> eeffect | _ -> false) in
+    and eeffect =
+      List.exists args ~f:(function _, C { eeffect; _ } -> eeffect | _ -> false)
+    in
     { ebody; ret; etype; efree; eeffect = has_effect || eeffect }
 
   let is_unit = Univ_map.Key.create ~name:"is_unit" [%sexp_of: unit]
@@ -198,7 +228,10 @@ module Make () : S = struct
   let add_global x = prog.globals <- x :: prog.globals
   let add_func f = prog.funcs <- f :: prog.funcs
   let fresh_name () = Fresh.name prog.fresh "x%d"
-  let expr_of_var { vname; vtype; _ } = { ebody = ""; ret = vname; etype = vtype; efree = []; eeffect = false }
+
+  let expr_of_var { vname; vtype; _ } =
+    { ebody = ""; ret = vname; etype = vtype; efree = []; eeffect = false }
+
   let unit = eformat "0" unit_t "" []
 
   module Func = struct
@@ -211,7 +244,9 @@ module Make () : S = struct
       let fval = { ret = name; ebody = ""; etype = type_; efree = []; eeffect = false } in
       if Option.is_none (of_name name) then (
         let arg = { vname = fresh_name (); vtype = arg_t type_; init = None } in
-        let func = { fname = name; ftype = type_; locals = []; args = [ arg ]; fbody = unit } in
+        let func =
+          { fname = name; ftype = type_; locals = []; args = [ arg ]; fbody = unit }
+        in
         add_func func;
         let old_func = prog.cur_func in
         prog.cur_func <- func;
@@ -225,8 +260,11 @@ module Make () : S = struct
       | Some func ->
           let ret_type = ret_t func.ftype in
           if Univ_map.mem ret_type is_unit then
-            eformat ~has_effect:true "0" ret_type "$(f)($(arg));" [ ("f", S func.fname); ("arg", C arg) ]
-          else eformat ~has_effect:true "$(f)($(arg))" ret_type "" [ ("f", S func.fname); ("arg", C arg) ]
+            eformat ~has_effect:true "0" ret_type "$(f)($(arg));"
+              [ ("f", S func.fname); ("arg", C arg) ]
+          else
+            eformat ~has_effect:true "$(f)($(arg))" ret_type ""
+              [ ("f", S func.fname); ("arg", C arg) ]
       | None -> failwith (sprintf "No function named %s" f.ret)
   end
 
@@ -244,10 +282,12 @@ module Make () : S = struct
       let args_str = List.map f.args ~f:arg_to_str |> String.concat ~sep:"," in
       sprintf "%s %s(%s);" (Type.name (Func.ret_t f.ftype)) f.fname args_str
     and func_to_def_str f =
-      let locals_str = List.rev f.locals |> List.map ~f:var_decl_to_str |> String.concat ~sep:" "
+      let locals_str =
+        List.rev f.locals |> List.map ~f:var_decl_to_str |> String.concat ~sep:" "
       and args_str = List.map f.args ~f:arg_to_str |> String.concat ~sep:","
       and ret_t_name = Type.name (Func.ret_t f.ftype) in
-      sprintf "%s %s(%s) { %s %s return %s; }" ret_t_name f.fname args_str locals_str (expr_to_str f.fbody) f.fbody.ret
+      sprintf "%s %s(%s) { %s %s return %s; }" ret_t_name f.fname args_str locals_str
+        (expr_to_str f.fbody) f.fbody.ret
     in
 
     prog.cur_func.fbody <- { e with ebody = prog.cur_func.fbody.ebody ^ e.ebody };
@@ -316,18 +356,24 @@ namespace std {
 
 |}
     and forward_decls = List.map prog.funcs ~f:func_to_decl_str |> String.concat ~sep:"\n"
-    and global_decls = prog.globals |> List.rev |> List.map ~f:var_decl_to_str |> String.concat ~sep:" "
-    and funcs = List.rev prog.funcs |> List.map ~f:func_to_def_str |> String.concat ~sep:"\n" in
+    and global_decls =
+      prog.globals |> List.rev |> List.map ~f:var_decl_to_str |> String.concat ~sep:" "
+    and funcs =
+      List.rev prog.funcs |> List.map ~f:func_to_def_str |> String.concat ~sep:"\n"
+    in
     header ^ forward_decls ^ global_decls ^ funcs
 
   let unop fmt type_ x = eformat (sprintf fmt "$(arg)") type_ "" [ ("arg", C x) ]
-  let binop fmt type_ x x' = eformat (sprintf fmt "$(arg1)" "$(arg2)") type_ "" [ ("arg1", C x); ("arg2", C x') ]
+
+  let binop fmt type_ x x' =
+    eformat (sprintf fmt "$(arg1)" "$(arg2)") type_ "" [ ("arg1", C x); ("arg2", C x') ]
 
   let fresh_var etype m =
     let name = Fresh.name prog.fresh "x%d" in
     { ret = name; etype; efree = [ (name, m) ]; ebody = ""; eeffect = false }
 
-  let assign x ~to_:v = eformat ~has_effect:true "0" unit_t {|$(v) = $(x);|} [ ("x", C x); ("v", C v) ]
+  let assign x ~to_:v =
+    eformat ~has_effect:true "0" unit_t {|$(v) = $(x);|} [ ("x", C x); ("v", C v) ]
 
   let fresh_decl ?init type_ =
     let name = fresh_name () in
@@ -349,7 +395,12 @@ namespace std {
   let let_ v b =
     let x = fresh_local v in
     let y = b { x with ebody = "" } in
-    { y with ebody = x.ebody ^ y.ebody; efree = x.efree @ y.efree; eeffect = x.eeffect || y.eeffect }
+    {
+      y with
+      ebody = x.ebody ^ y.ebody;
+      efree = x.efree @ y.efree;
+      eeffect = x.eeffect || y.eeffect;
+    }
 
   include Genlet.Make (struct
     type 'a t = expr
@@ -413,13 +464,27 @@ for(int $(i) = $(lo); $(i) < $(hi); $(i) += $(step)) {
     let g = fresh_global v.etype in
     let x = seq (assign v ~to_:g) g in
     let y = b { x with ebody = "" } in
-    { y with ebody = x.ebody ^ y.ebody; efree = x.efree @ y.efree; eeffect = x.eeffect || y.eeffect }
+    {
+      y with
+      ebody = x.ebody ^ y.ebody;
+      efree = x.efree @ y.efree;
+      eeffect = x.eeffect || y.eeffect;
+    }
 
-  let print s = eformat ~has_effect:true "0" unit_t "std::cout << $(str);" [ ("str", S (sprintf "%S" s)) ]
-  let eprint s = eformat ~has_effect:true "0" unit_t "std::cerr << $(str);" [ ("str", S (sprintf "%S" s)) ]
+  let print s =
+    eformat ~has_effect:true "0" unit_t "std::cout << $(str);"
+      [ ("str", S (sprintf "%S" s)) ]
+
+  let eprint s =
+    eformat ~has_effect:true "0" unit_t "std::cerr << $(str);"
+      [ ("str", S (sprintf "%S" s)) ]
+
   let return = eformat ~has_effect:true "0" unit_t "return 0;" []
   let exit = eformat ~has_effect:true "0" unit_t "exit(0);" []
-  let with_comment s e = { e with ebody = sprintf "\n// begin %s\n%s// end %s\n" s e.ebody s }
+
+  let with_comment s e =
+    { e with ebody = sprintf "\n// begin %s\n%s// end %s\n" s e.ebody s }
+
   let assert_ f = eformat ~has_effect:true "0" unit_t "assert($(cond));" [ ("cond", C f) ]
   let add_annot e k v = { e with etype = Univ_map.set e.etype k v }
   let find_annot e k = Univ_map.find e.etype k
@@ -430,10 +495,16 @@ for(int $(i) = $(lo); $(i) < $(hi); $(i) += $(step)) {
 
     module List = struct
       let get x i = eformat "(($(x))[$(i)])" type_ "" [ ("x", C x); ("i", C i) ]
-      let length x = eformat "((int)(($(x)).size()))" (Type.create ~name:"int") "" [ ("x", C x) ]
+
+      let length x =
+        eformat "((int)(($(x)).size()))" (Type.create ~name:"int") "" [ ("x", C x) ]
+
       let type_ = Type.create ~name:"std::vector<sexp*>"
       let to_list a = eformat "(new list($(a)))" type_ "" [ ("a", C a) ]
-      let set a i x = eformat ~has_effect:true "0" unit_t "$(a)[$(i)] = $(x);" [ ("a", C a); ("i", C i); ("x", C x) ]
+
+      let set a i x =
+        eformat ~has_effect:true "0" unit_t "$(a)[$(i)] = $(x);"
+          [ ("a", C a); ("i", C i); ("x", C x) ]
 
       let const a =
         let a = Array.to_list a in
@@ -450,9 +521,12 @@ for(int $(i) = $(lo); $(i) < $(hi); $(i) += $(step)) {
     end
 
     let input () =
-      eformat ~has_effect:false "$(name)" type_ "sexp *$(name) = sexp::load(std::cin);" [ ("name", S (fresh_name ())) ]
+      eformat ~has_effect:false "$(name)" type_ "sexp *$(name) = sexp::load(std::cin);"
+        [ ("name", S (fresh_name ())) ]
 
-    let print x = eformat ~has_effect:false "0" type_ "($(x))->print(std::cout);" [ ("x", C x) ]
+    let print x =
+      eformat ~has_effect:false "0" type_ "($(x))->print(std::cout);" [ ("x", C x) ]
+
     let to_list x = eformat "((list*)($(x)))->get_body()" List.type_ "" [ ("x", C x) ]
     let to_atom x = eformat "((atom*)($(x)))->get_body()" Atom.type_ "" [ ("x", C x) ]
   end
@@ -464,6 +538,8 @@ for(int $(i) = $(lo); $(i) < $(hi); $(i) += $(step)) {
     let ( || ) x y = binop "(%s || %s)" type_ x y
     let not x = unop "(!%s)" type_ x
     let of_sexp x = eformat "std::stoi(((atom*)$(x))->get_body())" type_ "" [ ("x", C x) ]
-    let sexp_of x = eformat "(new atom(std::to_string($(x))))" Sexp.type_ "" [ ("x", C x) ]
+
+    let sexp_of x =
+      eformat "(new atom(std::to_string($(x))))" Sexp.type_ "" [ ("x", C x) ]
   end
 end

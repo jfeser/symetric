@@ -63,12 +63,15 @@ for(auto $(iter) = $(set).begin(); $(iter) != $(set).end(); ++$(iter)) {
         sseq [ assign init ~to_:acc; iter a (fun x -> assign (f acc x) ~to_:acc); acc ])
     |> with_comment "Set.fold"
 
-  let add a x = eformat ~has_effect:true "0" unit_t "$(name).insert($(val));" [ ("name", C a); ("val", C x) ]
+  let add a x =
+    eformat ~has_effect:true "0" unit_t "$(name).insert($(val));"
+      [ ("name", C a); ("val", C x) ]
 
   let of_sexp type_ sexp elem_of_sexp =
     let_ (empty type_) @@ fun set ->
     let_ (Sexp.to_list sexp) @@ fun sexp ->
-    for_ (Int.int 0) (Int.int 1) (Sexp.List.length sexp) (fun i -> add set (elem_of_sexp (Sexp.List.get sexp i)))
+    for_ (Int.int 0) (Int.int 1) (Sexp.List.length sexp) (fun i ->
+        add set (elem_of_sexp (Sexp.List.get sexp i)))
 
   let sexp_of _ _ = failwith "unimplemented"
 end
@@ -81,7 +84,10 @@ module Ordered_set (C : Cstage_core.S) =
 
       let elem_t = Univ_map.Key.create ~name:"elem_t" [%sexp_of: typ]
       let elem_type t = Univ_map.find_exn t elem_t
-      let mk_type e = Type.create ~name:(sprintf "std::set<%s >" (Type.name e)) |> Type.add_exn ~key:elem_t ~data:e
+
+      let mk_type e =
+        Type.create ~name:(sprintf "std::set<%s >" (Type.name e))
+        |> Type.add_exn ~key:elem_t ~data:e
     end)
 
 module Hash_set (C : Cstage_core.S) =
@@ -94,5 +100,6 @@ module Hash_set (C : Cstage_core.S) =
       let elem_type t = Univ_map.find_exn t elem_t
 
       let mk_type e =
-        Type.create ~name:(sprintf "std::unordered_set<%s >" (Type.name e)) |> Type.add_exn ~key:elem_t ~data:e
+        Type.create ~name:(sprintf "std::unordered_set<%s >" (Type.name e))
+        |> Type.add_exn ~key:elem_t ~data:e
     end)

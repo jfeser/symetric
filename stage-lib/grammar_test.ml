@@ -9,7 +9,9 @@ let%expect_test "" =
 
 let%expect_test "" =
   let open Term in
-  inline "A" @@ Grammar.of_list [ ("A", app "x" []); ("A", app "y" []); ("B", app "f" [ nonterm "A" ]) ]
+  inline "A"
+  @@ Grammar.of_list
+       [ ("A", app "x" []); ("A", app "y" []); ("B", app "f" [ nonterm "A" ]) ]
   |> [%sexp_of: _ Grammar.t] |> print_s;
   [%expect
     {|
@@ -95,12 +97,14 @@ let%expect_test "" =
      ((lhs FIII) (rhs (App max ())))) |}]
 
 let%expect_test "" =
-  weighted_random ~state:(Random.State.make [||]) [ (0.2, "a"); (0.3, "b"); (0.5, "c") ] |> print_endline;
+  weighted_random ~state:(Random.State.make [||]) [ (0.2, "a"); (0.3, "b"); (0.5, "c") ]
+  |> print_endline;
   [%expect {| a |}]
 
 let%expect_test "" =
   let open Untyped_term in
-  map (App ("x", [ Nonterm "y"; Nonterm "z" ])) ~nonterm:(fun x -> Nonterm (x ^ "!")) |> to_string |> print_endline;
+  map (App ("x", [ Nonterm "y"; Nonterm "z" ])) ~nonterm:(fun x -> Nonterm (x ^ "!"))
+  |> to_string |> print_endline;
   [%expect {| x(y!, z!) |}]
 
 let%expect_test "" =

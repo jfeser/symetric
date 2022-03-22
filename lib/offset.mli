@@ -1,4 +1,6 @@
-type t = { idx : int; arr : float array; [@compare.ignore] type_ : Csg_type.Offset.t } [@@deriving compare, hash, sexp]
+type t = { idx : int; arr : float array; [@compare.ignore] type_ : Csg_type.Offset.t }
+[@@deriving compare, hash, sexp]
+
 type ctx = float array Map.M(Csg_type.Offset).t [@@deriving sexp_of]
 
 val of_list : Csg_type.Offset.t -> float list -> ctx

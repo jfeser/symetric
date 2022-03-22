@@ -1,4 +1,6 @@
-type t = { idx : int; arr : float array; [@compare.ignore] type_ : Csg_type.Offset.t } [@@deriving compare, hash, sexp]
+type t = { idx : int; arr : float array; [@compare.ignore] type_ : Csg_type.Offset.t }
+[@@deriving compare, hash, sexp]
+
 type ctx = float array Map.M(Csg_type.Offset).t [@@deriving sexp_of]
 
 let of_list t l =
@@ -16,7 +18,9 @@ let of_type ctx t =
       |> Sequence.map ~f:(fun idx -> { idx; arr = offsets; type_ = t })
   | None -> Sequence.empty
 
-let of_type_count ctx t = match Map.find ctx t with Some offsets -> Array.length offsets | None -> 0
+let of_type_count ctx t =
+  match Map.find ctx t with Some offsets -> Array.length offsets | None -> 0
+
 let offset x = x.arr.(x.idx)
 
 let prev x =
@@ -33,17 +37,20 @@ let lt ctx t x =
   match Map.find ctx t with
   | Some offsets ->
       let end_ =
-        Array.binary_search offsets ~compare:[%compare: float] `First_greater_than_or_equal_to x
+        Array.binary_search offsets ~compare:[%compare: float]
+          `First_greater_than_or_equal_to x
         |> Option.value ~default:0
       in
-      Sequence.range 0 end_ ~stop:`exclusive |> Sequence.map ~f:(fun idx -> { idx; arr = offsets; type_ = t })
+      Sequence.range 0 end_ ~stop:`exclusive
+      |> Sequence.map ~f:(fun idx -> { idx; arr = offsets; type_ = t })
   | None -> Sequence.empty
 
 let gt ctx t x =
   match Map.find ctx t with
   | Some offsets ->
       let start =
-        Array.binary_search offsets ~compare:[%compare: float] `First_greater_than_or_equal_to x
+        Array.binary_search offsets ~compare:[%compare: float]
+          `First_greater_than_or_equal_to x
         |> Option.value ~default:(Array.length offsets)
       in
       Sequence.range start (Array.length offsets) ~stop:`exclusive

@@ -28,11 +28,15 @@ module String (C : Cstage_core.S) = struct
   let of_sexp = Sexp.to_atom
 
   module O = struct
-    let ( = ) s s' = eformat "($(s)) == ($(s'))" Bool.type_ "" [ ("s", C s); ("s'", C s') ]
+    let ( = ) s s' =
+      eformat "($(s)) == ($(s'))" Bool.type_ "" [ ("s", C s); ("s'", C s') ]
   end
 
   let const s = eformat "$(s)" type_ "" [ ("s", S (sprintf "%S" s)) ]
-  let print s = eformat ~has_effect:true "0" unit_t "std::cout << $(str) << std::endl;" [ ("str", C s) ]
+
+  let print s =
+    eformat ~has_effect:true "0" unit_t "std::cout << $(str) << std::endl;"
+      [ ("str", C s) ]
 
   let input =
     eformat ~has_effect:true "$(var)" type_

@@ -1,8 +1,12 @@
 (library
  (name staged_synth)
- (libraries core core_kernel.pairing_heap combinat fmt vpt logs yojson bitarray bheap owl sek gen)
+ (libraries core core_kernel.pairing_heap combinat fmt vpt logs yojson
+   bitarray bheap sek gen)
  (preprocess
-  (pps ppx_sexp_conv ppx_hash ppx_compare ppx_sexp_message base_quickcheck.ppx_quickcheck ppx_variants_conv ppx_expect ppx_let ppx_assert ppx_here ppx_yojson_conv))
+  (pps ppx_sexp_conv ppx_hash ppx_compare ppx_sexp_message
+    base_quickcheck.ppx_quickcheck ppx_variants_conv ppx_expect ppx_let
+    ppx_assert ppx_here ppx_yojson_conv))
  (inline_tests)
  (flags :standard -g -open Core -w -9-32)
- (instrumentation (backend landmarks)))
+ (instrumentation
+  (backend landmarks)))

@@ -17,7 +17,8 @@ module Op = struct
   type type_ = Type.t
 
   module T = struct
-    type t = Draw | Empty | Sides of int | Color of color | Position of int [@@deriving compare, equal, hash, sexp]
+    type t = Draw | Empty | Sides of int | Color of color | Position of int
+    [@@deriving compare, equal, hash, sexp]
   end
 
   include T
@@ -43,7 +44,9 @@ end
 module Value = struct
   module T = struct
     type scene = (color * int) option Cow_array.t [@@deriving compare, equal, hash, sexp]
-    type t = Scene of scene | Int of int | Color of color [@@deriving compare, equal, hash, sexp]
+
+    type t = Scene of scene | Int of int | Color of color
+    [@@deriving compare, equal, hash, sexp]
   end
 
   include T
@@ -57,7 +60,8 @@ module Value = struct
 
   let eval Ctx.{ n_pos } (op : Op.t) args =
     match (op, args) with
-    | Draw, [ Scene s; Int sides; Color color; Int pos ] -> Scene Cow_array.(set s pos (Some (color, sides)))
+    | Draw, [ Scene s; Int sides; Color color; Int pos ] ->
+        Scene Cow_array.(set s pos (Some (color, sides)))
     | Empty, [] -> Scene (Cow_array.of_array @@ Array.create ~len:n_pos None)
     | (Sides x | Position x), [] -> Int x
     | Color c, [] -> Color c
@@ -73,7 +77,8 @@ module Value = struct
                    let v = Cow_array.get s i and v' = Cow_array.get s' i in
                    match (v, v') with
                    | Some (c, n), Some (c', n') ->
-                       (if n = n' then 1 else 0) + if [%compare.equal: color] c c' then 1 else 0
+                       (if n = n' then 1 else 0)
+                       + if [%compare.equal: color] c c' then 1 else 0
                    | None, Some _ | Some _, None -> 0
                    | None, None -> 2)
             |> Iter.sum

@@ -18,7 +18,8 @@ module Code = struct
       | Float of float
       | Tuple_4 of (t * t * t * t)
 
-    and t = { value : value; annot : Univ_map.t [@compare.ignore] } [@@deriving compare, sexp_of]
+    and t = { value : value; annot : Univ_map.t [@compare.ignore] }
+    [@@deriving compare, sexp_of]
   end
 
   open Value
@@ -64,10 +65,15 @@ module Code = struct
     module List = struct
       let get s i =
         wrap @@ fun () ->
-        match to_sexp s with List l -> Sexp (List.nth_exn l (to_int i)) | _ -> failwith "Expected a list"
+        match to_sexp s with
+        | List l -> Sexp (List.nth_exn l (to_int i))
+        | _ -> failwith "Expected a list"
 
       let length s =
-        wrap @@ fun () -> match to_sexp s with List l -> Int (List.length l) | _ -> failwith "Expected a list"
+        wrap @@ fun () ->
+        match to_sexp s with
+        | List l -> Int (List.length l)
+        | _ -> failwith "Expected a list"
     end
 
     let to_list x = (x : Types.sexp t :> Types.sexp list t)
@@ -116,10 +122,14 @@ module Code = struct
     let type_ = ()
 
     module O = struct
-      let ( = ) x y = wrap @@ fun () -> Bool ([%equal: string] (to_string x) (to_string y))
+      let ( = ) x y =
+        wrap @@ fun () -> Bool ([%equal: string] (to_string x) (to_string y))
     end
 
-    let of_sexp x = wrap @@ fun () -> match to_sexp x with Atom s -> String s | _ -> failwith "Expected an atom."
+    let of_sexp x =
+      wrap @@ fun () ->
+      match to_sexp x with Atom s -> String s | _ -> failwith "Expected an atom."
+
     let sexp_of x = wrap @@ fun () -> Sexp ([%sexp_of: string] (to_str x))
 
     let print s =
@@ -140,7 +150,8 @@ module Code = struct
     let elem_type _ = ()
 
     module O = struct
-      let ( = ) x y = wrap @@ fun () -> Bool ([%compare.equal: Value.value] (to_value x) (to_value y))
+      let ( = ) x y =
+        wrap @@ fun () -> Bool ([%compare.equal: Value.value] (to_value x) (to_value y))
     end
 
     let const _ a = wrap @@ fun () -> Array (Array.map a ~f:to_value')
@@ -154,30 +165,47 @@ module Code = struct
     let length a = wrap @@ fun () -> Int (to_array a |> Array.length)
 
     let fold a ~init ~f =
-      wrap @@ fun () -> to_array a |> Array.fold ~init ~f:(fun acc x -> f acc @@ to_code x) |> to_value
+      wrap @@ fun () ->
+      to_array a |> Array.fold ~init ~f:(fun acc x -> f acc @@ to_code x) |> to_value
 
     let iter a ~f =
       wrap @@ fun () ->
       to_array a |> Array.iter ~f:(fun x -> f @@ to_code x |> to_unit);
       Unit
 
-    let sub a i i' = wrap @@ fun () -> Array (to_array a |> Array.(sub ~pos:(to_int i) ~len:(to_int i')))
-    let init i f = wrap @@ fun () -> Array (Array.init (to_int i) ~f:(fun i -> f Int.(int i) |> to_value'))
-    let map a ~f = wrap @@ fun () -> Array (Array.map (to_array a) ~f:(fun x -> f @@ to_code x |> to_value'))
+    let sub a i i' =
+      wrap @@ fun () -> Array (to_array a |> Array.(sub ~pos:(to_int i) ~len:(to_int i')))
+
+    let init i f =
+      wrap @@ fun () ->
+      Array (Array.init (to_int i) ~f:(fun i -> f Int.(int i) |> to_value'))
+
+    let map a ~f =
+      wrap @@ fun () ->
+      Array (Array.map (to_array a) ~f:(fun x -> f @@ to_code x |> to_value'))
 
     let map2 a a' ~f =
       wrap @@ fun () ->
-      Array (Array.map2_exn (to_array a) (to_array a') ~f:(fun x x' -> f (to_code x) (to_code x') |> to_value'))
+      Array
+        (Array.map2_exn (to_array a) (to_array a') ~f:(fun x x' ->
+             f (to_code x) (to_code x') |> to_value'))
 
     let of_sexp x elem_of_sexp =
       wrap @@ fun () ->
       match to_sexp x with
-      | List ls -> Array (List.map ls ~f:(fun s -> elem_of_sexp @@ Sexp.sexp s |> to_value') |> Array.of_list)
+      | List ls ->
+          Array
+            (List.map ls ~f:(fun s -> elem_of_sexp @@ Sexp.sexp s |> to_value')
+            |> Array.of_list)
       | _ -> failwith "Expected a list."
 
     let sexp_of x sexp_of_elem =
       wrap @@ fun () ->
-      Sexp (Core.Sexp.List (to_array x |> Array.map ~f:(fun e -> sexp_of_elem (to_code e) |> to_sexp) |> Array.to_list))
+      Sexp
+        (Core.Sexp.List
+           (to_array x
+           |> Array.map ~f:(fun e -> sexp_of_elem (to_code e) |> to_sexp)
+           |> Array.to_list))
   end
 
   module Set = struct
@@ -197,19 +225,25 @@ module Code = struct
       Set.iter !(to_set s) ~f:(fun x -> to_unit (f (to_code x)));
       Unit
 
-    let fold s ~init ~f = wrap @@ fun () -> Set.fold !(to_set s) ~init ~f:(fun acc x -> f acc (to_code x)) |> to_value
+    let fold s ~init ~f =
+      wrap @@ fun () ->
+      Set.fold !(to_set s) ~init ~f:(fun acc x -> f acc (to_code x)) |> to_value
 
     let of_sexp _ x elem_of_sexp =
       wrap @@ fun () ->
       match to_sexp x with
-      | List ls -> Set (List.map ls ~f:(fun s -> elem_of_sexp @@ Sexp.sexp s |> to_value') |> Set.Poly.of_list |> ref)
+      | List ls ->
+          Set
+            (List.map ls ~f:(fun s -> elem_of_sexp @@ Sexp.sexp s |> to_value')
+            |> Set.Poly.of_list |> ref)
       | _ -> failwith "Expected a list."
 
     let sexp_of x sexp_of_elem =
       wrap @@ fun () ->
       Sexp
         (Core.Sexp.List
-           (to_set x |> ( ! ) |> Set.Poly.to_list |> List.map ~f:(fun e -> sexp_of_elem (to_code e) |> to_sexp)))
+           (to_set x |> ( ! ) |> Set.Poly.to_list
+           |> List.map ~f:(fun e -> sexp_of_elem (to_code e) |> to_sexp)))
   end
 
   module Tuple = struct
@@ -230,13 +264,18 @@ module Code = struct
     let of_sexp x t1_of_sexp t2_of_sexp =
       wrap @@ fun () ->
       match to_sexp x with
-      | List [ t1; t2 ] -> Tuple (t1_of_sexp @@ Sexp.sexp t1 |> to_value', t2_of_sexp @@ Sexp.sexp t2 |> to_value')
+      | List [ t1; t2 ] ->
+          Tuple
+            ( t1_of_sexp @@ Sexp.sexp t1 |> to_value',
+              t2_of_sexp @@ Sexp.sexp t2 |> to_value' )
       | _ -> failwith "Expected a list."
 
     let sexp_of x sexp_of_t1 sexp_of_t2 =
       wrap @@ fun () ->
       let t1, t2 = to_tuple x in
-      Sexp (Core.Sexp.List [ sexp_of_t1 (to_code t1) |> to_sexp; sexp_of_t2 (to_code t2) |> to_sexp ])
+      Sexp
+        (Core.Sexp.List
+           [ sexp_of_t1 (to_code t1) |> to_sexp; sexp_of_t2 (to_code t2) |> to_sexp ])
   end
 
   module Tuple_3 = struct
@@ -280,7 +319,9 @@ module Code = struct
       Sexp
         (Core.Sexp.List
            [
-             sexp_of_t1 (to_code t1) |> to_sexp; sexp_of_t2 (to_code t2) |> to_sexp; sexp_of_t3 (to_code t3) |> to_sexp;
+             sexp_of_t1 (to_code t1) |> to_sexp;
+             sexp_of_t2 (to_code t2) |> to_sexp;
+             sexp_of_t3 (to_code t3) |> to_sexp;
            ])
   end
 
@@ -289,7 +330,9 @@ module Code = struct
 
     let mk_type _ _ _ _ = ()
     let to_tuple x = match to_value x with Tuple_4 x -> x | _ -> assert false
-    let create x y z a = wrap @@ fun () -> Tuple_4 (to_value' x, to_value' y, to_value' z, to_value' a)
+
+    let create x y z a =
+      wrap @@ fun () -> Tuple_4 (to_value' x, to_value' y, to_value' z, to_value' a)
 
     let fst x =
       wrap' @@ fun () ->
