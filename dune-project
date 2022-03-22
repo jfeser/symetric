@@ -8,12 +8,9 @@
   (ppx_jane (>= v0.14))
   (base_quickcheck (and :with-test (>= v0.14)))
   fmt
-  landmarks
-  memtrace
   sek
   ppx_yojson_conv
   core_bench
-  owl
   gen
   bheap
   iter
