@@ -187,7 +187,8 @@ let%expect_test "" =
         : L.Op.t t option)];
   [%expect
     {|
-    ("generate (module L) L.Type.Int 4 [Bool; Int; Plus; Eq]"
+    ( "generate (module L) L.Type.Int ~min_height:4 ~max_height:4\
+     \n  [Bool; Int; Plus; Eq]"
      ((Apply Plus
        ((Apply Int ())
         (Apply Plus

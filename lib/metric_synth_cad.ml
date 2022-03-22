@@ -276,8 +276,6 @@ let local_search p =
 
 type group_result = { groups : S.Class.t list Hashtbl.M(S.Class).t; n_queries : int }
 
-module NList = Non_empty_list
-
 (** return a mapping from representatives to the members of their groups *)
 let group_states_vp states : group_result =
   let thresh = group_threshold () in
@@ -306,7 +304,7 @@ let group_states_vp states : group_result =
         f)
   in
 
-  List.iter states ~f:(fun v ->
+  states (fun v ->
       let is_empty =
         find_close v
         |> Iter.iter_is_empty (fun c' ->
@@ -321,6 +319,11 @@ let group_states_vp states : group_result =
         reference := v :: !reference));
   { groups; n_queries = !n_queries }
 
+module Edge = struct
+  let value (v, _, _) = v
+  let score value = -1. *. target_distance value
+end
+
 let insert_states all_edges =
   let target_groups = target_groups () in
   let target_groups_min =
@@ -328,106 +331,77 @@ let insert_states all_edges =
   and target_groups_max =
     Float.(to_int @@ (of_int target_groups *. (1.0 +. target_groups_err)))
   in
-
   let search_state = get_search_state () in
 
-  (* group edges that produce the same state *)
-  let n_total_states = ref 0 in
-  let distinct_edges = Hashtbl.create (module S.Class) in
-  all_edges (fun ((value, op, _) as edge) ->
-      let class_ = S.Class.create value (Op.ret_type op) in
-      incr n_total_states;
-      Hashtbl.update distinct_edges class_ ~f:(function
-        | None -> NList.singleton edge
-        | Some edges -> NList.cons edge edges));
-
-  let distinct_states, sort_time =
-    Synth_utils.timed (fun () ->
-        Hashtbl.keys distinct_edges
-        |> List.filter_map ~f:(fun c -> Some (target_distance @@ S.Class.value c, c))
-        |> List.sort ~compare:[%compare: float * _])
+  let sample n =
+    all_edges ()
+    |> Iter.top_k_distinct_grouped (module Value) ~key:Edge.value ~score:Edge.score n
   in
 
-  Log.sexp 0
-    (lazy
-      (let min, max, mean =
-         Iter.of_list distinct_states |> Iter.map (fun (d, _) -> d) |> Iter.stats
-       in
-       [%message "all states" (min : float) (max : float) (mean : float)]));
-
-  Log.log 1 (fun m ->
-      m "(%d, %d distinct) states." !n_total_states (List.length distinct_states));
-
-  Log.log 1 (fun m -> m "sort time %a" Time.Span.pp sort_time);
-
-  let n_states = List.length distinct_states in
-  let distinct_states = List.map ~f:Tuple.T2.get2 distinct_states in
-
   let group n_sample =
-    let sample = List.permute @@ List.take ~n:n_sample distinct_states in
-    let group_result = group_states_vp sample in
+    let sample = sample n_sample in
+    let group_result =
+      group_states_vp @@ fun f ->
+      Hashtbl.iter sample ~f:(function
+        | (value, op, _) :: _ -> f (S.Class.create value (Op.ret_type op))
+        | _ -> assert false)
+    in
     let groups = group_result.groups in
     Log.sexp 0 (lazy [%message (n_sample : int) (Hashtbl.length groups : int)]);
-    groups
+    (groups, sample)
   in
 
   (* compute an upper bound on n_sample. if a good group is found, return it *)
   let rec adaptive_group_find_max n_sample =
-    let groups = group n_sample in
-    let n_groups = Hashtbl.length groups in
+    let groups, sample = group n_sample in
+    let n_groups = Hashtbl.length groups and n_states = Hashtbl.length sample in
 
     if n_groups > target_groups_max then First n_sample
-    else if n_sample >= n_states || n_groups >= target_groups_min then
-      Second (groups, Int.min n_states n_sample)
+    else if n_sample > n_states || n_groups >= target_groups_min then
+      Second (groups, sample)
     else adaptive_group_find_max (n_sample * 2)
   in
 
   let rec adaptive_group min_sample max_sample =
     let n_sample = (min_sample + max_sample) / 2 in
-    let groups = group n_sample in
-    let n_groups = Hashtbl.length groups in
+    let groups, sample = group n_sample in
+    let n_groups = Hashtbl.length groups and n_states = Hashtbl.length sample in
 
-    if min_sample >= max_sample then (groups, n_sample)
+    if min_sample >= max_sample then (groups, sample)
     else if n_groups > target_groups_max then adaptive_group min_sample n_sample
-    else if n_sample >= n_states || n_groups >= target_groups_min then (groups, n_sample)
+    else if n_sample > n_states || n_groups >= target_groups_min then (groups, sample)
     else adaptive_group n_sample max_sample
   in
 
-  let groups, _group_time =
+  let (groups, sample), _group_time =
     Synth_utils.timed (fun () ->
-        let groups, _ =
-          match adaptive_group_find_max target_groups with
-          | First max_sample -> adaptive_group (max_sample / 2) max_sample
-          | Second gs -> gs
-        in
-        groups)
+        match adaptive_group_find_max target_groups with
+        | First max_sample -> adaptive_group (max_sample / 2) max_sample
+        | Second gs -> gs)
   in
 
   Hashtbl.iteri groups ~f:(fun ~key:class_ ~data:members ->
       (* insert new representative (some may already exist) *)
       (if not @@ S.mem_class search_state class_ then
-       let value, op, args = NList.hd @@ Hashtbl.find_exn distinct_edges class_ in
+       let value, op, args =
+         List.hd_exn @@ Hashtbl.find_exn sample (S.Class.value class_)
+       in
        S.insert_class search_state value op @@ List.map ~f:S.Class.value args);
 
       List.iter members ~f:(fun c ->
           S.insert_class_members search_state class_
-          @@ NList.to_list
-          @@ Hashtbl.find_exn distinct_edges c))
+          @@ Hashtbl.find_exn sample (S.Class.value c)))
 
 let insert_states_beam all_edges =
   let search_state = get_search_state () in
 
-  let module Edge = struct
-    type t = Value.t * Op.t * S.Class.t list [@@deriving compare, hash, sexp]
-  end in
   all_edges
   |> Iter.filter (fun (value, op, _) ->
          let class_ = S.Class.create value (Op.ret_type op) in
          not (S.mem_class search_state class_))
   |> Iter.top_k_distinct
-       (module Edge)
-       ~score:(fun (value, _, _) -> -1. *. target_distance value)
-       (target_groups ())
+       (module Value)
+       ~score:Edge.score ~key:Edge.value (target_groups ())
   |> Iter.iter (fun (value, op, args) ->
          let class_ = S.Class.create value (Op.ret_type op) in
          if not (S.mem_class search_state class_) then
@@ -444,12 +418,13 @@ let fill_search_space () =
   for cost = 1 to max_cost do
     Log.log 1 (fun m -> m "Start generating states of cost %d" cost);
 
+    let states_iter () =
+      Gen.generate_states S.search_iter S.Class.value ectx search_state ops cost
+    in
+
     let (), run_time =
       Synth_utils.timed (fun () ->
-          let states_iter =
-            Gen.generate_states S.search_iter S.Class.value ectx search_state ops cost
-          in
-          if use_beam_search () then insert_states_beam states_iter
+          if use_beam_search () then insert_states_beam (states_iter ())
           else insert_states states_iter)
     in
 

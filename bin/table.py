@@ -12,6 +12,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 
+pd.set_option("display.max_rows", 1000)
+
 
 def load_v1(run_dir):
     header = [
@@ -88,7 +90,16 @@ def timeout(results):
     return 1.0 if runtime_variant[0] == "Started" else 0.0
 
 
+def bench_of_out_file(jobs, out_file):
+    for cmd in jobs:
+        if out_file in cmd:
+            return cmd.split(" ")[-3].split("/")[-1]
+
+
 def load(run_dir):
+    with open(run_dir + "/jobs", "r") as f:
+        jobs = f.readlines()
+
     header = [
         "method",
         "bench",
@@ -115,7 +126,7 @@ def load(run_dir):
         local_search_steps = bench_json["params"]["local_search_steps"]
 
         bench_params = os.path.splitext(fn)[0].split("-")
-        bench_name = bench_params[1]
+        bench_name = bench_of_out_file(jobs, fn)
 
         result_row = [
             method,
@@ -261,6 +272,7 @@ def first_true(s):
 
 
 def process_beam(df):
+    df = df[df["method"] == "beam"]
     df = df.sort_values(["bench", "local_search_steps", "n_groups"])
     gb = df.groupby(["bench", "local_search_steps"])
     df["runtime_cum"] = gb["runtime"].cumsum()
@@ -274,6 +286,10 @@ def process_beam(df):
 def process(metric_df, beam_df, main_table):
     metric_df, count = process_metric(metric_df)
     beam_df = process_beam(beam_df)
+
+    import pdb
+
+    pdb.set_trace()
 
     make_main_table(metric_df, count, main_table)
 

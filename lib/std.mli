@@ -23,7 +23,20 @@ module Iter : sig
   val top_k : compare:('a -> 'a -> int) -> int -> 'a t -> 'a t
 
   val top_k_distinct :
-    (module HASHABLE with type t = 'a) -> score:('a -> float) -> int -> 'a t -> 'a t
+    (module HASHABLE with type t = 'b) ->
+    score:('b -> float) ->
+    key:('a -> 'b) ->
+    int ->
+    'a t ->
+    'a t
+
+  val top_k_distinct_grouped :
+    (module HASHABLE with type t = 'b) ->
+    score:('b -> float) ->
+    key:('a -> 'b) ->
+    int ->
+    'a t ->
+    ('b, 'a list) Hashtbl.t
 
   val min_floor : to_float:('a -> float) -> float -> 'a t -> 'a option
   (** min_floor ~to_float floor iter returns first minimal element of `iter`

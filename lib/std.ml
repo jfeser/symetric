@@ -64,9 +64,9 @@ module Iter = struct
     print_s [%message (top_k ~compare 3 Iter.(0 -- 10) : int t)];
     [%expect {| ("top_k ~compare 3 (let open Iter in 0 -- 10)" (8 9 10)) |}]
 
-  let top_k_distinct (type t) (module M : HASHABLE with type t = t) ~score k l f =
+  let top_k_distinct (type k t) (module M : HASHABLE with type t = k) ~score ~key k l f =
     let module OM = struct
-      type t = (float * M.t) option
+      type nonrec t = (float * t) option
 
       let compare = Option.compare [%compare: float * _]
     end in
@@ -77,19 +77,19 @@ module Iter = struct
       let contents = Hash_set.create ~size:k ~growth_allowed:false (module M) in
       let add s x =
         H.add best (Some (s, x));
-        Hash_set.add contents x
+        Hash_set.add contents @@ key x
       in
       l (fun x ->
-          if not (Hash_set.mem contents x) then
-            if H.length best < k then add (score x) x
+          if not (Hash_set.mem contents @@ key x) then
+            let new_score = score @@ key x in
+            if H.length best < k then add new_score x
             else
               let min_score, min_val = Option.value_exn @@ H.minimum best in
-              let new_score = score x in
               if
                 Float.(min_score < new_score || (min_score = new_score && Random.bool ()))
               then (
                 ignore (H.pop_minimum best : _ option);
-                Hash_set.remove contents min_val;
+                Hash_set.remove contents @@ key min_val;
 
                 add new_score x));
       H.iter (fun x -> f @@ Tuple.T2.get2 @@ Option.value_exn x) best)
@@ -99,13 +99,57 @@ module Iter = struct
       [%message
         (top_k_distinct
            (module Int)
-           ~score:Float.of_int 3
+           ~score:Float.of_int ~key:Fun.id 3
            (Iter.of_list [ 6; 1; 2; 3; 1; 5; 6 ])
           : int t)];
     [%expect
       {|
-      ( "top_k_distinct (module Int) ~score:Float.of_int 3\
+      ( "top_k_distinct (module Int) ~score:Float.of_int ~key:Fun.id 3\
        \n  (Iter.of_list [6; 1; 2; 3; 1; 5; 6])" (3 6 5)) |}]
+
+  let top_k_distinct_grouped (type k t) (module M : HASHABLE with type t = k) ~score ~key
+      k l =
+    let module OM = struct
+      type nonrec t = (float * t) option
+
+      let compare = Option.compare [%compare: float * _]
+    end in
+    let module H = Binary_heap.Make (OM) in
+    assert (k > 0);
+    let best = H.create ~dummy:None k in
+    let contents = Hashtbl.create ~size:k ~growth_allowed:false (module M) in
+    let add s x =
+      H.add best (Some (s, x));
+      Hashtbl.add_multi contents ~key:(key x) ~data:x
+    in
+    l (fun x ->
+        if Hashtbl.mem contents @@ key x then
+          Hashtbl.add_multi contents ~key:(key x) ~data:x
+        else
+          let new_score = score @@ key x in
+          if H.length best < k then add new_score x
+          else
+            let min_score, min_val = Option.value_exn @@ H.minimum best in
+            if Float.(min_score < new_score || (min_score = new_score && Random.bool ()))
+            then (
+              ignore (H.pop_minimum best : _ option);
+              Hashtbl.remove contents @@ key min_val;
+
+              add new_score x));
+    contents
+
+  let%expect_test "" =
+    print_s
+      [%message
+        (top_k_distinct_grouped
+           (module Int)
+           ~score:Float.of_int ~key:Fun.id 3
+           (Iter.of_list [ 6; 1; 2; 3; 1; 5; 6 ])
+          : (int, int list) Hashtbl.t)];
+    [%expect
+      {|
+      ( "top_k_distinct_grouped (module Int) ~score:Float.of_int ~key:Fun.id 3\
+       \n  (Iter.of_list [6; 1; 2; 3; 1; 5; 6])" ((3 (3)) (5 (5)) (6 (6 6)))) |}]
 
   let list_product iters f =
     let rec product acc = function
