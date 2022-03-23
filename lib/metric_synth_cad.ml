@@ -324,6 +324,28 @@ module Edge = struct
   let score value = -1. *. target_distance value
 end
 
+module Top_k_cache = struct
+  type ('a, 'b) t = {
+    gen_cache : int -> ('a, 'b list) Hashtbl.t;
+    mutable cache : ('a, 'b list) Hashtbl.t;
+    score : 'a -> float;
+  }
+
+  let create ?(initial_cached = 10_000) ~score gen_cache =
+    { gen_cache; cache = gen_cache initial_cached; score }
+
+  let get this n =
+    if n > Hashtbl.length this.cache then this.cache <- this.gen_cache n;
+    let ret =
+      Hashtbl.create (Hashtbl.hashable_s this.cache) ~size:n ~growth_allowed:false
+    in
+    Iter.of_hashtbl this.cache
+    |> Iter.map (fun (k, v) -> (this.score k, (k, v)))
+    |> Iter.top_k ~compare:(fun (d, _) (d', _) -> [%compare: float] d d') n
+    |> Iter.iter (fun (_, (k, v)) -> Hashtbl.add_exn ret ~key:k ~data:v);
+    ret
+end
+
 let insert_states all_edges =
   let target_groups = target_groups () in
   let target_groups_min =
@@ -333,10 +355,13 @@ let insert_states all_edges =
   in
   let search_state = get_search_state () in
 
-  let sample n =
-    all_edges ()
-    |> Iter.top_k_distinct_grouped (module Value) ~key:Edge.value ~score:Edge.score n
+  let top_k_cache =
+    Top_k_cache.create ~score:Edge.score (fun n ->
+        Iter.top_k_distinct_grouped
+          (module Value)
+          ~key:Edge.value ~score:Edge.score n (all_edges ()))
   in
+  let sample n = Top_k_cache.get top_k_cache n in
 
   let group n_sample =
     let sample = sample n_sample in
