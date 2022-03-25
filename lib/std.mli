@@ -20,23 +20,6 @@ module Iter : sig
   val of_sek_e : 'a Sek.E.t -> 'a t
   val list_product : 'a t list -> 'a list t
   val group_by : 'a Base.Hashtbl.Key.t -> ('a * 'b) t -> ('a * 'b list) t
-  val top_k : compare:('a -> 'a -> int) -> int -> 'a t -> 'a t
-
-  val top_k_distinct :
-    (module HASHABLE with type t = 'b) ->
-    score:('b -> float) ->
-    key:('a -> 'b) ->
-    int ->
-    'a t ->
-    'a t
-
-  val top_k_distinct_grouped :
-    (module HASHABLE with type t = 'b) ->
-    score:('b -> float) ->
-    key:('a -> 'b) ->
-    int ->
-    'a t ->
-    ('b, 'a list) Hashtbl.t
 
   val min_floor : to_float:('a -> float) -> float -> 'a t -> 'a option
   (** min_floor ~to_float floor iter returns first minimal element of `iter`
@@ -53,6 +36,25 @@ module Iter : sig
   (** Return the last element of an iterator. May run forever if the iterator is infinite. *)
 
   val mean : float t -> float option
+  val top_k : compare:('t -> 't -> int) -> int -> 't Iter.t -> 't Iter.t
+
+  val top_k_distinct :
+    (module HASHABLE with type t = 'k) ->
+    score:('k -> float) ->
+    key:('t -> 'k) ->
+    int ->
+    't Iter.t ->
+    't Iter.t
+
+  val top_k_distinct_grouped : (module HASHABLE with type t = 'k) -> 'b
+
+  val ordered_groupby :
+    (module HASHABLE with type t = 'k) ->
+    score:('k -> float) ->
+    key:('a -> 'k) ->
+    ?batch_size:int ->
+    'a t ->
+    ('k * (float * 'a list)) t
 end
 
 module Array : sig

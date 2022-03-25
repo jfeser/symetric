@@ -1,3 +1,9 @@
+let ( <. ) = Float.( < )
+let ( >. ) = Float.( > )
+let ( <=. ) = Float.( <= )
+let ( >=. ) = Float.( >= )
+let ( =. ) = Float.( = )
+
 module Option = struct
   include Option
 
@@ -40,116 +46,6 @@ module Iter = struct
     in
     let l = to_list iter |> List.sort ~compare:C.comparator.compare in
     Core.Set.of_list m l
-
-  let top_k (type t) ~compare k l f =
-    let module OM = struct
-      type nonrec t = t option
-
-      let compare = Option.compare compare
-    end in
-    let module H = Binary_heap.Make (OM) in
-    assert (k >= 0);
-    if k > 0 then (
-      let mins = H.create ~dummy:None k in
-      l (fun x ->
-          if H.length mins < k then H.add mins (Some x)
-          else
-            let c = compare (Option.value_exn @@ H.minimum mins) x in
-            if c < 0 || (c = 0 && Random.bool ()) then (
-              ignore (H.pop_minimum mins : t option);
-              H.add mins (Some x)));
-      H.iter (fun x -> f @@ Option.value_exn x) mins)
-
-  let%expect_test "" =
-    print_s [%message (top_k ~compare 3 Iter.(0 -- 10) : int t)];
-    [%expect {| ("top_k ~compare 3 (let open Iter in 0 -- 10)" (8 9 10)) |}]
-
-  let top_k_distinct (type k t) (module M : HASHABLE with type t = k) ~score ~key k l f =
-    let module OM = struct
-      type nonrec t = (float * t) option
-
-      let compare = Option.compare [%compare: float * _]
-    end in
-    let module H = Binary_heap.Make (OM) in
-    assert (k >= 0);
-    if k > 0 then (
-      let best = H.create ~dummy:None k in
-      let contents = Hash_set.create ~size:k ~growth_allowed:false (module M) in
-      let add s x =
-        H.add best (Some (s, x));
-        Hash_set.add contents @@ key x
-      in
-      l (fun x ->
-          if not (Hash_set.mem contents @@ key x) then
-            let new_score = score @@ key x in
-            if H.length best < k then add new_score x
-            else
-              let min_score, min_val = Option.value_exn @@ H.minimum best in
-              if
-                Float.(min_score < new_score || (min_score = new_score && Random.bool ()))
-              then (
-                ignore (H.pop_minimum best : _ option);
-                Hash_set.remove contents @@ key min_val;
-
-                add new_score x));
-      H.iter (fun x -> f @@ Tuple.T2.get2 @@ Option.value_exn x) best)
-
-  let%expect_test "" =
-    print_s
-      [%message
-        (top_k_distinct
-           (module Int)
-           ~score:Float.of_int ~key:Fun.id 3
-           (Iter.of_list [ 6; 1; 2; 3; 1; 5; 6 ])
-          : int t)];
-    [%expect
-      {|
-      ( "top_k_distinct (module Int) ~score:Float.of_int ~key:Fun.id 3\
-       \n  (Iter.of_list [6; 1; 2; 3; 1; 5; 6])" (3 6 5)) |}]
-
-  let top_k_distinct_grouped (type k t) (module M : HASHABLE with type t = k) ~score ~key
-      k l =
-    let module OM = struct
-      type nonrec t = (float * t) option
-
-      let compare = Option.compare [%compare: float * _]
-    end in
-    let module H = Binary_heap.Make (OM) in
-    assert (k > 0);
-    let best = H.create ~dummy:None k in
-    let contents = Hashtbl.create ~size:k ~growth_allowed:false (module M) in
-    let add s x =
-      H.add best (Some (s, x));
-      Hashtbl.add_multi contents ~key:(key x) ~data:x
-    in
-    l (fun x ->
-        if Hashtbl.mem contents @@ key x then
-          Hashtbl.add_multi contents ~key:(key x) ~data:x
-        else
-          let new_score = score @@ key x in
-          if H.length best < k then add new_score x
-          else
-            let min_score, min_val = Option.value_exn @@ H.minimum best in
-            if Float.(min_score < new_score || (min_score = new_score && Random.bool ()))
-            then (
-              ignore (H.pop_minimum best : _ option);
-              Hashtbl.remove contents @@ key min_val;
-
-              add new_score x));
-    contents
-
-  let%expect_test "" =
-    print_s
-      [%message
-        (top_k_distinct_grouped
-           (module Int)
-           ~score:Float.of_int ~key:Fun.id 3
-           (Iter.of_list [ 6; 1; 2; 3; 1; 5; 6 ])
-          : (int, int list) Hashtbl.t)];
-    [%expect
-      {|
-      ( "top_k_distinct_grouped (module Int) ~score:Float.of_int ~key:Fun.id 3\
-       \n  (Iter.of_list [6; 1; 2; 3; 1; 5; 6])" ((3 (3)) (5 (5)) (6 (6 6)))) |}]
 
   let list_product iters f =
     let rec product acc = function
@@ -229,6 +125,142 @@ module Iter = struct
     let last = ref None in
     s (fun x -> last := Some x);
     !last
+
+  let top_k (type t) ~compare k l f =
+    let module OM = struct
+      type nonrec t = t option
+
+      let compare = Option.compare compare
+    end in
+    let module H = Binary_heap.Make (OM) in
+    assert (k >= 0);
+    if k > 0 then (
+      let mins = H.create ~dummy:None k in
+      l (fun x ->
+          if H.length mins < k then H.add mins (Some x)
+          else
+            let c = compare (Option.value_exn @@ H.minimum mins) x in
+            if c < 0 || (c = 0 && Random.bool ()) then (
+              ignore (H.pop_minimum mins : t option);
+              H.add mins (Some x)));
+      H.iter (fun x -> f @@ Option.value_exn x) mins)
+
+  let%expect_test "" =
+    print_s [%message (top_k ~compare 3 Iter.(0 -- 10) : int t)];
+    [%expect {| ("top_k ~compare 3 (let open Iter in 0 -- 10)" (8 9 10)) |}]
+
+  let top_k_distinct (type k t) (module M : HASHABLE with type t = k) ~score ~key k l f =
+    let module OM = struct
+      type nonrec t = (float * t) option
+
+      let compare = Option.compare [%compare: float * _]
+    end in
+    let module H = Binary_heap.Make (OM) in
+    assert (k >= 0);
+    if k > 0 then (
+      let best = H.create ~dummy:None k in
+      let contents = Hash_set.create ~size:k ~growth_allowed:false (module M) in
+      let add s x =
+        H.add best (Some (s, x));
+        Hash_set.add contents @@ key x
+      in
+      l (fun x ->
+          if not (Hash_set.mem contents @@ key x) then
+            let new_score = score @@ key x in
+            if H.length best < k then add new_score x
+            else
+              let min_score, min_val = Option.value_exn @@ H.minimum best in
+              if
+                Float.(min_score < new_score || (min_score = new_score && Random.bool ()))
+              then (
+                ignore (H.pop_minimum best : _ option);
+                Hash_set.remove contents @@ key min_val;
+
+                add new_score x));
+      H.iter (fun x -> f @@ Tuple.T2.get2 @@ Option.value_exn x) best)
+
+  let%expect_test "" =
+    print_s
+      [%message
+        (top_k_distinct
+           (module Int)
+           ~score:Float.of_int ~key:Fun.id 3
+           (Iter.of_list [ 6; 1; 2; 3; 1; 5; 6 ])
+          : int t)];
+    [%expect
+      {|
+      ( "top_k_distinct (module Int) ~score:Float.of_int ~key:Fun.id 3\
+       \n  (Iter.of_list [6; 1; 2; 3; 1; 5; 6])" (3 6 5)) |}]
+
+  let top_k_distinct_grouped _ = failwith ""
+
+  let ordered_groupby (type k t) (module M : HASHABLE with type t = k) ~score ~key
+      ?(batch_size = 10_000) states f =
+    let module OM = struct
+      type nonrec t = (float * k) option
+
+      let compare = Option.compare [%compare: float * _]
+    end in
+    let module H = Binary_heap.Make (OM) in
+    let groups = Hashtbl.create ~size:batch_size ~growth_allowed:false (module M) in
+
+    let add heap groups s k x =
+      H.add heap (Some (s, k));
+      Hashtbl.update groups k ~f:(function
+        | Some (score, xs) -> (score, x :: xs)
+        | None -> (s, [ x ]))
+    in
+
+    (* fill the heap with up to batch_size elements *)
+    let rec collect_batch max_score =
+      let heap = H.create ~dummy:None batch_size in
+      Hashtbl.clear groups;
+
+      states (fun x ->
+          let k = key x in
+          if Hashtbl.mem groups k then
+            Hashtbl.update groups k ~f:(function
+              | Some (s, xs) -> (s, x :: xs)
+              | None -> assert false)
+          else
+            let new_score = score k in
+            if new_score <. max_score then
+              if H.length heap < batch_size then add heap groups new_score k x
+              else
+                let min_score, min_key = Option.value_exn @@ H.minimum heap in
+                if
+                  Float.(
+                    min_score < new_score || (min_score = new_score && Random.bool ()))
+                then (
+                  ignore (H.pop_minimum heap : _ option);
+                  Hashtbl.remove groups min_key;
+                  add heap groups new_score k x));
+
+      let groups =
+        Hashtbl.to_alist groups
+        |> List.sort ~compare:(fun (_, (s, _)) (_, (s', _)) -> [%compare: float] s' s)
+      in
+      List.iter groups ~f;
+      if List.length groups >= batch_size then
+        let _, (min_score, _) = List.last_exn groups in
+        collect_batch min_score
+    in
+
+    collect_batch Float.infinity
+
+  let%expect_test "" =
+    print_s
+      [%message
+        (ordered_groupby
+           (module Int)
+           ~score:Float.of_int ~key:Fun.id ~batch_size:1
+           (Iter.of_list [ 6; 1; 2; 3; 1; 5; 6 ])
+          : (int * (float * int list)) t)];
+    [%expect
+      {|
+      ( "ordered_groupby (module Int) ~score:Float.of_int ~key:Fun.id ~batch_size:1\
+       \n  (Iter.of_list [6; 1; 2; 3; 1; 5; 6])"
+       ((6 (6 (6 6))) (5 (5 (5))) (3 (3 (3))) (2 (2 (2))) (1 (1 (1 1))))) |}]
 end
 
 module List = struct
@@ -294,12 +326,6 @@ module Array = struct
     let a' = Array.sorted_copy a ~compare in
     a'.(Array.length a' / 2)
 end
-
-let ( <. ) = Float.( < )
-let ( >. ) = Float.( > )
-let ( <=. ) = Float.( <= )
-let ( >=. ) = Float.( >= )
-let ( =. ) = Float.( = )
 
 module Incr_mean = struct
   type t = float * float [@@deriving sexp]
