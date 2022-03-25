@@ -1,7 +1,7 @@
 (executable
  (name metric_synth_cad)
  (modules metric_synth_cad)
- (libraries core staged_synth memtrace)
+ (libraries core staged_synth)
  (preprocess
   (pps ppx_jane)))
 
@@ -46,3 +46,11 @@
  (libraries core staged_synth)
  (preprocess
   (pps ppx_jane)))
+
+(executable
+ (name grouping_bench)
+ (modules grouping_bench)
+ (libraries core staged_synth)
+ (preprocess
+  (pps ppx_jane))
+ (instrumentation (backend landmarks)))
