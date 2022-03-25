@@ -17,6 +17,8 @@ end
 module Bit_list_equal_len_pair = struct
   type t = bool list * bool list [@@deriving compare, quickcheck, sexp]
 
+  let quickcheck_shrinker = Shrinker.atomic
+
   let quickcheck_generator =
     let open Generator.Let_syntax in
     let%bind l1 = Bit_list.quickcheck_generator in
@@ -41,10 +43,21 @@ let make_binary_test fn fv =
       [%test_result: Bit_list.t] ~expect:(N.to_list @@ fn n n') (V.to_list @@ fv v v'))
     (module Bit_list_equal_len_pair)
 
+let make_binary_float_test fn fv =
+  Test.run_exn
+    ~f:(fun (a, a') ->
+      let n = N.of_list a
+      and n' = N.of_list a'
+      and v = V.of_list a
+      and v' = V.of_list a' in
+      [%test_result: float] ~expect:(fn n n') (fv v v'))
+    (module Bit_list_equal_len_pair)
+
 let%test_unit "and" = make_binary_test N.and_ V.and_
 let%test_unit "or" = make_binary_test N.or_ V.or_
 let%test_unit "xor" = make_binary_test N.xor V.xor
 let%test_unit "not" = make_unary_test N.not V.not
+let%test_unit "jaccard" = make_binary_float_test N.jaccard V.jaccard
 
 let%test_unit "get" =
   Test.run_exn

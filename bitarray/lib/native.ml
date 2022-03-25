@@ -113,3 +113,9 @@ let replicate ~w ~h s ~dx ~dy ~ct =
   init_bitmap ~w ~h ~f:(fun ~i:_ ~x ~y -> replicate_is_set ~w ~h s dx dy ct x y)
 
 let corners ~w:_ ~h:_ _ = failwith "unimplemented"
+
+let[@inline] jaccard c c' =
+  let union = hamming_weight (or_ c c') in
+  (* the empty scene is equal to itself *)
+  if union = 0 then 0.0
+  else 1.0 -. Float.(of_int (hamming_weight (and_ c c')) / of_int union)

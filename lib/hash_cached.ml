@@ -13,7 +13,7 @@ struct
   include Comparator.Make (S)
 
   let create x = { value = x; hash = [%hash: T.t] x }
-  let value x = x.value
+  let[@inline] value x = x.value
   let hash x = x.hash
   let hash_fold_t s x = [%hash_fold: int] s @@ hash x
 

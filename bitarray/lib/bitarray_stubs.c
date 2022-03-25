@@ -1,3 +1,4 @@
+#include <caml/alloc.h>
 #include <caml/memory.h>
 #include <caml/mlvalues.h>
 #include <stdbool.h>
@@ -78,6 +79,26 @@ CAMLprim intnat bitarray_hamming_distance_stub(value b1, value b2) {
 
 CAMLprim value bitarray_hamming_distance_stub_byte(value b1, value b2) {
   return Val_int(bitarray_hamming_distance_stub(b1, b2));
+}
+
+CAMLprim double bitarray_jaccard_stub(value b1, value b2) {
+  const word_t *p1 = (const word_t *)String_val(b1),
+               *p2 = (const word_t *)String_val(b2);
+  int union_ = 0, inter = 0, len = len(b1);
+
+  if (len == 0) {
+    return 0.;
+  }
+  for (int i = 0; i < len; i++) {
+    union_ += __builtin_popcount(p1[i] | p2[i]);
+    inter += __builtin_popcount(p1[i] & p2[i]);
+  }
+
+  return union_ == 0 ? 0.0 : 1.0 - ((double)inter / (double)union_);
+}
+
+CAMLprim value bitarray_jaccard_stub_byte(value b1, value b2) {
+  return caml_copy_double(bitarray_jaccard_stub(b1, b2));
 }
 
 CAMLprim value bitarray_replicate_stub(value b1, intnat x, intnat y, intnat ct,

@@ -41,6 +41,10 @@ external bitarray_hamming_distance : string -> string -> (int[@untagged])
   = "bitarray_hamming_distance_stub_byte" "bitarray_hamming_distance_stub"
   [@@noalloc]
 
+external bitarray_jaccard : string -> string -> (float[@unboxed])
+  = "bitarray_jaccard_stub_byte" "bitarray_jaccard_stub"
+  [@@noalloc]
+
 external bitarray_replicate :
   string ->
   (int[@untagged]) ->
@@ -86,6 +90,7 @@ let[@inline] hamming_distance a b =
   assert (a.len = b.len);
   bitarray_hamming_distance a.buf b.buf
 
+let jaccard a b = bitarray_jaccard a.buf b.buf
 let any a = bitarray_any a.buf
 let none a = not (any a)
 let is_empty = none
@@ -145,12 +150,6 @@ let iteri x ~f = Shared.iteri ~fold x ~f
 let of_list x = Shared.of_list ~init_fold x
 let to_list x = List.init (length x) ~f:(get x)
 let not = not_
-
-let weighted_jaccard ?(pos_weight = 0.5) a b =
-  ((Float.of_int (hamming_weight (not @@ and_ a b)) *. pos_weight)
-  +. (Float.of_int (hamming_weight (not @@ and_ (not a) (not b))) *. (1.0 -. pos_weight))
-  )
-  /. (Float.of_int @@ length a)
 
 let replicate ~w ~h t ~dx ~dy ~ct =
   assert (w >= 0 && h >= 0 && t.len = w * h && ct >= 0);

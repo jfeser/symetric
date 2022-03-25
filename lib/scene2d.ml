@@ -66,7 +66,7 @@ let of_bitarray dim buf =
   assert (Bitarray.length buf = Dim.npixels dim);
   { dim; buf = H.create buf }
 
-let[@inline] pixels x = H.value x.buf
+let[@inline] pixels x = x.buf.T.H.value
 let[@inline] dim x = x.dim
 
 let init (dim : Dim.t) ~f =
@@ -107,13 +107,7 @@ let[@inline] jaccard_canvas c c' =
   let l = Bitarray.length (pixels c) in
   Float.(of_int h / of_int l)
 
-let[@inline] jaccard_pixels c c' =
-  let union = Bitarray.(hamming_weight (or_ (pixels c) (pixels c'))) in
-  if union = 0 then 0.0
-  else
-    1.0
-    -. Float.(
-         of_int Bitarray.(hamming_weight (and_ (pixels c) (pixels c'))) / of_int union)
+let[@inline] jaccard_pixels c c' = Bitarray.jaccard c.buf.T.H.value c'.buf.T.H.value
 
 let cosine c c' =
   let n = Bitarray.hamming_weight (Bitarray.and_ (pixels c) (pixels c')) in
