@@ -277,47 +277,12 @@ let local_search p =
 type group_result = { groups : S.Class.t list Hashtbl.M(S.Class).t; n_queries : int }
 
 (** return a mapping from representatives to the members of their groups *)
-let group_states_vp states : group_result =
-  let thresh = group_threshold () in
+let class_distance c c' =
+  let v = S.Class.value c and v' = S.Class.value c' in
+  similarity v v'
 
-  let distance c c' =
-    let v = S.Class.value c and v' = S.Class.value c' in
-    similarity v v'
-  in
-  let create_vp = Vpt.create distance `Random in
-
-  let reference_vp = ref (create_vp @@ (* (S.classes search_state |> Iter.to_list) *) [])
-  and reference = ref []
-  and groups = Hashtbl.create (module S.Class) in
-  let group_radii = Hashtbl.create (module S.Class) in
-  let n_queries = ref 0 in
-
-  let find_close c f =
-    incr n_queries;
-    if thresh >. 0.0 then (
-      if List.length !reference > 100 then (
-        reference_vp := create_vp ((Iter.to_list @@ Vpt.iter !reference_vp) @ !reference);
-        reference := []);
-      (Iter.append
-         (Vpt.neighbors distance c thresh !reference_vp)
-         (Iter.filter (fun c' -> distance c c' <=. thresh) (Iter.of_list !reference)))
-        f)
-  in
-
-  states (fun v ->
-      let is_empty =
-        find_close v
-        |> Iter.iter_is_empty (fun c' ->
-               Hashtbl.update groups c' ~f:(function None -> [ v ] | Some vs -> v :: vs);
-               Hashtbl.update group_radii c' ~f:(function
-                 | None -> (distance c' v, 1)
-                 | Some (n, d) -> (n +. distance c' v, d + 1)))
-      in
-      if is_empty then (
-        Hashtbl.add_exn group_radii ~key:v ~data:(0.0, 1);
-        Hashtbl.add_exn groups ~key:v ~data:[];
-        reference := v :: !reference));
-  { groups; n_queries = !n_queries }
+let group_states states =
+  Grouping.create_m (module S.Class) (group_threshold ()) class_distance states
 
 module Edge = struct
   let value (v, _, _) = v
@@ -366,7 +331,7 @@ let insert_states all_edges =
   let group n_sample =
     let sample = sample n_sample in
     let group_result =
-      group_states_vp @@ fun f ->
+      group_states @@ fun f ->
       Hashtbl.iter sample ~f:(function
         | (value, op, _) :: _ -> f (S.Class.create value (Op.ret_type op))
         | _ -> assert false)
