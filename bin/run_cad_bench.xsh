@@ -1,13 +1,17 @@
 #!/usr/bin/env xonsh
 
 import glob
+import json
 import random
 
 dry_run = False
 run_metric = True
-run_beam = True
+run_beam = False
 run_exhaustive = False
 run_local = False
+
+run_handwritten = False
+run_generated = True
 
 metric_mlimit = 2 * 1000000 # 2GB
 metric_tlimit = 15 * 60     # 15min
@@ -26,13 +30,25 @@ mkdir -p @(run_dir)
 cd @(run_dir)
 
 jobs = []
-benchmarks = [('generated', 35)]
+benchmarks = []
+if run_handwritten:
+    benchmarks += [('small', 20), ('medium', 30), ('large', 40)]
+if run_generated:
+    benchmarks += [('generated', 35)]
+
+with open('job_params', 'w') as f:
+    json.dump({
+        'metric-memlimit': metric_mlimit,
+        'metric-timelimit':metric_tlimit,
+        'beam-memlimit':beam_mlimit,
+        'beam-timelimit': beam_tlimit
+    }, f)
 
 if run_metric:
     for _ in range(25):
         for (d, max_cost) in benchmarks:
             for f in glob.glob(base_dir + '/bench/cad_ext/' + d + '/*'):
-                for n_groups in [200, 400, 800]:
+                for n_groups in [200, 400]:
                     for thresh in [0.2, 0.4]:
                         job_name = f"metric-{len(jobs)}"
                         cmd = [
@@ -46,7 +62,7 @@ if run_metric:
                         jobs.append(cmd)
 
 if run_beam:
-    for n_groups in [100, 200, 400, 800, 1600, 3200, 6400, 12800]:
+    for n_groups in [100, 200, 400, 800, 1600, 3200]:
         for (d, max_cost) in benchmarks:
             for f in glob.glob(base_dir + '/bench/cad_ext/' + d + '/*'):
                 for local_search in [0, 500]:
@@ -69,7 +85,7 @@ if dry_run:
 
 with open('jobs', 'w') as f:
     f.writelines(jobs)
-parallel --eta --joblog joblog :::: jobs
+parallel --eta -j 46 --joblog joblog :::: jobs
 
 # Local Variables:
 # major-mode: python-mode
