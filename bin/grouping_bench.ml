@@ -21,15 +21,16 @@ let () =
     Value.distance v v'
   in
 
+  let n_groups = 10_000 in
   let groups_vp, vp_time =
     Synth_utils.timed (fun () ->
-        create_vp (module Value) 0.2 distance @@ Iter.of_list states)
+        create_vp (module Value) 0.2 distance n_groups @@ Iter.of_list states)
   in
   let vp_distance_calls = !distance_calls in
   distance_calls := 0;
   let groups_m, m_time =
     Synth_utils.timed (fun () ->
-        create_m (module Value) 0.2 distance @@ Iter.of_list states)
+        create_m (module Value) 0.2 distance n_groups @@ Iter.of_list states)
   in
   let m_distance_calls = !distance_calls in
   print_s

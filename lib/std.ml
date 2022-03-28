@@ -41,6 +41,10 @@ module Iter = struct
   let of_hashtbl_data x k = Hashtbl.iteri ~f:(fun ~key:_ ~data -> k data) x
   let of_sek_e s k = Sek.E.iter Sek.forward k s
 
+  exception ExitIterWhile
+
+  let iter_while p seq = Iter.take_while p seq (fun _ -> ())
+
   let to_set (type t w) m iter =
     let module C = (val m : Comparator.S with type t = t and type comparator_witness = w)
     in

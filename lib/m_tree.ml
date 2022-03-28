@@ -1,5 +1,7 @@
 open Std
 
+[@@@warning "-30"]
+
 type 'a obj = {
   value : 'a;
   mutable parent_dist : float; [@default Float.nan] [@sexp_drop_default.compare]
@@ -19,6 +21,8 @@ and 'a node = {
   mutable parent : ('a opaque_obj * ('a node[@sexp.opaque])) option; [@sexp.option]
 }
 [@@deriving sexp]
+
+[@@@warning "+30"]
 
 type 'a t = {
   mutable root : 'a node;

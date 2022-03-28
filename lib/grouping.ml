@@ -1,15 +1,15 @@
 open Std
 
-type 'a t = { groups : ('a, 'a list) Hashtbl.t; n_queries : int }
+type 'a t = { groups : ('a, 'a list) Hashtbl.t; n_queries : int; n_samples : int }
 
 (** return a mapping from representatives to the members of their groups *)
-let create_vp m thresh distance states =
+let create_vp m thresh distance k states =
   let create_vp = Vpt.create distance `Random in
 
   let reference_vp = ref (create_vp [])
   and reference = ref []
   and groups = Hashtbl.create m in
-  let n_queries = ref 0 in
+  let n_queries = ref 0 and n_samples = ref 0 in
 
   let find_close c f =
     incr n_queries;
@@ -23,36 +23,46 @@ let create_vp m thresh distance states =
         f)
   in
 
-  states (fun v ->
-      let is_empty =
-        find_close v
-        |> Iter.iter_is_empty (fun c' ->
-               Hashtbl.update groups c' ~f:(function None -> [ v ] | Some vs -> v :: vs))
-      in
-      if is_empty then (
-        Hashtbl.add_exn groups ~key:v ~data:[];
-        reference := v :: !reference));
-  { groups; n_queries = !n_queries }
+  With_return.with_return (fun r ->
+      states (fun v ->
+          if Hashtbl.mem groups v then Hashtbl.add_multi groups ~key:v ~data:v
+          else (
+            incr n_samples;
+            let no_existing_group =
+              find_close v
+              |> Iter.iter_is_empty (fun c' -> Hashtbl.add_multi groups ~key:c' ~data:c')
+            in
+            if no_existing_group then (
+              if Hashtbl.length groups = k then
+                r.return { groups; n_queries = !n_queries; n_samples = !n_samples };
+              Hashtbl.add_exn groups ~key:v ~data:[ v ];
+              reference := v :: !reference)));
+      r.return { groups; n_queries = !n_queries; n_samples = !n_samples })
 
 (** return a mapping from representatives to the members of their groups *)
-let create_m (type a) (module M : Base.Hashtbl.Key.S with type t = a) thresh distance
+let create_m (type a) (module M : Base.Hashtbl.Key.S with type t = a) thresh distance k
     states =
   let reference = M_tree.empty ~capacity:32 M.compare distance in
   let groups = Hashtbl.create (module M) in
-  let n_queries = ref 0 in
+  let n_queries = ref 0 and n_samples = ref 0 in
 
   let find_close c f =
     incr n_queries;
     if thresh >. 0.0 then (M_tree.range reference c thresh) f
   in
 
-  states (fun v ->
-      let is_empty =
-        find_close v
-        |> Iter.iter_is_empty (fun c' ->
-               Hashtbl.update groups c' ~f:(function None -> [ v ] | Some vs -> v :: vs))
-      in
-      if is_empty then (
-        Hashtbl.add_exn groups ~key:v ~data:[];
-        M_tree.insert reference v));
-  { groups; n_queries = !n_queries }
+  with_return (fun r ->
+      states (fun v ->
+          if Hashtbl.mem groups v then Hashtbl.add_multi groups ~key:v ~data:v
+          else (
+            incr n_samples;
+            let no_existing_group =
+              find_close v
+              |> Iter.iter_is_empty (fun c' -> Hashtbl.add_multi groups ~key:c' ~data:c')
+            in
+            if no_existing_group then (
+              if Hashtbl.length groups = k then
+                r.return { groups; n_queries = !n_queries; n_samples = !n_samples };
+              Hashtbl.add_exn groups ~key:v ~data:[ v ];
+              M_tree.insert reference v)));
+      r.return { groups; n_queries = !n_queries; n_samples = !n_samples })

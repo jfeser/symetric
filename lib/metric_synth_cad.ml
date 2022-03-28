@@ -197,7 +197,7 @@ let write_output m_prog =
   in
   Out_channel.with_file (output_file ()) ~f:(fun ch -> Safe.to_channel ch json)
 
-let similarity (v : Value.t) (v' : Value.t) =
+let relative_distance (v : Value.t) (v' : Value.t) =
   match (v, v') with
   | Scene x, Scene x' ->
       let target_scene = match target () with Scene t -> t | _ -> assert false in
@@ -274,113 +274,35 @@ let local_search p =
   |> Option.map ~f:(fun (_, i, p) -> (i, p))
   |> Option.value ~default:(-1, p)
 
-type group_result = { groups : S.Class.t list Hashtbl.M(S.Class).t; n_queries : int }
-
-(** return a mapping from representatives to the members of their groups *)
-let class_distance c c' =
-  let v = S.Class.value c and v' = S.Class.value c' in
-  similarity v v'
-
-let group_states states =
-  Grouping.create_m (module S.Class) (group_threshold ()) class_distance states
-
 module Edge = struct
+  type t = Value.t * (Op.t[@compare.ignore]) * (S.Class.t list[@compare.ignore])
+  [@@deriving compare, hash, sexp]
+
   let value (v, _, _) = v
   let score value = -1. *. target_distance value
+  let distance (v, _, _) (v', _, _) = relative_distance v v'
 end
 
-module Top_k_cache = struct
-  type ('a, 'b) t = {
-    gen_cache : int -> ('a, 'b list) Hashtbl.t;
-    mutable cache : ('a, 'b list) Hashtbl.t;
-    score : 'a -> float;
-  }
-
-  let create ?(initial_cached = 10_000) ~score gen_cache =
-    { gen_cache; cache = gen_cache initial_cached; score }
-
-  let get this n =
-    if n > Hashtbl.length this.cache then this.cache <- this.gen_cache n;
-    let ret =
-      Hashtbl.create (Hashtbl.hashable_s this.cache) ~size:n ~growth_allowed:false
-    in
-    Iter.of_hashtbl this.cache
-    |> Iter.map (fun (k, v) -> (this.score k, (k, v)))
-    |> Iter.top_k ~compare:(fun (d, _) (d', _) -> [%compare: float] d d') n
-    |> Iter.iter (fun (_, (k, v)) -> Hashtbl.add_exn ret ~key:k ~data:v);
-    ret
-end
-
-let insert_states all_edges =
+let insert_states (all_edges : Edge.t Iter.t) =
   let target_groups = target_groups () in
-  let target_groups_min =
-    Float.(to_int @@ (of_int target_groups *. (1.0 -. target_groups_err)))
-  and target_groups_max =
-    Float.(to_int @@ (of_int target_groups *. (1.0 +. target_groups_err)))
-  in
   let search_state = get_search_state () in
-
-  let top_k_cache =
-    Top_k_cache.create ~score:Edge.score (fun n ->
-        Iter.top_k_distinct_grouped
-          (module Value)
-          ~key:Edge.value ~score:Edge.score n (all_edges ()))
-  in
-  let sample n = Top_k_cache.get top_k_cache n in
-
-  let group n_sample =
-    let sample = sample n_sample in
-    let group_result =
-      group_states @@ fun f ->
-      Hashtbl.iter sample ~f:(function
-        | (value, op, _) :: _ -> f (S.Class.create value (Op.ret_type op))
-        | _ -> assert false)
-    in
-    let groups = group_result.groups in
-    Log.sexp 0 (lazy [%message (n_sample : int) (Hashtbl.length groups : int)]);
-    (groups, sample)
-  in
-
-  (* compute an upper bound on n_sample. if a good group is found, return it *)
-  let rec adaptive_group_find_max n_sample =
-    let groups, sample = group n_sample in
-    let n_groups = Hashtbl.length groups and n_states = Hashtbl.length sample in
-
-    if n_groups > target_groups_max then First n_sample
-    else if n_sample > n_states || n_groups >= target_groups_min then
-      Second (groups, sample)
-    else adaptive_group_find_max (n_sample * 2)
-  in
-
-  let rec adaptive_group min_sample max_sample =
-    let n_sample = (min_sample + max_sample) / 2 in
-    let groups, sample = group n_sample in
-    let n_groups = Hashtbl.length groups and n_states = Hashtbl.length sample in
-
-    if min_sample >= max_sample then (groups, sample)
-    else if n_groups > target_groups_max then adaptive_group min_sample n_sample
-    else if n_sample > n_states || n_groups >= target_groups_min then (groups, sample)
-    else adaptive_group n_sample max_sample
-  in
-
-  let (groups, sample), _group_time =
+  let groups, _group_time =
     Synth_utils.timed (fun () ->
-        match adaptive_group_find_max target_groups with
-        | First max_sample -> adaptive_group (max_sample / 2) max_sample
-        | Second gs -> gs)
+        Grouping.create_m
+          (module Edge)
+          (group_threshold ()) Edge.distance target_groups all_edges)
   in
+  Log.log 1 (fun m ->
+      m "Generated %d groups from %d edges"
+        (Hashtbl.length groups.groups)
+        groups.n_samples);
 
-  Hashtbl.iteri groups ~f:(fun ~key:class_ ~data:members ->
+  Hashtbl.iteri groups.groups ~f:(fun ~key:(group_center, op, args) ~data:members ->
+      let class_ = S.Class.create group_center (Op.ret_type op) in
       (* insert new representative (some may already exist) *)
-      (if not @@ S.mem_class search_state class_ then
-       let value, op, args =
-         List.hd_exn @@ Hashtbl.find_exn sample (S.Class.value class_)
-       in
-       S.insert_class search_state value op @@ List.map ~f:S.Class.value args);
-
-      List.iter members ~f:(fun c ->
-          S.insert_class_members search_state class_
-          @@ Hashtbl.find_exn sample (S.Class.value c)))
+      if not @@ S.mem_class search_state class_ then
+        S.insert_class search_state group_center op @@ List.map ~f:S.Class.value args;
+      S.insert_class_members search_state class_ members)
 
 let insert_states_beam all_edges =
   let search_state = get_search_state () in
@@ -415,7 +337,7 @@ let fill_search_space () =
     let (), run_time =
       Synth_utils.timed (fun () ->
           if use_beam_search () then insert_states_beam (states_iter ())
-          else insert_states states_iter)
+          else insert_states (states_iter ()))
     in
 
     incr stats.max_cost_generated;
