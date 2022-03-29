@@ -3,6 +3,8 @@
 (vendored_dirs vendor)
 
 (env
+(dev
+ (flags (:standard -warn-error -A)))
  (release
   (ocamlopt_flags
    (:standard -O3 -noassert))))
