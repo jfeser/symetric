@@ -319,11 +319,20 @@ module Make (Lang : Lang_intf) = struct
       |> Iter.min ~lt:(fun (d, _) (d', _) -> Float.(d < d'))
     in
     let best_path_arg_values = List.map best_path.args ~f:(fun c -> c.value) in
-    List.mapi best_path.args ~f:(fun i arg_class ->
-        let dist' v = dist (eval best_path.op @@ List.set best_path_arg_values i v) in
-        local_greedy ss (max_height - 1) eval dist' arg_class)
-    |> Option.all
-    |> Option.map ~f:(fun arg_progs -> Apply (best_path.op, arg_progs))
+
+    let rec select_args arg_values i = function
+      | [] -> Some []
+      | c :: cs ->
+          let dist' v = dist (eval best_path.op @@ List.set arg_values i v) in
+          let%bind arg_prog = local_greedy ss (max_height - 1) eval dist' c in
+          let arg_values' = List.set arg_values i @@ Program.eval eval arg_prog in
+          let%bind rest_progs = select_args arg_values' (i + 1) cs in
+          return (arg_prog :: rest_progs)
+    in
+
+    let%bind arg_progs = select_args best_path_arg_values 0 best_path.args in
+    let prog = Apply (best_path.op, arg_progs) in
+    return prog
 
   let rec local_greedy_new ss max_height eval dist (class_ : Class.t) =
     let open Option.Let_syntax in
@@ -394,7 +403,7 @@ module Make (Lang : Lang_intf) = struct
     |> Iter.min ~lt:(fun (d, _) (d', _) -> d <. d')
     |> Option.map ~f:(fun (_, p) -> p)
 
-  let local_greedy = exhaustive
+  let local_greedy = local_greedy
 
   let all_paths ss =
     Iter.of_hashtbl_data ss.paths
