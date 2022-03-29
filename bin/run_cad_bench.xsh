@@ -41,7 +41,8 @@ with open('job_params', 'w') as f:
         'metric-memlimit': metric_mlimit,
         'metric-timelimit':metric_tlimit,
         'beam-memlimit':beam_mlimit,
-        'beam-timelimit': beam_tlimit
+        'beam-timelimit': beam_tlimit,
+        'commit': $(git rev-parse HEAD),
     }, f)
 
 if run_metric:
@@ -50,7 +51,7 @@ if run_metric:
             for f in glob.glob(base_dir + '/bench/cad_ext/' + d + '/*'):
                 for n_groups in [200]:
                     for thresh in [0.2]:
-                        for repeats in [5, 10, 50, 100]:
+                        for repeats in [5, 10, 20, 40]:
                             job_name = f"metric-{len(jobs)}"
                             cmd = [
                                 f"ulimit -v {metric_mlimit}; ulimit -t {metric_tlimit};",
