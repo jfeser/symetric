@@ -7,11 +7,14 @@ import json
 import math
 import os
 import sys
+import re
+import ipdb
 
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 
+plt.rcParams["text.usetex"] = True
 pd.set_option("display.max_rows", 1000)
 
 
@@ -111,6 +114,7 @@ def load(run_dir):
         "program_size",
         "timeout",
         "local_search_steps",
+        "filename",
     ]
     results = []
     for fn in os.listdir(run_dir):
@@ -139,6 +143,7 @@ def load(run_dir):
             bench_json["program_size"],
             timeout(bench_json),
             local_search_steps,
+            fn,
         ]
         results += [result_row]
 
@@ -158,86 +163,137 @@ bot = r"$\bot$"
 
 
 def bench_name(bench):
-    return " ".join([s.capitalize() for s in bench.split("_")])
+    return (
+        (" ".join([s.capitalize() for s in bench.split("_")]))
+        .removeprefix("Bench")
+        .strip()
+    )
 
 
-def make_main_table(df, count, main_table):
+def maybe_int_to_tex(x):
+    if math.isnan(x):
+        return bot
+    return "%d" % int(x)
+
+
+def maybe_float_to_tex(x):
+    if math.isnan(x) or math.isinf(x):
+        return bot
+    return "%.1f" % x
+
+
+def runtimes_to_tex(xs):
+    minr = min([x for x in xs if not math.isnan(x)])
+    out = ""
+    for x in xs:
+        out += "& "
+        if x == minr:
+            out += r"\bfseries "
+        out += maybe_float_to_tex(x)
+    return out
+
+
+def atoi(text):
+    return int(text) if text.isdigit() else text
+
+
+def natural_keys(text):
+    """
+    alist.sort(key=natural_keys) sorts in human order
+    http://nedbatchelder.com/blog/200712/human_sorting.html
+    (See Toothy's implementation in the comments)
+    """
+    return [atoi(c) for c in re.split(r"(\d+)", text)]
+
+
+def natural_sort(l):
+    return sorted(l, key=natural_keys)
+
+
+def make_main_table(metric_df, beam_df, count, main_table):
     with open(main_table, "w") as f:
         print(
-            r"\begin{tabular}{llS[table-format=2]S[table-format=2.1]llS[table-format=3.1]S[table-format=4.1]}",
+            r"\begin{tabular}{lrrrrllrrrrrr}",
             file=f,
         )
         print(r"\toprule", file=f)
         print(
-            r"Name & \multicolumn{3}{c}{Program Size} & \multicolumn{3}{c}{Success/Failure/Timeout} & \multicolumn{3}{c}{Expected Time} \\",
+            r"Name & \multicolumn{4}{c}{Program Size} & \multicolumn{2}{c}{Succ./Fail./T.out} & \multicolumn{2}{c}{Beam Width} & \multicolumn{4}{c}{Expected Runtime (s)} \\",
             file=f,
         )
         print(
-            r"& & {Beam} & {Metric} & {Beam} & {Metric} & {Beam} & {Metric} \\", file=f
+            r"& {$B$} & {$B+$} & {$M_{200}$} & {$M_{400}$} & {$M_{200}$} & {$M_{400}$} & {$B$} & {$B+$} & {$B$} & {$B+$} & {$M_{200}$} & {$M_{400}$} \\",
+            file=f,
         )
         print(r"\midrule", file=f)
-        for bench in sorted(list(set(df.index.get_level_values(0)))):
-            dfb = df.loc[bench]
-            is_first_row = True
-            for ((n_groups, _), row) in dfb.iterrows():
-                if is_first_row:
-                    print(bench_name(bench), file=f, end="")
-                    is_first_row = False
+        for bench in natural_sort(list(set(metric_df.index.get_level_values(0)))):
+            dfb = metric_df.loc[bench]
+            print(bench_name(bench), file=f, end="")
 
-                print(r"& %d" % n_groups, file=f, end="")
-
-                beam_psize = row[("program_size", "mean", "beam")]
-                if math.isnan(beam_psize):
-                    beam_psize = r"{\textemdash}"
-                else:
-                    beam_psize = "%d" % int(beam_psize)
-
-                print(
-                    r"& %s & %.1f"
-                    % (
-                        beam_psize,
-                        row[("program_size", "mean", "metric")],
+            print(
+                r"& %s & %s & %s & %s"
+                % (
+                    maybe_int_to_tex(beam_df.loc[bench, 0]["program_size"]),
+                    maybe_int_to_tex(beam_df.loc[bench, 500]["program_size"]),
+                    maybe_float_to_tex(
+                        metric_df.loc[bench, 200][("program_size", "mean", 0.2)]
                     ),
-                    file=f,
-                    end="",
-                )
-                print(
-                    r"& %s & %s"
-                    % (
-                        success_failure_timeout(
-                            row[("success", "mean", "beam")],
-                            row[("timeout", "mean", "beam")],
-                            count[bench, n_groups, "beam"],
-                        ),
-                        success_failure_timeout(
-                            row[("success", "mean", "metric")],
-                            row[("timeout", "mean", "metric")],
-                            count[bench, n_groups, "metric"],
-                        ),
+                    maybe_float_to_tex(
+                        metric_df.loc[bench, 400][("program_size", "mean", 0.2)]
                     ),
-                    file=f,
-                    end="",
-                )
+                ),
+                file=f,
+                end="",
+            )
 
-                beam_time = None
-                if row[("success", "mean", "beam")] <= 0:
-                    if row[("timeout", "mean", "beam")] < 1:
-                        beam_time = bot
-                    else:
-                        beam_time = r"{\textemdash}"
-                else:
-                    beam_time = "%.1f" % row[("expected_time", "", "beam")]
-
-                print(
-                    r"& %s & %.1f"
-                    % (
-                        beam_time,
-                        row[("expected_time", "", "metric")],
+            print(
+                r"& %s & %s"
+                % (
+                    success_failure_timeout(
+                        metric_df.loc[bench, 200][("success", "mean", 0.2)],
+                        metric_df.loc[bench, 200][("timeout", "mean", 0.2)],
+                        count.loc[bench, 200, "metric", 0.2],
                     ),
-                    file=f,
-                    end="",
-                )
-                print(r"\\", file=f)
+                    success_failure_timeout(
+                        metric_df.loc[bench, 400][("success", "mean", 0.2)],
+                        metric_df.loc[bench, 400][("timeout", "mean", 0.2)],
+                        count.loc[bench, 400, "metric", 0.2],
+                    ),
+                ),
+                file=f,
+                end="",
+            )
+
+            if not math.isnan(beam_df.loc[bench, 0]["runtime_cum"]):
+                print(r"& %d" % beam_df.loc[bench, 0]["n_groups"], file=f, end="")
+            else:
+                print(r"& %s" % bot, file=f, end="")
+
+            if not math.isnan(beam_df.loc[bench, 500]["runtime_cum"]):
+                print(r"& %d" % beam_df.loc[bench, 500]["n_groups"], file=f, end="")
+            else:
+                print(r"& %s" % bot, file=f, end="")
+
+            print(
+                (
+                    runtimes_to_tex(
+                        [
+                            beam_df.loc[bench, 0]["runtime_cum"],
+                            beam_df.loc[bench, 500]["runtime_cum"],
+                            metric_df.loc[bench, 200, "metric"][
+                                "expected_time", "", 0.2
+                            ],
+                            metric_df.loc[bench, 400, "metric"][
+                                "expected_time", "", 0.2
+                            ],
+                        ]
+                    )
+                ),
+                file=f,
+                end="",
+            )
+
+            print(r"\\", file=f)
         print(r"\bottomrule", file=f)
         print(r"\end{tabular}", file=f)
 
@@ -253,7 +309,7 @@ def success_by_time(df, method, ngroups):
 
 
 def process_metric(df):
-    df["runtime"] = df["runtime"].fillna(600)
+    df["runtime"] = df["runtime"].fillna(60 * 15)
 
     df = df[df["method"] == "metric"]
     gb = df.groupby(by=["bench", "n_groups", "method", "threshold"])
@@ -280,61 +336,85 @@ def process_beam(df):
     df = df.loc[success_idx]
     df = df.set_index(["bench", "local_search_steps"])
     df["any_success"] = gb["success"].any()
+    df["runtime_cum"][~df["any_success"]] = float("nan")
     return df
 
 
-def process(metric_df, beam_df, main_table):
+def process(metric_df, beam_df, main_table, gen_plot):
     metric_df, count = process_metric(metric_df)
     beam_df = process_beam(beam_df)
 
-    import pdb
-
-    pdb.set_trace()
-
-    make_main_table(metric_df, count, main_table)
+    ipdb.set_trace()
+    make_main_table(metric_df, beam_df, count, main_table)
 
     fig = plt.figure()
     ax = fig.add_subplot(1, 1, 1)
-    bx = success_by_time(df, "beam", 100)
-    by = range(1, len(bx) + 1)
-    ax.plot(bx, by)
 
-    bx = success_by_time(df, "beam", 200)
+    bx = list(
+        sorted(beam_df.xs(0, level="local_search_steps")["runtime_cum"].fillna(1e20))
+    )
     by = range(1, len(bx) + 1)
-    ax.plot(bx, by)
+    ax.plot(bx, by, label="Beam")
 
-    bx = success_by_time(df, "metric", 100)
+    bx = list(
+        sorted(beam_df.xs(500, level="local_search_steps")["runtime_cum"].fillna(1e20))
+    )
     by = range(1, len(bx) + 1)
-    ax.plot(bx, by)
+    ax.plot(bx, by, label="Beam+")
 
-    bx = success_by_time(df, "metric", 200)
+    bx = list(
+        sorted(
+            metric_df.xs(200, level="n_groups")["expected_time", "", 0.2].replace(
+                [np.inf], 1e10
+            )
+        )
+    )
     by = range(1, len(bx) + 1)
-    ax.plot(bx, by)
+    ax.plot(bx, by, label="Metric ($\gamma = 200$)")
 
-    n_bench = len(set(df.index.get_level_values(0)))
+    bx = list(
+        sorted(
+            metric_df.xs(400, level="n_groups")["expected_time", "", 0.2].replace(
+                [np.inf], 1e10
+            )
+        )
+    )
+    by = range(1, len(bx) + 1)
+    ax.plot(bx, by, label="Metric ($\gamma = 400$)")
+
+    n_bench = len(set(beam_df.index.get_level_values(0)))
     ax.set_xscale("log")
     ax.set_ylim([0, n_bench + 1])
-    ax.set_xlim([0, 5000])
-    plt.show()
+    ax.set_xlim([1e1, 1e4])
+    ax.set_ylabel("Benchmarks solved")
+    ax.set_xlabel("Time (s)")
+    plt.legend(loc="upper left")
+    plt.savefig(gen_plot)
 
 
 def main(args):
-    process(load(args.metric_run_dir), load(args.beam_run_dir), args.main_table)
+    process(
+        load(args.metric_generated),
+        load(args.beam_generated),
+        args.main_table,
+        args.generated_plot,
+    )
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Produce result tables")
     parser.add_argument(
-        "metric_run_dir",
+        "--metric-generated",
         metavar="METRIC_RUN_DIR",
         help="directory containing benchmark output",
     )
     parser.add_argument(
-        "beam_run_dir",
+        "--beam-generated",
         metavar="BEAM_RUN_DIR",
         help="directory containing benchmark output",
     )
     parser.add_argument("--main-table")
+    parser.add_argument("--generated-plot")
     args = parser.parse_args()
 
     main(args)
