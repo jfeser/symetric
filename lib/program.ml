@@ -136,28 +136,30 @@ let generate (type op type_)
           && (min_height <= 1 || Op.arity op > 0)
           && (max_height > 1 || Op.arity op = 0))
     in
-    let%bind op = List.random_element valid_ops in
-    let%bind args, _ =
-      let args_min_height = Int.max 1 (min_height - 1) in
-      let args_max_height = Int.max args_min_height (max_height - 1) in
-      Op.args_type op
-      |> List.mapi ~f:(fun i t -> (i, t))
-      |> List.permute
-      |> List.fold
-           ~init:(Some ([], false))
-           ~f:(fun acc (idx, type_) ->
-             let%bind progs, min_sat = acc in
-             let min = if min_sat then 1 else args_min_height in
-             let%bind p = gen min args_max_height type_ in
-             let min_sat = min_sat || height p >= args_min_height in
-             return ((idx, p) :: progs, min_sat))
-    in
-    let args =
-      List.sort args ~compare:(fun (i, _) (i', _) -> [%compare: int] i i')
-      |> List.map ~f:Tuple.T2.get2
-    in
-    let prog = Apply (op, args) in
-    if filter prog then return prog else None
+    match List.random_element valid_ops with
+    | None -> None
+    | Some op ->
+        let%bind args, _ =
+          let args_min_height = Int.max 1 (min_height - 1) in
+          let args_max_height = Int.max args_min_height (max_height - 1) in
+          Op.args_type op
+          |> List.mapi ~f:(fun i t -> (i, t))
+          |> List.permute
+          |> List.fold
+               ~init:(Some ([], false))
+               ~f:(fun acc (idx, type_) ->
+                 let%bind progs, min_sat = acc in
+                 let min = if min_sat then 1 else args_min_height in
+                 let%bind p = gen min args_max_height type_ in
+                 let min_sat = min_sat || height p >= args_min_height in
+                 return ((idx, p) :: progs, min_sat))
+        in
+        let args =
+          List.sort args ~compare:(fun (i, _) (i', _) -> [%compare: int] i i')
+          |> List.map ~f:Tuple.T2.get2
+        in
+        let prog = Apply (op, args) in
+        if filter prog then return prog else gen min_height max_height type_
   in
   let%map prog = gen min_height max_height type_ in
   let h = height prog in

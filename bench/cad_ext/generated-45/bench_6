@@ -1,0 +1,7 @@
+(union (circle (2) (2) (2))
+ (union
+  (sub
+   (union (rect (6) (3) (14) (4))
+    (union (rect (4) (9) (5) (14)) (circle (7) (9) (2))))
+   (rect (7) (7) (8) (15)))
+  (sub (circle (2) (6) (2)) (circle (5) (5) (2)))))

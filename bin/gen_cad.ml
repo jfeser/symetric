@@ -42,11 +42,13 @@ let main ~n ~out_dir =
   Iter.forever (fun () ->
       Program.generate
         (module Cad_ext)
-        ~filter Cad_ext.Type.Scene ~min_height:5 ~max_height:6 ops)
+        ~filter Cad_ext.Type.Scene ~min_height:7 ~max_height:10 ops)
   |> Iter.filter_map (fun p_opt ->
          let%bind p = p_opt in
          let s = Program.size p in
-         if s < 25 || s > 35 then None
+         if s < 35 || s > 45 then (
+           Fmt.epr "Too small: %d\n%!" s;
+           None)
          else
            let%bind d = mean_primitive_distance p in
            return (p, d))
