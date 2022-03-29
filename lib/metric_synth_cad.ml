@@ -286,23 +286,36 @@ end
 let insert_states (all_edges : Edge.t Iter.t) =
   let target_groups = target_groups () in
   let search_state = get_search_state () in
+
+  let module Edges = struct
+    type t = Value.t * (Edge.t list[@compare.ignore]) [@@deriving compare, hash, sexp]
+
+    let distance (v, _) (v', _) = relative_distance v v'
+  end in
   let groups, _group_time =
     Synth_utils.timed (fun () ->
-        Grouping.create_m
-          (module Edge)
-          (group_threshold ()) Edge.distance target_groups all_edges)
+        all_edges
+        |> Iter.ordered_groupby (module Value) ~score:Edge.score ~key:(fun (v, _, _) -> v)
+        |> Iter.map (fun (v, (_, es)) -> (v, es))
+        |> Grouping.create_m
+             (module Edges)
+             (group_threshold ()) Edges.distance target_groups)
   in
   Log.log 1 (fun m ->
       m "Generated %d groups from %d edges"
         (Hashtbl.length groups.groups)
         groups.n_samples);
 
-  Hashtbl.iteri groups.groups ~f:(fun ~key:(group_center, op, args) ~data:members ->
+  Hashtbl.iteri groups.groups ~f:(fun ~key:(group_center, center_edges) ~data:members ->
+      let op, args =
+        match center_edges with (_, op, args) :: _ -> (op, args) | _ -> assert false
+      in
       let class_ = S.Class.create group_center (Op.ret_type op) in
       (* insert new representative (some may already exist) *)
       if not @@ S.mem_class search_state class_ then
         S.insert_class search_state group_center op @@ List.map ~f:S.Class.value args;
-      S.insert_class_members search_state class_ members)
+      List.iter members ~f:(fun (_, edges) ->
+          S.insert_class_members search_state class_ edges))
 
 let insert_states_beam all_edges =
   let search_state = get_search_state () in
