@@ -48,18 +48,19 @@ if run_metric:
     for _ in range(25):
         for (d, max_cost) in benchmarks:
             for f in glob.glob(base_dir + '/bench/cad_ext/' + d + '/*'):
-                for n_groups in [200, 400]:
-                    for thresh in [0.2, 0.4]:
-                        job_name = f"metric-{len(jobs)}"
-                        cmd = [
-                            f"ulimit -v {metric_mlimit}; ulimit -t {metric_tlimit};",
-                            f"{build_dir}/bin/metric_synth_cad.exe -max-cost {max_cost} -verbosity 1",
-                            f"-group-threshold {thresh} -scaling 2 -n-groups {n_groups}",
-                            f"-dump-search-space {job_name}.bin -out {job_name}.json -backward-pass-repeats 5",
-                            f"-local-search-steps 500 < {f} 2> {job_name}.log\n"
-                        ]
-                        cmd = ' '.join(cmd)
-                        jobs.append(cmd)
+                for n_groups in [200]:
+                    for thresh in [0.2]:
+                        for repeats in [5, 10, 50, 100]:
+                            job_name = f"metric-{len(jobs)}"
+                            cmd = [
+                                f"ulimit -v {metric_mlimit}; ulimit -t {metric_tlimit};",
+                                f"{build_dir}/bin/metric_synth_cad.exe -max-cost {max_cost} -verbosity 1",
+                                f"-group-threshold {thresh} -scaling 2 -n-groups {n_groups}",
+                                f"-dump-search-space {job_name}.bin -out {job_name}.json -backward-pass-repeats 5",
+                                f"-local-search-steps 500 < {f} 2> {job_name}.log\n"
+                            ]
+                            cmd = ' '.join(cmd)
+                            jobs.append(cmd)
 
 if run_beam:
     for n_groups in [100, 200, 400, 800, 1600, 3200]:
@@ -70,7 +71,7 @@ if run_beam:
                     cmd = [
                         f"ulimit -v {beam_mlimit}; ulimit -t {beam_tlimit};",
                         f"{build_dir}/bin/metric_synth_cad.exe -max-cost {max_cost} -verbosity 1",
-                        f"-n-groups {n_groups} -scaling 2 -use-beam-search -backward-pass-repeats 1",
+                        f"-n-groups {n_groups} -scaling 2 -use-beam-search -backward-pass-repeats 5",
                         f"-local-search-steps {local_search} -dump-search-space {job_name}.bin",
                         f"-out {job_name}.json < {f} 2> {job_name}.log\n"
                     ]
