@@ -115,6 +115,7 @@ def load(run_dir):
         "timeout",
         "local_search_steps",
         "filename",
+        "backward_pass_repeats",
     ]
     results = []
     for fn in os.listdir(run_dir):
@@ -144,6 +145,7 @@ def load(run_dir):
             timeout(bench_json),
             local_search_steps,
             fn,
+            bench_json["params"]["backward_pass_repeats"],
         ]
         results += [result_row]
 
@@ -341,6 +343,7 @@ def process_beam(df):
 
 
 def process(metric_df, beam_df, main_table, gen_plot):
+    ipdb.set_trace()
     metric_df, count = process_metric(metric_df)
     beam_df = process_beam(beam_df)
 
