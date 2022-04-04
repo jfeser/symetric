@@ -67,4 +67,4 @@ let () =
       let n = flag "n" ~doc:" number of benchmarks" (required int)
       and out_dir = flag "o" ~doc:" output directory" (required string) in
       fun () -> main ~n ~out_dir]
-  |> Command.run
+  |> Command_unix.run

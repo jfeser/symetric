@@ -313,6 +313,7 @@ def success_by_time(df, method, ngroups):
 def process_metric(df):
     df["runtime"] = df["runtime"].fillna(60 * 15)
 
+    ipdb.set_trace()
     df = df[df["method"] == "metric"]
     gb = df.groupby(by=["bench", "n_groups", "method", "threshold"])
     count = gb.size()

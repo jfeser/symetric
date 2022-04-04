@@ -37,7 +37,7 @@ let () =
   let hash_native = Bench.Test.create ~name:"native" (fun () -> Vectorized.hash v1) in
   let hash_vect = Bench.Test.create ~name:"vect" (fun () -> Vectorized.vec_hash v1) in
 
-  Command.run
+  Command_unix.run
   @@ Command.group ~summary:"bitvector benchmarks"
        [
          ("hash", Bench.make_command [ hash_native; hash_vect ]);

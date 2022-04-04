@@ -21,4 +21,4 @@ let () =
         let p = parse @@ Sexp.input_sexp In_channel.stdin in
         Fmt.pr "cost=%d\n" (Program.size p);
         Fmt.pr "%a\n" Value.pp @@ Program.eval (Value.eval ectx) p]
-  |> Command.run
+  |> Command_unix.run

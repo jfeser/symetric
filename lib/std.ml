@@ -40,9 +40,6 @@ module Iter = struct
   let of_hashtbl x k = Hashtbl.iteri ~f:(fun ~key ~data -> k (key, data)) x
   let of_hashtbl_data x k = Hashtbl.iteri ~f:(fun ~key:_ ~data -> k data) x
   let of_sek_e s k = Sek.E.iter Sek.forward k s
-
-  exception ExitIterWhile
-
   let iter_while p seq = Iter.take_while p seq (fun _ -> ())
 
   let to_set (type t w) m iter =
@@ -198,7 +195,7 @@ module Iter = struct
 
   let top_k_distinct_grouped _ = failwith ""
 
-  let ordered_groupby (type k t) (module M : HASHABLE with type t = k) ~score ~key
+  let ordered_groupby (type k) (module M : HASHABLE with type t = k) ~score ~key
       ?(batch_size = 10_000) states f =
     let module OM = struct
       type nonrec t = (float * k) option

@@ -150,4 +150,4 @@ let () =
         let bench = Sexp.load_sexps_conv_exn bench_fn parse in
         let ss = In_channel.with_file ss_fn ~f:S.of_channel in
         test_search ss bench]
-  |> Command.run
+  |> Command_unix.run

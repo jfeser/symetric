@@ -30,4 +30,4 @@ let () =
       fun () ->
         let bench = Sexp.load_sexp_conv_exn bench_fn parse in
         main bench_fn bench]
-  |> Command.run
+  |> Command_unix.run

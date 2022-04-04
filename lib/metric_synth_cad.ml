@@ -146,13 +146,8 @@ type time_span = Time.Span.t
 let yojson_of_time_span t = `Float (Time.Span.to_sec t)
 
 module Stats = struct
-  let user_time () = (Unix.times ()).tms_cutime
-  let sys_time () = (Unix.times ()).tms_cstime
-
   type t = {
     runtime : Timer.t;
-    user_time : float Getter.t;
-    sys_time : float Getter.t;
     max_cost_generated : int ref;
     groups_searched : int ref;
     space_contains_target : bool option ref;
@@ -168,8 +163,6 @@ module Stats = struct
       space_contains_target = ref None;
       grouping_time =
         Sample.Quantile_estimator.create [%compare: Time.Span.t] Time.Span.zero;
-      user_time;
-      sys_time;
     }
 end
 

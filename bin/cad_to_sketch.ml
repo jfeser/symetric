@@ -23,4 +23,4 @@ let () =
     [%map_open
       let dim = Scene2d.Dim.param in
       fun () -> convert dim @@ Cad_ext.parse @@ Sexp.input_sexp In_channel.stdin]
-  |> Command.run
+  |> Command_unix.run

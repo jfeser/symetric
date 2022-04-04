@@ -4,7 +4,7 @@ let yojson_of_time_span t = `Float (Time.Span.to_sec t)
 
 type time = Time.t
 
-let yojson_of_time t = `String (Time.to_string t)
+let yojson_of_time t = `String (Time.to_string_utc t)
 
 type state = Not_started | Started of time | Stopped of time_span [@@deriving yojson_of]
 type t = state ref [@@deriving yojson_of]

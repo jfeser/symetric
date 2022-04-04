@@ -4,9 +4,9 @@
 (package
  (name staged-synth)
  (depends
-  (core (and (>= v0.14) (< v0.15)))
-  (ppx_jane (>= v0.14))
-  (base_quickcheck (and :with-test (>= v0.14)))
+  (core (>= v0.15))
+  ppx_jane
+  base_quickcheck
   fmt
   sek
   ppx_yojson_conv

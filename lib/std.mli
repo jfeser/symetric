@@ -13,7 +13,7 @@ module Iter : sig
   include Sexpable.S1 with type 'a t := 'a t
 
   val of_set : ('a, _) Base.Set.t -> 'a t
-  val to_set : ('a, 'w) Base.Set.comparator -> 'a t -> ('a, 'w) Base.Set.t
+  val to_set : ('a, 'w) Comparator.Module.t -> 'a t -> ('a, 'w) Base.Set.t
   val of_queue : 'a Queue.t -> 'a t
   val of_hashtbl : ('a, 'b) Base.Hashtbl.t -> ('a * 'b) t
   val of_hashtbl_data : ('a, 'b) Base.Hashtbl.t -> 'b t

@@ -1,49 +1,49 @@
 (executable
  (name metric_synth_cad)
  (modules metric_synth_cad)
- (libraries core staged_synth)
+ (libraries core staged_synth core_unix.command_unix)
  (preprocess
   (pps ppx_jane)))
 
 (executable
  (name cad_to_sketch)
  (modules cad_to_sketch)
- (libraries core fmt staged_synth)
+ (libraries core fmt staged_synth core_unix.command_unix)
  (preprocess
   (pps ppx_jane)))
 
 (executable
  (name enumerate_cad)
  (modules enumerate_cad)
- (libraries core staged_synth)
+ (libraries core staged_synth core_unix.command_unix)
  (preprocess
   (pps ppx_jane)))
 
 (executable
  (name print_bench)
  (modules print_bench)
- (libraries core staged_synth)
+ (libraries core staged_synth core_unix.command_unix)
  (preprocess
   (pps ppx_jane)))
 
 (executable
  (name subprograms)
  (modules subprograms)
- (libraries core staged_synth)
+ (libraries core staged_synth core_unix.command_unix)
  (preprocess
   (pps ppx_jane)))
 
 (executable
  (name similarity)
  (modules similarity)
- (libraries core staged_synth)
+ (libraries core staged_synth core_unix.command_unix)
  (preprocess
   (pps ppx_jane)))
 
 (executable
  (name gen_cad)
  (modules gen_cad)
- (libraries core staged_synth)
+ (libraries core staged_synth core_unix.command_unix)
  (preprocess
   (pps ppx_jane)))
 

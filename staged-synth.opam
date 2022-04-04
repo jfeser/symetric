@@ -2,9 +2,9 @@
 opam-version: "2.0"
 depends: [
   "dune" {>= "2.7"}
-  "core" {>= "v0.14" & < "v0.15"}
-  "ppx_jane" {>= "v0.14"}
-  "base_quickcheck" {with-test & >= "v0.14"}
+  "core" {>= "v0.15"}
+  "ppx_jane"
+  "base_quickcheck"
   "fmt"
   "sek"
   "ppx_yojson_conv"
