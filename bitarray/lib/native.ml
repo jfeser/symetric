@@ -1,4 +1,4 @@
-open! Core
+open! Base
 
 type buf = int array [@@deriving compare, sexp]
 
@@ -8,7 +8,7 @@ type t = { len : int; buf : buf } [@@deriving compare, hash, sexp]
 
 let length t = t.len
 let bits_per_word = 63
-let nwords len = (len / bits_per_word) + if len mod bits_per_word > 0 then 1 else 0
+let nwords len = (len / bits_per_word) + if len % bits_per_word > 0 then 1 else 0
 
 let create len v =
   let fill = if v then 0x7FFFFFFFFFFFFFFF else 0 in
@@ -25,7 +25,7 @@ let init_fold ~f ~init len =
         let state', value = f !state !idx in
         let v = if value then 1 else 0 in
         buf.(w) <- buf.(w) + (v lsl b);
-        incr idx;
+        Int.incr idx;
         state := state')
     done
   done;
@@ -38,7 +38,7 @@ let fold { len; buf } ~f ~init =
     for b = 0 to bits_per_word - 1 do
       let bit = (word lsr b) land 1 > 0 in
       state := f !state bit;
-      incr i
+      Int.incr i
     done
   done;
   let last_word = buf.(n_words - 1) in
@@ -46,14 +46,14 @@ let fold { len; buf } ~f ~init =
     let bit = (last_word lsr b) land 1 > 0 in
     assert (!i < len);
     state := f !state bit;
-    incr i
+    Int.incr i
   done;
   !state
 
 let init = Shared.init ~init_fold
 let of_list = Shared.of_list ~init_fold
 let iteri = Shared.iteri ~fold
-let get t i = (t.buf.(i / bits_per_word) lsr (i mod bits_per_word)) land 1 > 0
+let get t i = (t.buf.(i / bits_per_word) lsr (i % bits_per_word)) land 1 > 0
 let to_list x = List.init (length x) ~f:(get x)
 let is_empty a = Array.exists a.buf ~f:(fun x -> x <> 0)
 let not a = { a with buf = Array.map a.buf ~f:lnot }

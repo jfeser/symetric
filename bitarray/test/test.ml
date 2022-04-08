@@ -1,4 +1,4 @@
-open Core
+open Base
 open Base_quickcheck
 open Bitarray
 module V = Vectorized
@@ -117,7 +117,7 @@ let%test_unit "replicate" =
   let n = N.of_list l and v = V.of_list l in
   let n_ret = N.replicate ~w ~h ~dx ~dy ~ct n
   and v_ret = V.replicate ~w ~h ~dx ~dy ~ct v in
-  if Core.not ([%compare.equal: Bit_list.t] (N.to_list n_ret) (V.to_list v_ret)) then (
-    Format.printf "Dx=%d Dy=%d Ct=%d\nInput:\n%a\nExpected:\n%a\nGot:\n%a\n@." dx dy ct
-      (N.pp_bitmap ~w) n (N.pp_bitmap ~w) n_ret (V.pp_bitmap ~w) v_ret;
+  if Base.not ([%compare.equal: Bit_list.t] (N.to_list n_ret) (V.to_list v_ret)) then (
+    Caml.Format.printf "Dx=%d Dy=%d Ct=%d\nInput:\n%a\nExpected:\n%a\nGot:\n%a\n@." dx dy
+      ct (N.pp_bitmap ~w) n (N.pp_bitmap ~w) n_ret (V.pp_bitmap ~w) v_ret;
     assert false)

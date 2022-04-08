@@ -1,4 +1,4 @@
-open! Core
+open! Base
 
 let init ~init_fold ~f len = init_fold ~f:(fun () i -> ((), f i)) ~init:() len
 
@@ -28,7 +28,7 @@ let init_bitmap init_fold ~w ~h ~f =
     len
 
 let pp_bitmap iteri ~w fmt x =
-  let open Format in
+  let open Caml.Format in
   iteri x ~f:(fun i b ->
       if b then fprintf fmt "█" else fprintf fmt ".";
-      if i mod w = w - 1 then fprintf fmt "\n")
+      if i % w = w - 1 then fprintf fmt "\n")

@@ -1,4 +1,4 @@
-open! Core
+open! Base
 module N = Native
 module V = Vectorized
 

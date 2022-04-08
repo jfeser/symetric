@@ -58,7 +58,7 @@ module Gen_list (Lang : Lang_intf) = struct
           else if arity = 0 && args_cost = 0 then make_edge params op []
           else
             Combinat.compositions ~n:args_cost ~k:arity
-            |> Combinat.to_list
+            |> Iter.to_list
             |> List.concat_map ~f:(generate_args search params ss op))
 end
 

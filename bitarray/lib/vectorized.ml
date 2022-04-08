@@ -1,9 +1,9 @@
-open! Core
+open! Base
 
 type buf = string [@@deriving compare, hash, sexp]
 type t = { buf : buf; len : int } [@@deriving compare, hash, sexp]
 
-let hash_seed = String.init 128 ~f:(fun _ -> Core.Random.char ())
+let hash_seed = String.init 128 ~f:(fun _ -> Random.char ())
 let[@inline] ceil_div x y = (x + y - 1) / y
 let[@inline] length x = x.len
 let bits_per_word = 8
@@ -102,13 +102,13 @@ let fold { len; buf } ~f ~init =
     let word = buf.[w] in
     for b = 0 to bits_per_word - 1 do
       state := f !state (read_bit word b);
-      incr i
+      Int.incr i
     done
   done;
   let last_word = buf.[n_words - 1] in
   for b = 0 to len - !i - 1 do
     state := f !state (read_bit last_word b);
-    incr i
+    Int.incr i
   done;
   !state
 
@@ -126,7 +126,7 @@ let init_fold ~f ~init len =
       for b = 0 to bits_per_word - 1 do
         let state', value = f !state !i in
         x := !x + (Bool.to_int value lsl b);
-        incr i;
+        Int.incr i;
         state := state'
       done;
       Bytes.set buf w @@ Char.of_int_exn !x
@@ -135,14 +135,14 @@ let init_fold ~f ~init len =
     for b = 0 to len - !i - 1 do
       let state', value = f !state !i in
       x := !x + (Bool.to_int value lsl b);
-      incr i;
+      Int.incr i;
       state := state'
     done;
     Bytes.set buf (nwords - 1) @@ Char.of_int_exn !x;
     return_buf buf
 
 let get t i =
-  let w = i / bits_per_word and b = i mod bits_per_word in
+  let w = i / bits_per_word and b = i % bits_per_word in
   read_bit t.buf.[w] b
 
 let init ~f x = Shared.init ~init_fold ~f x

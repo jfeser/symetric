@@ -312,9 +312,8 @@ module Make (Lang : Lang_intf) = struct
     let eligible_paths =
       Sek.E.filter (fun (p : Path.t) -> Path.height ss p <= max_height) all_paths
     in
-    let n_sample = max 1 (Sek.E.length eligible_paths / 2) in
     let%bind _, best_path =
-      Iter.of_sek_e eligible_paths |> Iter.sample n_sample |> Iter.of_array
+      Iter.of_sek_e eligible_paths
       |> Iter.map (fun (p : Path.t) -> (dist p.value, p))
       |> Iter.min ~lt:(fun (d, _) (d', _) -> Float.(d < d'))
     in
