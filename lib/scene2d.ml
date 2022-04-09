@@ -19,16 +19,17 @@ module Dim = struct
   (** Returns a sequence of the pixels and pixel centers for a canvas of
    `size`. Starts from the top left and continues left to right. *)
   let pixels size =
+    let xres = scaled_xres size and yres = scaled_yres size in
     Gen.unfold
       (fun ((px, py) as state) ->
         if py < 0 then None
-        else if px = size.xres - 1 then
+        else if px = xres - 1 then
           let state' = (0, py - 1) in
           Some (state, state')
         else
           let state' = (px + 1, py) in
           Some (state, state'))
-      (0, size.yres - 1)
+      (0, yres - 1)
 
   let%expect_test "" =
     for _ = 0 to 10 do

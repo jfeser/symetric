@@ -1,4 +1,4 @@
-#define DEPTH 3
+#define DEPTH 6
 
 struct Vector {
   int x;
@@ -6,11 +6,31 @@ struct Vector {
 }
 
 adt Program {
-  Circle { int x; int y; int r; }
-  Rect { int lx; int ly; int hx; int hy; }
-  Union { Program l; Program r; }
-  Sub { Program l; Program r; }
-  Repl { Program p; int dx; int dy; int c; }
+  Circle {
+    int x;
+    int y;
+    int r;
+  }
+  Rect {
+    int lx;
+    int ly;
+    int hx;
+    int hy;
+  }
+  Union {
+    Program l;
+    Program r;
+  }
+  Sub {
+    Program l;
+    Program r;
+  }
+  Repl {
+    Program p;
+    int dx;
+    int dy;
+    int c;
+  }
 }
 
 generator Program gen(int d) {
@@ -19,27 +39,35 @@ generator Program gen(int d) {
       int x = ??;
       int y = ??;
       int r = ??;
-      assert (x >= 0 && y >= 0 && r >= 0);
-      return new Circle(x=x, y=y, r=r);
+      assert(0 <= x && x < 16);
+      assert(0 <= y && y < 16);
+      return new Circle(x = x, y = y, r = r);
     } else {
       int lx = ??;
       int ly = ??;
       int hx = ??;
       int hy = ??;
-      assert (lx >= 0 && ly >= 0 && hx >= 0 && hx >= 0 && lx < hx && ly < hy);
-      return new Rect(lx=lx, ly=ly, hx=hx, hy=hy);
+      assert(0 <= lx && lx < 16);
+      assert(0 <= ly && ly < 16);
+      assert(0 <= hx && hx < 16);
+      assert(0 <= hy && hy < 16);
+      assert(lx >= 0 && ly >= 0 && hx >= 0 && hx >= 0 && lx < hx && ly < hy);
+      return new Rect(lx = lx, ly = ly, hx = hx, hy = hy);
     }
   } else {
     Program p1 = gen(d - 1);
-    bit b = ??;
-    if (b) {
+    if (??) {
       return new Union(l = p1, r = gen(d - 1));
+    } else if (??) {
+      return new Sub(l = p1, r = gen(d - 1));
     } else {
       int dx = ??;
       int dy = ??;
       int c = ??;
-      assert (0 <= c && c < 10);
-      return new Repl(p = p1, dx=dx, dy=dy, c=c);
+      assert(0 <= dx && dx < 16);
+      assert(0 <= dy && dy < 16);
+      assert(2 <= c && c < 5);
+      return new Repl(p = p1, dx = dx, dy = dy, c = c);
     }
   }
 }
@@ -47,27 +75,95 @@ generator Program gen(int d) {
 bit eval(Program p, Vector v) {
   switch (p) {
   case Circle: {
-    return (v.x - p.x) * (v.x - p.x) + (v.y - p.y) * (v.y - p.y) <= p.r * p.r;
+    int x = p.x * SCALING;
+    int y = p.y * SCALING;
+    int r = p.r * SCALING;
+    return (v.x - x) * (v.x - x) + (v.y - y) * (v.y - y) < r * r;
   }
   case Rect: {
-    return (p.lx <= v.x) && (v.x <= p.hx) && (p.ly <= v.y) && (v.y <= p.hy);
+    int lx = p.lx * SCALING;
+    int ly = p.ly * SCALING;
+    int hx = p.hx * SCALING;
+    int hy = p.hy * SCALING;
+    return (lx <= v.x) && (v.x <= hx) && (ly <= v.y) && (v.y <= hy);
   }
   case Union: {
     return eval(p.l, v) || eval(p.r, v);
   }
+  case Sub: {
+    return eval(p.l, v) && !eval(p.r, v);
+  }
   case Repl: {
+    int dx = p.dx * SCALING;
+    int dy = p.dy * SCALING;
     bit ret = false;
     for (int count = 0; count < p.c && !ret; count++) {
-      ret = ret || eval(p, new Vector(x = v.x - p.dx * count, y = v.y - p.dy * count));
+      ret = ret || eval(p.p, new Vector(x = v.x - (dx * count), y = v.y - (dy * count)));
     }
     return ret;
   }
   }
 }
 
+bit eq(Program p1, Program p2) {
+  switch(p1) {
+  case Circle: {
+    switch(p2) {
+    case Circle: {
+      return p1.x == p2.x && p1.y == p2.y && p1.r == p2.r;
+    }
+    case Rect: { return false; }
+    case Union: { return false; }
+    case Sub: { return false; }
+    case Repl: { return false; }
+    }
+  }
+  case Rect: {
+    switch(p2) {
+    case Circle: { return false; }
+    case Rect: {
+      return p1.lx == p2.lx && p1.ly == p2.ly && p1.hx == p2.hx && p1.hy == p2.hy;
+    }
+    case Union: { return false; }
+    case Sub: { return false; }
+    case Repl: { return false; }
+    }
+  }
+  case Union: {
+    switch(p2) {
+    case Circle: { return false; }
+    case Rect: { return false; }
+    case Union: { return eq(p1.l, p2.l) && eq(p1.r, p2.r); }
+    case Sub: { return false; }
+    case Repl: { return false; }
+    }
+  }
+  case Sub: {
+    switch(p2) {
+    case Circle: { return false; }
+    case Rect: { return false; }
+    case Union: { return false; }
+    case Sub: { return eq(p1.l, p2.l) && eq(p1.r, p2.r); }
+    case Repl: { return false; }
+    }
+  }
+  case Repl: {
+    switch(p2) {
+    case Circle: { return false; }
+    case Rect: { return false; }
+    case Union: { return false; }
+    case Sub: { return false; }
+    case Repl: { return eq(p1.p, p2.p) && p1.dx == p2.dx && p1.dy == p2.dy && p1.c == p2.c; }
+    }
+  }
+  }
+}
+
 harness void main(int i) {
-  assume (0 <= i && i < NUM_DATA);
+  assume(0 <= i && i < NUM_DATA);
   Program solution = gen(DEPTH);
+  // Program gold = new Repl(p = new Circle(x=3, y=3, r=3), dx=5, dy=5, c=3);
+  // assert (eq(solution, gold));
   Vector v = new Vector(x = examples[i].x, y = examples[i].y);
-  assert (eval(solution, v) == examples[i].v);
+  assert(eval(solution, v) == examples[i].v);
 }

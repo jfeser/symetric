@@ -4,4 +4,14 @@ RUN opam init --disable-sandboxing -a -c 4.13.1+options && opam install -y ocaml
 
 COPY staged-synth.opam /tmp
 RUN opam install -y --deps-only /tmp/staged-synth.opam
+
+ADD https://people.csail.mit.edu/asolar/sketch-1.7.6.tar.gz /tmp/sketch.tar.gz
+RUN mkdir -p /opt/sketch && tar -x --no-same-owner --strip-components=1 -f /tmp/sketch.tar.gz -C /opt/sketch
+RUN dnf install -y bison flex g++ && cd /opt/sketch/sketch-backend && ./configure && make -j
+RUN dnf install -y java
+
+RUN echo 'PATH=$PATH:/opt/sketch/sketch-frontend' >> /root/.bashrc && \
+    echo 'SKETCH_HOME=/opt/sketch/sketch-frontend/runtime' >> /root/.bashrc && \
+    echo 'eval $(opam env)' >> /root/.bashrc
+
 CMD /bin/bash -i
