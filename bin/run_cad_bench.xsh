@@ -7,7 +7,7 @@ import random
 dry_run = False
 run_metric = False
 run_beam = False
-run_exhaustive = True
+run_exhaustive = False
 run_local = False
 run_sketch = False
 run_abstract = True
@@ -66,14 +66,16 @@ with open('job_params', 'w') as f:
 if run_abstract:
     for d in abstract_benchmarks:
         for f in glob.glob(base_dir + '/bench/cad_ext/' + d + '/*'):
-            bench_name = $(basename @(f)).strip()
-            job_name = f"abstract-{bench_name}-{len(jobs)}"
-            cmd = [
-                f"ulimit -v {abstract_mlimit}; ulimit -t {abstract_tlimit};",
-                f"{build_dir}/bin/abs_synth_cad.exe -scaling 2 < {f} &> {job_name}.log"
-            ]
-            cmd = ' '.join(cmd) + '\n'
-            jobs.append(cmd)
+            for repl in [True, False]:
+                bench_name = $(basename @(f)).strip()
+                job_name = f"abstract-{bench_name}-{len(jobs)}"
+                repl_flag = "" if repl else "-no-repl"
+                cmd = [
+                    f"ulimit -v {abstract_mlimit}; ulimit -t {abstract_tlimit};",
+                    f"{build_dir}/bin/abs_synth_cad.exe -scaling 2 {repl_flag} < {f} &> {job_name}.log"
+                ]
+                cmd = ' '.join(cmd) + '\n'
+                jobs.append(cmd)
 
 if run_exhaustive:
     for d in exhaustive_benchmarks:

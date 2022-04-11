@@ -199,12 +199,18 @@ let cmd =
   let open Command.Let_syntax in
   Command.basic ~summary:"Solve CAD problems with metric synthesis."
     [%map_open
-      let dim = Scene2d.Dim.param in
+      let dim = Scene2d.Dim.param
+      and no_repl = flag "-no-replicate" no_arg ~doc:" disable replicate op" in
       fun () ->
         let ectx = Value.Ctx.create dim in
         let target_prog = Cad_ext.parse @@ Sexp.input_sexp In_channel.stdin in
         let target_value = Program.eval (Value.eval ectx) target_prog in
         let ops = Cad_ext.Op.default_operators ~xres:dim.xres ~yres:dim.yres in
+        let ops =
+          if no_repl then
+            List.filter ops ~f:(function Repl | Rep_count _ -> false | _ -> true)
+          else ops
+        in
         synth dim target_value ops]
 
 let%expect_test "" =
