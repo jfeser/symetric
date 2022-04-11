@@ -42,3 +42,4 @@ val translate : t -> int -> int -> t
 val ( = ) : t -> t -> bool
 val corners : t -> t
 val corner_overlap : t -> t -> bool
+val empty : Dim.t -> t

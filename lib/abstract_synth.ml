@@ -47,8 +47,8 @@ module type Domain_pred_intf = sig
   val lift : concrete -> t Iter.t
 
   val implies :
-    [ `Concrete of concrete | `Pred of t ] Iter.t ->
-    [ `Concrete of concrete | `Pred of t ] Iter.t ->
+    [ `Concrete of concrete | `Preds of t list ] ->
+    [ `Concrete of concrete | `Preds of t list ] ->
     bool
 
   val eval : t -> concrete -> bool
@@ -57,7 +57,7 @@ module type Domain_pred_intf = sig
     ctx ->
     op ->
     [ `Concrete of concrete | `Preds of t list ] list ->
-    [ `False | `Concrete of concrete | `Preds of t list ]
+    bool * concrete option * t list
 end
 
 module Make
@@ -126,11 +126,23 @@ struct
 
       let and_many = Iter.fold and_ true_
 
+      let pack ps =
+        let concrete =
+          Iter.of_set ps |> Iter.find (function `Concrete _ as c -> Some c | _ -> None)
+        in
+        match concrete with
+        | Some c -> c
+        | None ->
+            `Preds
+              (Iter.of_set ps
+              |> Iter.map (function `Pred p -> p | `Concrete _ -> assert false)
+              |> Iter.to_list)
+
       let implies p p' =
         match (p, p') with
         | Bottom, _ -> true
         | _, Bottom -> false
-        | Preds ps, Preds ps' -> Domain_pred.implies (Iter.of_set ps) (Iter.of_set ps')
+        | Preds ps, Preds ps' -> Domain_pred.implies (pack ps) (pack ps')
 
       let contains p v =
         match p with
@@ -172,25 +184,12 @@ struct
       if List.exists args ~f:(function Bottom -> true | _ -> false) then Bottom
       else
         let args' =
-          List.map args ~f:(function
-            | Bottom -> assert false
-            | Preds ps -> (
-                let concrete =
-                  Iter.of_set ps
-                  |> Iter.find (function `Concrete _ as c -> Some c | _ -> None)
-                in
-                match concrete with
-                | Some c -> c
-                | None ->
-                    `Preds
-                      (Iter.of_set ps
-                      |> Iter.map (function `Pred p -> p | `Concrete _ -> assert false)
-                      |> Iter.to_list)))
+          List.map args ~f:(function Bottom -> assert false | Preds ps -> pack ps)
         in
-        match transfer args' with
-        | `Concrete c -> Preds (Set.singleton (module Pred) (`Concrete c))
-        | `Preds ps -> Iter.of_list ps |> Iter.map (fun p -> `Pred p) |> of_iter
-        | `False -> Bottom
+        let is_bot, concrete, preds = transfer args' in
+        let ps = Option.map concrete ~f:(fun c -> `Concrete c) |> Option.to_list in
+        let ps = List.map preds ~f:(fun p -> `Pred p) @ ps in
+        if is_bot then Bottom else of_iter @@ Iter.of_list ps
 
     (** Restricts the abstract transfer to only use the predicates that we have
        discovered through refinement. *)
@@ -325,7 +324,7 @@ struct
       in
       List.find_exn candidates ~f:implies
 
-    let strengthen = strengthen_simple
+    let strengthen = strengthen_enum
 
     let strengthen_root (ctx : Ctx.t) too_strong too_weak target =
       if debug then
@@ -412,7 +411,7 @@ struct
     let rec loop iters ctx =
       let ctx' =
         let sctx =
-          Synth.Ctx.create ctx ops
+          Synth.Ctx.create ~max_cost:40 ctx ops
           @@ `Pred
                (fun op s ->
                  [%compare.equal: Abs.Type.t] (Abs.Op.ret_type op) Abs.Type.output

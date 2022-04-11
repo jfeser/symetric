@@ -115,6 +115,8 @@ let cosine c c' =
   let d = Bitarray.hamming_weight (pixels c) * Bitarray.hamming_weight (pixels c') in
   if d = 0 then 0. else Float.(of_int n / of_int d)
 
+let empty dim = init dim ~f:(fun _ _ _ -> false)
+
 let circle (dim : Dim.t) center_x center_y radius =
   let center_x = center_x * dim.scaling
   and center_y = center_y * dim.scaling

@@ -36,7 +36,7 @@ end
 module Make (Lang : Lang_intf) = struct
   open Lang
   module S = Search_state_all.Make (Lang)
-  module Gen = Generate.Gen_list (Lang)
+  module Gen = Generate.Gen_iter (Lang)
 
   exception Done of Op.t Program.t
 
@@ -82,27 +82,37 @@ module Make (Lang : Lang_intf) = struct
       method get_search_state = search_state
 
       method generate_states cost =
-        Gen.generate_states S.search eval_ctx search_state ops cost
+        Gen.generate_states S.search_iter S.Class.value eval_ctx search_state ops cost
 
       method insert_states states =
-        List.iter states ~f:(fun (state, op, args) ->
-            if not (S.mem_class search_state @@ S.Class.create state (Op.ret_type op))
-            then S.insert_class search_state state op args);
-        ctx.bank_size := Float.of_int @@ S.length search_state
+        let new_states =
+          Iter.filter
+            (fun (state, op, args) ->
+              let in_bank =
+                S.mem_class search_state @@ S.Class.create state (Op.ret_type op)
+              in
+              if not in_bank then
+                S.insert_class search_state state op @@ List.map ~f:S.Class.value args;
+              not in_bank)
+            states
+        in
+        ctx.bank_size := Float.of_int @@ S.length search_state;
+        new_states
 
       method check_states states =
-        List.iter states ~f:(fun (s, op, args) ->
+        Iter.iter
+          (fun (s, op, args) ->
             if ctx.goal op s then
               let p =
-                S.program_of_op_args_exn search_state (Int.ceil_log2 max_cost) op
-                @@ List.map2_exn args (Op.args_type op) ~f:S.Class.create
+                S.program_of_op_args_exn search_state (Int.ceil_log2 max_cost) op args
               in
               raise (Done p))
+          states
 
       method fill cost =
         let new_states = self#generate_states cost in
-        self#insert_states new_states;
-        self#check_states new_states;
+        let inserted_states = self#insert_states new_states in
+        self#check_states inserted_states;
         if verbose then (
           Fmt.epr "Finished cost %d\n%!" cost;
           S.print_stats search_state)
