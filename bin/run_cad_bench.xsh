@@ -9,7 +9,7 @@ run_metric = False
 run_beam = False
 run_exhaustive = False
 run_local = False
-run_sketch = False
+run_sketch = True
 run_abstract = True
 
 run_handwritten = False
@@ -19,8 +19,7 @@ metric_mlimit = 2 * 1000000 # 2GB
 metric_tlimit = 15 * 60     # 15min
 beam_mlimit = metric_mlimit
 beam_tlimit = 60 * 60       # 1hr
-sketch_tlimit = beam_tlimit / 60
-sketch_mlimit = 9 * 1000000 # 9GB
+sketch_tlimit = 60 # 1hr
 abstract_tlimit = beam_tlimit
 abstract_mlimit = 9 * 1000000 # 9GB
 exhaustive_tlimit = beam_tlimit
@@ -54,7 +53,6 @@ with open('job_params', 'w') as f:
         'metric-timelimit':metric_tlimit,
         'beam-memlimit':beam_mlimit,
         'beam-timelimit': beam_tlimit,
-        'sketch-memlimit':sketch_mlimit,
         'sketch-timelimit': sketch_tlimit,
         'abstract-memlimit':abstract_mlimit,
         'abstract-timelimit': abstract_tlimit,
@@ -89,6 +87,7 @@ if run_exhaustive:
             cmd = ' '.join(cmd) + '\n'
             jobs.append(cmd)
 
+sketch_jobs = []
 if run_sketch:
     for (d, max_cost) in benchmarks:
         for f in glob.glob(base_dir + '/bench/cad_ext/' + d + '/*'):
@@ -97,11 +96,10 @@ if run_sketch:
             sketch_name = f"{bench_name}.sk"
             cmd = [
                 f"{build_dir}/bin/cad_to_sketch.exe -scaling 2 < {f} > {sketch_name};",
-                f"ulimit -v {sketch_mlimit};",
-                f"sketch --fe-timeout {sketch_tlimit} -V5 {sketch_name} &> {job_name}.log"
+                f"sketch --fe-timeout {sketch_tlimit} --bnd-inbits 10 --slv-nativeints -V5 {sketch_name} &> {job_name}.log"
             ]
             cmd = ' '.join(cmd) + '\n'
-            jobs.append(cmd)
+            sketch_jobs.append(cmd)
 
 if run_metric:
     for _ in range(25):
@@ -137,15 +135,22 @@ if run_beam:
                     cmd = ' '.join(cmd)
                     jobs.append(cmd)
 
-print('Jobs: ', len(jobs))
+print('Jobs: ', len(jobs) + len(sketch_jobs))
 
 if dry_run:
     print(jobs)
+    print(sketch_jobs)
     exit(0)
 
 with open('jobs', 'w') as f:
     f.writelines(jobs)
+
+with open('sketch_jobs', 'w') as f:
+    f.writelines(sketch_jobs)
+
 parallel --will-cite --eta -j 46 --joblog joblog :::: jobs
+if run_sketch:
+    parallel --will-cite --eta -j 1 --joblog sketch_joblog :::: sketch_jobs
 
 # Local Variables:
 # mode: python
