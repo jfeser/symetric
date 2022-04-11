@@ -7,7 +7,7 @@ import random
 dry_run = False
 run_metric = False
 run_beam = False
-run_exhaustive = False
+run_exhaustive = True
 run_local = False
 run_sketch = False
 run_abstract = True
@@ -23,15 +23,15 @@ sketch_tlimit = beam_tlimit / 60
 sketch_mlimit = 9 * 1000000 # 9GB
 abstract_tlimit = beam_tlimit
 abstract_mlimit = 9 * 1000000 # 9GB
+exhaustive_tlimit = beam_tlimit
+exhaustive_mlimit = 9 * 1000000 # 9GB
 
 base_dir = $(pwd).strip()
 build_dir = base_dir + "/_build/default/"
 runs_dir = base_dir + "/runs/"
 print(base_dir, build_dir, runs_dir)
 
-dune build --profile=release "bin/metric_synth_cad.exe"
-dune build --profile=release "bin/cad_to_sketch.exe"
-dune build --profile=release "bin/abs_cad_synth.exe"
+dune build --profile=release bin/metric_synth_cad.exe bin/cad_to_sketch.exe bin/abs_synth_cad.exe bin/enumerate_cad.exe
 
 run_dir = runs_dir + $(date '+%Y-%m-%d-%H:%M:%S').strip()
 mkdir -p @(run_dir)
@@ -44,8 +44,9 @@ if run_handwritten:
     benchmarks += [('small', 20), ('medium', 30), ('large', 40)]
 if run_generated:
     benchmarks += [('generated', 35)]
-if run_abstract:
-    benchmarks += ['tiny', 'generated']
+
+abstract_benchmarks = ['tiny', 'generated']
+exhaustive_benchmarks = ['tiny', 'small', 'generated']
 
 with open('job_params', 'w') as f:
     json.dump({
@@ -57,17 +58,31 @@ with open('job_params', 'w') as f:
         'sketch-timelimit': sketch_tlimit,
         'abstract-memlimit':abstract_mlimit,
         'abstract-timelimit': abstract_tlimit,
+        'exh-memlimit':exhaustive_mlimit,
+        'exh-timelimit': exhaustive_tlimit,
         'commit': $(git rev-parse HEAD),
     }, f)
 
 if run_abstract:
-    for d in benchmarks:
+    for d in abstract_benchmarks:
         for f in glob.glob(base_dir + '/bench/cad_ext/' + d + '/*'):
             bench_name = $(basename @(f)).strip()
             job_name = f"abstract-{bench_name}-{len(jobs)}"
             cmd = [
                 f"ulimit -v {abstract_mlimit}; ulimit -t {abstract_tlimit};",
-                f"{build_dir}/bin/abs_cad_synth.exe -scaling 2 < {f} &> {job_name}.log"
+                f"{build_dir}/bin/abs_synth_cad.exe -scaling 2 < {f} &> {job_name}.log"
+            ]
+            cmd = ' '.join(cmd) + '\n'
+            jobs.append(cmd)
+
+if run_exhaustive:
+    for d in exhaustive_benchmarks:
+        for f in glob.glob(base_dir + '/bench/cad_ext/' + d + '/*'):
+            bench_name = $(basename @(f)).strip()
+            job_name = f"exhaustive-{bench_name}-{len(jobs)}"
+            cmd = [
+                f"ulimit -v {exhaustive_mlimit}; ulimit -t {exhaustive_tlimit};",
+                f"{build_dir}/bin/enumerate_cad.exe -verbose -scaling 2 < {f} &> {job_name}.log"
             ]
             cmd = ' '.join(cmd) + '\n'
             jobs.append(cmd)
@@ -128,7 +143,7 @@ if dry_run:
 
 with open('jobs', 'w') as f:
     f.writelines(jobs)
-parallel --eta -j 46 --joblog joblog :::: jobs
+parallel --will-cite --eta -j 46 --joblog joblog :::: jobs
 
 # Local Variables:
 # mode: python
