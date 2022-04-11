@@ -31,10 +31,13 @@ let abs_value size =
           `Scene (Map.of_iteri_exn (module I2) ~iteri)
       | `Concrete (Value.Int x) -> `Int x
       | `Concrete Error -> `Error
-      | `Concrete v -> raise_s [%message "unexpected value" (v : Value.t)]
+      | `Concrete (Rep_count x) -> `Rep_count x
 
     let summarize_int x =
       match summarize x with `Int x -> x | _ -> failwith "not an int"
+
+    let summarize_rep_ct x =
+      match summarize x with `Rep_count x -> x | _ -> failwith "not a rep count"
 
     let summarize_scene x =
       match summarize x with
@@ -90,6 +93,47 @@ let abs_value size =
           (None, preds)
       | `Error, _ | _, `Error -> (Some Value.Error, [])
 
+    let transfer_repl s dx dy ct =
+      let dx = summarize_int dx and dy = summarize_int dy and ct = summarize_rep_ct ct in
+
+      match summarize_scene s with
+      | `Scene s ->
+          let preds =
+            Map.to_alist s
+            |> List.concat_map ~f:(fun ((x, y), b) ->
+                   let rec forced_on c =
+                     if c <= ct then
+                       let x' = x + (dx * c) and y' = y + (dy * c) in
+                       if
+                         x' < 0
+                         || x' >= Scene2d.Dim.scaled_xres size
+                         || y' < 0
+                         || y' >= Scene2d.Dim.scaled_yres size
+                       then []
+                       else Pixel_set (x', y', b) :: forced_on (c + 1)
+                     else []
+                   in
+                   let rec forced_off c =
+                     if c <= ct then
+                       let x' = x - (dx * c) and y' = y - (dy * c) in
+                       if
+                         x' < 0
+                         || x' >= Scene2d.Dim.scaled_xres size
+                         || y' < 0
+                         || y' >= Scene2d.Dim.scaled_yres size
+                       then [ Pixel_set (x, y, b) ]
+                       else
+                         match Map.find s (x', y') with
+                         | Some false -> forced_off (c + 1)
+                         | Some _ | None -> []
+                     else []
+                   in
+
+                   if b then forced_on 1 else forced_off 1)
+          in
+          (None, preds)
+      | `Error -> (Some Value.Error, [])
+
     let transfer_circle x y r =
       let x = summarize_int x and y = summarize_int y and r = summarize_int r in
       Scene2d.circle size x y r |> Scene2d.to_iter size |> Iter.to_list
@@ -123,6 +167,7 @@ let abs_value size =
               | Sub, [ a; b ] -> transfer_sub a b
               | Circle, [ x; y; r ] -> (None, transfer_circle x y r)
               | Rect, [ lx; ly; hx; hy ] -> (None, transfer_rect lx ly hx hy)
+              | Repl, [ s; dx; dy; ct ] -> transfer_repl s dx dy ct
               | _ -> failwith "unexpected arguments"
             in
             (false, concrete, preds)
@@ -159,12 +204,7 @@ let cmd =
         let ectx = Value.Ctx.create dim in
         let target_prog = Cad_ext.parse @@ Sexp.input_sexp In_channel.stdin in
         let target_value = Program.eval (Value.eval ectx) target_prog in
-        let ops =
-          Cad_ext.Op.default_operators ~xres:dim.xres ~yres:dim.yres
-          |> List.filter ~f:(function
-               | Cad_ext.Op.Repl | Rep_count _ -> false
-               | _ -> true)
-        in
+        let ops = Cad_ext.Op.default_operators ~xres:dim.xres ~yres:dim.yres in
         synth dim target_value ops]
 
 let%expect_test "" =
