@@ -9,7 +9,8 @@ run_metric = False
 run_beam = False
 run_exhaustive = False
 run_local = False
-run_sketch = True
+run_sketch = False
+run_abstract = True
 
 run_handwritten = False
 run_generated = True
@@ -20,6 +21,8 @@ beam_mlimit = metric_mlimit
 beam_tlimit = 60 * 60       # 1hr
 sketch_tlimit = beam_tlimit / 60
 sketch_mlimit = 9 * 1000000 # 9GB
+abstract_tlimit = beam_tlimit
+abstract_mlimit = 9 * 1000000 # 9GB
 
 base_dir = $(pwd).strip()
 build_dir = base_dir + "/_build/default/"
@@ -28,6 +31,7 @@ print(base_dir, build_dir, runs_dir)
 
 dune build --profile=release "bin/metric_synth_cad.exe"
 dune build --profile=release "bin/cad_to_sketch.exe"
+dune build --profile=release "bin/abs_cad_synth.exe"
 
 run_dir = runs_dir + $(date '+%Y-%m-%d-%H:%M:%S').strip()
 mkdir -p @(run_dir)
@@ -40,6 +44,8 @@ if run_handwritten:
     benchmarks += [('small', 20), ('medium', 30), ('large', 40)]
 if run_generated:
     benchmarks += [('generated', 35)]
+if run_abstract:
+    benchmarks += ['tiny', 'generated']
 
 with open('job_params', 'w') as f:
     json.dump({
@@ -47,8 +53,24 @@ with open('job_params', 'w') as f:
         'metric-timelimit':metric_tlimit,
         'beam-memlimit':beam_mlimit,
         'beam-timelimit': beam_tlimit,
+        'sketch-memlimit':sketch_mlimit,
+        'sketch-timelimit': sketch_tlimit,
+        'abstract-memlimit':abstract_mlimit,
+        'abstract-timelimit': abstract_tlimit,
         'commit': $(git rev-parse HEAD),
     }, f)
+
+if run_abstract:
+    for d in benchmarks:
+        for f in glob.glob(base_dir + '/bench/cad_ext/' + d + '/*'):
+            bench_name = $(basename @(f)).strip()
+            job_name = f"abstract-{bench_name}-{len(jobs)}"
+            cmd = [
+                f"ulimit -v {abstract_mlimit}; ulimit -t {abstract_tlimit};",
+                f"{build_dir}/bin/abs_cad_synth.exe -scaling 2 < {f} &> {job_name}.log"
+            ]
+            cmd = ' '.join(cmd) + '\n'
+            jobs.append(cmd)
 
 if run_sketch:
     for (d, max_cost) in benchmarks:
@@ -109,5 +131,5 @@ with open('jobs', 'w') as f:
 parallel --eta -j 46 --joblog joblog :::: jobs
 
 # Local Variables:
-# major-mode: python-mode
+# mode: python
 # End:
