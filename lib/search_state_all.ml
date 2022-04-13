@@ -425,8 +425,6 @@ module Make (Lang : Lang_intf) = struct
     |> Iter.min ~lt:(fun (d, _) (d', _) -> d <. d')
     |> Option.map ~f:(fun (_, p) -> p)
 
-  let local_greedy = local_greedy
-
   let all_paths ss =
     Iter.of_hashtbl_data ss.paths
     |> Iter.map (fun (ps : paths) -> Iter.of_sek_e ps.paths)

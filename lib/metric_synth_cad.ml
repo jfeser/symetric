@@ -387,7 +387,7 @@ let fill_search_space () =
         m "Finish generating states of cost %d (runtime=%a)" cost Time.Span.pp run_time)
   done
 
-let extract eval height class_ =
+let run_extract eval height class_ =
   let search_state = get_search_state () in
   match extract () with
   | `Greedy -> S.local_greedy search_state height eval target_distance class_
@@ -399,7 +399,8 @@ let backwards_pass class_ =
   match S.Class.value class_ with
   | Value.Scene _ ->
       let eval = Value.mk_eval_memoized () ectx in
-      Iter.forever (fun () -> extract eval height class_ |> Option.map ~f:local_search)
+      Iter.forever (fun () ->
+          run_extract eval height class_ |> Option.map ~f:local_search)
   | _ -> Iter.empty
 
 let check_for_target_program () =
@@ -432,12 +433,21 @@ let synthesize () =
   let exception Done of Op.t Program.t in
   Log.log 1 (fun m -> m "Starting backwards pass");
 
+  (* classes of type Scene *)
+  let valid_classes =
+    S.classes search_state
+    |> Iter.filter (fun c -> [%compare.equal: Type.t] Scene (S.Class.type_ c))
+    |> Iter.map (fun c -> (target_distance @@ S.Class.value c, c))
+  in
+  let classes_ =
+    match extract () with
+    | `Greedy ->
+        valid_classes |> Iter.sort ~cmp:(fun (d, _) (d', _) -> [%compare: float] d d')
+    | `Random -> valid_classes |> Iter.to_list |> List.permute |> Iter.of_list
+  in
   let ret =
     try
-      S.classes search_state
-      |> Iter.filter (fun c -> [%compare.equal: Type.t] Scene (S.Class.type_ c))
-      |> Iter.map (fun c -> (target_distance @@ S.Class.value c, c))
-      |> Iter.sort ~cmp:(fun (d, _) (d', _) -> [%compare: float] d d')
+      classes_
       |> Iter.iteri (fun i (d, (class_ : S.Class.t)) ->
              incr stats.groups_searched;
              Log.log 1 (fun m -> m "Searching candidate %d (d=%f)" i d);
