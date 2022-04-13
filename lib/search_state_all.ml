@@ -312,8 +312,9 @@ module Make (Lang : Lang_intf) = struct
     let eligible_paths =
       Sek.E.filter (fun (p : Path.t) -> Path.height ss p <= max_height) all_paths
     in
+    let n_sample = max 1 (Sek.E.length eligible_paths / 2) in
     let%bind _, best_path =
-      Iter.of_sek_e eligible_paths
+      Iter.of_sek_e eligible_paths |> Iter.sample n_sample |> Iter.of_array
       |> Iter.map (fun (p : Path.t) -> (dist p.value, p))
       |> Iter.min ~lt:(fun (d, _) (d', _) -> Float.(d < d'))
     in
@@ -330,6 +331,28 @@ module Make (Lang : Lang_intf) = struct
     in
 
     let%bind arg_progs = select_args best_path_arg_values 0 best_path.args in
+    let prog = Apply (best_path.op, arg_progs) in
+    return prog
+
+  let rec random ss max_height (class_ : Class.t) =
+    let open Option.Let_syntax in
+    let all_paths = (H.find_exn ss.paths class_).paths in
+
+    let eligible_paths =
+      Sek.E.filter (fun (p : Path.t) -> Path.height ss p <= max_height) all_paths
+    in
+    let%bind best_path =
+      Iter.of_sek_e eligible_paths |> Iter.sample 1 |> Array.random_element
+    in
+
+    let rec select_args i = function
+      | [] -> Some []
+      | c :: cs ->
+          let%bind arg_prog = random ss (max_height - 1) c in
+          let%bind rest_progs = select_args (i + 1) cs in
+          return (arg_prog :: rest_progs)
+    in
+    let%bind arg_progs = select_args 0 best_path.args in
     let prog = Apply (best_path.op, arg_progs) in
     return prog
 

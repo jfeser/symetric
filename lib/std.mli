@@ -56,6 +56,8 @@ module Iter : sig
     ?batch_size:int ->
     'a t ->
     ('k * (float * 'a list)) t
+
+  val random : 'a t -> 'a option
 end
 
 module Array : sig

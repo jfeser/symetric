@@ -72,4 +72,6 @@ module type S = sig
     (value -> float) ->
     Class.t ->
     op Program.t option
+
+  val random : t -> int -> Class.t -> op Program.t option
 end

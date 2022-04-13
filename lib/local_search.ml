@@ -190,7 +190,7 @@ let rewrite_all unnormalize t k =
   in
   rewrite_all t k
 
-let of_unnormalize_tabu (type op value) ?(max_tabu = 1000) ~dist ~target
+let of_unnormalize_tabu (type op value) ?(max_tabu = 1000) ?(random = false) ~dist ~target
     (module Op : Value_intf with type t = op)
     (module Value : Value_intf with type t = value) unnormalize eval start =
   let module State = struct
@@ -208,10 +208,17 @@ let of_unnormalize_tabu (type op value) ?(max_tabu = 1000) ~dist ~target
       |> Iter.to_list
     in
 
-    Iter.of_list choices
-    |> Iter.top_k ~compare:[%compare: float * _] (max_tabu + 1)
-    |> Iter.map (fun (d, x) -> (-.d, x))
-    |> Iter.sort ~cmp |> Iter.map Tuple.T2.get2
+    let n_sample = List.length choices / 2 in
+    let n_sample = if n_sample > 0 then n_sample else List.length choices in
+    let ret =
+      if random then List.permute choices |> Iter.of_list
+      else
+        Iter.of_list choices |> Iter.sample n_sample |> Iter.of_array
+        |> Iter.top_k ~compare:[%compare: float * _] (max_tabu + 1)
+        |> Iter.map (fun (d, x) -> (-.d, x))
+        |> Iter.sort ~cmp
+    in
+    Iter.map Tuple.T2.get2 ret
   in
 
   tabu ~max_tabu ~neighbors (module State) { program = start; value = eval start }

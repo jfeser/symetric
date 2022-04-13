@@ -24,14 +24,17 @@ module Params = struct
     dump_search_space : string option;
     load_search_space : string option;
     output_file : string;
-    use_beam_search : bool;
+    use_beam_search : bool; (* if true, then disable clustering *)
+    use_ranking : bool; (* if false, disable ranking clustered states *)
+    extract : [ `Greedy | `Random ];
+    repair : [ `Guided | `Random ]; (* if true, do not use distance to guide repair *)
   }
   [@@deriving yojson]
 
   let create : dim:Scene2d.Dim.t -> _ =
    fun ~dim:size ~group_threshold ~max_cost ~local_search_steps ~backward_pass_repeats
        ~verbosity ~validate ~n_groups ~dump_search_space ~load_search_space ~output_file
-       ~use_beam_search target_prog ->
+       ~use_beam_search ~use_ranking ~extract ~repair target_prog ->
     let operators = Cad_ext.Op.default_operators ~xres:size.xres ~yres:size.yres in
 
     List.find (Program.ops target_prog) ~f:(fun op ->
@@ -53,6 +56,9 @@ module Params = struct
       load_search_space;
       output_file;
       use_beam_search;
+      use_ranking;
+      extract;
+      repair;
     }
 
   let cmd =
@@ -67,32 +73,50 @@ module Params = struct
         flag "-load-search-space" (optional string)
           ~doc:" load the search space from a file"
       and group_threshold =
-        flag "-group-threshold"
-          (optional_with_default 0.1 float)
+        flag "-group-threshold" (required float)
           ~doc:"distance threshold to trigger grouping"
-      and n_groups =
-        flag "-n-groups"
-          (optional_with_default 1_000 int)
-          ~doc:" number of groups to retain"
+      and n_groups = flag "-n-groups" (required int) ~doc:" number of groups to retain"
       and local_search_steps =
-        flag "-local-search-steps"
-          (optional_with_default 1_000 int)
+        flag "-local-search-steps" (required int)
           ~doc:" number of steps to run local search"
       and backward_pass_repeats =
-        flag "-backward-pass-repeats"
-          (optional_with_default 10 int)
+        flag "-backward-pass-repeats" (required int)
           ~doc:" number of times to run backward pass"
       and dim = Scene2d.Dim.param
       and verbosity =
         flag "-verbosity" (optional_with_default 0 int) ~doc:" set verbosity"
       and validate = flag "-validate" no_arg ~doc:" turn on validation"
       and use_beam_search = flag "-use-beam-search" no_arg ~doc:" use beam search"
+      and use_ranking =
+        flag "-use-ranking"
+          (optional_with_default true bool)
+          ~doc:" ranking during XFTA construction"
+      and extract =
+        flag "-extract"
+          (optional_with_default "greedy" string)
+          ~doc:" method of program extraction"
+      and repair =
+        flag "-repair"
+          (optional_with_default "guided" string)
+          ~doc:" method of program repair"
       and output_file = flag "-out" (required string) ~doc:" output to file" in
       fun () ->
         let target_prog = Lang.parse @@ Sexp.input_sexp In_channel.stdin in
+        let extract =
+          match extract with
+          | "greedy" -> `Greedy
+          | "random" -> `Random
+          | _ -> raise_s [%message "unexpected extraction method" (extract : string)]
+        in
+        let repair =
+          match repair with
+          | "guided" -> `Guided
+          | "random" -> `Random
+          | _ -> raise_s [%message "unexpected extraction method" (repair : string)]
+        in
         create ~max_cost ~group_threshold ~local_search_steps ~dim ~backward_pass_repeats
           ~verbosity ~validate ~n_groups ~dump_search_space ~load_search_space
-          ~output_file ~use_beam_search target_prog]
+          ~output_file ~use_beam_search ~use_ranking ~extract ~repair target_prog]
 end
 
 let params = Set_once.create ()
@@ -106,6 +130,9 @@ let[@inline] validate () = (Set_once.get_exn params [%here]).Params.validate
 let[@inline] target_groups () = (Set_once.get_exn params [%here]).Params.target_groups
 let[@inline] output_file () = (Set_once.get_exn params [%here]).Params.output_file
 let[@inline] use_beam_search () = (Set_once.get_exn params [%here]).Params.use_beam_search
+let[@inline] extract () = (Set_once.get_exn params [%here]).Params.extract
+let[@inline] repair () = (Set_once.get_exn params [%here]).Params.repair
+let[@inline] use_ranking () = (Set_once.get_exn params [%here]).Params.use_ranking
 
 let[@inline] dump_search_space () =
   (Set_once.get_exn params [%here]).Params.dump_search_space
@@ -218,6 +245,7 @@ let local_search p =
   and ectx = ectx () in
   let value_eval = Value.mk_eval_memoized () in
   Local_search.of_unnormalize_tabu ~target ~dist:distance
+    ~random:(match repair () with `Guided -> false | `Random -> true)
     (module Op)
     (module Value)
     (function
@@ -276,6 +304,15 @@ module Edge = struct
   let distance (v, _, _) (v', _, _) = relative_distance v v'
 end
 
+let select_top_k_edges edges =
+  Iter.ordered_groupby (module Value) ~score:Edge.score ~key:(fun (v, _, _) -> v) edges
+  |> Iter.map (fun (v, (_, es)) -> (v, es))
+
+let select_arbitrary edges = Iter.map (fun ((v, _, _) as edge) -> (v, [ edge ])) edges
+
+let select_edges edges =
+  if use_ranking () then select_top_k_edges edges else select_arbitrary edges
+
 let insert_states (all_edges : Edge.t Iter.t) =
   let target_groups = target_groups () in
   let search_state = get_search_state () in
@@ -287,9 +324,7 @@ let insert_states (all_edges : Edge.t Iter.t) =
   end in
   let groups, _group_time =
     Synth_utils.timed (fun () ->
-        all_edges
-        |> Iter.ordered_groupby (module Value) ~score:Edge.score ~key:(fun (v, _, _) -> v)
-        |> Iter.map (fun (v, (_, es)) -> (v, es))
+        all_edges |> select_edges
         |> Grouping.create_m
              (module Edges)
              (group_threshold ()) Edges.distance target_groups)
@@ -352,14 +387,19 @@ let fill_search_space () =
         m "Finish generating states of cost %d (runtime=%a)" cost Time.Span.pp run_time)
   done
 
+let extract eval height class_ =
+  let search_state = get_search_state () in
+  match extract () with
+  | `Greedy -> S.local_greedy search_state height eval target_distance class_
+  | `Random -> S.random search_state height class_
+
 let backwards_pass class_ =
-  let search_state = get_search_state () and max_cost = max_cost () and ectx = ectx () in
+  let max_cost = max_cost () and ectx = ectx () in
+  let height = Int.ceil_log2 max_cost in
   match S.Class.value class_ with
   | Value.Scene _ ->
       let eval = Value.mk_eval_memoized () ectx in
-      Iter.forever (fun () ->
-          S.local_greedy search_state (Int.ceil_log2 max_cost) eval target_distance class_
-          |> Option.map ~f:local_search)
+      Iter.forever (fun () -> extract eval height class_ |> Option.map ~f:local_search)
   | _ -> Iter.empty
 
 let check_for_target_program () =

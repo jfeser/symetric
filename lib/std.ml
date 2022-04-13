@@ -127,6 +127,10 @@ module Iter = struct
     s (fun x -> last := Some x);
     !last
 
+  let random s =
+    let ret = Iter.sample 1 s in
+    if Array.length ret > 0 then Some ret.(0) else None
+
   let top_k (type t) ~compare k l f =
     let module OM = struct
       type nonrec t = t option
