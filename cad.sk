@@ -1,5 +1,3 @@
-#define DEPTH 6
-
 struct Vector {
   int x;
   int y;
@@ -162,8 +160,6 @@ bit eq(Program p1, Program p2) {
 harness void main(int i) {
   assume(0 <= i && i < NUM_DATA);
   Program solution = gen(DEPTH);
-  // Program gold = new Repl(p = new Circle(x=3, y=3, r=3), dx=5, dy=5, c=3);
-  // assert (eq(solution, gold));
   Vector v = new Vector(x = examples[i].x, y = examples[i].y);
   assert(eval(solution, v) == examples[i].v);
 }
