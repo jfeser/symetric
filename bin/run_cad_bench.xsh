@@ -16,6 +16,7 @@ run_handwritten = False
 run_generated = True
 
 mlimit = 4 * 1000000 # 4GB
+sketch_mlimit = 8 * 1000000 # 8GB
 tlimit = 60 * 60     # 1hr
 
 base_dir = $(pwd).strip()
@@ -24,7 +25,7 @@ runs_dir = base_dir + "/runs/"
 print(base_dir, build_dir, runs_dir)
 
 if not dry_run:
-    dune build --profile=release bin/metric_synth_cad.exe bin/cad_to_sketch.exe bin/abs_synth_cad.exe bin/enumerate_cad.exe
+    dune build --profile=release bin/metric_synth_cad.exe bin/pixels.exe bin/abs_synth_cad.exe bin/enumerate_cad.exe
 
 run_dir = runs_dir + $(date '+%Y-%m-%d-%H:%M:%S').strip()
 if not dry_run:
@@ -45,6 +46,7 @@ jobs = []
 benchmarks = [('tiny', 10), ('small', 20), ('generated', 35)]
 
 ulimit_stanza = f"ulimit -v {mlimit}; ulimit -t {tlimit};"
+sketch_ulimit_stanza = f"ulimit -v {sketch_mlimit}; ulimit -t {tlimit};"
 
 if run_abstract:
     for (d, _) in benchmarks:
@@ -72,6 +74,7 @@ if run_exhaustive:
             cmd = ' '.join(cmd) + '\n'
             jobs.append(cmd)
 
+sketch_jobs = []
 if run_sketch:
     for (d, max_cost) in benchmarks:
         for f in glob.glob(base_dir + '/bench/cad_ext/' + d + '/*'):
@@ -86,12 +89,13 @@ if run_sketch:
             job_name = f"sketch-{bench_name}-{len(jobs)}"
             sketch_name = f"{bench_name}.sk"
             cmd = [
-                f"{build_dir}/bin/cad_to_sketch.exe -scaling 2 -height {height} < {f} > {sketch_name};",
-                ulimit_stanza,
-                f"sketch --bnd-inbits 10 --slv-nativeints -V5 --fe-output-test --bnd-unroll-amnt 5 --bnd-cbits 4 --bnd-int-range 3000 {sketch_name} &> {job_name}.log"
+                f"{build_dir}/bin/pixels.exe -scaling 2 < {f} > {bench_name}.in;",
+                f"sed 's/INFILE/{bench_name}.in/' cad.sk > {sketch_name};",
+                sketch_ulimit_stanza,
+                f"sketch --bnd-inbits 10 --slv-nativeints -V5 --fe-output-test --bnd-unroll-amnt 5 --bnd-cbits 4 --bnd-int-range 3000 --fe-def DEPTH={height} --fe-def SCALING=2 {sketch_name} &> {job_name}.log"
             ]
             cmd = ' '.join(cmd) + '\n'
-            jobs.append(cmd)
+            sketch_jobs.append(cmd)
 
 if run_metric:
     for _ in range(5):
@@ -168,13 +172,18 @@ if run_ablations:
 print('Jobs: ', len(jobs))
 
 if dry_run:
-    print(''.join(jobs))
+    print(''.join(jobs + sketch_jobs))
     exit(0)
 
 with open('jobs', 'w') as f:
     f.writelines(jobs)
+if run_sketch:
+    with open('sketch_jobs', 'w') as f:
+        f.writelines(sketch_jobs)
 
 parallel --will-cite --eta -j 44 --joblog joblog :::: jobs
+if run_sketch:
+    parallel --will-cite --eta -j 22 --joblog sketch_joblog :::: sketch_jobs
 
 # Local Variables:
 # mode: python

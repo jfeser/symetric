@@ -157,9 +157,9 @@ bit eq(Program p1, Program p2) {
   }
 }
 
-harness void main(int i) {
-  assume(0 <= i && i < NUM_DATA);
+@FromFile("INFILE")
+harness void main(int x, int y, int out) {
   Program solution = gen(DEPTH);
-  Vector v = new Vector(x = examples[i].x, y = examples[i].y);
-  assert(eval(solution, v) == examples[i].v);
+  Vector v = new Vector(x = x, y = y);
+  assert(eval(solution, v) == out);
 }
