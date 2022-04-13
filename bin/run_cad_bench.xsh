@@ -5,152 +5,176 @@ import json
 import random
 
 dry_run = False
-run_metric = False
-run_beam = False
-run_exhaustive = False
-run_local = False
+run_metric = True
+run_ablations = True
+run_beam = True
+run_exhaustive = True
 run_sketch = True
 run_abstract = True
 
 run_handwritten = False
 run_generated = True
 
-metric_mlimit = 2 * 1000000 # 2GB
-metric_tlimit = 15 * 60     # 15min
-beam_mlimit = metric_mlimit
-beam_tlimit = 60 * 60       # 1hr
-sketch_tlimit = 60 # 1hr
-abstract_tlimit = beam_tlimit
-abstract_mlimit = 9 * 1000000 # 9GB
-exhaustive_tlimit = beam_tlimit
-exhaustive_mlimit = 9 * 1000000 # 9GB
+mlimit = 4 * 1000000 # 4GB
+tlimit = 60 * 60     # 1hr
 
 base_dir = $(pwd).strip()
 build_dir = base_dir + "/_build/default/"
 runs_dir = base_dir + "/runs/"
 print(base_dir, build_dir, runs_dir)
 
-dune build --profile=release bin/metric_synth_cad.exe bin/cad_to_sketch.exe bin/abs_synth_cad.exe bin/enumerate_cad.exe
+if not dry_run:
+    dune build --profile=release bin/metric_synth_cad.exe bin/cad_to_sketch.exe bin/abs_synth_cad.exe bin/enumerate_cad.exe
 
 run_dir = runs_dir + $(date '+%Y-%m-%d-%H:%M:%S').strip()
-mkdir -p @(run_dir)
-cp cad.sk cad_header.sk @(run_dir)/
-cd @(run_dir)
+if not dry_run:
+    mkdir -p @(run_dir)
+    cp cad.sk cad_header.sk @(run_dir)/
+    cd @(run_dir)
+
+if not dry_run:
+    with open('job_params', 'w') as f:
+        json.dump({
+            'mlimit': mlimit,
+            'tlimit': tlimit,
+            'sketch-tlimit': sketch_tlimit,
+            'commit': $(git rev-parse HEAD),
+        }, f)
 
 jobs = []
-benchmarks = []
-if run_handwritten:
-    benchmarks += [('small', 20), ('medium', 30), ('large', 40)]
-if run_generated:
-    benchmarks += [('generated', 35)]
+benchmarks = [('tiny', 10), ('small', 20), ('generated', 35)]
 
-abstract_benchmarks = ['tiny', 'generated']
-exhaustive_benchmarks = ['tiny', 'small', 'generated']
-
-with open('job_params', 'w') as f:
-    json.dump({
-        'metric-memlimit': metric_mlimit,
-        'metric-timelimit':metric_tlimit,
-        'beam-memlimit':beam_mlimit,
-        'beam-timelimit': beam_tlimit,
-        'sketch-timelimit': sketch_tlimit,
-        'abstract-memlimit':abstract_mlimit,
-        'abstract-timelimit': abstract_tlimit,
-        'exh-memlimit':exhaustive_mlimit,
-        'exh-timelimit': exhaustive_tlimit,
-        'commit': $(git rev-parse HEAD),
-    }, f)
+ulimit_stanza = f"ulimit -v {mlimit}; ulimit -t {tlimit};"
 
 if run_abstract:
-    for d in abstract_benchmarks:
+    for (d, _) in benchmarks:
         for f in glob.glob(base_dir + '/bench/cad_ext/' + d + '/*'):
             for repl in [True, False]:
                 bench_name = $(basename @(f)).strip()
                 job_name = f"abstract-{bench_name}-{len(jobs)}"
                 repl_flag = "" if repl else "-no-repl"
                 cmd = [
-                    f"ulimit -v {abstract_mlimit}; ulimit -t {abstract_tlimit};",
+                    ulimit_stanza,
                     f"{build_dir}/bin/abs_synth_cad.exe -scaling 2 {repl_flag} < {f} &> {job_name}.log"
                 ]
                 cmd = ' '.join(cmd) + '\n'
                 jobs.append(cmd)
 
 if run_exhaustive:
-    for d in exhaustive_benchmarks:
+    for (d, _) in benchmarks:
         for f in glob.glob(base_dir + '/bench/cad_ext/' + d + '/*'):
             bench_name = $(basename @(f)).strip()
             job_name = f"exhaustive-{bench_name}-{len(jobs)}"
             cmd = [
-                f"ulimit -v {exhaustive_mlimit}; ulimit -t {exhaustive_tlimit};",
+                ulimit_stanza,
                 f"{build_dir}/bin/enumerate_cad.exe -verbose -scaling 2 < {f} &> {job_name}.log"
             ]
             cmd = ' '.join(cmd) + '\n'
             jobs.append(cmd)
 
-sketch_jobs = []
 if run_sketch:
     for (d, max_cost) in benchmarks:
         for f in glob.glob(base_dir + '/bench/cad_ext/' + d + '/*'):
+            if max_cost <= 10:
+                height = 2
+            elif max_cost <= 20:
+                height = 4
+            else:
+                height = 6
+
             bench_name = $(basename @(f)).strip()
             job_name = f"sketch-{bench_name}-{len(jobs)}"
             sketch_name = f"{bench_name}.sk"
             cmd = [
-                f"{build_dir}/bin/cad_to_sketch.exe -scaling 2 < {f} > {sketch_name};",
-                f"sketch --fe-timeout {sketch_tlimit} --bnd-inbits 10 --slv-nativeints -V5 {sketch_name} &> {job_name}.log"
+                f"{build_dir}/bin/cad_to_sketch.exe -scaling 2 -height {height} < {f} > {sketch_name};",
+                ulimit_stanza,
+                f"sketch --bnd-inbits 10 --slv-nativeints -V5 --fe-output-test --bnd-unroll-amnt 5 --bnd-cbits 4 --bnd-int-range 3000 {sketch_name} &> {job_name}.log"
             ]
             cmd = ' '.join(cmd) + '\n'
-            sketch_jobs.append(cmd)
+            jobs.append(cmd)
 
 if run_metric:
-    for _ in range(25):
+    for _ in range(5):
         for (d, max_cost) in benchmarks:
             for f in glob.glob(base_dir + '/bench/cad_ext/' + d + '/*'):
-                for n_groups in [200]:
-                    for thresh in [0.2]:
-                        for repeats in [5, 10, 20, 40]:
-                            job_name = f"metric-{len(jobs)}"
-                            cmd = [
-                                f"ulimit -v {metric_mlimit}; ulimit -t {metric_tlimit};",
-                                f"{build_dir}/bin/metric_synth_cad.exe -max-cost {max_cost} -verbosity 1",
-                                f"-group-threshold {thresh} -scaling 2 -n-groups {n_groups}",
-                                f"-out {job_name}.json -backward-pass-repeats {repeats}",
-                                f"-local-search-steps 500 < {f} 2> {job_name}.log\n"
-                            ]
-                            cmd = ' '.join(cmd)
-                            jobs.append(cmd)
-
-if run_beam:
-    for n_groups in [100, 200, 400, 800, 1600, 3200]:
-        for (d, max_cost) in benchmarks:
-            for f in glob.glob(base_dir + '/bench/cad_ext/' + d + '/*'):
-                for local_search in [0, 500]:
-                    job_name = f"beam-{len(jobs)}"
+                for n_groups in [200, 400]:
+                    # standard
+                    job_name = f"metric-{len(jobs)}"
                     cmd = [
-                        f"ulimit -v {beam_mlimit}; ulimit -t {beam_tlimit};",
+                        ulimit_stanza,
                         f"{build_dir}/bin/metric_synth_cad.exe -max-cost {max_cost} -verbosity 1",
-                        f"-n-groups {n_groups} -scaling 2 -use-beam-search -backward-pass-repeats 1",
-                        f"-local-search-steps {local_search}",
-                        f"-out {job_name}.json < {f} 2> {job_name}.log\n"
+                        f"-group-threshold 0.2 -scaling 2 -n-groups {n_groups}",
+                        f"-out {job_name}.json -backward-pass-repeats 20",
+                        f"-local-search-steps 500 < {f} 2> {job_name}.log\n"
                     ]
                     cmd = ' '.join(cmd)
                     jobs.append(cmd)
 
-print('Jobs: ', len(jobs) + len(sketch_jobs))
+if run_ablations:
+    for _ in range(5):
+        for (d, max_cost) in [('generated', 35)]:
+            for f in glob.glob(base_dir + '/bench/cad_ext/' + d + '/*'):
+                for n_groups in [200, 400]:
+                    # extract random
+                    job_name = f"metric-extractrandom-{len(jobs)}"
+                    cmd = [
+                        ulimit_stanza,
+                        f"{build_dir}/bin/metric_synth_cad.exe -max-cost {max_cost} -verbosity 1",
+                        f"-group-threshold 0.2 -scaling 2 -n-groups {n_groups} -extract random",
+                        f"-out {job_name}.json -backward-pass-repeats 20",
+                        f"-local-search-steps 500 < {f} 2> {job_name}.log\n"
+                    ]
+                    cmd = ' '.join(cmd)
+                    jobs.append(cmd)
+
+                    # repair random
+                    job_name = f"metric-repairrandom-{len(jobs)}"
+                    cmd = [
+                        ulimit_stanza,
+                        f"{build_dir}/bin/metric_synth_cad.exe -max-cost {max_cost} -verbosity 1",
+                        f"-group-threshold 0.2 -scaling 2 -n-groups {n_groups} -repair random",
+                        f"-out {job_name}.json -backward-pass-repeats 20",
+                        f"-local-search-steps 500 < {f} 2> {job_name}.log\n"
+                    ]
+                    cmd = ' '.join(cmd)
+                    jobs.append(cmd)
+
+                    # no rank
+                    job_name = f"metric-norank-{len(jobs)}"
+                    cmd = [
+                        ulimit_stanza,
+                        f"{build_dir}/bin/metric_synth_cad.exe -max-cost {max_cost} -verbosity 1",
+                        f"-group-threshold 0.2 -scaling 2 -n-groups {n_groups} -use-ranking false",
+                        f"-out {job_name}.json -backward-pass-repeats 20",
+                        f"-local-search-steps 500 < {f} 2> {job_name}.log\n"
+                    ]
+                    cmd = ' '.join(cmd)
+                    jobs.append(cmd)
+
+    for n_groups in [100, 200, 400, 800, 1600]:
+        for (d, max_cost) in benchmarks:
+            for f in glob.glob(base_dir + '/bench/cad_ext/' + d + '/*'):
+                job_name = f"metric-nocluster-{len(jobs)}"
+                cmd = [
+                    ulimit_stanza,
+                    f"{build_dir}/bin/metric_synth_cad.exe -max-cost {max_cost} -verbosity 1",
+                    f"-n-groups {n_groups} -scaling 2 -use-beam-search -backward-pass-repeats 1",
+                    f"-local-search-steps 500",
+                    f"-out {job_name}.json < {f} 2> {job_name}.log\n"
+                ]
+                cmd = ' '.join(cmd)
+                jobs.append(cmd)
+
+print('Jobs: ', len(jobs))
 
 if dry_run:
-    print(jobs)
-    print(sketch_jobs)
+    print(''.join(jobs))
     exit(0)
 
 with open('jobs', 'w') as f:
     f.writelines(jobs)
 
-with open('sketch_jobs', 'w') as f:
-    f.writelines(sketch_jobs)
-
-parallel --will-cite --eta -j 46 --joblog joblog :::: jobs
-if run_sketch:
-    parallel --will-cite --eta -j 1 --joblog sketch_joblog :::: sketch_jobs
+parallel --will-cite --eta -j 44 --joblog joblog :::: jobs
 
 # Local Variables:
 # mode: python
