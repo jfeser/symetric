@@ -14,7 +14,18 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 
-plt.rcParams["text.usetex"] = True
+pd.set_option("mode.chained_assignment", "raise")
+
+plt.rcParams.update(
+    {
+        "font.family": "serif",
+        "text.usetex": True,
+        "pgf.rcfonts": False,
+        "pgf.preamble": "\n".join(
+            [r"\documentclass[acmsmall,review,timestamp]{acmart}"]
+        ),
+    }
+)
 pd.set_option("display.max_rows", 1000)
 
 
@@ -116,6 +127,9 @@ def load(run_dir):
         "local_search_steps",
         "filename",
         "backward_pass_repeats",
+        "extract",
+        "repair",
+        "rank",
     ]
     results = []
     for fn in os.listdir(run_dir):
@@ -129,6 +143,18 @@ def load(run_dir):
         group_count = bench_json["params"]["target_groups"]
         thresh = bench_json["params"]["group_threshold"]
         local_search_steps = bench_json["params"]["local_search_steps"]
+        if "extract" in bench_json["params"]:
+            extract = bench_json["params"]["extract"][0]
+        else:
+            extract = None
+        if "repair" in bench_json["params"]:
+            repair = bench_json["params"]["repair"][0]
+        else:
+            repair = None
+        if "use_ranking" in bench_json["params"]:
+            rank = bench_json["params"]["use_ranking"]
+        else:
+            rank = None
 
         bench_params = os.path.splitext(fn)[0].split("-")
         bench_name = bench_of_out_file(jobs, fn)
@@ -146,11 +172,67 @@ def load(run_dir):
             local_search_steps,
             fn,
             bench_json["params"]["backward_pass_repeats"],
+            extract,
+            repair,
+            rank,
         ]
         results += [result_row]
 
     df = pd.DataFrame(results, columns=header)
     df = df.sort_values(["bench", "method"])
+    return df
+
+
+def classify_exitval(x):
+    if x == 0:
+        return "success"
+    elif x == 1:
+        return "failure"
+    elif x == 134:
+        return "memory"
+    elif x == 137:
+        return "time"
+
+
+def classify_method(x):
+    if "metric_synth_cad" in x:
+        if (
+            "-extract random" in x
+            or "-use-ranking false" in x
+            or "-repair random" in x
+            or "-use-beam-search" in x
+            or "-n-groups 400" in x
+        ):
+            return "ablation"
+        return "metric"
+    if "abs_synth_cad" in x:
+        if "-no-repl" in x:
+            return "abstract_norepl"
+        else:
+            return "abstract"
+    if "enumerate_cad" in x:
+        return "enumerate"
+    return float("nan")
+
+
+def bench_from_command(x):
+    m = re.compile(r"bench/cad_ext/.+/([a-z_0-9]+)").search(x)
+    if m:
+        return m.group(1)
+    return float("nan")
+
+
+def classify_bench(x):
+    if "bench" in x:
+        return "Generated"
+    return "Hand-written"
+
+
+def load_joblog(run_dir):
+    df = pd.read_csv(run_dir + "/joblog", header=0, sep="\t")
+    df["method"] = df["Command"].apply(classify_method)
+    df["status"] = df["Exitval"].apply(classify_exitval)
+    df["bench"] = df["Command"].apply(bench_from_command)
     return df
 
 
@@ -212,90 +294,86 @@ def natural_sort(l):
     return sorted(l, key=natural_keys)
 
 
-def make_main_table(metric_df, beam_df, count, main_table):
-    with open(main_table, "w") as f:
+def print_row(df, total, repeats=1):
+    def perc(x, r, t):
+        return 100 * ((x / r) / t)
+
+    row = ""
+
+    if "success" in list(df["status"]):
+        s = df[df["status"] == "success"]
+        row += "& {:.1f} & {:.0f}\%".format(
+            float(s["mean"]), float(perc(s["count"], repeats, total))
+        )
+    else:
+        row += r"& -- & 0\%"
+
+    if "memory" in list(df["status"]):
+        s = df[df["status"] == "memory"]
+        row += "& {0:.0f}\%".format(float(perc(s["count"], repeats, total)))
+    else:
+        row += r"& 0\%"
+
+    if "time" in list(df["status"]):
+        s = df[df["status"] == "time"]
+        row += "& {0:.0f}\%".format(float(perc(s["count"], repeats, total)))
+    else:
+        row += r"& 0\%"
+
+    return row
+
+
+def make_main_table(df, fn, total_generated=25, total_handwritten=14):
+    total = total_generated + total_handwritten
+
+    df = df[df["method"] != "ablation"].copy()
+    df["bench_kind"] = df["bench"].apply(classify_bench)
+    df_kind = df.groupby(["method", "bench_kind", "status"])["JobRuntime"].agg(
+        ["mean", "count"]
+    )
+    df_total = df.groupby(["method", "status"])["JobRuntime"].agg(["mean", "count"])
+
+    with open(fn, "w") as f:
         print(
-            r"\begin{tabular}{lrrrrllrrrrrr}",
+            r"""
+\begin{tabular}{llrrrr}
+\toprule
+Algorithm & Benchmark & Avg. Runtime (s) & Success & Memory & Timeout \\
+\midrule
+""",
             file=f,
         )
-        print(r"\toprule", file=f)
-        print(
-            r"Name & \multicolumn{4}{c}{Program Size} & \multicolumn{2}{c}{Succ./Fail./T.out} & \multicolumn{2}{c}{Beam Width} & \multicolumn{4}{c}{Expected Runtime (s)} \\",
-            file=f,
-        )
-        print(
-            r"& {$B$} & {$B+$} & {$M_{200}$} & {$M_{400}$} & {$M_{200}$} & {$M_{400}$} & {$B$} & {$B+$} & {$B$} & {$B+$} & {$M_{200}$} & {$M_{400}$} \\",
-            file=f,
-        )
-        print(r"\midrule", file=f)
-        for bench in natural_sort(list(set(metric_df.index.get_level_values(0)))):
-            dfb = metric_df.loc[bench]
-            print(bench_name(bench), file=f, end="")
-
+        methods = [
+            (r"\name", "metric", 5),
+            (r"\textsc{FTA-Syngar}", "abstract", 1),
+            (r"\textsc{FTA-Syngar} (NR)", "abstract_norepl", 1),
+            (r"\textsc{FTA-Basic}", "enumerate", 1),
+        ]
+        for (texname, name, repeats) in methods:
+            print(r"%s " % texname, file=f)
             print(
-                r"& %s & %s & %s & %s"
-                % (
-                    maybe_int_to_tex(beam_df.loc[bench, 0]["program_size"]),
-                    maybe_int_to_tex(beam_df.loc[bench, 500]["program_size"]),
-                    maybe_float_to_tex(
-                        metric_df.loc[bench, 200][("program_size", "mean", 0.2)]
-                    ),
-                    maybe_float_to_tex(
-                        metric_df.loc[bench, 400][("program_size", "mean", 0.2)]
-                    ),
+                r"& Generated %s \\"
+                % print_row(
+                    df_kind.loc[name, "Generated"].reset_index(),
+                    total_generated,
+                    repeats,
                 ),
                 file=f,
-                end="",
             )
-
             print(
-                r"& %s & %s"
-                % (
-                    success_failure_timeout(
-                        metric_df.loc[bench, 200][("success", "mean", 0.2)],
-                        metric_df.loc[bench, 200][("timeout", "mean", 0.2)],
-                        count.loc[bench, 200, "metric", 0.2],
-                    ),
-                    success_failure_timeout(
-                        metric_df.loc[bench, 400][("success", "mean", 0.2)],
-                        metric_df.loc[bench, 400][("timeout", "mean", 0.2)],
-                        count.loc[bench, 400, "metric", 0.2],
-                    ),
+                r"& Hand-written %s \\"
+                % print_row(
+                    df_kind.loc[name, "Hand-written"].reset_index(),
+                    total_handwritten,
+                    repeats,
                 ),
                 file=f,
-                end="",
             )
-
-            if not math.isnan(beam_df.loc[bench, 0]["runtime_cum"]):
-                print(r"& %d" % beam_df.loc[bench, 0]["n_groups"], file=f, end="")
-            else:
-                print(r"& %s" % bot, file=f, end="")
-
-            if not math.isnan(beam_df.loc[bench, 500]["runtime_cum"]):
-                print(r"& %d" % beam_df.loc[bench, 500]["n_groups"], file=f, end="")
-            else:
-                print(r"& %s" % bot, file=f, end="")
-
             print(
-                (
-                    runtimes_to_tex(
-                        [
-                            beam_df.loc[bench, 0]["runtime_cum"],
-                            beam_df.loc[bench, 500]["runtime_cum"],
-                            metric_df.loc[bench, 200, "metric"][
-                                "expected_time", "", 0.2
-                            ],
-                            metric_df.loc[bench, 400, "metric"][
-                                "expected_time", "", 0.2
-                            ],
-                        ]
-                    )
-                ),
+                r"& All %s \\"
+                % print_row(df_total.loc[name].reset_index(), total, repeats),
                 file=f,
-                end="",
             )
-
-            print(r"\\", file=f)
         print(r"\bottomrule", file=f)
         print(r"\end{tabular}", file=f)
 
@@ -310,17 +388,21 @@ def success_by_time(df, method, ngroups):
     )
 
 
-def process_metric(df):
-    df["runtime"] = df["runtime"].fillna(60 * 15)
+def process_metric(df, timeout=3600):
+    mask = df["bench"].str.startswith("bench_")
+    df = df[mask].copy()
 
-    ipdb.set_trace()
-    df = df[df["method"] == "metric"]
-    gb = df.groupby(by=["bench", "n_groups", "method", "threshold"])
+    timed_out = (df["runtime"] > timeout) | (df["runtime"].isna())
+    df.loc[timed_out, "runtime"] = timeout
+    df.loc[timed_out, "program_size"] = float("nan")
+    df.loc[timed_out, "success"] = False
+
+    gb = df.groupby(by=["method", "bench", "n_groups", "extract", "repair", "rank"])
     count = gb.size()
     df = gb.agg(["mean"])
     df["expected_time"] = (1.0 / df["success"]) * df["runtime"]
 
-    return df.unstack(level=-1), count
+    return df, count
 
 
 def first_true(s):
@@ -330,79 +412,130 @@ def first_true(s):
     return s.index[-1]
 
 
-def process_beam(df):
-    df = df[df["method"] == "beam"]
-    df = df.sort_values(["bench", "local_search_steps", "n_groups"])
-    gb = df.groupby(["bench", "local_search_steps"])
-    df["runtime_cum"] = gb["runtime"].cumsum()
-    success_idx = gb["success"].agg(first_true)
-    df = df.loc[success_idx]
-    df = df.set_index(["bench", "local_search_steps"])
-    df["any_success"] = gb["success"].any()
-    df["runtime_cum"][~df["any_success"]] = float("nan")
-    return df
-
-
-def process(metric_df, beam_df, main_table, gen_plot):
-    ipdb.set_trace()
+def ablation_plot(metric_df, beam_df, er_df, gen_plot):
     metric_df, count = process_metric(metric_df)
-    beam_df = process_beam(beam_df)
+    er_df, _ = process_metric(er_df)
 
-    ipdb.set_trace()
-    make_main_table(metric_df, beam_df, count, main_table)
-
-    fig = plt.figure()
+    plt.tight_layout()
+    fig = plt.figure(figsize=(9, 3.2))
     ax = fig.add_subplot(1, 1, 1)
 
-    bx = list(
-        sorted(beam_df.xs(0, level="local_search_steps")["runtime_cum"].fillna(1e20))
+    std_200 = (
+        metric_df.xs(200, level="n_groups")
+        .xs("Greedy", level="extract")
+        .xs("Guided", level="repair")
+        .xs(True, level="rank")["expected_time"]
     )
+    std_200 = std_200.replace([np.inf], 1e10)
+    bx = list(sorted(std_200))
     by = range(1, len(bx) + 1)
-    ax.plot(bx, by, label="Beam")
+    ax.plot(bx, by, label=r"\textsc{SyMetric}", color="C2")
 
-    bx = list(
-        sorted(beam_df.xs(500, level="local_search_steps")["runtime_cum"].fillna(1e20))
+    no_group_200 = beam_df[
+        (beam_df["n_groups"] == 200)
+        & (beam_df["local_search_steps"] == 500)
+        & (beam_df["method"] == "beam")
+    ].copy()
+    no_group_200.loc[~no_group_200["success"], "runtime"] = float("nan")
+    bx = sorted(no_group_200["runtime"].fillna(1e20))
+
+    by = range(1, len(bx) + 1)
+    ax.plot(bx, by, label=r"\textsc{NoCluster}", color="C0")
+
+    # no_group_400 = beam_df[
+    #     (beam_df["n_groups"] == 400)
+    #     & (beam_df["local_search_steps"] == 500)
+    #     & (beam_df["method"] == "beam")
+    # ]
+    # no_group_400["runtime"][~no_group_400["success"]] = float("nan")
+    # bx = sorted(no_group_400["runtime"].fillna(1e20))
+    # by = range(1, len(bx) + 1)
+    # ax.plot(
+    #     bx, by, label=r"\textsc{NoCluster} ($w = 400$)", linestyle="dotted", color="C0"
+    # )
+
+    # no_group_800 = beam_df[
+    #     (beam_df["n_groups"] == 800)
+    #     & (beam_df["local_search_steps"] == 500)
+    #     & (beam_df["method"] == "beam")
+    # ]
+    # no_group_800["runtime"][~no_group_800["success"]] = float("nan")
+    # bx = sorted(no_group_800["runtime"].fillna(1e20))
+    # by = range(1, len(bx) + 1)
+    # ax.plot(
+    #     bx, by, label=r"\textsc{NoCluster} ($w = 800$)", linestyle="dashed", color="C0"
+    # )
+
+    # no_group_1600 = beam_df[
+    #     (beam_df["n_groups"] == 1600)
+    #     & (beam_df["local_search_steps"] == 500)
+    #     & (beam_df["method"] == "beam")
+    # ]
+    # no_group_1600["runtime"][~no_group_1600["success"]] = float("nan")
+    # bx = sorted(no_group_1600["runtime"].fillna(1e20))
+    # by = range(1, len(bx) + 1)
+    # ax.plot(
+    #     bx,
+    #     by,
+    #     label=r"\textsc{NoCluster} ($w = 1600$)",
+    #     linestyle="dashdot",
+    #     color="C0",
+    # )
+
+    norank_200 = (
+        metric_df.xs(200, level="n_groups")
+        .xs("Greedy", level="extract")
+        .xs("Guided", level="repair")
+        .xs(False, level="rank")["expected_time"]
     )
+    norank_200 = norank_200.replace([np.inf], 1e10)
+    bx = list(sorted(norank_200))
     by = range(1, len(bx) + 1)
-    ax.plot(bx, by, label="Beam+")
+    ax.plot(bx, by, label=r"\textsc{NoRank}", color="C1")
 
-    bx = list(
-        sorted(
-            metric_df.xs(200, level="n_groups")["expected_time", "", 0.2].replace(
-                [np.inf], 1e10
-            )
-        )
+    extractrandom_200 = (
+        er_df.xs(200, level="n_groups")
+        .xs("Random", level="extract")
+        .xs("Guided", level="repair")
+        .xs(True, level="rank")["expected_time"]
     )
+    extractrandom_200 = extractrandom_200.replace([np.inf], 1e10)
+    bx = list(sorted(extractrandom_200))
     by = range(1, len(bx) + 1)
-    ax.plot(bx, by, label="Metric ($\gamma = 200$)")
+    ax.plot(bx, by, label=r"\textsc{ExtractRandom}", color="C5")
 
-    bx = list(
-        sorted(
-            metric_df.xs(400, level="n_groups")["expected_time", "", 0.2].replace(
-                [np.inf], 1e10
-            )
-        )
+    repairrandom_200 = (
+        metric_df.xs(200, level="n_groups")
+        .xs("Greedy", level="extract")
+        .xs("Random", level="repair")
+        .xs(True, level="rank")["expected_time"]
     )
+    repairrandom_200 = repairrandom_200.replace([np.inf], 1e10)
+    bx = list(sorted(repairrandom_200))
     by = range(1, len(bx) + 1)
-    ax.plot(bx, by, label="Metric ($\gamma = 400$)")
+    ax.plot(bx, by, label=r"\textsc{RepairRandom}", color="C4")
 
-    n_bench = len(set(beam_df.index.get_level_values(0)))
-    ax.set_xscale("log")
+    n_bench = 25
     ax.set_ylim([0, n_bench + 1])
-    ax.set_xlim([1e1, 1e4])
+    ax.set_xlim([5, 1e4])
+    ax.set_xscale("log")
     ax.set_ylabel("Benchmarks solved")
     ax.set_xlabel("Time (s)")
+    ax.set_title(r"Effect of Ablations on \textsc{SyMetric} Performance")
     plt.legend(loc="upper left")
-    plt.savefig(gen_plot)
+    plt.savefig(gen_plot, bbox_inches="tight")
 
 
 def main(args):
-    process(
+    ablation_plot(
         load(args.metric_generated),
         load(args.beam_generated),
-        args.main_table,
+        load(args.er_generated),
         args.generated_plot,
     )
+
+    joblog_df = load_joblog(args.metric_generated)
+    make_main_table(joblog_df, args.main_table)
 
 
 if __name__ == "__main__":
@@ -413,8 +546,18 @@ if __name__ == "__main__":
         help="directory containing benchmark output",
     )
     parser.add_argument(
+        "--er-generated",
+        metavar="ER_RUN_DIR",
+        help="directory containing benchmark output",
+    )
+    parser.add_argument(
         "--beam-generated",
         metavar="BEAM_RUN_DIR",
+        help="directory containing benchmark output",
+    )
+    parser.add_argument(
+        "--abstract",
+        metavar="ABS_RUN_DIR",
         help="directory containing benchmark output",
     )
     parser.add_argument("--main-table")
