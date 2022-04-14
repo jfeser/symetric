@@ -7,9 +7,9 @@ RUN opam install -y --deps-only /tmp/staged-synth.opam
 
 ADD https://people.csail.mit.edu/asolar/sketch-1.7.6.tar.gz /tmp/sketch.tar.gz
 RUN mkdir -p /opt/sketch && tar -x --no-same-owner --strip-components=1 -f /tmp/sketch.tar.gz -C /opt/sketch
+RUN dnf install -y bison flex g++ java && dnf clean all
 COPY hole_hardcoder.patch /opt/sketch/sketch-backend
-RUN dnf install -y bison flex g++ && cd /opt/sketch/sketch-backend && patch < hole_hardcoder.patch && ./configure && make -j
-RUN dnf install -y java
+RUN cd /opt/sketch/sketch-backend && patch -p0 --binary < hole_hardcoder.patch && ./configure && make -j
 
 RUN echo 'PATH=$PATH:/opt/sketch/sketch-frontend' >> /root/.bashrc && \
     echo 'SKETCH_HOME=/opt/sketch/sketch-frontend/runtime' >> /root/.bashrc && \
