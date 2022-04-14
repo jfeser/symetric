@@ -6,9 +6,9 @@ import random
 
 dry_run = False
 run_metric = False
-run_ablations = True
+run_ablations = False
 run_exhaustive = False
-run_sketch = False
+run_sketch = True
 run_abstract = False
 
 run_extract_ablation = True
@@ -17,9 +17,7 @@ run_rank_ablation = False
 run_group_ablation = True
 
 mlimit = 4 * 1000000 # 4GB
-sketch_mlimit = 8 * 1000000 # 8GB
 tlimit = 60 * 60     # 1hr
-sketch_tlimit = 60   # 1hr
 
 base_dir = $(pwd).strip()
 build_dir = base_dir + "/_build/default/"
@@ -80,24 +78,29 @@ sketch_jobs = []
 if run_sketch:
     for (d, max_cost) in benchmarks:
         for f in glob.glob(base_dir + '/bench/cad_ext/' + d + '/*'):
-            if max_cost <= 10:
-                height = 2
-            elif max_cost <= 20:
-                height = 4
-            else:
-                height = 6
+            for par in [True, False]:
+                parallel_stanza = '--slv-p-cpus 2 --slv-parallel' if par else ''
+                if max_cost <= 10:
+                    height = 2
+                elif max_cost <= 20:
+                    height = 4
+                else:
+                    height = 6
 
-            bench_name = $(basename @(f)).strip()
-            job_name = f"sketch-{bench_name}-{len(jobs)}"
-            sketch_name = f"{bench_name}.sk"
-            cmd = [
-                f"{build_dir}/bin/pixels.exe -scaling 2 < {f} > {bench_name}.in;",
-                f"sed 's/INFILE/{bench_name}.in/' cad.sk > {sketch_name};",
-                sketch_ulimit_stanza,
-                f"sketch --bnd-inbits 10 --slv-nativeints -V5 --fe-output-test --bnd-unroll-amnt 5 --bnd-cbits 4 --bnd-int-range 3000 --fe-def DEPTH={height} --fe-def SCALING=2 {sketch_name} &> {job_name}.log"
-            ]
-            cmd = ' '.join(cmd) + '\n'
-            sketch_jobs.append(cmd)
+                bench_name = $(basename @(f)).strip()
+                job_name = f"sketch-{bench_name}-{len(jobs)}"
+                cmd = [
+                    f"{build_dir}/bin/pixels.exe -scaling 2 < {f} > {job_name}.in;",
+                    f"sed 's/INFILE/{bench_name}.in/' cad.sk > {job_name}.sk;",
+                    f"bin/timeout -t {tlimit} -s {mlimit};",
+                    f"sketch -V5 --fe-output-test --fe-def SCALING=2 --fe-def DEPTH={height}",
+                    f"--bnd-inbits 10 --bnd-unroll-amnt 5 --bnd-cbits 4 --bnd-int-range 3000 --bnd-inline-amnt {height + 1}",
+                    f"--slv-nativeints",
+                    parallel_stanza,
+                    f"{job_name}.sk &> {job_name}.log"
+                ]
+                cmd = ' '.join(cmd) + '\n'
+                sketch_jobs.append(cmd)
 
 if run_metric:
     for _ in range(5):
