@@ -5,11 +5,11 @@ import json
 import random
 
 dry_run = False
-run_metric = False
+run_metric = True
 run_ablations = False
-run_exhaustive = False
+run_exhaustive = True
 run_sketch = True
-run_abstract = False
+run_abstract = True
 
 run_extract_ablation = True
 run_repair_ablation = False
@@ -30,7 +30,7 @@ if not dry_run:
 run_dir = runs_dir + $(date '+%Y-%m-%d-%H:%M:%S').strip()
 if not dry_run:
     mkdir -p @(run_dir)
-    cp cad.sk cad_header.sk @(run_dir)/
+    cp cad.sk cad_header.sk bin/timeout @(run_dir)/
     cd @(run_dir)
 
 if not dry_run:
@@ -38,7 +38,6 @@ if not dry_run:
         json.dump({
             'mlimit': mlimit,
             'tlimit': tlimit,
-            'sketch-tlimit': sketch_tlimit,
             'commit': $(git rev-parse HEAD),
         }, f)
 
@@ -46,7 +45,6 @@ jobs = []
 benchmarks = [('tiny', 10), ('small', 20), ('generated', 35)]
 
 ulimit_stanza = f"ulimit -v {mlimit}; ulimit -t {tlimit};"
-sketch_ulimit_stanza = f"ulimit -v {sketch_mlimit}; ulimit -t {tlimit};"
 
 if run_abstract:
     for (d, _) in benchmarks:
@@ -74,11 +72,10 @@ if run_exhaustive:
             cmd = ' '.join(cmd) + '\n'
             jobs.append(cmd)
 
-sketch_jobs = []
 if run_sketch:
     for (d, max_cost) in benchmarks:
         for f in glob.glob(base_dir + '/bench/cad_ext/' + d + '/*'):
-            for par in [True, False]:
+            for par in [False]:
                 parallel_stanza = '--slv-p-cpus 2 --slv-parallel' if par else ''
                 if max_cost <= 10:
                     height = 2
@@ -91,8 +88,8 @@ if run_sketch:
                 job_name = f"sketch-{bench_name}-{len(jobs)}"
                 cmd = [
                     f"{build_dir}/bin/pixels.exe -scaling 2 < {f} > {job_name}.in;",
-                    f"sed 's/INFILE/{bench_name}.in/' cad.sk > {job_name}.sk;",
-                    f"bin/timeout -t {tlimit} -s {mlimit};",
+                    f"sed 's/INFILE/{job_name}.in/' cad.sk > {job_name}.sk;",
+                    f"./timeout -t {tlimit} -s {mlimit}",
                     f"sketch -V5 --fe-output-test --fe-def SCALING=2 --fe-def DEPTH={height}",
                     f"--bnd-inbits 10 --bnd-unroll-amnt 5 --bnd-cbits 4 --bnd-int-range 3000 --bnd-inline-amnt {height + 1}",
                     f"--slv-nativeints",
@@ -100,7 +97,7 @@ if run_sketch:
                     f"{job_name}.sk &> {job_name}.log"
                 ]
                 cmd = ' '.join(cmd) + '\n'
-                sketch_jobs.append(cmd)
+                jobs.append(cmd)
 
 if run_metric:
     for _ in range(5):
@@ -181,18 +178,13 @@ if run_ablations:
 print('Jobs: ', len(jobs))
 
 if dry_run:
-    print(''.join(jobs + sketch_jobs))
+    print(''.join(jobs))
     exit(0)
 
 with open('jobs', 'w') as f:
     f.writelines(jobs)
-if run_sketch:
-    with open('sketch_jobs', 'w') as f:
-        f.writelines(sketch_jobs)
 
 parallel --will-cite --eta -j 44 --joblog joblog :::: jobs
-if run_sketch:
-    parallel --will-cite --eta -j 22 --joblog sketch_joblog :::: sketch_jobs
 
 # Local Variables:
 # mode: python
