@@ -1,6 +1,11 @@
 open Std
 
-type 'a t = { groups : ('a, 'a list) Hashtbl.t; n_queries : int; n_samples : int }
+type 'a t = {
+  groups : ('a, 'a list) Hashtbl.t;
+  n_queries : int;
+  n_samples : int;
+  runtime : Time.Span.t;
+}
 
 (** return a mapping from representatives to the members of their groups *)
 let create_vp m thresh distance k states =
@@ -34,10 +39,22 @@ let create_vp m thresh distance k states =
             in
             if no_existing_group then (
               if Hashtbl.length groups = k then
-                r.return { groups; n_queries = !n_queries; n_samples = !n_samples };
+                r.return
+                  {
+                    groups;
+                    n_queries = !n_queries;
+                    n_samples = !n_samples;
+                    runtime = Time.Span.zero;
+                  };
               Hashtbl.add_exn groups ~key:v ~data:[ v ];
               reference := v :: !reference)));
-      r.return { groups; n_queries = !n_queries; n_samples = !n_samples })
+      r.return
+        {
+          groups;
+          n_queries = !n_queries;
+          n_samples = !n_samples;
+          runtime = Time.Span.zero;
+        })
 
 (** return a mapping from representatives to the members of their groups *)
 let create_m (type a) (module M : Base.Hashtbl.Key.S with type t = a) thresh distance k
@@ -51,18 +68,31 @@ let create_m (type a) (module M : Base.Hashtbl.Key.S with type t = a) thresh dis
     if thresh >. 0.0 then (M_tree.range reference c thresh) f
   in
 
+  let runtime = ref Time.Span.zero in
   with_return (fun r ->
       states (fun v ->
-          if Hashtbl.mem groups v then Hashtbl.add_multi groups ~key:v ~data:v
-          else (
-            incr n_samples;
-            let no_existing_group =
-              find_close v
-              |> Iter.iter_is_empty (fun c' -> Hashtbl.add_multi groups ~key:c' ~data:c')
-            in
-            if no_existing_group then (
-              if Hashtbl.length groups = k then
-                r.return { groups; n_queries = !n_queries; n_samples = !n_samples };
-              Hashtbl.add_exn groups ~key:v ~data:[ v ];
-              M_tree.insert reference v)));
-      r.return { groups; n_queries = !n_queries; n_samples = !n_samples })
+          let (), time =
+            Synth_utils.timed (fun () ->
+                if Hashtbl.mem groups v then Hashtbl.add_multi groups ~key:v ~data:v
+                else (
+                  incr n_samples;
+                  let no_existing_group =
+                    find_close v
+                    |> Iter.iter_is_empty (fun c' ->
+                           Hashtbl.add_multi groups ~key:c' ~data:c')
+                  in
+                  if no_existing_group then (
+                    if Hashtbl.length groups = k then
+                      r.return
+                        {
+                          groups;
+                          n_queries = !n_queries;
+                          n_samples = !n_samples;
+                          runtime = !runtime;
+                        };
+                    Hashtbl.add_exn groups ~key:v ~data:[ v ];
+                    M_tree.insert reference v)))
+          in
+          runtime := Time.Span.(!runtime + time));
+      r.return
+        { groups; n_queries = !n_queries; n_samples = !n_samples; runtime = !runtime })

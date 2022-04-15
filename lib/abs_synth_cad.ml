@@ -212,12 +212,3 @@ let cmd =
           else ops
         in
         synth dim target_value ops]
-
-let%expect_test "" =
-  let dim = Scene2d.Dim.create ~scaling:2 ~xres:16 ~yres:16 () in
-  let module Abs_value = (val abs_value dim) in
-  let ret =
-    Abs_value.transfer (Value.Ctx.create dim) Circle
-      [ `Concrete (Int 14); `Concrete (Int 14); `Concrete (Int 1) ]
-  in
-  print_s [%message (ret : bool * Value.t option * Abs_value.t list)]

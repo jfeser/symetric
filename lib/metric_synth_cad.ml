@@ -177,8 +177,10 @@ module Stats = struct
     runtime : Timer.t;
     max_cost_generated : int ref;
     groups_searched : int ref;
-    space_contains_target : bool option ref;
-    grouping_time : time_span Sample.Quantile_estimator.t;
+    cluster_time : time_span ref;
+    repair_time : time_span ref;
+    xfta_time : time_span ref;
+    extract_time : time_span ref;
   }
   [@@deriving yojson_of]
 
@@ -187,9 +189,10 @@ module Stats = struct
       runtime = Timer.create ();
       max_cost_generated = ref 0;
       groups_searched = ref 0;
-      space_contains_target = ref None;
-      grouping_time =
-        Sample.Quantile_estimator.create [%compare: Time.Span.t] Time.Span.zero;
+      cluster_time = ref Time.Span.zero;
+      repair_time = ref Time.Span.zero;
+      xfta_time = ref Time.Span.zero;
+      extract_time = ref Time.Span.zero;
     }
 end
 
@@ -231,14 +234,10 @@ let relative_distance (v : Value.t) (v' : Value.t) =
       if union = 0 then 0.0 else 1.0 -. (Float.of_int inter /. Float.of_int union)
   | v, v' -> if [%compare.equal: Value.t] v v' then 0.0 else Float.infinity
 
-let distance (v : Value.t) (v' : Value.t) =
-  match (v, v') with
-  (* | Scene x, Scene x' when not Scene2d.(corner_overlap x x') -> Float.infinity *)
-  | v, v' -> Value.distance v v'
-
+let distance = Value.distance
 let target_distance v = distance (target ()) v
 
-let local_search p =
+let local_search_untimed p =
   let target = target ()
   and size = size ()
   and steps = local_search_steps ()
@@ -295,6 +294,11 @@ let local_search p =
   |> Option.map ~f:(fun (_, i, p) -> (i, p))
   |> Option.value ~default:(-1, p)
 
+let local_search p =
+  let ret, time = Synth_utils.timed (fun () -> local_search_untimed p) in
+  (stats.repair_time := Time.Span.(time + !(stats.repair_time)));
+  ret
+
 module Edge = struct
   type t = Value.t * (Op.t[@compare.ignore]) * (S.Class.t list[@compare.ignore])
   [@@deriving compare, hash, sexp]
@@ -322,13 +326,12 @@ let insert_states (all_edges : Edge.t Iter.t) =
 
     let distance (v, _) (v', _) = relative_distance v v'
   end in
-  let groups, _group_time =
-    Synth_utils.timed (fun () ->
-        all_edges |> select_edges
-        |> Grouping.create_m
-             (module Edges)
-             (group_threshold ()) Edges.distance target_groups)
+  let groups =
+    all_edges |> select_edges
+    |> Grouping.create_m (module Edges) (group_threshold ()) Edges.distance target_groups
   in
+  (stats.cluster_time := Time.Span.(!(stats.cluster_time) + groups.runtime));
+
   Log.log 1 (fun m ->
       m "Generated %d groups from %d edges"
         (Hashtbl.length groups.groups)
@@ -360,7 +363,7 @@ let insert_states_beam all_edges =
          if not (S.mem_class search_state class_) then
            S.insert_class search_state value op @@ List.map ~f:S.Class.value args)
 
-let fill_search_space () =
+let fill_search_space_untimed () =
   let ectx = ectx ()
   and search_state = get_search_state ()
   and ops = operators ()
@@ -387,11 +390,22 @@ let fill_search_space () =
         m "Finish generating states of cost %d (runtime=%a)" cost Time.Span.pp run_time)
   done
 
-let run_extract eval height class_ =
+let fill_search_space () =
+  let (), xfta_time = Synth_utils.timed fill_search_space_untimed in
+  stats.xfta_time := xfta_time
+
+let run_extract_untimed eval height class_ =
   let search_state = get_search_state () in
   match extract () with
   | `Greedy -> S.local_greedy search_state height eval target_distance class_
   | `Random -> S.random search_state height class_
+
+let run_extract eval height class_ =
+  let ret, extract_time =
+    Synth_utils.timed (fun () -> run_extract_untimed eval height class_)
+  in
+  (stats.extract_time := Time.Span.(!(stats.extract_time) + extract_time));
+  ret
 
 let backwards_pass class_ =
   let max_cost = max_cost () and ectx = ectx () in
@@ -402,12 +416,6 @@ let backwards_pass class_ =
       Iter.forever (fun () ->
           run_extract eval height class_ |> Option.map ~f:local_search)
   | _ -> Iter.empty
-
-let check_for_target_program () =
-  let p = S.find_term (get_search_state ()) (target_program ()) in
-  Log.sexp 1 (lazy [%message (p : (Op.t * _ list) Program.t)]);
-  stats.space_contains_target :=
-    Some (Iter.for_all (fun (_, xs) -> List.length xs > 0) (Program.iter p))
 
 let synthesize () =
   Timer.start stats.runtime;
@@ -423,7 +431,6 @@ let synthesize () =
       Option.iter (dump_search_space ()) ~f:(fun fn ->
           Out_channel.with_file fn ~f:(fun ch -> S.to_channel ch @@ get_search_state ())));
 
-  check_for_target_program ();
   write_output None;
   let search_state = get_search_state () in
 
