@@ -1,3 +1,9 @@
+let[@inline] timed f =
+  let start = Time.now () in
+  let ret = f () in
+  let end_ = Time.now () in
+  (ret, Time.diff end_ start)
+
 let ( <. ) = Float.( < )
 let ( >. ) = Float.( > )
 let ( <=. ) = Float.( <= )
@@ -35,6 +41,16 @@ module Iter = struct
 
   let sexp_of_t sexp_of_elem iter = [%sexp_of: elem list] @@ Iter.to_list iter
   let t_of_sexp elem_of_sexp sexp = Iter.of_list @@ [%of_sexp: elem list] sexp
+
+  let timed time s k =
+    let inner_time = ref Time.Span.zero in
+    let k' x =
+      let (), inst_time = timed (fun () -> k x) in
+      inner_time := Time.Span.(!inner_time + inst_time)
+    in
+    let (), total_time = timed (fun () -> s k') in
+    time := Time.Span.(!time + (total_time - !inner_time))
+
   let of_queue q k = Queue.iter q ~f:k
   let of_set s k = Core.Set.iter ~f:k s
   let of_hashtbl x k = Hashtbl.iteri ~f:(fun ~key ~data -> k (key, data)) x

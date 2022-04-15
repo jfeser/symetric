@@ -178,6 +178,8 @@ module Stats = struct
     max_cost_generated : int ref;
     groups_searched : int ref;
     cluster_time : time_span ref;
+    rank_time : time_span ref;
+    expansion_time : time_span ref;
     repair_time : time_span ref;
     xfta_time : time_span ref;
     extract_time : time_span ref;
@@ -190,6 +192,8 @@ module Stats = struct
       max_cost_generated = ref 0;
       groups_searched = ref 0;
       cluster_time = ref Time.Span.zero;
+      rank_time = ref Time.Span.zero;
+      expansion_time = ref Time.Span.zero;
       repair_time = ref Time.Span.zero;
       xfta_time = ref Time.Span.zero;
       extract_time = ref Time.Span.zero;
@@ -310,6 +314,7 @@ end
 
 let select_top_k_edges edges =
   Iter.ordered_groupby (module Value) ~score:Edge.score ~key:(fun (v, _, _) -> v) edges
+  |> Iter.timed stats.rank_time
   |> Iter.map (fun (v, (_, es)) -> (v, es))
 
 let select_arbitrary edges = Iter.map (fun ((v, _, _) as edge) -> (v, [ edge ])) edges
@@ -376,6 +381,7 @@ let fill_search_space_untimed () =
 
     let states_iter () =
       Gen.generate_states S.search_iter S.Class.value ectx search_state ops cost
+      |> Iter.timed stats.expansion_time
     in
 
     let (), run_time =

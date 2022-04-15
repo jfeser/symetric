@@ -58,6 +58,7 @@ module Iter : sig
     ('k * (float * 'a list)) t
 
   val random : 'a t -> 'a option
+  val timed : Time.Span.t ref -> 'a t -> 'a t
 end
 
 module Array : sig
