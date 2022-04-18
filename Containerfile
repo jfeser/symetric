@@ -15,6 +15,6 @@ RUN echo 'PATH=$PATH:/opt/sketch/sketch-frontend' >> /root/.bashrc && \
     echo 'SKETCH_HOME=/opt/sketch/sketch-frontend/runtime' >> /root/.bashrc && \
     echo 'eval $(opam env)' >> /root/.bashrc
 
-RUN dnf install -y time
+RUN dnf install -y perl-Time-HiRes
 
 CMD /bin/bash -i

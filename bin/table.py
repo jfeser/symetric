@@ -183,17 +183,6 @@ def load(run_dir):
     return df
 
 
-def classify_exitval(x):
-    if x == 0:
-        return "success"
-    elif x == 1:
-        return "failure"
-    elif x == 134:
-        return "memory"
-    elif x == 137:
-        return "time"
-
-
 def classify_method(x):
     if "metric_synth_cad" in x:
         if (
@@ -212,14 +201,25 @@ def classify_method(x):
             return "abstract"
     if "enumerate_cad" in x:
         return "enumerate"
+    if "sketch" in x:
+        if "--slv-parallel" in x:
+            return "sketch_par"
+        return "sketch"
     return float("nan")
 
 
 def bench_from_command(x):
-    m = re.compile(r"bench/cad_ext/.+/([a-z_0-9]+)").search(x)
-    if m:
-        return m.group(1)
-    return float("nan")
+    cmd = x["Command"]
+    if x["method"] == "sketch":
+        m = re.compile(r"sketch-([a-z_0-9]+)-[0-9]+.sk").search(cmd)
+        if m:
+            return m.group(1)
+        return float("nan")
+    else:
+        m = re.compile(r"bench/cad_ext/.+/([a-z_0-9]+)").search(cmd)
+        if m:
+            return m.group(1)
+        return float("nan")
 
 
 def classify_bench(x):
@@ -228,12 +228,73 @@ def classify_bench(x):
     return "Hand-written"
 
 
-def load_joblog(run_dir):
-    df = pd.read_csv(run_dir + "/joblog", header=0, sep="\t")
+out_re = re.compile("metric-[0-9]+\.json")
+
+
+def load_joblog(run_dir, name="joblog"):
+    def classify_status(x):
+        if x["method"] == "sketch":
+            logfile = run_dir + "/" + x["Command"].split("&>")[-1].strip()
+            with open(logfile, "r") as f:
+                log = f.read()
+            if "Error: Must be SPARSE!!!" in log:
+                return "failure_par"
+            if "[SKETCH] DONE" in log:
+                return "success"
+            if "TIMEOUT" in log:
+                return "time"
+            if "MEM_RSS" in log:
+                return "memory"
+
+        e = x["Exitval"]
+        if e == 0:
+            return "success"
+        elif e == 1:
+            return "failure"
+        elif e == 134:
+            return "memory"
+        elif e == 137:
+            return "time"
+
+    fields = [
+        "repair_time",
+        "xfta_time",
+        "cluster_time",
+        "extract_time",
+        "rank_time",
+        "expansion_time",
+    ]
+
+    def routine_times(x):
+        if x["method"] == "metric":
+            out_file = out_re.search(x["Command"]).group(0)
+            with open(run_dir + "/" + out_file, "r") as f:
+                out = json.load(f)
+            ret = []
+            for f in fields:
+                if f in out["stats"]:
+                    ret.append(out["stats"][f])
+                else:
+                    ret.append(float("nan"))
+            return pd.Series(ret)
+        else:
+            return pd.Series([float("nan")] * len(fields))
+
+    df = pd.read_csv(run_dir + "/" + name, header=0, sep="\t")
     df["method"] = df["Command"].apply(classify_method)
-    df["status"] = df["Exitval"].apply(classify_exitval)
-    df["bench"] = df["Command"].apply(bench_from_command)
+    df["status"] = df.apply(classify_status, axis=1)
+    df["bench"] = df.apply(bench_from_command, axis=1)
+    df["bench_kind"] = df["bench"].apply(classify_bench)
+    df[fields] = df.apply(routine_times, axis=1)
     return df
+
+
+def load_sketch(logs):
+    dfs = []
+    for log in logs.split(","):
+        name = os.path.basename(log)
+        dfs.append(load_joblog(os.path.dirname(log), name))
+    return pd.concat(dfs)
 
 
 def success_failure_timeout(success_frac, timeout_frac, total):
@@ -303,7 +364,7 @@ def print_row(df, total, repeats=1):
     if "success" in list(df["status"]):
         s = df[df["status"] == "success"]
         row += "& {:.1f} & {:.0f}\%".format(
-            float(s["mean"]), float(perc(s["count"], repeats, total))
+            float(s["median"]), float(perc(s["count"], repeats, total))
         )
     else:
         row += r"& -- & 0\%"
@@ -323,22 +384,25 @@ def print_row(df, total, repeats=1):
     return row
 
 
-def make_main_table(df, fn, total_generated=25, total_handwritten=14):
+def make_main_table(df, fn, total_generated=25, total_handwritten=15):
     total = total_generated + total_handwritten
 
     df = df[df["method"] != "ablation"].copy()
-    df["bench_kind"] = df["bench"].apply(classify_bench)
+    df.loc[
+        df["bench"] == "rings", "status"
+    ] = "time"  # hack to deal with rings expected time > 1h
+    ipdb.set_trace()
     df_kind = df.groupby(["method", "bench_kind", "status"])["JobRuntime"].agg(
-        ["mean", "count"]
+        ["median", "count"]
     )
-    df_total = df.groupby(["method", "status"])["JobRuntime"].agg(["mean", "count"])
+    df_total = df.groupby(["method", "status"])["JobRuntime"].agg(["median", "count"])
 
     with open(fn, "w") as f:
         print(
             r"""
 \begin{tabular}{llrrrr}
 \toprule
-Algorithm & Benchmark & Avg. Runtime (s) & Success & Memory & Timeout \\
+Algorithm & Benchmark & Median Runtime (s) & Success & Memory & Timeout \\
 \midrule
 """,
             file=f,
@@ -348,6 +412,7 @@ Algorithm & Benchmark & Avg. Runtime (s) & Success & Memory & Timeout \\
             (r"\textsc{FTA-Syngar}", "abstract", 1),
             (r"\textsc{FTA-Syngar} (NR)", "abstract_norepl", 1),
             (r"\textsc{FTA-Basic}", "enumerate", 1),
+            (r"\textsc{Sketch}", "sketch", 1),
         ]
         for (texname, name, repeats) in methods:
             print(r"%s " % texname, file=f)
@@ -374,6 +439,151 @@ Algorithm & Benchmark & Avg. Runtime (s) & Success & Memory & Timeout \\
                 % print_row(df_total.loc[name].reset_index(), total, repeats),
                 file=f,
             )
+        print(r"\bottomrule", file=f)
+        print(r"\end{tabular}", file=f)
+
+
+def method_table(df, fn):
+    df = df[df["method"] == "metric"]
+    df = (
+        df[df["status"] == "success"]
+        .groupby(["bench_kind", "bench"])
+        .agg(["mean"])
+        .reset_index()
+    )
+    by_type = df.groupby(["bench_kind"]).agg(["median", "max"]).reset_index()
+    total = df.agg(["median", "max"])
+    with open(fn, "w") as f:
+        print(
+            r"""
+\begin{tabular}{lrrrrrr}
+\toprule
+Benchmark & \multicolumn{2}{c}{\textsc{ConstructXFTA}} & \multicolumn{2}{c}{\textsc{Extract}} & \multicolumn{2}{c}{\textsc{Repair}} \\
+& Median & Max & Median & Max & Median & Max \\
+\midrule
+""",
+            file=f,
+        )
+        for k in ["Generated", "Hand-written"]:
+            print(
+                "{} & {:.1f} & {:.1f} & {:.1f} & {:.1f} & {:.1f} & {:.1f} \\\\".format(
+                    k,
+                    float(
+                        by_type[by_type["bench_kind"] == k]["xfta_time"]["mean"][
+                            "median"
+                        ]
+                    ),
+                    float(
+                        by_type[by_type["bench_kind"] == k]["xfta_time"]["mean"]["max"]
+                    ),
+                    float(
+                        by_type[by_type["bench_kind"] == k]["extract_time"]["mean"][
+                            "median"
+                        ]
+                    ),
+                    float(
+                        by_type[by_type["bench_kind"] == k]["extract_time"]["mean"][
+                            "max"
+                        ]
+                    ),
+                    float(
+                        by_type[by_type["bench_kind"] == k]["repair_time"]["mean"][
+                            "median"
+                        ]
+                    ),
+                    float(
+                        by_type[by_type["bench_kind"] == k]["repair_time"]["mean"][
+                            "max"
+                        ]
+                    ),
+                ),
+                file=f,
+            )
+
+        print(
+            "All & {:.1f} & {:.1f} & {:.1f} & {:.1f} & {:.1f} & {:.1f} \\\\".format(
+                float(total.loc["median"]["xfta_time"]),
+                float(total.loc["max"]["xfta_time"]),
+                float(total.loc["median"]["extract_time"]),
+                float(total.loc["max"]["extract_time"]),
+                float(total.loc["median"]["repair_time"]),
+                float(total.loc["max"]["repair_time"]),
+            ),
+            file=f,
+        )
+        print(r"\bottomrule", file=f)
+        print(r"\end{tabular}", file=f)
+
+
+def construct_table(df, fn):
+    df = df[df["method"] == "metric"]
+    df = (
+        df[df["status"] == "success"]
+        .groupby(["bench_kind", "bench"])
+        .agg(["mean"])
+        .reset_index()
+    )
+    by_type = df.groupby(["bench_kind"]).agg(["median", "max"]).reset_index()
+    total = df.agg(["median", "max"])
+
+    with open(fn, "w") as f:
+        print(
+            r"""
+\begin{tabular}{lrrrrrr}
+\toprule
+Benchmark & \multicolumn{2}{c}{Expansion} & \multicolumn{2}{c}{Clustering} & \multicolumn{2}{c}{Ranking} \\
+& Median & Max & Median & Max & Median & Max \\
+\midrule
+""",
+            file=f,
+        )
+        for k in ["Generated", "Hand-written"]:
+            print(
+                "{} & {:.1f} & {:.1f} & {:.1f} & {:.1f} & {:.1f} & {:.1f} \\\\".format(
+                    k,
+                    float(
+                        by_type[by_type["bench_kind"] == k]["expansion_time"]["mean"][
+                            "median"
+                        ]
+                    ),
+                    float(
+                        by_type[by_type["bench_kind"] == k]["expansion_time"]["mean"][
+                            "max"
+                        ]
+                    ),
+                    float(
+                        by_type[by_type["bench_kind"] == k]["cluster_time"]["mean"][
+                            "median"
+                        ]
+                    ),
+                    float(
+                        by_type[by_type["bench_kind"] == k]["cluster_time"]["mean"][
+                            "max"
+                        ]
+                    ),
+                    float(
+                        by_type[by_type["bench_kind"] == k]["rank_time"]["mean"][
+                            "median"
+                        ]
+                    ),
+                    float(
+                        by_type[by_type["bench_kind"] == k]["rank_time"]["mean"]["max"]
+                    ),
+                ),
+                file=f,
+            )
+
+        print(
+            "All & {:.1f} & {:.1f} & {:.1f} & {:.1f} & {:.1f} & {:.1f} \\\\".format(
+                float(total.loc["median"]["expansion_time"]),
+                float(total.loc["max"]["expansion_time"]),
+                float(total.loc["median"]["cluster_time"]),
+                float(total.loc["max"]["cluster_time"]),
+                float(total.loc["median"]["rank_time"]),
+                float(total.loc["max"]["rank_time"]),
+            ),
+            file=f,
+        )
         print(r"\bottomrule", file=f)
         print(r"\end{tabular}", file=f)
 
@@ -528,39 +738,61 @@ def ablation_plot(metric_df, beam_df, er_df, gen_plot):
 
 def main(args):
     ablation_plot(
-        load(args.metric_generated),
-        load(args.beam_generated),
-        load(args.er_generated),
+        load(args.ablation_metric),
+        load(args.ablation_no_cluster),
+        load(args.ablation_extract_random),
         args.generated_plot,
     )
 
-    joblog_df = load_joblog(args.metric_generated)
+    joblog_df = load_joblog(args.bench)
+    joblog_df = joblog_df[
+        (joblog_df["method"] == "abstract_norepl")
+        | (joblog_df["method"] == "abstract")
+        | (joblog_df["method"] == "enumerate")
+    ]
+
+    metric_joblog_df = load_joblog(args.bench_metric)
+    sketch_joblog_df = load_sketch(args.bench_sketch)
+
+    joblog_df = joblog_df.append(sketch_joblog_df)
+    joblog_df = joblog_df.append(metric_joblog_df)
+
     make_main_table(joblog_df, args.main_table)
+    method_table(joblog_df, args.method_table)
+    construct_table(joblog_df, args.construct_table)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Produce result tables")
     parser.add_argument(
-        "--metric-generated",
+        "--ablation-metric",
         metavar="METRIC_RUN_DIR",
         help="directory containing benchmark output",
     )
     parser.add_argument(
-        "--er-generated",
+        "--ablation-extract-random",
         metavar="ER_RUN_DIR",
         help="directory containing benchmark output",
     )
     parser.add_argument(
-        "--beam-generated",
+        "--ablation-no-cluster",
         metavar="BEAM_RUN_DIR",
         help="directory containing benchmark output",
     )
     parser.add_argument(
-        "--abstract",
-        metavar="ABS_RUN_DIR",
-        help="directory containing benchmark output",
+        "--bench",
+        metavar="RUN_DIR",
+        help="benchmark output",
+    )
+    parser.add_argument("--bench-metric")
+    parser.add_argument(
+        "--bench-sketch",
+        metavar="SKETCH_RUN_DIR",
+        help="benchmark output",
     )
     parser.add_argument("--main-table")
+    parser.add_argument("--method-table")
+    parser.add_argument("--construct-table")
     parser.add_argument("--generated-plot")
     args = parser.parse_args()
 
