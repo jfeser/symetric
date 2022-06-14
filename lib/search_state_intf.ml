@@ -25,9 +25,6 @@ module type S = sig
     val op : t -> op
     val args : t -> Class.t list
     val value : t -> value
-    val cost : ctx -> t -> int
-    val height : ctx -> t -> int
-    val default : t
   end
   with type ctx := t
 
@@ -35,9 +32,6 @@ module type S = sig
   (** Create a new search state. *)
 
   (** {0 Access iterators} *)
-
-  val all_paths : t -> Path.t Iter.t
-  (** Iterator over all hyperedges. *)
 
   val in_paths : t -> Class.t -> Path.t Iter.t
   (** Iterator over the hyperedges that point to a particular class. *)
@@ -48,7 +42,6 @@ module type S = sig
 
   val to_channel : Out_channel.t -> t -> unit
   val of_channel : In_channel.t -> t
-  val pp_dot : Format.formatter -> t -> unit
   val search_iter : t -> cost:int -> type_:type_ -> Class.t Iter.t
   val search : t -> cost:int -> type_:type_ -> value list
   val find_term : t -> op Program.t -> (op * Class.t list) Program.t
@@ -57,10 +50,7 @@ module type S = sig
   val insert_class : t -> value -> op -> value list -> unit
   val length : t -> int
   val print_stats : t -> unit
-  val program_exn : t -> int -> Class.t -> op Program.t
   val program_of_op_args_exn : t -> int -> op -> Class.t list -> op Program.t
-  val random_program_exn : ?max_cost:int -> t -> Class.t -> op Program.t
-  val clear : t -> unit
 
   val validate :
     t -> (op -> value list -> value) -> (value -> value -> float) -> float -> unit

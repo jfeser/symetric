@@ -2,7 +2,7 @@
 (allow_approximate_merlin)
 (generate_opam_files true)
 (package
- (name staged-synth)
+ (name staged_synth)
  (depends
   (core (>= v0.15))
   ppx_jane
