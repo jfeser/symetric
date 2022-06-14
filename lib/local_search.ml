@@ -190,8 +190,8 @@ let rewrite_all unnormalize t k =
   in
   rewrite_all t k
 
-let of_unnormalize_tabu (type op value) ?(max_tabu = 1000) ?(random = false) ~dist ~target
-    (module Op : Value_intf with type t = op)
+let of_unnormalize_tabu (type op value) ?(max_tabu = 1000) ?(random = false)
+    ~target_distance (module Op : Value_intf with type t = op)
     (module Value : Value_intf with type t = value) unnormalize eval start =
   let module State = struct
     type t = { program : Op.t Program.t; value : Value.t }
@@ -204,7 +204,7 @@ let of_unnormalize_tabu (type op value) ?(max_tabu = 1000) ?(random = false) ~di
       rewrite_all unnormalize t.program
       |> Iter.map (fun p ->
              let value = eval p in
-             (-.dist value target, State.{ program = p; value }))
+             (-.target_distance value, State.{ program = p; value }))
       |> Iter.to_list
     in
 

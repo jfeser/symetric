@@ -401,3 +401,9 @@ let%expect_test "rank-stability" =
      (Ok 0.77777777777777779))
     ("(rank_stability 3) @@ (Iter.of_list [[1; 2; 3]; [2; 3; 1]; [3; 1; 2]])"
      (Ok 0)) |}]
+
+module Set = struct
+  include Set
+
+  let union_map m ~f s = Iter.of_set s |> Iter.map f |> Iter.fold Set.union (Set.empty m)
+end

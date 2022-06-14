@@ -1,5 +1,5 @@
 open Std
-module Lang = Cad_ext
+module Lang = Regex
 open Lang
 module S = Search_state_all.Make (Lang)
 module Gen = Generate.Gen_iter (Lang)
@@ -11,54 +11,45 @@ let target_groups_err = 0.1
 (* parameters *)
 module Params = struct
   type t = {
-    size : Scene2d.Dim.t;
     local_search_steps : int;
     group_threshold : float;
     operators : Op.t list;
     max_cost : int;
     backward_pass_repeats : int;
     verbosity : int;
-    target_program : Op.t Program.t;
     validate : bool;
     target_groups : int;
     dump_search_space : string option;
     load_search_space : string option;
-    output_file : string;
     use_beam_search : bool; (* if true, then disable clustering *)
     use_ranking : bool; (* if false, disable ranking clustered states *)
     extract : [ `Greedy | `Random ];
     repair : [ `Guided | `Random ]; (* if true, do not use distance to guide repair *)
+    output_file : string;
   }
   [@@deriving yojson]
 
-  let create : dim:Scene2d.Dim.t -> _ =
-   fun ~dim:size ~group_threshold ~max_cost ~local_search_steps ~backward_pass_repeats
-       ~verbosity ~validate ~n_groups ~dump_search_space ~load_search_space ~output_file
-       ~use_beam_search ~use_ranking ~extract ~repair target_prog ->
-    let operators = Cad_ext.Op.default_operators ~xres:size.xres ~yres:size.yres in
-
-    List.find (Program.ops target_prog) ~f:(fun op ->
-        not @@ List.mem ~equal:[%compare.equal: Op.t] operators op)
-    |> Option.iter ~f:(fun op ->
-           raise_s [%message "program not in search space" (op : Op.t)]);
+  let create ~group_threshold ~max_cost ~local_search_steps ~backward_pass_repeats
+      ~verbosity ~validate ~n_groups ~dump_search_space ~load_search_space
+      ~use_beam_search ~use_ranking ~extract ~repair ~output_file =
     {
       validate;
       local_search_steps;
-      size;
-      operators;
+      operators =
+        [ Op.Concat; Class "0123456789"; Repeat_range; Optional; Class "." ]
+        @ List.map (List.range ~stop:`inclusive 1 15) ~f:(fun i -> Op.Int i);
       group_threshold;
       max_cost;
       backward_pass_repeats;
       verbosity;
-      target_program = target_prog;
       target_groups = n_groups;
       dump_search_space;
       load_search_space;
-      output_file;
       use_beam_search;
       use_ranking;
       extract;
       repair;
+      output_file;
     }
 
   let cmd =
@@ -82,7 +73,6 @@ module Params = struct
       and backward_pass_repeats =
         flag "-backward-pass-repeats" (required int)
           ~doc:" number of times to run backward pass"
-      and dim = Scene2d.Dim.param
       and verbosity =
         flag "-verbosity" (optional_with_default 0 int) ~doc:" set verbosity"
       and validate = flag "-validate" no_arg ~doc:" turn on validation"
@@ -99,9 +89,8 @@ module Params = struct
         flag "-repair"
           (optional_with_default "guided" string)
           ~doc:" method of program repair"
-      and output_file = flag "-out" (required string) ~doc:" output to file" in
+      and output_file = flag "-out" (required string) ~doc:" output file" in
       fun () ->
-        let target_prog = Lang.parse @@ Sexp.input_sexp In_channel.stdin in
         let extract =
           match extract with
           | "greedy" -> `Greedy
@@ -114,25 +103,23 @@ module Params = struct
           | "random" -> `Random
           | _ -> raise_s [%message "unexpected extraction method" (repair : string)]
         in
-        create ~max_cost ~group_threshold ~local_search_steps ~dim ~backward_pass_repeats
+        create ~max_cost ~group_threshold ~local_search_steps ~backward_pass_repeats
           ~verbosity ~validate ~n_groups ~dump_search_space ~load_search_space
-          ~output_file ~use_beam_search ~use_ranking ~extract ~repair target_prog]
+          ~use_beam_search ~use_ranking ~extract ~repair ~output_file]
 end
 
 let params = Set_once.create ()
-let[@inline] size () = (Set_once.get_exn params [%here]).Params.size
 let[@inline] group_threshold () = (Set_once.get_exn params [%here]).Params.group_threshold
 let[@inline] operators () = (Set_once.get_exn params [%here]).Params.operators
 let[@inline] max_cost () = (Set_once.get_exn params [%here]).Params.max_cost
 let[@inline] verbosity () = (Set_once.get_exn params [%here]).Params.verbosity
-let[@inline] target_program () = (Set_once.get_exn params [%here]).Params.target_program
 let[@inline] validate () = (Set_once.get_exn params [%here]).Params.validate
 let[@inline] target_groups () = (Set_once.get_exn params [%here]).Params.target_groups
-let[@inline] output_file () = (Set_once.get_exn params [%here]).Params.output_file
 let[@inline] use_beam_search () = (Set_once.get_exn params [%here]).Params.use_beam_search
 let[@inline] extract () = (Set_once.get_exn params [%here]).Params.extract
 let[@inline] repair () = (Set_once.get_exn params [%here]).Params.repair
 let[@inline] use_ranking () = (Set_once.get_exn params [%here]).Params.use_ranking
+let[@inline] output_file () = (Set_once.get_exn params [%here]).Params.output_file
 
 let[@inline] dump_search_space () =
   (Set_once.get_exn params [%here]).Params.dump_search_space
@@ -163,10 +150,23 @@ end
 
 let search_state = ref (S.create ())
 let[@inline] get_search_state () = !search_state
-let ectx = lazy (Value.Ctx.create (size ()))
+
+let ectx =
+  lazy
+    (Value.Ctx.create
+       [ ("123.", true); ("12", false) ]
+       (* [ *)
+       (*   ("123456789.123", true); *)
+       (*   ("123456789123456.12", true); *)
+       (*   ("12345.1", true); *)
+       (*   (\* ("123456789123456", true); *\) *)
+       (*   ("1234567891234567", false); *)
+       (*   ("123.1234", false); *)
+       (*   ("1.12345", false); *)
+       (*   (".1234", false); *)
+       (* ] *))
+
 let[@inline] ectx () = Lazy.force ectx
-let target = lazy (Program.eval (Value.eval (ectx ())) @@ target_program ())
-let[@inline] target () = Lazy.force target
 
 type time_span = Time.Span.t
 
@@ -224,68 +224,33 @@ let write_output m_prog =
   in
   Out_channel.with_file (output_file ()) ~f:(fun ch -> Safe.to_channel ch json)
 
-let relative_distance (v : Value.t) (v' : Value.t) =
-  match (v, v') with
-  | Scene x, Scene x' ->
-      let target_scene = match target () with Scene t -> t | _ -> assert false in
-      let n = Scene2d.(pixels @@ sub target_scene x)
-      and n' = Scene2d.(pixels @@ sub target_scene x') in
-      let p = Scene2d.(pixels @@ sub x target_scene)
-      and p' = Scene2d.(pixels @@ sub x' target_scene) in
-      let union = Bitarray.(hamming_weight (or_ n n') + hamming_weight (or_ p p'))
-      and inter = Bitarray.(hamming_weight (and_ n n') + hamming_weight (and_ p p')) in
-      assert (union >= inter && inter >= 0);
-      if union = 0 then 0.0 else 1.0 -. (Float.of_int inter /. Float.of_int union)
-  | v, v' -> if [%compare.equal: Value.t] v v' then 0.0 else Float.infinity
-
 let distance = Value.distance
-let target_distance v = distance (target ()) v
+let relative_distance = Value.distance
+
+let target_distance : Value.t -> _ = function
+  | Error -> 1.0
+  | Int _ -> 1.0
+  | Matches m ->
+      let ctx = ectx () in
+      let correct =
+        List.fold2_exn ctx.input m ~init:0 ~f:(fun acc (s, is_pos) m ->
+            match Map.find m 0 with
+            | Some ends ->
+                if Set.mem ends (String.length s) then if is_pos then acc + 1 else acc
+                else if is_pos then acc
+                else acc + 1
+            | None -> if is_pos then acc else acc + 1)
+      in
+      1.0 -. (Float.of_int correct /. Float.of_int (List.length ctx.input))
 
 let local_search_untimed p =
-  let size = size () and steps = local_search_steps () and ectx = ectx () in
+  let steps = local_search_steps () and ectx = ectx () in
   let value_eval = Value.mk_eval_memoized () in
   Local_search.of_unnormalize_tabu ~target_distance
     ~random:(match repair () with `Guided -> false | `Random -> true)
     (module Op)
     (module Value)
-    (function
-      | Apply (Int x, []) ->
-          if x <= 0 then [ Apply (Int (x + 1), []) ]
-          else if x >= max size.Scene2d.Dim.xres size.yres then
-            [ Apply (Int (x - 1), []) ]
-          else [ Apply (Int (x + 1), []); Apply (Int (x - 1), []) ]
-      | Apply (Rep_count x, []) ->
-          if x <= 1 then [ Apply (Rep_count (x + 1), []) ]
-          else if x >= max_repeat_count then [ Apply (Rep_count (x - 1), []) ]
-          else [ Apply (Rep_count (x + 1), []); Apply (Rep_count (x - 1), []) ]
-      | Apply (Circle, [ Apply (Int x, []); Apply (Int y, []); Apply (Int r, []) ]) ->
-          [
-            Apply
-              ( Rect,
-                [
-                  Apply (Int (x - r), []);
-                  Apply (Int (y - r), []);
-                  Apply (Int (x + r), []);
-                  Apply (Int (y + r), []);
-                ] );
-          ]
-      | Apply
-          ( Rect,
-            [
-              Apply (Int lx, []);
-              Apply (Int ly, []);
-              Apply (Int hx, []);
-              Apply (Int hy, []);
-            ] )
-        when hx - lx = hy - ly ->
-          let r = (hx - lx) / 2 in
-          [
-            Apply
-              ( Circle,
-                [ Apply (Int (lx + r), []); Apply (Int (ly + r), []); Apply (Int r, []) ]
-              );
-          ]
-      | _ -> [])
+    (fun _ -> [])
     (Program.eval (value_eval ectx))
     p
   |> Iter.map (fun p -> (target_distance (Program.eval (value_eval ectx) p), p))
@@ -371,8 +336,6 @@ let fill_search_space_untimed () =
   and ops = operators ()
   and max_cost = max_cost () in
 
-  Log.log 1 (fun m -> m "Goal:\n%a" Value.pp (target ()));
-
   for cost = 1 to max_cost do
     Log.log 1 (fun m -> m "Start generating states of cost %d" cost);
 
@@ -413,19 +376,15 @@ let run_extract eval height class_ =
 let backwards_pass class_ =
   let max_cost = max_cost () and ectx = ectx () in
   let height = Int.ceil_log2 max_cost in
-  match S.Class.value class_ with
-  | Value.Scene _ ->
-      let eval = Value.mk_eval_memoized () ectx in
-      Iter.forever (fun () ->
-          run_extract eval height class_ |> Option.map ~f:local_search)
-  | _ -> Iter.empty
+  if [%equal: Type.t] (S.Class.type_ class_) Type.output then
+    let eval = Value.mk_eval_memoized () ectx in
+    Iter.forever (fun () -> run_extract eval height class_ |> Option.map ~f:local_search)
+  else Iter.empty
 
 let synthesize () =
   Timer.start stats.runtime;
 
-  let target = target ()
-  and ectx = ectx ()
-  and backward_pass_repeats = backward_pass_repeats () in
+  let ectx = ectx () and backward_pass_repeats = backward_pass_repeats () in
 
   (match load_search_space () with
   | Some fn -> In_channel.with_file fn ~f:(fun ch -> search_state := S.of_channel ch)
@@ -443,10 +402,9 @@ let synthesize () =
   let exception Done of Op.t Program.t in
   Log.log 1 (fun m -> m "Starting backwards pass");
 
-  (* classes of type Scene *)
   let valid_classes =
     S.classes search_state
-    |> Iter.filter (fun c -> [%compare.equal: Type.t] Scene (S.Class.type_ c))
+    |> Iter.filter (fun c -> [%equal: Type.t] Type.output (S.Class.type_ c))
     |> Iter.map (fun c -> (target_distance @@ S.Class.value c, c))
   in
   let classes_ =
@@ -480,7 +438,7 @@ let synthesize () =
                           found_value);
                     Log.sexp 2 (lazy [%message (p : Op.t Program.t)]);
 
-                    if [%compare.equal: Value.t] target found_value then (
+                    if Float.(target_distance found_value = 0.) then (
                       Log.log 0 (fun m -> m "local search iters %d" local_search_iters);
                       Log.log 0 (fun m ->
                           m "backwards pass iters %d" backwards_pass_iters);

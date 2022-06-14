@@ -95,7 +95,11 @@ module Gen_iter (Lang : Lang_intf) = struct
             (fun vs -> search ss ~cost ~type_:t (fun v -> k (v :: vs)))
             ts
     in
-    build_args 0 (fun args -> f @@ make_edge to_value params op args) types_
+    build_args 0
+      (fun args ->
+        let state = Value.eval params op @@ List.map ~f:to_value args in
+        if not (Value.is_error state) then f (state, op, args))
+      types_
 
   let generate_args search to_value params ss op costs f =
     match (costs, Op.args_type op) with
