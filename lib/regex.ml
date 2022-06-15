@@ -246,7 +246,43 @@ module Value = struct
 
   let eval = if memoize then mk_eval_memoized () else eval_unmemoized
   let is_error = function Error -> true | _ -> false
-  let distance v v' = if [%equal: t] v v' then 0. else 1.
+
+  let distance v v' =
+    let intersect_size m m' =
+      Map.merge m m' ~f:(fun ~key:_ -> function
+        | `Left _ | `Right _ -> None | `Both (s, s') -> Some (Set.length (Set.inter s s')))
+      |> Map.data
+      |> List.sum (module Int) ~f:Fun.id
+      |> Float.of_int
+    in
+    let union_size m m' =
+      Map.merge m m' ~f:(fun ~key:_ -> function
+        | `Left s | `Right s -> Some (Set.length s)
+        | `Both (s, s') -> Some (Set.length (Set.union s s')))
+      |> Map.data
+      |> List.sum (module Int) ~f:Fun.id
+      |> Float.of_int
+    in
+    match (v, v') with
+    | Int x, Int x' -> if x = x' then 0. else 1.
+    | Matches ms, Matches ms' ->
+        let similarity =
+          List.map2_exn ms ms' ~f:(fun m m' ->
+              let d = intersect_size m m' /. union_size m m' in
+              d *. d)
+          |> Iter.of_list |> Iter.mean |> Option.value ~default:0.
+        in
+        1. -. similarity
+    | _ -> 1.
+
+  let%expect_test "" =
+    let input = "123456789.123" in
+    let ctx = Ctx.create [ (input, true) ] in
+    let c1 = eval_unmemoized ctx (Class "1") [] in
+    let c2 = eval_unmemoized ctx (Class "2") [] in
+    let c3 = eval_unmemoized ctx (Class "12") [] in
+    print_s [%message (distance c1 c2 : float) (distance c1 c3 : float)]
+
   let pp = Fmt.nop
 end
 
