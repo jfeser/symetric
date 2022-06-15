@@ -82,7 +82,7 @@ module Value = struct
   type t = Int of int | Matches of Set.M(Int).t Map.M(Int).t list | Error
   [@@deriving compare, equal, hash, sexp]
 
-  let default = Int (-1)
+  let default = Error
 
   module Ctx = struct
     type t = { input : (string * bool) list } [@@deriving sexp]
@@ -213,10 +213,12 @@ module Value = struct
         Apply (Op.Concat, [ Apply (Op.class_ '1', []); Apply (Op.class_ '2', []) ]))
     in
     print_s [%message (Program.eval (eval_unmemoized ctx) concat : t)];
-    [%expect {| ("Program.eval (eval_unmemoized ctx) concat" (Matches (((0 (2)) (10 (12)))))) |}];
+    [%expect
+      {| ("Program.eval (eval_unmemoized ctx) concat" (Matches (((0 (2)) (10 (12)))))) |}];
     let repeat = Op.(repeat_range (P.apply Op.num) 1 3) in
     print_s [%message (Program.eval (eval_unmemoized ctx) repeat : t)];
-    [%expect {|
+    [%expect
+      {|
       ("Program.eval (eval_unmemoized ctx) repeat"
        (Matches
         (((0 (1 2 3)) (1 (2 3 4)) (2 (3 4 5)) (3 (4 5 6)) (4 (5 6 7)) (5 (6 7 8))
@@ -244,7 +246,8 @@ module Value = struct
     print_s [%message (repeat_val : t)];
     print_s [%message (repeat_concat_val : t)];
     print_s [%message (target_distance ctx repeat_concat_val : float)];
-    [%expect {|
+    [%expect
+      {|
       (opt_val
        (Matches
         (((0 (0)) (1 (1)) (2 (2)) (3 (3)) (4 (4)) (5 (5)) (6 (6)) (7 (7)) (8 (8))
@@ -331,6 +334,12 @@ module Value = struct
            (Multi { name = "12"; mem = (function '1' | '2' -> true | _ -> false) }))
         []
     in
+    print_s [%message (c1 : t)];
+    [%expect {| (c1 (Matches (((0 (1)) (10 (11)))))) |}];
+    print_s [%message (c2 : t)];
+    [%expect {| (c2 (Matches (((1 (2)) (11 (12)))))) |}];
+    print_s [%message (c3 : t)];
+    [%expect {| (c3 (Matches (((0 (1)) (1 (2)) (10 (11)) (11 (12)))))) |}];
     print_s [%message (distance c1 c2 : float) (distance c1 c3 : float)];
     [%expect {| (("distance c1 c2" 1) ("distance c1 c3" 0.75)) |}]
 
