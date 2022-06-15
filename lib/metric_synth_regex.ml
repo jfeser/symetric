@@ -37,7 +37,7 @@ module Params = struct
       validate;
       local_search_steps;
       operators =
-        [ Op.Concat; Op.alpha; Op.num; Op.any; Repeat_range; Optional ]
+        [ Op.Concat; Op.alpha; Op.num; Op.any; Op.cap; Op.low; Repeat_range; Optional ]
         @ (Iter.to_list
           @@ Iter.map (fun c -> Op.Class (Single (Char.of_int_exn c)))
           @@ Iter.int_range ~start:32 ~stop:126)
