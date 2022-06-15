@@ -11,12 +11,17 @@ module Type = struct
 end
 
 module Op = struct
+  type char_class =
+    | Single of char
+    | Multi of { name : string; mem : char -> bool [@ignore] [@opaque] }
+  [@@deriving compare, equal, hash, sexp, yojson]
+
   type sketch = Op of t | Arg of int
 
   and t =
     | Int of int
     | Concat
-    | Class of string
+    | Class of char_class
     | Repeat_range
     | Optional
     | Or
@@ -45,6 +50,21 @@ module Op = struct
   open Program.T
 
   let int x = Apply (Int x, [])
+  let class_ c = Class (Single c)
+
+  let alpha =
+    Class
+      (Multi
+         {
+           name = "<let>";
+           mem = (function 'a' .. 'z' | 'A' .. 'Z' -> true | _ -> false);
+         })
+
+  let num =
+    Class (Multi { name = "<num>"; mem = (function '0' .. '9' -> true | _ -> false) })
+
+  let any =
+    Class (Multi { name = "<any>"; mem = (function ' ' .. '~' -> true | _ -> false) })
 end
 
 module Value = struct
@@ -54,7 +74,7 @@ module Value = struct
   let default = Int (-1)
 
   module Ctx = struct
-    type t = { input : (string * bool) list }
+    type t = { input : (string * bool) list } [@@deriving sexp]
 
     let create input = { input }
   end
@@ -115,11 +135,20 @@ module Value = struct
     match (op, args) with
     | Int x, [] -> Int x
     | Empty, [] -> Matches (eval_empty ctx)
-    | Class x, [] ->
+    | Class (Single c), [] ->
         Matches
           (List.map ctx.input ~f:(fun (input, _) ->
                Iter.int_range ~start:0 ~stop:(String.length input - 1)
-               |> Iter.filter (fun idx -> String.contains x (String.get input idx))
+               |> Iter.filter (fun idx -> [%equal: char] input.[idx] c)
+               |> Iter.fold
+                    (fun m i ->
+                      Map.add_exn m ~key:i ~data:(Set.singleton (module Int) (i + 1)))
+                    (Map.empty (module Int))))
+    | Class (Multi { mem; _ }), [] ->
+        Matches
+          (List.map ctx.input ~f:(fun (input, _) ->
+               Iter.int_range ~start:0 ~stop:(String.length input - 1)
+               |> Iter.filter (fun idx -> mem input.[idx])
                |> Iter.fold
                     (fun m i ->
                       Map.add_exn m ~key:i ~data:(Set.singleton (module Int) (i + 1)))
@@ -136,9 +165,11 @@ module Value = struct
                      |> Iter.fold Set.union (Set.empty (module Int))
                    in
                    if Set.is_empty end_pos then None else Some end_pos)))
+    | Repeat_range, ([ Error; _; _ ] | [ _; Error; _ ] | [ _; _; Error ]) -> Error
     | Repeat_range, [ Matches _; Int min; Int max ] when max < min -> Error
     | Repeat_range, [ Matches ms; Int min; Int max ] ->
         Matches (eval_repeat_range ms min max)
+    | Optional, [ Error ] -> Error
     | Optional, [ Matches x ] -> Matches (eval_or (eval_empty ctx) x)
     | _ -> raise_s [%message "unexpected arguments" (op : Op.t) (args : t list)]
 
@@ -161,21 +192,21 @@ module Value = struct
   let%expect_test "" =
     let input = "123456789.123" in
     let ctx = Ctx.create [ (input, true) ] in
-    print_s [%message (eval_unmemoized ctx (Class ".") [] : t)];
+    print_s [%message (eval_unmemoized ctx (Op.class_ '.') [] : t)];
     [%expect {| ("eval_unmemoized ctx (Class \".\") []" (Matches (((9 (10)))))) |}];
-    print_s [%message (eval_unmemoized ctx (Class "1") [] : t)];
+    print_s [%message (eval_unmemoized ctx (Op.class_ '1') [] : t)];
     [%expect
       {| ("eval_unmemoized ctx (Class \"1\") []" (Matches (((0 (1)) (10 (11)))))) |}];
     let concat =
-      Program.(Apply (Op.Concat, [ Apply (Class "1", []); Apply (Class "2", []) ]))
+      Program.(
+        Apply (Op.Concat, [ Apply (Op.class_ '1', []); Apply (Op.class_ '2', []) ]))
     in
     print_s [%message (Program.eval (eval_unmemoized ctx) concat : t)];
     [%expect {||}];
     let repeat =
       Program.(
         Apply
-          ( Op.Repeat_range,
-            [ Apply (Class "123456789", []); Apply (Int 1, []); Apply (Int 3, []) ] ))
+          (Op.Repeat_range, [ Apply (Op.num, []); Apply (Int 1, []); Apply (Int 3, []) ]))
     in
     print_s [%message (Program.eval (eval_unmemoized ctx) repeat : t)];
     [%expect {||}];
@@ -199,23 +230,18 @@ module Value = struct
             [
               Apply
                 ( Repeat_range,
-                  [
-                    Apply (Class "0123456789", []); Apply (Int 1, []); Apply (Int 15, []);
-                  ] );
+                  [ Apply (Op.num, []); Apply (Int 1, []); Apply (Int 15, []) ] );
               Apply
                 ( Optional,
                   [
                     Apply
                       ( Concat,
                         [
-                          Apply (Class ".", []);
+                          Apply (Op.class_ '.', []);
                           Apply
                             ( Repeat_range,
-                              [
-                                Apply (Class "0123456789", []);
-                                Apply (Int 1, []);
-                                Apply (Int 3, []);
-                              ] );
+                              [ Apply (Op.num, []); Apply (Int 1, []); Apply (Int 3, []) ]
+                            );
                         ] );
                   ] );
             ] ))
@@ -278,9 +304,14 @@ module Value = struct
   let%expect_test "" =
     let input = "123456789.123" in
     let ctx = Ctx.create [ (input, true) ] in
-    let c1 = eval_unmemoized ctx (Class "1") [] in
-    let c2 = eval_unmemoized ctx (Class "2") [] in
-    let c3 = eval_unmemoized ctx (Class "12") [] in
+    let c1 = eval_unmemoized ctx (Op.class_ '1') [] in
+    let c2 = eval_unmemoized ctx (Op.class_ '2') [] in
+    let c3 =
+      eval_unmemoized ctx
+        (Op.Class
+           (Multi { name = "12"; mem = (function '1' | '2' -> true | _ -> false) }))
+        []
+    in
     print_s [%message (distance c1 c2 : float) (distance c1 c3 : float)]
 
   let pp = Fmt.nop
@@ -288,3 +319,18 @@ end
 
 let serialize = [%sexp_of: Op.t Program.t]
 let parse = [%of_sexp: Op.t Program.t]
+
+let load_bench ch =
+  let open Option.Let_syntax in
+  In_channel.input_lines ch |> Iter.of_list |> Iter.map String.strip
+  |> Iter.drop_while (fun line -> not ([%equal: string] line "// examples"))
+  |> Iter.drop 1
+  |> Iter.filter_map (fun line ->
+         let len = String.length line in
+         if len > 0 then
+           let%map is_pos =
+             match line.[len - 1] with '+' -> Some true | '-' -> Some false | _ -> None
+           in
+           (String.drop_suffix (String.drop_prefix line 1) 3, is_pos)
+         else None)
+  |> Iter.to_list

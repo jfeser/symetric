@@ -4,3 +4,6 @@
 [submodule "doc/paper"]
 	path = doc/paper
 	url = ./doc/paper/
+[submodule "regel"]
+	path = vendor/regel
+	url = https://github.com/utopia-group/regel.git

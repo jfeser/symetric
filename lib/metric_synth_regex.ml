@@ -7,6 +7,7 @@ module Gen = Generate.Gen_iter (Lang)
 (* constants *)
 let max_repeat_count = 4
 let target_groups_err = 0.1
+let max_int = 15
 
 (* parameters *)
 module Params = struct
@@ -36,8 +37,11 @@ module Params = struct
       validate;
       local_search_steps;
       operators =
-        [ Op.Concat; Class "0123456789"; Repeat_range; Optional; Class "." ]
-        @ List.map (List.range ~stop:`inclusive 1 15) ~f:(fun i -> Op.Int i);
+        [ Op.Concat; Op.alpha; Op.num; Op.any; Repeat_range; Optional ]
+        @ (Iter.to_list
+          @@ Iter.map (fun c -> Op.Class (Single (Char.of_int_exn c)))
+          @@ Iter.int_range ~start:32 ~stop:126)
+        @ List.map (List.range ~stop:`inclusive 1 max_int) ~f:(fun i -> Op.Int i);
       group_threshold;
       max_cost;
       backward_pass_repeats;
@@ -150,22 +154,7 @@ end
 
 let search_state = ref (S.create ())
 let[@inline] get_search_state () = !search_state
-
-let ectx =
-  lazy
-    (Value.Ctx.create
-       (* [ ("123.", true); ("12", false) ] *)
-       [
-         ("123456789.123", true);
-         ("123456789123456.12", true);
-         ("12345.1", true);
-         (* ("123456789123456", true); *)
-         ("1234567891234567", false);
-         ("123.1234", false);
-         ("1.12345", false);
-         (".1234", false);
-       ])
-
+let ectx = lazy (Value.Ctx.create (load_bench In_channel.stdin))
 let[@inline] ectx () = Lazy.force ectx
 
 type time_span = Time.Span.t
@@ -250,7 +239,12 @@ let local_search_untimed p =
     ~random:(match repair () with `Guided -> false | `Random -> true)
     (module Op)
     (module Value)
-    (fun _ -> [])
+    (function
+      | Apply (Int x, []) ->
+          if x <= 1 then [ Apply (Int (x + 1), []) ]
+          else if x >= max_int then [ Apply (Int (x - 1), []) ]
+          else [ Apply (Int (x + 1), []); Apply (Int (x - 1), []) ]
+      | _ -> [])
     (Program.eval (value_eval ectx))
     p
   |> Iter.map (fun p -> (target_distance (Program.eval (value_eval ectx) p), p))
@@ -382,6 +376,8 @@ let backwards_pass class_ =
   else Iter.empty
 
 let synthesize () =
+  print_s [%message (ectx () : Value.Ctx.t)];
+
   Timer.start stats.runtime;
 
   let ectx = ectx () and backward_pass_repeats = backward_pass_repeats () in
