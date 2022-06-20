@@ -26,26 +26,26 @@ module Op = struct
     | Repeat_range
     | Optional
     | Or
+    | And
+    | Not
     | Empty
-    | Sketch of sketch Program.t * Type.t list
   [@@deriving compare, equal, hash, sexp, yojson]
 
   let default = Concat
   let cost _ = 1
 
   let ret_type : _ -> Type.t = function
-    | Concat | Class _ | Repeat_range | Sketch _ | Optional | Or | Empty -> Regex
+    | Concat | Class _ | Repeat_range | Optional | Or | And | Not | Empty -> Regex
     | Int _ -> Int
 
   let args_type : _ -> Type.t list = function
-    | Concat | Or -> [ Regex; Regex ]
-    | Optional -> [ Regex ]
+    | Concat | Or | And -> [ Regex; Regex ]
+    | Optional | Not -> [ Regex ]
     | Class _ | Int _ | Empty -> []
     | Repeat_range -> [ Regex; Int; Int ]
-    | Sketch (_, ts) -> ts
 
   let arity op = List.length @@ args_type op
-  let is_commutative = function Or -> true | _ -> false
+  let is_commutative = function Or | And -> true | _ -> false
   let pp fmt x = Sexp.pp_hum fmt @@ [%sexp_of: t] x
 
   open Program.T
@@ -76,10 +76,31 @@ module Op = struct
   let concat x x' = Apply (Concat, [ x; x' ])
   let repeat_range x l h = Apply (Repeat_range, [ x; int l; int h ])
   let optional x = Apply (Optional, [ x ])
+  let ( || ) x x' = Apply (Or, [ x; x' ])
+  let ( && ) x x' = Apply (And, [ x; x' ])
+  let empty = Apply (Empty, [])
 end
 
 module Value = struct
-  type t = Int of int | Matches of Set.M(Int).t Map.M(Int).t list | Error
+  module M = Bitarray.Blocked_matrix
+
+  type match_ = M.t [@@deriving compare, equal, hash]
+
+  let sexp_of_match_ m =
+    Iter.int_range ~start:0 ~stop:(M.dim m - 1)
+    |> Iter.map (fun i ->
+           let ends =
+             Iter.int_range ~start:i ~stop:(M.dim m - 1)
+             |> Iter.filter (fun j -> M.get m i j)
+             |> Iter.to_list
+           in
+           (i, ends))
+    |> Iter.filter (fun (_, ends) -> not (List.is_empty ends))
+    |> Iter.to_list |> [%sexp_of: (int * int list) list]
+
+  let match__of_sexp _ = assert false
+
+  type t = Int of int | Matches of match_ list | Error
   [@@deriving compare, equal, hash, sexp]
 
   let default = Error
@@ -89,19 +110,6 @@ module Value = struct
 
     let create input = { input }
   end
-
-  let eval_empty (ctx : Ctx.t) =
-    List.map ctx.input ~f:(fun (input, _) ->
-        Iter.int_range ~start:0 ~stop:(String.length input)
-        |> Iter.fold
-             (fun m i -> Map.add_exn m ~key:i ~data:(Set.singleton (module Int) i))
-             (Map.empty (module Int)))
-
-  let eval_or x x' =
-    List.map2_exn x x'
-      ~f:
-        (Map.merge ~f:(fun ~key:_ -> function
-           | `Left x | `Right x -> Some x | `Both (x, x') -> Some (Set.union x x')))
 
   let repeat_range matches l h =
     let rec process all_reps m =
@@ -142,19 +150,18 @@ module Value = struct
   let eval_repeat_range ms min max =
     List.map ms ~f:(fun m -> repeat_range m min (Some max))
 
-  let eval_unmemoized (ctx : Ctx.t) (op : Op.t) args =
+  let eval_unmemoized_open eval (ctx : Ctx.t) (op : Op.t) args =
+    let fail () = raise_s [%message "unexpected arguments" (op : Op.t) (args : t list)] in
     match (op, args) with
     | Int x, [] -> Int x
-    | Empty, [] -> Matches (eval_empty ctx)
-    | Class (Single c), [] ->
+    | Empty, [] ->
         Matches
-          (List.map ctx.input ~f:(fun (input, _) ->
-               Iter.int_range ~start:0 ~stop:(String.length input - 1)
-               |> Iter.filter (fun idx -> [%equal: char] input.[idx] c)
-               |> Iter.fold
-                    (fun m i ->
-                      Map.add_exn m ~key:i ~data:(Set.singleton (module Int) (i + 1)))
-                    (Map.empty (module Int))))
+          (List.map ctx.input ~f:(fun (input, _) -> M.identity (String.length input + 1)))
+    | Class (Single c), [] ->
+        eval ctx
+          (Op.Class
+             (Multi { mem = (fun c' -> [%equal: Char.t] c c'); name = Char.to_string c }))
+          []
     | Class (Multi { mem; _ }), [] ->
         Matches
           (List.map ctx.input ~f:(fun (input, _) ->
@@ -162,27 +169,43 @@ module Value = struct
                |> Iter.filter (fun idx -> mem input.[idx])
                |> Iter.fold
                     (fun m i ->
-                      Map.add_exn m ~key:i ~data:(Set.singleton (module Int) (i + 1)))
-                    (Map.empty (module Int))))
-    | (Or | Concat), ([ Error; _ ] | [ _; Error ]) -> Error
-    | Or, [ Matches x; Matches x' ] -> Matches (eval_or x x')
+                      let m = M.set m i (i + 1) true in
+                      M.set m (i + 1) i true)
+                    (M.create (String.length input + 1) false)))
+    | (Int _ | Empty | Class _), _ :: _ -> fail ()
+    | (Not | Optional), [ Error ] -> Error
+    | Not, [ Matches x ] -> Matches (List.map x ~f:M.O.lnot)
+    | (Not | Optional), ([] | [ Int _ ] | _ :: _ :: _) -> fail ()
+    | Optional, [ v ] -> eval ctx Or [ eval ctx Empty []; v ]
+    | (And | Or | Concat), ([ Error; _ ] | [ _; Error ]) -> Error
+    | (And | Or | Concat), ([] | [ _ ] | [ Int _; _ ] | [ _; Int _ ] | _ :: _ :: _ :: _)
+      ->
+        fail ()
+    | Or, [ Matches x; Matches x' ] -> Matches (List.map2_exn x x' ~f:M.O.( lor ))
+    | And, [ Matches x; Matches x' ] -> Matches (List.map2_exn x x' ~f:M.O.( land ))
     | Concat, [ Matches x; Matches x' ] ->
-        Matches
-          (List.map2_exn x x' ~f:(fun x x' ->
-               Map.filter_map x ~f:(fun end_pos1 ->
-                   let end_pos =
-                     Iter.of_set end_pos1
-                     |> Iter.filter_map (Map.find x')
-                     |> Iter.fold Set.union (Set.empty (module Int))
-                   in
-                   if Set.is_empty end_pos then None else Some end_pos)))
+        Matches (List.map2_exn x x' ~f:(fun x x' -> M.O.(x * x')))
     | Repeat_range, ([ Error; _; _ ] | [ _; Error; _ ] | [ _; _; Error ]) -> Error
-    | Repeat_range, [ Matches _; Int min; Int max ] when max < min -> Error
-    | Repeat_range, [ Matches ms; Int min; Int max ] ->
-        Matches (eval_repeat_range ms min max)
-    | Optional, [ Error ] -> Error
-    | Optional, [ Matches x ] -> Matches (eval_or (eval_empty ctx) x)
-    | _ -> raise_s [%message "unexpected arguments" (op : Op.t) (args : t list)]
+    | Repeat_range, [ _; Int min; Int max ] when max < min -> Error
+    | Repeat_range, [ v; Int min; Int max ] ->
+        let rec repeat k = if k = 1 then v else eval ctx Concat [ v; repeat (k - 1) ] in
+        let rec repeat_or k =
+          if k = 1 then eval ctx Optional [ v ]
+          else eval ctx Optional [ eval ctx Concat [ v; repeat_or (k - 1) ] ]
+        in
+        if min = max then repeat min
+        else eval ctx Concat [ repeat min; repeat_or (max - min) ]
+    | ( Repeat_range,
+        ( []
+        | [ _ ]
+        | [ _; _ ]
+        | [ Int _; _; _ ]
+        | [ _; Matches _; _ ]
+        | [ _; _; Matches _ ]
+        | _ :: _ :: _ :: _ :: _ ) ) ->
+        fail ()
+
+  let rec eval_unmemoized ctx op args = eval_unmemoized_open eval_unmemoized ctx op args
 
   let target_distance (ctx : Ctx.t) = function
     | Error -> 1.0
@@ -190,13 +213,8 @@ module Value = struct
     | Matches m ->
         let correct =
           List.fold2_exn ctx.input m ~init:0 ~f:(fun acc (s, is_pos) m ->
-              match Map.find m 0 with
-              | Some ends ->
-                  let full_match = Set.mem ends (String.length s) in
-                  if is_pos then if full_match then acc + 1 else acc
-                  else if full_match then acc
-                  else acc + 1
-              | None -> if is_pos then acc else acc + 1)
+              let full_match = M.get m 0 (String.length s) in
+              if [%equal: bool] is_pos full_match then acc + 1 else acc)
         in
         1.0 -. (Float.of_int correct /. Float.of_int (List.length ctx.input))
 
@@ -236,12 +254,20 @@ module Value = struct
           (* (".1234", false); *);
         ]
     in
-    let opt = Op.optional (P.apply (Op.class_ '.')) in
+    let dot = P.apply (Op.class_ '.') in
+    let empty = Op.empty in
+    let opt = Op.optional dot in
     let repeat = Op.repeat_range (P.apply Op.num) 1 15 in
     let repeat_concat = Op.concat repeat opt in
     let repeat_val = (Program.eval (eval_unmemoized ctx) repeat : t) in
+    let dot_val = (Program.eval (eval_unmemoized ctx) dot : t) in
+    let empty_val = (Program.eval (eval_unmemoized ctx) empty : t) in
+    let empty_or_dot_val = (Program.eval (eval_unmemoized ctx) Op.(empty || dot) : t) in
     let opt_val = (Program.eval (eval_unmemoized ctx) opt : t) in
     let repeat_concat_val = (Program.eval (eval_unmemoized ctx) repeat_concat : t) in
+    print_s [%message (dot_val : t)];
+    print_s [%message (empty_val : t)];
+    print_s [%message (empty_or_dot_val : t)];
     print_s [%message (opt_val : t)];
     print_s [%message (repeat_val : t)];
     print_s [%message (repeat_concat_val : t)];
@@ -296,28 +322,12 @@ module Value = struct
   let is_error = function Error -> true | _ -> false
 
   let distance v v' =
-    let intersect_size m m' =
-      Map.merge m m' ~f:(fun ~key:_ -> function
-        | `Left _ | `Right _ -> None | `Both (s, s') -> Some (Set.length (Set.inter s s')))
-      |> Map.data
-      |> List.sum (module Int) ~f:Fun.id
-      |> Float.of_int
-    in
-    let union_size m m' =
-      Map.merge m m' ~f:(fun ~key:_ -> function
-        | `Left s | `Right s -> Some (Set.length s)
-        | `Both (s, s') -> Some (Set.length (Set.union s s')))
-      |> Map.data
-      |> List.sum (module Int) ~f:Fun.id
-      |> Float.of_int
-    in
     match (v, v') with
     | Int x, Int x' -> if x = x' then 0. else 1.
     | Matches ms, Matches ms' ->
         let similarity =
           List.map2_exn ms ms' ~f:(fun m m' ->
-              let d = intersect_size m m' /. union_size m m' in
-              d *. d)
+              Bitarray.jaccard_distance (M.to_bitarray m) (M.to_bitarray m'))
           |> Iter.of_list |> Iter.mean |> Option.value ~default:0.
         in
         1. -. similarity
@@ -343,7 +353,11 @@ module Value = struct
     print_s [%message (distance c1 c2 : float) (distance c1 c3 : float)];
     [%expect {| (("distance c1 c2" 1) ("distance c1 c3" 0.75)) |}]
 
-  let pp = Fmt.nop
+  let pp fmt = function
+    | Matches m ->
+        Sexp.pp_hum fmt
+          ([%sexp_of: bool list] (List.map m ~f:(fun m -> M.get m 0 (M.dim m - 1))))
+    | _ -> ()
 end
 
 let serialize = [%sexp_of: Op.t Program.t]

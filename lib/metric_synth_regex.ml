@@ -215,22 +215,7 @@ let write_output m_prog =
 
 let distance = Value.distance
 let relative_distance = Value.distance
-
-let target_distance : Value.t -> _ = function
-  | Error -> 1.0
-  | Int _ -> 1.0
-  | Matches m ->
-      let ctx = ectx () in
-      let correct =
-        List.fold2_exn ctx.input m ~init:0 ~f:(fun acc (s, is_pos) m ->
-            match Map.find m 0 with
-            | Some ends ->
-                if Set.mem ends (String.length s) then if is_pos then acc + 1 else acc
-                else if is_pos then acc
-                else acc + 1
-            | None -> if is_pos then acc else acc + 1)
-      in
-      1.0 -. (Float.of_int correct /. Float.of_int (List.length ctx.input))
+let target_distance = Value.target_distance (ectx ())
 
 let local_search_untimed p =
   let steps = local_search_steps () and ectx = ectx () in
