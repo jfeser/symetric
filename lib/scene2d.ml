@@ -101,17 +101,18 @@ let pp fmt x =
 let get x = Bitarray.get (pixels x)
 let[@inline] hamming c c' = Bitarray.hamming_distance (pixels c) (pixels c')
 let[@inline] hamming_weight c = Bitarray.hamming_weight (pixels c)
-let is_empty s = Bitarray.is_empty (pixels s)
+let is_empty s = not (Bitarray.any (pixels s))
 
 let[@inline] jaccard_canvas c c' =
   let h = hamming c c' in
   let l = Bitarray.length (pixels c) in
   Float.(of_int h / of_int l)
 
-let[@inline] jaccard_pixels c c' = Bitarray.jaccard c.buf.T.H.value c'.buf.T.H.value
+let[@inline] jaccard_pixels c c' =
+  Bitarray.jaccard_distance c.buf.T.H.value c'.buf.T.H.value
 
 let cosine c c' =
-  let n = Bitarray.hamming_weight (Bitarray.and_ (pixels c) (pixels c')) in
+  let n = Bitarray.hamming_weight Bitarray.O.(pixels c land pixels c') in
   let d = Bitarray.hamming_weight (pixels c) * Bitarray.hamming_weight (pixels c') in
   if d = 0 then 0. else Float.(of_int n / of_int d)
 
@@ -134,17 +135,17 @@ let rect (dim : Dim.t) lx ly hx hy =
 
 let inter s s' =
   assert (Dim.(s.dim = s'.dim));
-  of_bitarray s.dim @@ Bitarray.and_ (pixels s) (pixels s')
+  of_bitarray s.dim @@ Bitarray.O.(pixels s land pixels s')
 
 let union s s' =
   assert (Dim.(s.dim = s'.dim));
-  of_bitarray s.dim @@ Bitarray.or_ (pixels s) (pixels s')
+  of_bitarray s.dim @@ Bitarray.O.(pixels s lor pixels s')
 
 let sub s s' =
   assert (Dim.(s.dim = s'.dim));
-  of_bitarray s.dim @@ Bitarray.(and_ (pixels s) (not (pixels s')))
+  of_bitarray s.dim @@ Bitarray.O.(pixels s land lnot (pixels s'))
 
-let not s = of_bitarray s.dim @@ Bitarray.(not (pixels s))
+let not s = of_bitarray s.dim @@ Bitarray.O.(lnot (pixels s))
 
 let repeat s dx dy ct =
   let dim = s.dim in
@@ -163,7 +164,7 @@ let translate s dx dy =
 
 let bitarray_corners s =
   let w = Dim.scaled_xres s.dim and h = Dim.scaled_yres s.dim in
-  Bitarray.(or_ (corners ~w ~h (pixels s)) (corners ~w ~h (not (pixels s))))
+  Bitarray.(O.(corners ~w ~h (pixels s) lor corners ~w ~h (lnot (pixels s))))
 
 let corners s = of_bitarray s.dim @@ bitarray_corners s
 
@@ -232,7 +233,7 @@ let%expect_test "" =
     ................ |}]
 
 let corner_overlap s s' =
-  Base.not Bitarray.(is_empty @@ and_ (bitarray_corners s) (bitarray_corners s'))
+  Bitarray.(any @@ O.(bitarray_corners s land bitarray_corners s'))
 
 let%test_unit "" =
   let s = circle (Dim.create ~xres:16 ~yres:16 ()) 8 8 5 in

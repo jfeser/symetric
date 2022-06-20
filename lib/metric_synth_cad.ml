@@ -232,8 +232,10 @@ let relative_distance (v : Value.t) (v' : Value.t) =
       and n' = Scene2d.(pixels @@ sub target_scene x') in
       let p = Scene2d.(pixels @@ sub x target_scene)
       and p' = Scene2d.(pixels @@ sub x' target_scene) in
-      let union = Bitarray.(hamming_weight (or_ n n') + hamming_weight (or_ p p'))
-      and inter = Bitarray.(hamming_weight (and_ n n') + hamming_weight (and_ p p')) in
+      let union = Bitarray.(O.(hamming_weight (n lor n') + hamming_weight (p lor p')))
+      and inter =
+        Bitarray.(O.(hamming_weight (n land n') + hamming_weight (p land p')))
+      in
       assert (union >= inter && inter >= 0);
       if union = 0 then 0.0 else 1.0 -. (Float.of_int inter /. Float.of_int union)
   | v, v' -> if [%compare.equal: Value.t] v v' then 0.0 else Float.infinity
