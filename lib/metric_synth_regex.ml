@@ -9,6 +9,18 @@ let max_repeat_count = 4
 let target_groups_err = 0.1
 let max_int = 15
 
+let single_char_classes =
+  Iter.to_list
+  @@ Iter.map (fun c -> Op.Class (Single (Char.of_int_exn c)))
+  @@ Iter.int_range ~start:32 ~stop:126
+
+let multi_char_classes = [ Op.alpha; Op.num; Op.any; Op.cap; Op.low ]
+let ints = List.map (List.range ~stop:`inclusive 1 max_int) ~f:(fun i -> Op.Int i)
+
+let operators =
+  [ Op.Concat; And; Or; Repeat_range; Optional; Not ]
+  @ single_char_classes @ multi_char_classes @ ints
+
 (* parameters *)
 module Params = struct
   type t = {
@@ -36,12 +48,7 @@ module Params = struct
     {
       validate;
       local_search_steps;
-      operators =
-        [ Op.Concat; Op.alpha; Op.num; Op.any; Op.cap; Op.low; Repeat_range; Optional ]
-        @ (Iter.to_list
-          @@ Iter.map (fun c -> Op.Class (Single (Char.of_int_exn c)))
-          @@ Iter.int_range ~start:32 ~stop:126)
-        @ List.map (List.range ~stop:`inclusive 1 max_int) ~f:(fun i -> Op.Int i);
+      operators;
       group_threshold;
       max_cost;
       backward_pass_repeats;
@@ -217,6 +224,13 @@ let distance = Value.distance
 let relative_distance = Value.distance
 let target_distance = Value.target_distance (ectx ())
 
+let rewrite : Op.t P.t -> Op.t P.t list = function
+  | Apply (Int x, []) ->
+      if x <= 1 then [ Apply (Int (x + 1), []) ]
+      else if x >= max_int then [ Apply (Int (x - 1), []) ]
+      else [ Apply (Int (x + 1), []); Apply (Int (x - 1), []) ]
+  | _ -> []
+
 let local_search_untimed p =
   let steps = local_search_steps () and ectx = ectx () in
   let value_eval = Value.mk_eval_memoized () in
@@ -224,12 +238,7 @@ let local_search_untimed p =
     ~random:(match repair () with `Guided -> false | `Random -> true)
     (module Op)
     (module Value)
-    (function
-      | Apply (Int x, []) ->
-          if x <= 1 then [ Apply (Int (x + 1), []) ]
-          else if x >= max_int then [ Apply (Int (x - 1), []) ]
-          else [ Apply (Int (x + 1), []); Apply (Int (x - 1), []) ]
-      | _ -> [])
+    rewrite
     (Program.eval (value_eval ectx))
     p
   |> Iter.map (fun p -> (target_distance (Program.eval (value_eval ectx) p), p))
@@ -361,7 +370,7 @@ let backwards_pass class_ =
   else Iter.empty
 
 let synthesize () =
-  print_s [%message (ectx () : Value.Ctx.t)];
+  eprint_s [%message (ectx () : Value.Ctx.t)];
 
   Timer.start stats.runtime;
 

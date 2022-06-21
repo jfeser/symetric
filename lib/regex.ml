@@ -228,7 +228,8 @@ module Value = struct
         (Program.eval (eval_unmemoized ctx)
            Op.(concat (P.apply num) @@ concat (P.apply num) (P.apply alpha))
           : t)];
-    [%expect {|
+    [%expect
+      {|
       ( "Program.eval (eval_unmemoized ctx)\
        \n  (let open Op in concat (P.apply num) (P.apply alpha))"
        (Matches (((0 (2))) () () ((2 (4))) ((4 (6))))))
@@ -242,7 +243,8 @@ module Value = struct
     print_s
       [%message
         (Program.eval (eval_unmemoized ctx) Op.(P.apply num || P.apply alpha) : t)];
-    [%expect {|
+    [%expect
+      {|
       ( "Program.eval (eval_unmemoized ctx)\
        \n  (let open Op in (P.apply num) || (P.apply alpha))"
        (Matches (((0 (1)) (1 (2))) ((0 (1))) ((0 (1))) ((0 (1)) (2 (3)) (3 (4)))))) |}]
@@ -252,7 +254,8 @@ module Value = struct
     print_s
       [%message
         (Program.eval (eval_unmemoized ctx) Op.(repeat_range (P.apply num) 2 3) : t)];
-    [%expect {|
+    [%expect
+      {|
       ( "Program.eval (eval_unmemoized ctx)\
        \n  (let open Op in repeat_range (P.apply num) 2 3)"
        (Matches (() ((0 (2))) ((0 (2)) (1 (3))) ((0 (2)) (1 (3)) (2 (4)))))) |}]
