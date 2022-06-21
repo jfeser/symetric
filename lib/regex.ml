@@ -227,19 +227,35 @@ module Value = struct
       [%message
         (Program.eval (eval_unmemoized ctx)
            Op.(concat (P.apply num) @@ concat (P.apply num) (P.apply alpha))
-          : t)]
+          : t)];
+    [%expect {|
+      ( "Program.eval (eval_unmemoized ctx)\
+       \n  (let open Op in concat (P.apply num) (P.apply alpha))"
+       (Matches (((0 (2))) () () ((2 (4))) ((4 (6))))))
+      ( "Program.eval (eval_unmemoized ctx)\
+       \n  (let open Op in\
+       \n     (concat (P.apply num)) @@ (concat (P.apply num) (P.apply alpha)))"
+       (Matches (() () () ((1 (4))) ((3 (6)))))) |}]
 
   let%expect_test "" =
     let ctx = Ctx.create [ ("1e", true); ("1", true); ("e", true); ("1.1e", true) ] in
     print_s
       [%message
-        (Program.eval (eval_unmemoized ctx) Op.(P.apply num || P.apply alpha) : t)]
+        (Program.eval (eval_unmemoized ctx) Op.(P.apply num || P.apply alpha) : t)];
+    [%expect {|
+      ( "Program.eval (eval_unmemoized ctx)\
+       \n  (let open Op in (P.apply num) || (P.apply alpha))"
+       (Matches (((0 (1)) (1 (2))) ((0 (1))) ((0 (1))) ((0 (1)) (2 (3)) (3 (4)))))) |}]
 
   let%expect_test "" =
     let ctx = Ctx.create [ ("1", true); ("11", true); ("111", true); ("1111", true) ] in
     print_s
       [%message
-        (Program.eval (eval_unmemoized ctx) Op.(repeat_range (P.apply num) 2 3) : t)]
+        (Program.eval (eval_unmemoized ctx) Op.(repeat_range (P.apply num) 2 3) : t)];
+    [%expect {|
+      ( "Program.eval (eval_unmemoized ctx)\
+       \n  (let open Op in repeat_range (P.apply num) 2 3)"
+       (Matches (() ((0 (2))) ((0 (2)) (1 (3))) ((0 (2)) (1 (3)) (2 (4)))))) |}]
 
   let%expect_test "" =
     let input = "123456789.123" in
@@ -262,8 +278,8 @@ module Value = struct
       {|
       ("Program.eval (eval_unmemoized ctx) repeat"
        (Matches
-        (((0 (1 2 3)) (1 (2 3 4)) (2 (3 4 5)) (3 (4 5 6)) (4 (5 6 7)) (5 (6 7 8))
-          (6 (7 8 9)) (7 (8 9)) (8 (9)) (10 (11 12 13)) (11 (12 13)) (12 (13)))))) |}];
+        (((0 (1)) (1 (2)) (2 (3)) (3 (4)) (4 (5)) (5 (6)) (6 (7)) (7 (8)) (8 (9))
+          (10 (11)) (11 (12)) (12 (13)))))) |}];
     let ctx =
       Ctx.create
         [
@@ -297,29 +313,28 @@ module Value = struct
     print_s [%message (target_distance ctx repeat_concat_val : float)];
     [%expect
       {|
+      (dot_val (Matches (())))
+      (empty_val
+       (Matches
+        (((0 (0)) (1 (1)) (2 (2)) (3 (3)) (4 (4)) (5 (5)) (6 (6)) (7 (7)) (8 (8))
+          (9 (9)) (10 (10)) (11 (11)) (12 (12)) (13 (13)) (14 (14)) (15 (15))))))
+      (empty_or_dot_val
+       (Matches
+        (((0 (0)) (1 (1)) (2 (2)) (3 (3)) (4 (4)) (5 (5)) (6 (6)) (7 (7)) (8 (8))
+          (9 (9)) (10 (10)) (11 (11)) (12 (12)) (13 (13)) (14 (14)) (15 (15))))))
       (opt_val
        (Matches
         (((0 (0)) (1 (1)) (2 (2)) (3 (3)) (4 (4)) (5 (5)) (6 (6)) (7 (7)) (8 (8))
           (9 (9)) (10 (10)) (11 (11)) (12 (12)) (13 (13)) (14 (14)) (15 (15))))))
       (repeat_val
        (Matches
-        (((0 (1 2 3 4 5 6 7 8 9 10 11 12 13 14 15))
-          (1 (2 3 4 5 6 7 8 9 10 11 12 13 14 15))
-          (2 (3 4 5 6 7 8 9 10 11 12 13 14 15)) (3 (4 5 6 7 8 9 10 11 12 13 14 15))
-          (4 (5 6 7 8 9 10 11 12 13 14 15)) (5 (6 7 8 9 10 11 12 13 14 15))
-          (6 (7 8 9 10 11 12 13 14 15)) (7 (8 9 10 11 12 13 14 15))
-          (8 (9 10 11 12 13 14 15)) (9 (10 11 12 13 14 15)) (10 (11 12 13 14 15))
-          (11 (12 13 14 15)) (12 (13 14 15)) (13 (14 15)) (14 (15))))))
+        (((0 (1)) (1 (2)) (2 (3)) (3 (4)) (4 (5)) (5 (6)) (6 (7)) (7 (8)) (8 (9))
+          (9 (10)) (10 (11)) (11 (12)) (12 (13)) (13 (14)) (14 (15))))))
       (repeat_concat_val
        (Matches
-        (((0 (1 2 3 4 5 6 7 8 9 10 11 12 13 14 15))
-          (1 (2 3 4 5 6 7 8 9 10 11 12 13 14 15))
-          (2 (3 4 5 6 7 8 9 10 11 12 13 14 15)) (3 (4 5 6 7 8 9 10 11 12 13 14 15))
-          (4 (5 6 7 8 9 10 11 12 13 14 15)) (5 (6 7 8 9 10 11 12 13 14 15))
-          (6 (7 8 9 10 11 12 13 14 15)) (7 (8 9 10 11 12 13 14 15))
-          (8 (9 10 11 12 13 14 15)) (9 (10 11 12 13 14 15)) (10 (11 12 13 14 15))
-          (11 (12 13 14 15)) (12 (13 14 15)) (13 (14 15)) (14 (15))))))
-      ("target_distance ctx repeat_concat_val" 0) |}]
+        (((0 (1)) (1 (2)) (2 (3)) (3 (4)) (4 (5)) (5 (6)) (6 (7)) (7 (8)) (8 (9))
+          (9 (10)) (10 (11)) (11 (12)) (12 (13)) (13 (14)) (14 (15))))))
+      ("target_distance ctx repeat_concat_val" 1) |}]
 
   let mk_eval_memoized () =
     let module Key = struct
@@ -374,7 +389,7 @@ module Value = struct
     print_s [%message (c3 : t)];
     [%expect {| (c3 (Matches (((0 (1)) (1 (2)) (10 (11)) (11 (12)))))) |}];
     print_s [%message (distance c1 c2 : float) (distance c1 c3 : float)];
-    [%expect {| (("distance c1 c2" 1) ("distance c1 c3" 0.75)) |}]
+    [%expect {| (("distance c1 c2" 1) ("distance c1 c3" 0.5)) |}]
 
   let pp fmt = function
     | Matches m ->
