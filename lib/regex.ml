@@ -168,9 +168,7 @@ module Value = struct
                Iter.int_range ~start:0 ~stop:(String.length input - 1)
                |> Iter.filter (fun idx -> mem input.[idx])
                |> Iter.fold
-                    (fun m i ->
-                      let m = M.set m i (i + 1) true in
-                      M.set m (i + 1) i true)
+                    (fun m i -> M.set m i (i + 1) true)
                     (M.create (String.length input + 1) false)))
     | (Int _ | Empty | Class _), _ :: _ -> fail ()
     | (Not | Optional), [ Error ] -> Error
@@ -187,14 +185,13 @@ module Value = struct
         Matches (List.map2_exn x x' ~f:(fun x x' -> M.O.(x * x')))
     | Repeat_range, ([ Error; _; _ ] | [ _; Error; _ ] | [ _; _; Error ]) -> Error
     | Repeat_range, [ _; Int min; Int max ] when max < min -> Error
-    | Repeat_range, [ v; Int min; Int max ] ->
+    | Repeat_range, [ v; Int min; Int _max ] ->
         let rec repeat k = if k = 1 then v else eval ctx Concat [ v; repeat (k - 1) ] in
-        let rec repeat_or k =
-          if k = 1 then eval ctx Optional [ v ]
-          else eval ctx Optional [ eval ctx Concat [ v; repeat_or (k - 1) ] ]
-        in
-        if min = max then repeat min
-        else eval ctx Concat [ repeat min; repeat_or (max - min) ]
+        (* let rec repeat_range k = *)
+        (*   if k = max then repeat k else eval ctx Or [ repeat k; repeat_range (k + 1) ] *)
+        (* in *)
+        repeat min
+        (* repeat_range min *)
     | ( Repeat_range,
         ( []
         | [ _ ]
@@ -217,6 +214,32 @@ module Value = struct
               if [%equal: bool] is_pos full_match then acc + 1 else acc)
         in
         1.0 -. (Float.of_int correct /. Float.of_int (List.length ctx.input))
+
+  let%expect_test "" =
+    let ctx =
+      Ctx.create
+        [ ("1e", true); ("1", true); ("e", true); ("111e", true); ("eee11ee", true) ]
+    in
+    print_s
+      [%message
+        (Program.eval (eval_unmemoized ctx) Op.(concat (P.apply num) (P.apply alpha)) : t)];
+    print_s
+      [%message
+        (Program.eval (eval_unmemoized ctx)
+           Op.(concat (P.apply num) @@ concat (P.apply num) (P.apply alpha))
+          : t)]
+
+  let%expect_test "" =
+    let ctx = Ctx.create [ ("1e", true); ("1", true); ("e", true); ("1.1e", true) ] in
+    print_s
+      [%message
+        (Program.eval (eval_unmemoized ctx) Op.(P.apply num || P.apply alpha) : t)]
+
+  let%expect_test "" =
+    let ctx = Ctx.create [ ("1", true); ("11", true); ("111", true); ("1111", true) ] in
+    print_s
+      [%message
+        (Program.eval (eval_unmemoized ctx) Op.(repeat_range (P.apply num) 2 3) : t)]
 
   let%expect_test "" =
     let input = "123456789.123" in
@@ -325,12 +348,12 @@ module Value = struct
     match (v, v') with
     | Int x, Int x' -> if x = x' then 0. else 1.
     | Matches ms, Matches ms' ->
-        let similarity =
+        let distance =
           List.map2_exn ms ms' ~f:(fun m m' ->
               Bitarray.jaccard_distance (M.to_bitarray m) (M.to_bitarray m'))
           |> Iter.of_list |> Iter.mean |> Option.value ~default:0.
         in
-        1. -. similarity
+        distance
     | _ -> 1.
 
   let%expect_test "" =
@@ -366,7 +389,8 @@ let parse = [%of_sexp: Op.t Program.t]
 let load_bench ch =
   let open Option.Let_syntax in
   In_channel.input_lines ch |> Iter.of_list |> Iter.map String.strip
-  |> Iter.drop_while (fun line -> not ([%equal: string] line "// examples"))
+  |> Iter.drop_while (fun line ->
+         not ([%equal: string] line "// examples" || [%equal: string] line "// example"))
   |> Iter.drop 1
   |> Iter.filter_map (fun line ->
          let len = String.length line in
