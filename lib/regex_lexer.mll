@@ -21,12 +21,13 @@
 
 let num = ['0'-'9']+
 let id = ['a'-'z' 'A'-'Z']+
-let chars = '<' [' '-';' '=' '?'-'~']+ '>'
+let single = [' '-';' '=' '?'-'~']
 
 rule token = parse
   | '\n'       { Lexing.new_line lexbuf; token lexbuf }
   | '\t' '\r'  { token lexbuf }
-  | chars as x { CLASS x }
+  | '<' (single as x) '>' { CLASS (Char.to_string x) }
+  | '<' (['a'-'z']+ as x) '>' { CLASS x }
   | ' '        { token lexbuf }
   | "("        { LPAREN }
   | ")"        { RPAREN }

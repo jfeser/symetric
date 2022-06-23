@@ -227,7 +227,7 @@ let write_output m_prog =
 
 let distance = Value.distance
 let relative_distance = Value.distance
-let target_distance = Value.target_distance (ectx ())
+let target_distance v = Value.target_distance (ectx ()) v
 
 let rewrite : Op.t P.t -> Op.t P.t list = function
   | Apply (Int x, []) ->

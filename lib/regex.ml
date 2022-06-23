@@ -2,10 +2,10 @@ open Std
 module P = Program
 
 module Type = struct
-  type t = Int | Regex [@@deriving compare, equal, hash, sexp, yojson]
+  type t = Int | Regex | Output [@@deriving compare, equal, hash, sexp, yojson]
 
   let default = Int
-  let output = Regex
+  let output = Output
   let pp fmt x = Sexp.pp fmt @@ [%sexp_of: t] x
 end
 
@@ -86,7 +86,9 @@ module Op = struct
   let class_of_string_exn s =
     if String.length s = 1 then Class (Single s.[0])
     else
-      Class (Multi (List.find_exn named_classes ~f:(fun c -> [%equal: string] c.name s)))
+      match List.find named_classes ~f:(fun c -> [%equal: string] c.name s) with
+      | Some c -> Class (Multi c)
+      | None -> raise_s [%message "unexpected class name" s]
 
   let int x = Apply (Int x, [])
   let concat x x' = Apply (Concat, [ x; x' ])
@@ -178,13 +180,14 @@ module Value = struct
     | Repeat, [ (Matches _ as m); (Int _ as x) ] -> eval ctx Repeat_range [ m; x; x ]
     | Repeat_range, ([ Error; _; _ ] | [ _; Error; _ ] | [ _; _; Error ]) -> Error
     | Repeat_range, [ _; Int min; Int max ] when max.value < min.value -> Error
-    | Repeat_range, [ v; Int min; Int _max ] ->
+    | Repeat_range, [ v; Int min; Int max ] ->
         let rec repeat k = if k = 1 then v else eval ctx Concat [ v; repeat (k - 1) ] in
-        (* let rec repeat_range k = *)
-        (*   if k = max then repeat k else eval ctx Or [ repeat k; repeat_range (k + 1) ] *)
-        (* in *)
-        repeat min.value
-        (* repeat_range min *)
+        let rec repeat_range k =
+          if k = max.value then repeat k
+          else eval ctx Or [ repeat k; repeat_range (k + 1) ]
+        in
+        (* repeat min.value *)
+        repeat_range min.value
     | ( Repeat_range,
         ( []
         | [ _ ]
@@ -205,8 +208,8 @@ module Value = struct
         in
         if not args_valid then Error
         else
-          let eval_sketch op args =
-            match op with Op.Op op -> eval ctx op args | Hole i -> List.nth_exn args i
+          let eval_sketch op xs =
+            match op with Op.Op op -> eval ctx op xs | Hole i -> List.nth_exn args i
           in
           let ret = P.eval eval_sketch sk.term in
           match ret with
@@ -226,17 +229,17 @@ module Value = struct
       include Comparable.Make (T)
     end in
     let tbl = Hashtbl.create (module Key) in
-    let find_or_eval (ctx : Ctx.t) op args =
+    let rec find_or_eval (ctx : Ctx.t) op args =
       match Hashtbl.find tbl (op, args) with
       | Some v -> v
       | None ->
-          let v = eval_unmemoized ctx op args in
+          let v = eval_unmemoized_open find_or_eval ctx op args in
           Hashtbl.set tbl ~key:(op, args) ~data:v;
           v
     in
     find_or_eval
 
-  let eval = eval_unmemoized
+  let eval = mk_eval_memoized ()
 
   let target_distance (ctx : Ctx.t) = function
     | Matches m when Bitarray.get m.holes 0 ->
@@ -372,13 +375,12 @@ module Value = struct
           (9 (10)) (10 (11)) (11 (12)) (12 (13)) (13 (14)) (14 (15))))))
       ("target_distance ctx repeat_concat_val" 1) |}]
 
-  let eval = eval_unmemoized
   let is_error = function Error -> true | _ -> false
 
   let distance v v' =
     match (v, v') with
     | Int x, Int x' -> if x.value = x'.value then 0. else 1.
-    | Matches ms, Matches ms' ->
+    | Matches ms, Matches ms' when [%equal: Bitarray.t] ms.holes ms'.holes ->
         let distance =
           List.map2_exn ms.value ms'.value ~f:(fun m m' ->
               Bitarray.jaccard_distance (M.to_bitarray m) (M.to_bitarray m'))

@@ -17,7 +17,8 @@ let load_examples ch =
 let load_sketch_bench sketch_str bench_ch =
   let sketch_ast =
     let buf = Lexing.from_string sketch_str in
-    Regex_parser.sketch_eof Regex_lexer.token buf
+    try Regex_parser.sketch_eof Regex_lexer.token buf
+    with _ -> raise_s [%message "parse error" (buf.lex_curr_p.pos_cnum : int)]
   in
   let sketches, n_holes = Regex_sketch_ast.convert_sketch sketch_ast in
   let examples = load_examples bench_ch in

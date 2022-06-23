@@ -33,7 +33,8 @@ let number_holes sk =
         incr id;
         `Hole !id
   in
-  (f sk, !id)
+  let ret = f sk in
+  (ret, !id)
 
 let reduce reduce zero ( + ) = function
   | `Class _ | `Hole _ -> zero
@@ -49,7 +50,7 @@ open Regex
 let op (x : Op.t) = `Op x
 let int x = P.Apply (op (Op.Int x), [])
 let concat x x' = P.Apply (op Op.Concat, [ x; x' ])
-let repeat x n = P.Apply (op Op.Repeat_range, [ x; n ])
+let repeat x n = P.Apply (op Op.Repeat, [ x; n ])
 let repeat_range x l h = P.Apply (op Op.Repeat_range, [ x; l; h ])
 let not x = P.Apply (op Not, [ x ])
 let ( || ) x x' = P.apply (op Or) ~args:[ x; x' ]
@@ -90,9 +91,8 @@ let desugar x =
 
 let rec n_holes = function P.Apply (`Hole _, _) -> 1 | p -> P.reduce n_holes 0 ( + ) p
 
-let renumber_holes x n =
+let renumber_holes n_holes x n =
   let id = ref 0 in
-  let n_holes = n_holes x in
   let holes = ref [] in
   let rec f = function
     | P.Apply (`Op op, args) -> P.Apply (Op.Op op, List.map ~f args)
@@ -108,11 +108,13 @@ let renumber_holes x n =
     {
       term = sketch;
       arg_types = !holes;
-      ret_type = Regex;
+      ret_type = (if n = 0 then Output else Regex);
       ret_hole_mask = Bitarray.one_hot ~len:n_holes n;
     }
 
 let convert_sketch sk =
   let sk, n_holes = number_holes sk in
   let sks = desugar sk in
-  (List.map sks ~f:(fun (sk, n) -> renumber_holes sk n), n_holes)
+  let ret = (List.map sks ~f:(fun (sk, n) -> renumber_holes n_holes sk n), n_holes) in
+  print_s [%message (ret : Op.sketch list * int)];
+  ret
