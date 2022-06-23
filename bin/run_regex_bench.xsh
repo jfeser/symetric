@@ -2,6 +2,7 @@
 
 import glob
 import json
+import os
 import random
 
 dry_run = False
@@ -36,21 +37,29 @@ jobs = []
 ulimit_stanza = f"ulimit -v {mlimit}; ulimit -t {tlimit};"
 
 if run_metric:
-    for c in [10, 20, 30]:
-        for t in [0.01, 0.1, 0.2]:
-            for g in [100, 200, 400, 800]:
+    for c in [10, 20]:
+        for t in [0.0, 0.1, 0.2]:
+            for g in [100, 200]:
                 for f in glob.glob(base_dir + '/vendor/regel/exp/so/benchmark/*'):
-                    # standard
-                    job_name = f"metric-{len(jobs)}"
-                    cmd = [
-                        ulimit_stanza,
-                        f"{build_dir}/bin/metric_synth_regex.exe -max-cost {c} -verbosity 2",
-                        f"-group-threshold {t} -n-groups {g}",
-                        f"-out {job_name}.json -backward-pass-repeats 20",
-                        f"-local-search-steps 100 < {f} 2> {job_name}.log\n"
-                    ]
-                    cmd = ' '.join(cmd)
-                    jobs.append(cmd)
+                    bench_name = os.path.basename(f)
+                    sketch_file = f'{base_dir}/vendor/regel/exp/so/sketch/{bench_name}'
+                    with open(sketch_file, 'r') as sketch_f:
+                        sketches = sketch_f.readlines()
+                    for sketch in sketches:
+                        sketch = sketch.lstrip('0123456789').strip()
+                        print(sketch)
+                        # standard
+                        job_name = f"metric-{len(jobs)}"
+                        cmd = [
+                            ulimit_stanza,
+                            f"{build_dir}/bin/metric_synth_regex.exe -max-cost {c} -verbosity 2",
+                            f"-group-threshold {t} -n-groups {g}",
+                            f"-sketch '{sketch}'",
+                            f"-out {job_name}.json -backward-pass-repeats 20",
+                            f"-local-search-steps 100 < {f} 2> {job_name}.log\n"
+                        ]
+                        cmd = ' '.join(cmd)
+                        jobs.append(cmd)
 
 print('Jobs: ', len(jobs))
 
@@ -61,7 +70,7 @@ if dry_run:
 with open('jobs', 'w') as f:
     f.writelines(jobs)
 
-parallel --will-cite --eta -j 50 --joblog joblog :::: jobs
+parallel --will-cite --eta -j 40 --joblog joblog :::: jobs
 
 # Local Variables:
 # mode: python

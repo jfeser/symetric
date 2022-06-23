@@ -1,5 +1,4 @@
 (lang dune 2.7)
-(allow_approximate_merlin)
 (generate_opam_files true)
 (package
  (name staged_synth)
@@ -7,6 +6,7 @@
  (maintainers jack.feser@gmail.com)
  (depends
   (core (>= v0.15))
+  menhir
   ppx_jane
   base_quickcheck
   fmt

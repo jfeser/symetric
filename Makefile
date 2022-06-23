@@ -1,4 +1,4 @@
-REMOTE=sketch4.csail.mit.edu
+REMOTE=sketch2.csail.mit.edu
 
 .PHONY: get-runs send-code send-container build-table
 

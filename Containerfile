@@ -13,7 +13,8 @@ RUN opam install -y --deps-only /tmp/staged_synth.opam
 
 RUN echo 'PATH=$PATH:/opt/sketch/sketch-frontend' >> /root/.bashrc && \
     echo 'SKETCH_HOME=/opt/sketch/sketch-frontend/runtime' >> /root/.bashrc && \
-    echo 'eval $(opam env)' >> /root/.bashrc
+    echo 'eval $(opam env)' >> /root/.bashrc && \
+    echo 'git config --global --add safe.directory /work/staged-synth' >> /root/.bashrc
 
 CMD /bin/bash -i
 

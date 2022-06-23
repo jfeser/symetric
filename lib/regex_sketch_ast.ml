@@ -115,6 +115,4 @@ let renumber_holes n_holes x n =
 let convert_sketch sk =
   let sk, n_holes = number_holes sk in
   let sks = desugar sk in
-  let ret = (List.map sks ~f:(fun (sk, n) -> renumber_holes n_holes sk n), n_holes) in
-  print_s [%message (ret : Op.sketch list * int)];
-  ret
+  (List.map sks ~f:(fun (sk, n) -> renumber_holes n_holes sk n), n_holes)

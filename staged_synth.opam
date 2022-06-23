@@ -5,6 +5,7 @@ maintainer: ["jack.feser@gmail.com"]
 depends: [
   "dune" {>= "2.7"}
   "core" {>= "v0.15"}
+  "menhir"
   "ppx_jane"
   "base_quickcheck"
   "fmt"
