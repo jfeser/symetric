@@ -9,3 +9,8 @@
  (inline_tests)
  (flags :standard -g -open Core -w -9-32)
  (instrumentation (backend landmarks)))
+
+(menhir
+ (modules regex_parser))
+
+(ocamllex regex_lexer)

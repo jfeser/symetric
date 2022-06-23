@@ -24,6 +24,7 @@ let operators =
 (* parameters *)
 module Params = struct
   type t = {
+    sketch : string;
     local_search_steps : int;
     group_threshold : float;
     operators : Op.t list;
@@ -44,8 +45,9 @@ module Params = struct
 
   let create ~group_threshold ~max_cost ~local_search_steps ~backward_pass_repeats
       ~verbosity ~validate ~n_groups ~dump_search_space ~load_search_space
-      ~use_beam_search ~use_ranking ~extract ~repair ~output_file =
+      ~use_beam_search ~use_ranking ~extract ~repair ~output_file ~sketch =
     {
+      sketch;
       validate;
       local_search_steps;
       operators;
@@ -71,6 +73,7 @@ module Params = struct
       and dump_search_space =
         flag "-dump-search-space" (optional string)
           ~doc:" dump the search space to a file"
+      and sketch = flag "-sketch" (required string) ~doc:" regex sketch"
       and load_search_space =
         flag "-load-search-space" (optional string)
           ~doc:" load the search space from a file"
@@ -116,7 +119,7 @@ module Params = struct
         in
         create ~max_cost ~group_threshold ~local_search_steps ~backward_pass_repeats
           ~verbosity ~validate ~n_groups ~dump_search_space ~load_search_space
-          ~use_beam_search ~use_ranking ~extract ~repair ~output_file]
+          ~use_beam_search ~use_ranking ~extract ~repair ~output_file ~sketch]
 end
 
 let params = Set_once.create ()
@@ -131,6 +134,7 @@ let[@inline] extract () = (Set_once.get_exn params [%here]).Params.extract
 let[@inline] repair () = (Set_once.get_exn params [%here]).Params.repair
 let[@inline] use_ranking () = (Set_once.get_exn params [%here]).Params.use_ranking
 let[@inline] output_file () = (Set_once.get_exn params [%here]).Params.output_file
+let[@inline] sketch () = (Set_once.get_exn params [%here]).Params.sketch
 
 let[@inline] dump_search_space () =
   (Set_once.get_exn params [%here]).Params.dump_search_space
@@ -161,8 +165,9 @@ end
 
 let search_state = ref (S.create ())
 let[@inline] get_search_state () = !search_state
-let ectx = lazy (Value.Ctx.create (load_bench In_channel.stdin))
-let[@inline] ectx () = Lazy.force ectx
+let bench = lazy (Regex_bench.load_sketch_bench (sketch ()) In_channel.stdin)
+let[@inline] ectx () = Tuple.T2.get1 @@ Lazy.force bench
+let[@inline] operators () = (Tuple.T2.get2 @@ Lazy.force bench) @ operators ()
 
 type time_span = Time.Span.t
 

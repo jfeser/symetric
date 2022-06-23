@@ -36,6 +36,9 @@ let rec map ~f (Apply (op, args)) =
   let args' = List.map args ~f:(map ~f) in
   Apply (op', args')
 
+let reduce reduce zero ( + ) (Apply (_, args)) =
+  List.map args ~f:reduce |> List.fold_left ~init:zero ~f:( + )
+
 let[@specialize] rec iter (Apply (op, args)) f =
   f (op, args);
   List.iter args ~f:(fun p -> iter p f)

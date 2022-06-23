@@ -1,8 +1,6 @@
 open Std
 module P = Program
 
-let memoize = false
-
 module Type = struct
   type t = Int | Regex [@@deriving compare, equal, hash, sexp, yojson]
 
@@ -12,17 +10,32 @@ module Type = struct
 end
 
 module Op = struct
-  type char_class =
-    | Single of char
-    | Multi of { name : string; mem : char -> bool [@ignore] [@opaque] }
+  type bitarray = Bitarray.t [@@deriving compare, equal, hash, sexp]
+
+  let yojson_of_bitarray b = [%yojson_of: bool list] @@ Bitarray.to_list b
+  let bitarray_of_yojson _ = assert false
+
+  type multi_class = { name : string; mem : char -> bool [@ignore] [@opaque] }
   [@@deriving compare, equal, hash, sexp, yojson]
 
-  type sketch = Op of t | Arg of int
+  type char_class = Single of char | Multi of multi_class
+  [@@deriving compare, equal, hash, sexp, yojson]
+
+  type sketch_op = Op of t | Hole of int
+
+  and sketch = {
+    term : sketch_op P.t;
+    arg_types : (Type.t * bitarray) list;
+    ret_type : Type.t;
+    ret_hole_mask : bitarray;
+  }
 
   and t =
+    | Sketch of sketch
     | Int of int
     | Concat
     | Class of char_class
+    | Repeat
     | Repeat_range
     | Optional
     | Or
@@ -35,14 +48,18 @@ module Op = struct
   let cost _ = 1
 
   let ret_type : _ -> Type.t = function
-    | Concat | Class _ | Repeat_range | Optional | Or | And | Not | Empty -> Regex
+    | Concat | Class _ | Repeat_range | Repeat | Optional | Or | And | Not | Empty ->
+        Regex
     | Int _ -> Int
+    | Sketch x -> x.ret_type
 
   let args_type : _ -> Type.t list = function
-    | Concat | Or | And -> [ Regex; Regex ]
-    | Optional | Not -> [ Regex ]
     | Class _ | Int _ | Empty -> []
+    | Optional | Not -> [ Regex ]
+    | Concat | Or | And -> [ Regex; Regex ]
+    | Repeat -> [ Regex; Int ]
     | Repeat_range -> [ Regex; Int; Int ]
+    | Sketch x -> List.map ~f:Tuple.T2.get1 x.arg_types
 
   let arity op = List.length @@ args_type op
   let is_commutative = function Or | And -> true | _ -> false
@@ -53,29 +70,29 @@ module Op = struct
   let class_ c = Class (Single c)
 
   let alpha =
-    Class
-      (Multi
-         {
-           name = "<let>";
-           mem = (function 'a' .. 'z' | 'A' .. 'Z' -> true | _ -> false);
-         })
+    { name = "let"; mem = (function 'a' .. 'z' | 'A' .. 'Z' -> true | _ -> false) }
 
-  let num =
-    Class (Multi { name = "<num>"; mem = (function '0' .. '9' -> true | _ -> false) })
+  let num = { name = "num"; mem = (function '0' .. '9' -> true | _ -> false) }
+  let cap = { name = "cap"; mem = (function 'A' .. 'Z' -> true | _ -> false) }
+  let low = { name = "low"; mem = (function 'a' .. 'z' -> true | _ -> false) }
+  let any = { name = "any"; mem = (function ' ' .. '~' -> true | _ -> false) }
+  let named_classes = [ alpha; num; cap; low; any ]
+  let alpha = Class (Multi alpha)
+  let num = Class (Multi num)
+  let cap = Class (Multi cap)
+  let low = Class (Multi low)
+  let any = Class (Multi any)
 
-  let cap =
-    Class (Multi { name = "<cap>"; mem = (function 'A' .. 'Z' -> true | _ -> false) })
-
-  let low =
-    Class (Multi { name = "<low>"; mem = (function 'a' .. 'z' -> true | _ -> false) })
-
-  let any =
-    Class (Multi { name = "<any>"; mem = (function ' ' .. '~' -> true | _ -> false) })
+  let class_of_string_exn s =
+    if String.length s = 1 then Class (Single s.[0])
+    else
+      Class (Multi (List.find_exn named_classes ~f:(fun c -> [%equal: string] c.name s)))
 
   let int x = Apply (Int x, [])
   let concat x x' = Apply (Concat, [ x; x' ])
   let repeat_range x l h = Apply (Repeat_range, [ x; int l; int h ])
   let optional x = Apply (Optional, [ x ])
+  let not x = Apply (Not, [ x ])
   let ( || ) x x' = Apply (Or, [ x; x' ])
   let ( && ) x x' = Apply (And, [ x; x' ])
   let empty = Apply (Empty, [])
@@ -100,63 +117,33 @@ module Value = struct
 
   let match__of_sexp _ = assert false
 
-  type t = Int of int | Matches of match_ list | Error
+  type 'a hole_constr = { value : 'a; holes : Bitarray.t }
+  [@@deriving compare, equal, hash, sexp]
+
+  type t = Int of int hole_constr | Matches of match_ list hole_constr | Error
   [@@deriving compare, equal, hash, sexp]
 
   let default = Error
 
   module Ctx = struct
-    type t = { input : (string * bool) list } [@@deriving sexp]
+    type t = { input : (string * bool) list; n_holes : int } [@@deriving sexp]
 
-    let create input = { input }
+    let create input = { input; n_holes = 0 }
   end
-
-  let repeat_range matches l h =
-    let rec process all_reps m =
-      match Map.max_elt m with
-      | None -> all_reps
-      | Some (start, ends) ->
-          (* find all the repeats beginning from `start` *)
-          let this_reps = Map.singleton (module Int) 1 ends in
-          let this_reps =
-            Iter.of_set ends
-            |> Iter.fold
-                 (fun this_reps end_ ->
-                   match Map.find all_reps end_ with
-                   | Some reps ->
-                       Map.fold reps ~init:this_reps
-                         ~f:(fun ~key:count ~data:ends this_reps ->
-                           Map.update this_reps (count + 1) ~f:(function
-                             | Some ends' -> Set.union ends ends'
-                             | None -> ends))
-                   | None -> this_reps)
-                 this_reps
-          in
-          let all_reps =
-            if Map.is_empty this_reps then all_reps
-            else Map.add_exn all_reps ~key:start ~data:this_reps
-          in
-          process all_reps (Map.remove m start)
-    in
-    let all_reps = process (Map.empty (module Int)) matches in
-
-    let lower_bound = Incl l in
-    let upper_bound = match h with Some b -> Incl b | None -> Unbounded in
-    Map.map all_reps ~f:(fun reps ->
-        Map.subrange reps ~lower_bound ~upper_bound
-        |> Map.data
-        |> Set.union_list (module Int))
-
-  let eval_repeat_range ms min max =
-    List.map ms ~f:(fun m -> repeat_range m min (Some max))
 
   let eval_unmemoized_open eval (ctx : Ctx.t) (op : Op.t) args =
     let fail () = raise_s [%message "unexpected arguments" (op : Op.t) (args : t list)] in
+    let wrap0 x = { value = x; holes = Bitarray.create ctx.n_holes false } in
+    let wrap2 f x x' =
+      { value = f x.value x'.value; holes = Bitarray.O.(x.holes lor x'.holes) }
+    in
     match (op, args) with
-    | Int x, [] -> Int x
+    | Int x, [] -> Int (wrap0 x)
     | Empty, [] ->
         Matches
-          (List.map ctx.input ~f:(fun (input, _) -> M.identity (String.length input + 1)))
+          (wrap0
+          @@ List.map ctx.input ~f:(fun (input, _) ->
+                 M.identity (String.length input + 1)))
     | Class (Single c), [] ->
         eval ctx
           (Op.Class
@@ -164,33 +151,39 @@ module Value = struct
           []
     | Class (Multi { mem; _ }), [] ->
         Matches
-          (List.map ctx.input ~f:(fun (input, _) ->
-               Iter.int_range ~start:0 ~stop:(String.length input - 1)
-               |> Iter.filter (fun idx -> mem input.[idx])
-               |> Iter.fold
-                    (fun m i -> M.set m i (i + 1) true)
-                    (M.create (String.length input + 1) false)))
+          (wrap0
+          @@ List.map ctx.input ~f:(fun (input, _) ->
+                 Iter.int_range ~start:0 ~stop:(String.length input - 1)
+                 |> Iter.filter (fun idx -> mem input.[idx])
+                 |> Iter.fold
+                      (fun m i -> M.set m i (i + 1) true)
+                      (M.create (String.length input + 1) false)))
     | (Int _ | Empty | Class _), _ :: _ -> fail ()
     | (Not | Optional), [ Error ] -> Error
-    | Not, [ Matches x ] -> Matches (List.map x ~f:M.O.lnot)
+    | Not, [ Matches x ] -> Matches { x with value = List.map x.value ~f:M.O.lnot }
     | (Not | Optional), ([] | [ Int _ ] | _ :: _ :: _) -> fail ()
     | Optional, [ v ] -> eval ctx Or [ eval ctx Empty []; v ]
-    | (And | Or | Concat), ([ Error; _ ] | [ _; Error ]) -> Error
+    | (And | Or | Concat | Repeat), ([ Error; _ ] | [ _; Error ]) -> Error
     | (And | Or | Concat), ([] | [ _ ] | [ Int _; _ ] | [ _; Int _ ] | _ :: _ :: _ :: _)
       ->
         fail ()
-    | Or, [ Matches x; Matches x' ] -> Matches (List.map2_exn x x' ~f:M.O.( lor ))
-    | And, [ Matches x; Matches x' ] -> Matches (List.map2_exn x x' ~f:M.O.( land ))
+    | Or, [ Matches x; Matches x' ] ->
+        Matches (wrap2 (fun x x' -> List.map2_exn x x' ~f:M.O.( lor )) x x')
+    | And, [ Matches x; Matches x' ] ->
+        Matches (wrap2 (fun x x' -> List.map2_exn x x' ~f:M.O.( land )) x x')
     | Concat, [ Matches x; Matches x' ] ->
-        Matches (List.map2_exn x x' ~f:(fun x x' -> M.O.(x * x')))
+        Matches
+          (wrap2 (fun x x' -> List.map2_exn x x' ~f:(fun x x' -> M.O.(x * x'))) x x')
+    | Repeat, ([] | [ _ ] | [ Int _; _ ] | [ _; Matches _ ] | _ :: _ :: _ :: _) -> fail ()
+    | Repeat, [ (Matches _ as m); (Int _ as x) ] -> eval ctx Repeat_range [ m; x; x ]
     | Repeat_range, ([ Error; _; _ ] | [ _; Error; _ ] | [ _; _; Error ]) -> Error
-    | Repeat_range, [ _; Int min; Int max ] when max < min -> Error
+    | Repeat_range, [ _; Int min; Int max ] when max.value < min.value -> Error
     | Repeat_range, [ v; Int min; Int _max ] ->
         let rec repeat k = if k = 1 then v else eval ctx Concat [ v; repeat (k - 1) ] in
         (* let rec repeat_range k = *)
         (*   if k = max then repeat k else eval ctx Or [ repeat k; repeat_range (k + 1) ] *)
         (* in *)
-        repeat min
+        repeat min.value
         (* repeat_range min *)
     | ( Repeat_range,
         ( []
@@ -201,19 +194,59 @@ module Value = struct
         | [ _; _; Matches _ ]
         | _ :: _ :: _ :: _ :: _ ) ) ->
         fail ()
+    | Sketch sk, args -> (
+        let args_valid =
+          List.fold2_exn sk.arg_types args ~init:true ~f:(fun rest_valid (_, mask) arg ->
+              let check_holes holes = Bitarray.(any O.(mask land holes)) in
+              match arg with
+              | Error -> false
+              | Int x -> rest_valid && check_holes x.holes
+              | Matches x -> rest_valid && check_holes x.holes)
+        in
+        if not args_valid then Error
+        else
+          let eval_sketch op args =
+            match op with Op.Op op -> eval ctx op args | Hole i -> List.nth_exn args i
+          in
+          let ret = P.eval eval_sketch sk.term in
+          match ret with
+          | Error -> ret
+          | Int x -> Int { x with holes = sk.ret_hole_mask }
+          | Matches x -> Matches { x with holes = sk.ret_hole_mask })
 
   let rec eval_unmemoized ctx op args = eval_unmemoized_open eval_unmemoized ctx op args
 
+  let mk_eval_memoized () =
+    let module Key = struct
+      module T = struct
+        type nonrec t = Op.t * t list [@@deriving compare, hash, sexp]
+      end
+
+      include T
+      include Comparable.Make (T)
+    end in
+    let tbl = Hashtbl.create (module Key) in
+    let find_or_eval (ctx : Ctx.t) op args =
+      match Hashtbl.find tbl (op, args) with
+      | Some v -> v
+      | None ->
+          let v = eval_unmemoized ctx op args in
+          Hashtbl.set tbl ~key:(op, args) ~data:v;
+          v
+    in
+    find_or_eval
+
+  let eval = eval_unmemoized
+
   let target_distance (ctx : Ctx.t) = function
-    | Error -> 1.0
-    | Int _ -> 1.0
-    | Matches m ->
+    | Matches m when Bitarray.get m.holes 0 ->
         let correct =
-          List.fold2_exn ctx.input m ~init:0 ~f:(fun acc (s, is_pos) m ->
+          List.fold2_exn ctx.input m.value ~init:0 ~f:(fun acc (s, is_pos) m ->
               let full_match = M.get m 0 (String.length s) in
               if [%equal: bool] is_pos full_match then acc + 1 else acc)
         in
-        1.0 -. (Float.of_int correct /. Float.of_int (List.length ctx.input))
+        1. -. (Float.of_int correct /. Float.of_int (List.length ctx.input))
+    | _ -> 1.
 
   let%expect_test "" =
     let ctx =
@@ -339,35 +372,15 @@ module Value = struct
           (9 (10)) (10 (11)) (11 (12)) (12 (13)) (13 (14)) (14 (15))))))
       ("target_distance ctx repeat_concat_val" 1) |}]
 
-  let mk_eval_memoized () =
-    let module Key = struct
-      module T = struct
-        type nonrec t = Op.t * t list [@@deriving compare, hash, sexp]
-      end
-
-      include T
-      include Comparable.Make (T)
-    end in
-    let tbl = Hashtbl.create (module Key) in
-    let find_or_eval (ctx : Ctx.t) op args =
-      match Hashtbl.find tbl (op, args) with
-      | Some v -> v
-      | None ->
-          let v = eval_unmemoized ctx op args in
-          Hashtbl.set tbl ~key:(op, args) ~data:v;
-          v
-    in
-    find_or_eval
-
-  let eval = if memoize then mk_eval_memoized () else eval_unmemoized
+  let eval = eval_unmemoized
   let is_error = function Error -> true | _ -> false
 
   let distance v v' =
     match (v, v') with
-    | Int x, Int x' -> if x = x' then 0. else 1.
+    | Int x, Int x' -> if x.value = x'.value then 0. else 1.
     | Matches ms, Matches ms' ->
         let distance =
-          List.map2_exn ms ms' ~f:(fun m m' ->
+          List.map2_exn ms.value ms'.value ~f:(fun m m' ->
               Bitarray.jaccard_distance (M.to_bitarray m) (M.to_bitarray m'))
           |> Iter.of_list |> Iter.mean |> Option.value ~default:0.
         in
@@ -397,25 +410,9 @@ module Value = struct
   let pp fmt = function
     | Matches m ->
         Sexp.pp_hum fmt
-          ([%sexp_of: bool list] (List.map m ~f:(fun m -> M.get m 0 (M.dim m - 1))))
+          ([%sexp_of: bool list] (List.map m.value ~f:(fun m -> M.get m 0 (M.dim m - 1))))
     | _ -> ()
 end
 
 let serialize = [%sexp_of: Op.t Program.t]
 let parse = [%of_sexp: Op.t Program.t]
-
-let load_bench ch =
-  let open Option.Let_syntax in
-  In_channel.input_lines ch |> Iter.of_list |> Iter.map String.strip
-  |> Iter.drop_while (fun line ->
-         not ([%equal: string] line "// examples" || [%equal: string] line "// example"))
-  |> Iter.drop 1
-  |> Iter.filter_map (fun line ->
-         let len = String.length line in
-         if len > 0 then
-           let%map is_pos =
-             match line.[len - 1] with '+' -> Some true | '-' -> Some false | _ -> None
-           in
-           (String.drop_suffix (String.drop_prefix line 1) 3, is_pos)
-         else None)
-  |> Iter.to_list

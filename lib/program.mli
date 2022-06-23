@@ -13,6 +13,7 @@ val ops : 'a t -> 'a list
 val iter : 'a t -> ('a * 'a t list) Iter.t
 val mapi : f:(int -> 'a -> 'b) -> 'a t -> 'b t
 val map : f:('a -> 'a t list -> 'b) -> 'a t -> 'b t
+val reduce : ('a t -> 'b) -> 'b -> ('b -> 'b -> 'b) -> 'a t -> 'b
 val subprograms : 'a t -> 'a t Iter.t
 val commutative_closure : is_commutative:('a -> bool) -> 'a t -> 'a t Iter.t
 
