@@ -34,7 +34,7 @@ let number_holes sk =
         `Hole !id
   in
   let ret = f sk in
-  (ret, !id)
+  (ret, !id + 1)
 
 let reduce reduce zero ( + ) = function
   | `Class _ | `Hole _ -> zero
@@ -109,6 +109,7 @@ let renumber_holes n_holes x n =
   let sketch = f x in
   Op.
     {
+      id = n;
       term = sketch;
       arg_types = !holes;
       ret_type = (if n = 0 then Output else Regex);

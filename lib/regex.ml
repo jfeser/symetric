@@ -24,10 +24,11 @@ module Op = struct
   type sketch_op = Op of t | Hole of int
 
   and sketch = {
-    term : sketch_op P.t;
-    arg_types : (Type.t * bitarray) list;
-    ret_type : Type.t;
-    ret_hole_mask : bitarray;
+    id : int;
+    term : sketch_op P.t; [@ignore]
+    arg_types : (Type.t * bitarray) list; [@ignore]
+    ret_type : Type.t; [@ignore]
+    ret_hole_mask : bitarray; [@ignore]
   }
 
   and t =
@@ -267,7 +268,7 @@ module Value = struct
     in
     find_or_eval
 
-  let eval = mk_eval_memoized ()
+  let eval = eval_unmemoized
 
   let target_distance (ctx : Ctx.t) = function
     | Matches m when Bitarray.length m.holes = 0 || Bitarray.get m.holes 0 ->
@@ -334,7 +335,8 @@ module Value = struct
     let input = "123456789.123" in
     let ctx = Ctx.create [ (input, true) ] in
     print_s [%message (eval_unmemoized ctx (Op.class_ '.') [] : t)];
-    [%expect {|
+    [%expect
+      {|
       ("eval_unmemoized ctx (Op.class_ '.') []"
        (Matches ((value (((9 (10))))) (holes ((buf "") (len 0)))))) |}];
     print_s [%message (eval_unmemoized ctx (Op.class_ '1') [] : t)];
@@ -468,11 +470,14 @@ module Value = struct
         []
     in
     print_s [%message (c1 : t)];
-    [%expect {| (c1 (Matches ((value (((0 (1)) (10 (11))))) (holes ((buf "") (len 0)))))) |}];
+    [%expect
+      {| (c1 (Matches ((value (((0 (1)) (10 (11))))) (holes ((buf "") (len 0)))))) |}];
     print_s [%message (c2 : t)];
-    [%expect {| (c2 (Matches ((value (((1 (2)) (11 (12))))) (holes ((buf "") (len 0)))))) |}];
+    [%expect
+      {| (c2 (Matches ((value (((1 (2)) (11 (12))))) (holes ((buf "") (len 0)))))) |}];
     print_s [%message (c3 : t)];
-    [%expect {|
+    [%expect
+      {|
       (c3
        (Matches
         ((value (((0 (1)) (1 (2)) (10 (11)) (11 (12)))))
