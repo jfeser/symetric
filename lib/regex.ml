@@ -215,7 +215,6 @@ module Value = struct
           if k = max.value then repeat k
           else eval ctx Or [ repeat k; repeat_range (k + 1) ]
         in
-        (* repeat min.value *)
         repeat_range min.value
     | ( Repeat_range,
         ( []
@@ -271,7 +270,7 @@ module Value = struct
   let eval = mk_eval_memoized ()
 
   let target_distance (ctx : Ctx.t) = function
-    | Matches m when Bitarray.get m.holes 0 ->
+    | Matches m when Bitarray.length m.holes = 0 || Bitarray.get m.holes 0 ->
         let correct =
           List.fold2_exn ctx.input m.value ~init:0 ~f:(fun acc (s, is_pos) m ->
               let full_match = M.get m 0 (String.length s) in
@@ -297,11 +296,13 @@ module Value = struct
       {|
       ( "Program.eval (eval_unmemoized ctx)\
        \n  (let open Op in concat (P.apply num) (P.apply alpha))"
-       (Matches (((0 (2))) () () ((2 (4))) ((4 (6))))))
+       (Matches
+        ((value (((0 (2))) () () ((2 (4))) ((4 (6))))) (holes ((buf "") (len 0))))))
       ( "Program.eval (eval_unmemoized ctx)\
        \n  (let open Op in\
        \n     (concat (P.apply num)) @@ (concat (P.apply num) (P.apply alpha)))"
-       (Matches (() () () ((1 (4))) ((3 (6)))))) |}]
+       (Matches
+        ((value (() () () ((1 (4))) ((3 (6))))) (holes ((buf "") (len 0)))))) |}]
 
   let%expect_test "" =
     let ctx = Ctx.create [ ("1e", true); ("1", true); ("e", true); ("1.1e", true) ] in
@@ -312,7 +313,9 @@ module Value = struct
       {|
       ( "Program.eval (eval_unmemoized ctx)\
        \n  (let open Op in (P.apply num) || (P.apply alpha))"
-       (Matches (((0 (1)) (1 (2))) ((0 (1))) ((0 (1))) ((0 (1)) (2 (3)) (3 (4)))))) |}]
+       (Matches
+        ((value (((0 (1)) (1 (2))) ((0 (1))) ((0 (1))) ((0 (1)) (2 (3)) (3 (4)))))
+         (holes ((buf "") (len 0)))))) |}]
 
   let%expect_test "" =
     let ctx = Ctx.create [ ("1", true); ("11", true); ("111", true); ("1111", true) ] in
@@ -323,31 +326,41 @@ module Value = struct
       {|
       ( "Program.eval (eval_unmemoized ctx)\
        \n  (let open Op in repeat_range (P.apply num) 2 3)"
-       (Matches (() ((0 (2))) ((0 (2)) (1 (3))) ((0 (2)) (1 (3)) (2 (4)))))) |}]
+       (Matches
+        ((value (() ((0 (2))) ((0 (2 3)) (1 (3))) ((0 (2 3)) (1 (3 4)) (2 (4)))))
+         (holes ((buf "") (len 0)))))) |}]
 
   let%expect_test "" =
     let input = "123456789.123" in
     let ctx = Ctx.create [ (input, true) ] in
     print_s [%message (eval_unmemoized ctx (Op.class_ '.') [] : t)];
-    [%expect {| ("eval_unmemoized ctx (Op.class_ '.') []" (Matches (((9 (10)))))) |}];
+    [%expect {|
+      ("eval_unmemoized ctx (Op.class_ '.') []"
+       (Matches ((value (((9 (10))))) (holes ((buf "") (len 0)))))) |}];
     print_s [%message (eval_unmemoized ctx (Op.class_ '1') [] : t)];
     [%expect
-      {| ("eval_unmemoized ctx (Op.class_ '1') []" (Matches (((0 (1)) (10 (11)))))) |}];
+      {|
+        ("eval_unmemoized ctx (Op.class_ '1') []"
+         (Matches ((value (((0 (1)) (10 (11))))) (holes ((buf "") (len 0)))))) |}];
     let concat =
       Program.(
         Apply (Op.Concat, [ Apply (Op.class_ '1', []); Apply (Op.class_ '2', []) ]))
     in
     print_s [%message (Program.eval (eval_unmemoized ctx) concat : t)];
     [%expect
-      {| ("Program.eval (eval_unmemoized ctx) concat" (Matches (((0 (2)) (10 (12)))))) |}];
+      {|
+        ("Program.eval (eval_unmemoized ctx) concat"
+         (Matches ((value (((0 (2)) (10 (12))))) (holes ((buf "") (len 0)))))) |}];
     let repeat = Op.(repeat_range (P.apply Op.num) 1 3) in
     print_s [%message (Program.eval (eval_unmemoized ctx) repeat : t)];
     [%expect
       {|
       ("Program.eval (eval_unmemoized ctx) repeat"
        (Matches
-        (((0 (1)) (1 (2)) (2 (3)) (3 (4)) (4 (5)) (5 (6)) (6 (7)) (7 (8)) (8 (9))
-          (10 (11)) (11 (12)) (12 (13)))))) |}];
+        ((value
+          (((0 (1 2 3)) (1 (2 3 4)) (2 (3 4 5)) (3 (4 5 6)) (4 (5 6 7)) (5 (6 7 8))
+            (6 (7 8 9)) (7 (8 9)) (8 (9)) (10 (11 12 13)) (11 (12 13)) (12 (13)))))
+         (holes ((buf "") (len 0)))))) |}];
     let ctx =
       Ctx.create
         [
@@ -381,28 +394,53 @@ module Value = struct
     print_s [%message (target_distance ctx repeat_concat_val : float)];
     [%expect
       {|
-      (dot_val (Matches (())))
+      (dot_val (Matches ((value (())) (holes ((buf "") (len 0))))))
       (empty_val
        (Matches
-        (((0 (0)) (1 (1)) (2 (2)) (3 (3)) (4 (4)) (5 (5)) (6 (6)) (7 (7)) (8 (8))
-          (9 (9)) (10 (10)) (11 (11)) (12 (12)) (13 (13)) (14 (14)) (15 (15))))))
+        ((value
+          (((0 (0)) (1 (1)) (2 (2)) (3 (3)) (4 (4)) (5 (5)) (6 (6)) (7 (7))
+            (8 (8)) (9 (9)) (10 (10)) (11 (11)) (12 (12)) (13 (13)) (14 (14))
+            (15 (15)))))
+         (holes ((buf "") (len 0))))))
       (empty_or_dot_val
        (Matches
-        (((0 (0)) (1 (1)) (2 (2)) (3 (3)) (4 (4)) (5 (5)) (6 (6)) (7 (7)) (8 (8))
-          (9 (9)) (10 (10)) (11 (11)) (12 (12)) (13 (13)) (14 (14)) (15 (15))))))
+        ((value
+          (((0 (0)) (1 (1)) (2 (2)) (3 (3)) (4 (4)) (5 (5)) (6 (6)) (7 (7))
+            (8 (8)) (9 (9)) (10 (10)) (11 (11)) (12 (12)) (13 (13)) (14 (14))
+            (15 (15)))))
+         (holes ((buf "") (len 0))))))
       (opt_val
        (Matches
-        (((0 (0)) (1 (1)) (2 (2)) (3 (3)) (4 (4)) (5 (5)) (6 (6)) (7 (7)) (8 (8))
-          (9 (9)) (10 (10)) (11 (11)) (12 (12)) (13 (13)) (14 (14)) (15 (15))))))
+        ((value
+          (((0 (0)) (1 (1)) (2 (2)) (3 (3)) (4 (4)) (5 (5)) (6 (6)) (7 (7))
+            (8 (8)) (9 (9)) (10 (10)) (11 (11)) (12 (12)) (13 (13)) (14 (14))
+            (15 (15)))))
+         (holes ((buf "") (len 0))))))
       (repeat_val
        (Matches
-        (((0 (1)) (1 (2)) (2 (3)) (3 (4)) (4 (5)) (5 (6)) (6 (7)) (7 (8)) (8 (9))
-          (9 (10)) (10 (11)) (11 (12)) (12 (13)) (13 (14)) (14 (15))))))
+        ((value
+          (((0 (1 2 3 4 5 6 7 8 9 10 11 12 13 14 15))
+            (1 (2 3 4 5 6 7 8 9 10 11 12 13 14 15))
+            (2 (3 4 5 6 7 8 9 10 11 12 13 14 15))
+            (3 (4 5 6 7 8 9 10 11 12 13 14 15)) (4 (5 6 7 8 9 10 11 12 13 14 15))
+            (5 (6 7 8 9 10 11 12 13 14 15)) (6 (7 8 9 10 11 12 13 14 15))
+            (7 (8 9 10 11 12 13 14 15)) (8 (9 10 11 12 13 14 15))
+            (9 (10 11 12 13 14 15)) (10 (11 12 13 14 15)) (11 (12 13 14 15))
+            (12 (13 14 15)) (13 (14 15)) (14 (15)))))
+         (holes ((buf "") (len 0))))))
       (repeat_concat_val
        (Matches
-        (((0 (1)) (1 (2)) (2 (3)) (3 (4)) (4 (5)) (5 (6)) (6 (7)) (7 (8)) (8 (9))
-          (9 (10)) (10 (11)) (11 (12)) (12 (13)) (13 (14)) (14 (15))))))
-      ("target_distance ctx repeat_concat_val" 1) |}]
+        ((value
+          (((0 (1 2 3 4 5 6 7 8 9 10 11 12 13 14 15))
+            (1 (2 3 4 5 6 7 8 9 10 11 12 13 14 15))
+            (2 (3 4 5 6 7 8 9 10 11 12 13 14 15))
+            (3 (4 5 6 7 8 9 10 11 12 13 14 15)) (4 (5 6 7 8 9 10 11 12 13 14 15))
+            (5 (6 7 8 9 10 11 12 13 14 15)) (6 (7 8 9 10 11 12 13 14 15))
+            (7 (8 9 10 11 12 13 14 15)) (8 (9 10 11 12 13 14 15))
+            (9 (10 11 12 13 14 15)) (10 (11 12 13 14 15)) (11 (12 13 14 15))
+            (12 (13 14 15)) (13 (14 15)) (14 (15)))))
+         (holes ((buf "") (len 0))))))
+      ("target_distance ctx repeat_concat_val" 0) |}]
 
   let is_error = function Error -> true | _ -> false
 
@@ -430,11 +468,15 @@ module Value = struct
         []
     in
     print_s [%message (c1 : t)];
-    [%expect {| (c1 (Matches (((0 (1)) (10 (11)))))) |}];
+    [%expect {| (c1 (Matches ((value (((0 (1)) (10 (11))))) (holes ((buf "") (len 0)))))) |}];
     print_s [%message (c2 : t)];
-    [%expect {| (c2 (Matches (((1 (2)) (11 (12)))))) |}];
+    [%expect {| (c2 (Matches ((value (((1 (2)) (11 (12))))) (holes ((buf "") (len 0)))))) |}];
     print_s [%message (c3 : t)];
-    [%expect {| (c3 (Matches (((0 (1)) (1 (2)) (10 (11)) (11 (12)))))) |}];
+    [%expect {|
+      (c3
+       (Matches
+        ((value (((0 (1)) (1 (2)) (10 (11)) (11 (12)))))
+         (holes ((buf "") (len 0)))))) |}];
     print_s [%message (distance c1 c2 : float) (distance c1 c3 : float)];
     [%expect {| (("distance c1 c2" 1) ("distance c1 c3" 0.5)) |}]
 
