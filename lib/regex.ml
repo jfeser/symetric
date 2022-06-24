@@ -75,8 +75,32 @@ module Op = struct
   let num = { name = "num"; mem = (function '0' .. '9' -> true | _ -> false) }
   let cap = { name = "cap"; mem = (function 'A' .. 'Z' -> true | _ -> false) }
   let low = { name = "low"; mem = (function 'a' .. 'z' -> true | _ -> false) }
+
+  let spec =
+    {
+      name = "spec";
+      mem =
+        (function
+        | '!' .. '/' | ':' .. '@' | '[' .. '`' | '{' .. '~' -> true | _ -> false);
+    }
+
+  let alphanum =
+    {
+      name = "alphanum";
+      mem = (function 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' -> true | _ -> false);
+    }
+
+  let hex =
+    {
+      name = "hex";
+      mem = (function 'a' .. 'f' | 'A' .. 'F' | '0' .. '9' -> true | _ -> false);
+    }
+
+  let vow =
+    { name = "vow"; mem = (function 'a' | 'e' | 'i' | 'o' | 'u' -> true | _ -> false) }
+
   let any = { name = "any"; mem = (function ' ' .. '~' -> true | _ -> false) }
-  let named_classes = [ alpha; num; cap; low; any ]
+  let named_classes = [ alpha; num; cap; low; any; spec; alphanum; hex ]
   let alpha = Class (Multi alpha)
   let num = Class (Multi num)
   let cap = Class (Multi cap)
