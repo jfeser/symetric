@@ -37,9 +37,9 @@ jobs = []
 ulimit_stanza = f"ulimit -v {mlimit}; ulimit -t {tlimit};"
 
 if run_metric:
-    for c in [10, 20]:
-        for t in [0.0, 0.1, 0.2]:
-            for g in [100, 200]:
+    for c in [20, 25]:
+        for t in [0.0, 0.2, 0.3]:
+            for g in [200, 300]:
                 for f in glob.glob(base_dir + '/vendor/regel/exp/so/benchmark/*'):
                     bench_name = os.path.basename(f)
                     sketch_file = f'{base_dir}/vendor/regel/exp/so/sketch/{bench_name}'
