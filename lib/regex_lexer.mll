@@ -16,6 +16,7 @@
         "endwith", UNOP Endwith;
         "star", UNOP Star;
         "contain", UNOP Contain;
+        "sep", BINOP Sep;
       ]
 }
 

@@ -1,5 +1,5 @@
 type unop = Not | Startwith | Endwith | Contain | Star [@@deriving sexp]
-type binop = And | Or | Concat [@@deriving sexp]
+type binop = And | Or | Concat | Sep | Sketch [@@deriving sexp]
 type num = [ `Num of int | `Hole ] [@@deriving sexp]
 
 type 't ast =
@@ -63,17 +63,20 @@ let desugar x =
   let rec desugar = function
     | `Class c -> P.apply (op (Op.class_of_string_exn c))
     | `Unop (Not, x) -> not (desugar x)
-    | `Unop (Startwith, x) -> concat (desugar x) anything
-    | `Unop (Endwith, x) -> concat anything (desugar x)
-    | `Unop (Contain, x) -> concat anything (concat (desugar x) anything)
-    | `Unop (Star, x) -> empty || repeat_range (desugar x) (int 1) (int 15)
     | `Binop (And, x, x') -> desugar x && desugar x'
     | `Binop (Or, x, x') -> desugar x || desugar x'
     | `Binop (Concat, x, x') -> concat (desugar x) (desugar x')
     | `Repeat (x, n) -> repeat (desugar x) (desugar_num n)
-    | `Repeat_at_least (x, n) -> repeat_range (desugar x) (desugar_num n) (int 15)
     | `Repeat_range (x, n, n') ->
         repeat_range (desugar x) (desugar_num n) (desugar_num n')
+    | `Unop (Startwith, x) -> concat (desugar x) anything
+    | `Unop (Endwith, x) -> concat anything (desugar x)
+    | `Unop (Contain, x) -> concat anything (concat (desugar x) anything)
+    | `Unop (Star, x) -> empty || desugar (`Repeat_at_least (x, `Num 1))
+    | `Binop (Sketch, x, _) -> desugar x
+    | `Binop (Sep, x, x') ->
+        desugar (`Binop (Concat, x, `Unop (Star, `Binop (Concat, x', x))))
+    | `Repeat_at_least (x, n) -> repeat_range (desugar x) (desugar_num n) (int 15)
     | `Hole (xs, n) ->
         let xs' =
           Iter.of_list xs |> Iter.map desugar

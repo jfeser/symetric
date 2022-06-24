@@ -97,7 +97,12 @@ module Op = struct
     }
 
   let vow =
-    { name = "vow"; mem = (function 'a' | 'e' | 'i' | 'o' | 'u' -> true | _ -> false) }
+    {
+      name = "vow";
+      mem =
+        (function
+        | 'a' | 'e' | 'i' | 'o' | 'u' | 'A' | 'E' | 'I' | 'O' | 'U' -> true | _ -> false);
+    }
 
   let any = { name = "any"; mem = (function ' ' .. '~' -> true | _ -> false) }
   let named_classes = [ alpha; num; cap; low; any; spec; alphanum; hex ]
