@@ -15,6 +15,7 @@ let single_char_classes =
   @@ Iter.int_range ~start:32 ~stop:126
 
 let multi_char_classes = [ Op.alpha; Op.num; Op.any; Op.cap; Op.low ]
+let all_classes = single_char_classes @ multi_char_classes
 let ints = List.map (List.range ~stop:`inclusive 1 max_int) ~f:(fun i -> Op.Int i)
 
 let operators =
@@ -234,6 +235,7 @@ let rewrite : Op.t P.t -> Op.t P.t list = function
       if x <= 1 then [ Apply (Int (x + 1), []) ]
       else if x >= max_int then [ Apply (Int (x - 1), []) ]
       else [ Apply (Int (x + 1), []); Apply (Int (x - 1), []) ]
+  | Apply (Repeat, [ r; n ]) -> [ Apply (Repeat_range, [ r; n; n ]) ]
   | _ -> []
 
 let local_search_untimed p =
@@ -431,6 +433,7 @@ let synthesize () =
                     Log.log 2 (fun m ->
                         m "Best (d=%f):@.%a" (target_distance found_value) Value.pp
                           found_value);
+                    Log.sexp 2 (lazy ([%sexp_of: Op.t Program.t] p));
 
                     if Float.(target_distance found_value = 0.) then (
                       Log.log 0 (fun m -> m "local search iters %d" local_search_iters);

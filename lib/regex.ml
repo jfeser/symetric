@@ -192,7 +192,13 @@ module Value = struct
                       (M.create (String.length input + 1) false)))
     | (Int _ | Empty | Class _), _ :: _ -> fail ()
     | (Not | Optional), [ Error ] -> Error
-    | Not, [ Matches x ] -> Matches { x with value = List.map x.value ~f:M.O.lnot }
+    | Not, [ Matches x ] ->
+        Matches
+          {
+            x with
+            value =
+              List.map x.value ~f:(fun m -> M.(O.(lnot m land upper_triangle (dim m))));
+          }
     | (Not | Optional), ([] | [ Int _ ] | _ :: _ :: _) -> fail ()
     | Optional, [ v ] -> eval ctx Or [ eval ctx Empty []; v ]
     | (And | Or | Concat | Repeat), ([ Error; _ ] | [ _; Error ]) -> Error
@@ -211,12 +217,13 @@ module Value = struct
         Matches { ms with value = List.map ms.value ~f:(fun m -> M.pow m n.value) }
     | Repeat_range, ([ Error; _; _ ] | [ _; Error; _ ] | [ _; _; Error ]) -> Error
     | Repeat_range, [ _; Int min; Int max ] when max.value < min.value -> Error
-    | Repeat_range, [ v; Int min; Int max ] ->
-        let rec repeat_range k =
-          if k = max.value then eval ctx Repeat [ v; Int (wrap0 k) ]
-          else eval ctx Or [ eval ctx Repeat [ v; Int (wrap0 k) ]; repeat_range (k + 1) ]
-        in
-        repeat_range min.value
+    | Repeat_range, [ Matches ms; Int min; Int max ] ->
+        Matches
+          {
+            ms with
+            value =
+              List.map ms.value ~f:(fun m -> M.transitive_range m min.value max.value);
+          }
     | ( Repeat_range,
         ( []
         | [ _ ]
