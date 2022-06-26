@@ -431,7 +431,6 @@ let synthesize () =
                     Log.log 2 (fun m ->
                         m "Best (d=%f):@.%a" (target_distance found_value) Value.pp
                           found_value);
-                    Log.sexp 2 (lazy [%message (p : Op.t Program.t)]);
 
                     if Float.(target_distance found_value = 0.) then (
                       Log.log 0 (fun m -> m "local search iters %d" local_search_iters);

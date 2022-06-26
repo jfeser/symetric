@@ -96,14 +96,17 @@ let rec n_holes = function P.Apply (`Hole _, _) -> 1 | p -> P.reduce n_holes 0 (
 
 let renumber_holes n_holes x n =
   let id = ref 0 in
-  let holes = ref [] in
+  let holes = ref (Map.empty (module Int)) in
   let rec f = function
     | P.Apply (`Op op, args) -> P.Apply (Op.Op op, List.map ~f args)
-    | P.Apply (`Hole (n, t), []) ->
-        let ret = P.Apply (Op.Hole !id, []) in
-        incr id;
-        holes := !holes @ [ (t, Bitarray.one_hot ~len:n_holes n) ];
-        ret
+    | P.Apply (`Hole (n, t), []) -> (
+        match Map.find !holes n with
+        | Some (i, _, _) -> P.Apply (Op.Hole i, [])
+        | None ->
+            let i = !id in
+            incr id;
+            holes := Map.set !holes ~key:n ~data:(i, t, Bitarray.one_hot ~len:n_holes n);
+            P.Apply (Op.Hole i, []))
     | P.Apply (`Hole _, _ :: _) -> failwith "hole with arguments"
   in
   let sketch = f x in
@@ -111,7 +114,10 @@ let renumber_holes n_holes x n =
     {
       id = n;
       term = sketch;
-      arg_types = !holes;
+      arg_types =
+        Map.data !holes
+        |> List.sort ~compare:(fun (i, _, _) (i', _, _) -> [%compare: int] i i')
+        |> List.map ~f:(fun (_, t, b) -> (t, b));
       ret_type = (if n = 0 then Output else Regex);
       ret_hole_mask = Bitarray.one_hot ~len:n_holes n;
     }

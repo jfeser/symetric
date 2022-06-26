@@ -207,14 +207,14 @@ module Value = struct
         Matches
           (wrap2 (fun x x' -> List.map2_exn x x' ~f:(fun x x' -> M.O.(x * x'))) x x')
     | Repeat, ([] | [ _ ] | [ Int _; _ ] | [ _; Matches _ ] | _ :: _ :: _ :: _) -> fail ()
-    | Repeat, [ (Matches _ as m); (Int _ as x) ] -> eval ctx Repeat_range [ m; x; x ]
+    | Repeat, [ Matches ms; Int n ] ->
+        Matches { ms with value = List.map ms.value ~f:(fun m -> M.pow m n.value) }
     | Repeat_range, ([ Error; _; _ ] | [ _; Error; _ ] | [ _; _; Error ]) -> Error
     | Repeat_range, [ _; Int min; Int max ] when max.value < min.value -> Error
     | Repeat_range, [ v; Int min; Int max ] ->
-        let rec repeat k = if k = 1 then v else eval ctx Concat [ v; repeat (k - 1) ] in
         let rec repeat_range k =
-          if k = max.value then repeat k
-          else eval ctx Or [ repeat k; repeat_range (k + 1) ]
+          if k = max.value then eval ctx Repeat [ v; Int (wrap0 k) ]
+          else eval ctx Or [ eval ctx Repeat [ v; Int (wrap0 k) ]; repeat_range (k + 1) ]
         in
         repeat_range min.value
     | ( Repeat_range,

@@ -9,7 +9,7 @@ dry_run = False
 run_metric = True
 
 mlimit = 4 * 1000000 # 4GB
-tlimit = 600          # 10min
+tlimit = 300          # 5min
 
 base_dir = $(pwd).strip()
 build_dir = base_dir + "/_build/default/"
@@ -37,9 +37,9 @@ jobs = []
 ulimit_stanza = f"ulimit -v {mlimit}; ulimit -t {tlimit};"
 
 if run_metric:
-    for c in [20, 25]:
-        for t in [0.0, 0.2, 0.3]:
-            for g in [200, 300]:
+    for c in [15, 20]:
+        for t in [0.0, 0.3, 0.4]:
+            for g in [100, 200]:
                 for f in glob.glob(base_dir + '/vendor/regel/exp/so/benchmark/*'):
                     bench_name = os.path.basename(f)
                     sketch_file = f'{base_dir}/vendor/regel/exp/so/sketch/{bench_name}'
@@ -70,7 +70,7 @@ if dry_run:
 with open('jobs', 'w') as f:
     f.writelines(jobs)
 
-parallel --will-cite --eta -j 40 --joblog joblog :::: jobs
+parallel --will-cite --eta -j 20 --joblog joblog :::: jobs
 
 # Local Variables:
 # mode: python
