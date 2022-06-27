@@ -13,6 +13,13 @@
   (pps ppx_jane)))
 
 (executable
+ (name test_regex)
+ (modules test_regex)
+ (libraries core staged_synth core_unix.command_unix)
+ (preprocess
+  (pps ppx_jane)))
+
+(executable
  (name abs_synth_cad)
  (modules abs_synth_cad)
  (libraries core staged_synth core_unix.command_unix)

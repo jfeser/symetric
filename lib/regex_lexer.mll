@@ -17,6 +17,7 @@
         "star", UNOP Star;
         "contain", UNOP Contain;
         "sep", BINOP Sep;
+        "optional", UNOP Optional;
       ]
 }
 
@@ -28,7 +29,7 @@ rule token = parse
   | '\n'       { Lexing.new_line lexbuf; token lexbuf }
   | '\t' '\r'  { token lexbuf }
   | '<' (single as x) '>' { CLASS (Char.to_string x) }
-  | '<' (['a'-'z']+ as x) '>' { CLASS x }
+  | '<' (['a'-'z' '-' '0'-'9']+ as x) '>' { CLASS x }
   | ' '        { token lexbuf }
   | "("        { LPAREN }
   | ")"        { RPAREN }

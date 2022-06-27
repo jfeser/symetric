@@ -5,8 +5,6 @@ module S = Search_state_all.Make (Lang)
 module Gen = Generate.Gen_iter (Lang)
 
 (* constants *)
-let max_repeat_count = 4
-let target_groups_err = 0.1
 let max_int = 15
 
 let single_char_classes =

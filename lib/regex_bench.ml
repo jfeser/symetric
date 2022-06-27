@@ -14,6 +14,16 @@ let load_examples ch =
          else None)
   |> Iter.to_list
 
+let load_ground_truth ch =
+  let open Option.Let_syntax in
+  let buf =
+    In_channel.input_lines ch |> Iter.of_list |> Iter.map String.strip
+    |> Iter.drop_while (fun line -> not ([%equal: string] line "// gt"))
+    |> Iter.drop 1 |> Iter.head_exn |> Lexing.from_string
+  in
+  try Regex_parser.sketch_eof Regex_lexer.token buf
+  with _ -> raise_s [%message "parse error" (buf.lex_curr_p.pos_cnum : int)]
+
 let load_sketch_bench sketch_str bench_ch =
   let sketch_ast =
     let buf = Lexing.from_string sketch_str in
@@ -22,5 +32,5 @@ let load_sketch_bench sketch_str bench_ch =
   in
   let sketches, n_holes = Regex_sketch_ast.convert_sketch sketch_ast in
   let examples = load_examples bench_ch in
-  ( Regex.Value.Ctx.{ input = examples; n_holes },
+  ( Regex.Value.Ctx.create examples n_holes,
     List.map ~f:(fun sk -> Regex.Op.Sketch sk) sketches )

@@ -1,4 +1,4 @@
-type unop = Not | Startwith | Endwith | Contain | Star [@@deriving sexp]
+type unop = Not | Startwith | Endwith | Contain | Star | Optional [@@deriving sexp]
 type binop = And | Or | Concat | Sep | Sketch [@@deriving sexp]
 type num = [ `Num of int | `Hole ] [@@deriving sexp]
 
@@ -51,12 +51,14 @@ let op (x : Op.t) = `Op x
 let int x = P.Apply (op (Op.Int x), [])
 let concat x x' = P.Apply (op Op.Concat, [ x; x' ])
 let repeat x n = P.Apply (op Op.Repeat, [ x; n ])
+let repeat_at_least x n = P.Apply (op Op.Repeat_at_least, [ x; n ])
 let repeat_range x l h = P.Apply (op Op.Repeat_range, [ x; l; h ])
 let not x = P.Apply (op Not, [ x ])
 let ( || ) x x' = P.apply (op Or) ~args:[ x; x' ]
 let ( && ) x x' = P.apply (op And) ~args:[ x; x' ]
 let empty = P.apply (op Op.Empty)
 let anything = empty || not empty
+let optional x = P.Apply (op Op.Optional, [ x ])
 
 let desugar x =
   let sketches = ref [] in
@@ -73,10 +75,11 @@ let desugar x =
     | `Unop (Endwith, x) -> concat anything (desugar x)
     | `Unop (Contain, x) -> concat anything (concat (desugar x) anything)
     | `Unop (Star, x) -> empty || desugar (`Repeat_at_least (x, `Num 1))
+    | `Unop (Optional, x) -> optional (desugar x)
     | `Binop (Sketch, x, _) -> desugar x
     | `Binop (Sep, x, x') ->
         desugar (`Binop (Concat, x, `Unop (Star, `Binop (Concat, x', x))))
-    | `Repeat_at_least (x, n) -> repeat_range (desugar x) (desugar_num n) (int 15)
+    | `Repeat_at_least (x, n) -> repeat_at_least (desugar x) (desugar_num n)
     | `Hole (xs, n) ->
         let xs' =
           Iter.of_list xs |> Iter.map desugar

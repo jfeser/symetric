@@ -38,6 +38,7 @@ module Op = struct
     | Class of char_class
     | Repeat
     | Repeat_range
+    | Repeat_at_least
     | Optional
     | Or
     | And
@@ -49,7 +50,8 @@ module Op = struct
   let cost _ = 1
 
   let ret_type : _ -> Type.t = function
-    | Concat | Class _ | Repeat_range | Repeat | Optional | Or | And | Not | Empty ->
+    | Concat | Class _ | Repeat_range | Repeat | Repeat_at_least | Optional | Or | And
+    | Not | Empty ->
         Regex
     | Int _ -> Int
     | Sketch x -> x.ret_type
@@ -58,7 +60,7 @@ module Op = struct
     | Class _ | Int _ | Empty -> []
     | Optional | Not -> [ Regex ]
     | Concat | Or | And -> [ Regex; Regex ]
-    | Repeat -> [ Regex; Int ]
+    | Repeat | Repeat_at_least -> [ Regex; Int ]
     | Repeat_range -> [ Regex; Int; Int ]
     | Sketch x -> List.map ~f:Tuple.T2.get1 x.arg_types
 
@@ -74,6 +76,7 @@ module Op = struct
     { name = "let"; mem = (function 'a' .. 'z' | 'A' .. 'Z' -> true | _ -> false) }
 
   let num = { name = "num"; mem = (function '0' .. '9' -> true | _ -> false) }
+  let num19 = { name = "num1-9"; mem = (function '1' .. '9' -> true | _ -> false) }
   let cap = { name = "cap"; mem = (function 'A' .. 'Z' -> true | _ -> false) }
   let low = { name = "low"; mem = (function 'a' .. 'z' -> true | _ -> false) }
 
@@ -106,7 +109,7 @@ module Op = struct
     }
 
   let any = { name = "any"; mem = (function ' ' .. '~' -> true | _ -> false) }
-  let named_classes = [ alpha; num; cap; low; any; spec; alphanum; hex ]
+  let named_classes = [ alpha; num; num19; cap; low; any; spec; alphanum; hex ]
   let alpha = Class (Multi alpha)
   let num = Class (Multi num)
   let cap = Class (Multi cap)
@@ -122,7 +125,9 @@ module Op = struct
 
   let int x = Apply (Int x, [])
   let concat x x' = Apply (Concat, [ x; x' ])
+  let repeat x n = Apply (Repeat, [ x; int n ])
   let repeat_range x l h = Apply (Repeat_range, [ x; int l; int h ])
+  let repeat_at_least x n = Apply (Repeat_at_least, [ x; int n ])
   let optional x = Apply (Optional, [ x ])
   let not x = Apply (Not, [ x ])
   let ( || ) x x' = Apply (Or, [ x; x' ])
@@ -158,9 +163,16 @@ module Value = struct
   let default = Error
 
   module Ctx = struct
-    type t = { input : (string * bool) list; n_holes : int } [@@deriving sexp]
+    type t = { input : (string * bool) list; max_example_len : int; n_holes : int }
+    [@@deriving sexp]
 
-    let create input = { input; n_holes = 0 }
+    let create input n_holes =
+      {
+        input;
+        max_example_len =
+          List.map input ~f:(fun (s, _) -> String.length s) |> List.fold ~init:0 ~f:max;
+        n_holes;
+      }
   end
 
   let eval_unmemoized_open eval (ctx : Ctx.t) (op : Op.t) args =
@@ -201,7 +213,8 @@ module Value = struct
           }
     | (Not | Optional), ([] | [ Int _ ] | _ :: _ :: _) -> fail ()
     | Optional, [ v ] -> eval ctx Or [ eval ctx Empty []; v ]
-    | (And | Or | Concat | Repeat), ([ Error; _ ] | [ _; Error ]) -> Error
+    | (And | Or | Concat | Repeat | Repeat_at_least), ([ Error; _ ] | [ _; Error ]) ->
+        Error
     | (And | Or | Concat), ([] | [ _ ] | [ Int _; _ ] | [ _; Int _ ] | _ :: _ :: _ :: _)
       ->
         fail ()
@@ -212,9 +225,15 @@ module Value = struct
     | Concat, [ Matches x; Matches x' ] ->
         Matches
           (wrap2 (fun x x' -> List.map2_exn x x' ~f:(fun x x' -> M.O.(x * x'))) x x')
-    | Repeat, ([] | [ _ ] | [ Int _; _ ] | [ _; Matches _ ] | _ :: _ :: _ :: _) -> fail ()
+    | ( (Repeat | Repeat_at_least),
+        ([] | [ _ ] | [ Int _; _ ] | [ _; Matches _ ] | _ :: _ :: _ :: _) ) ->
+        fail ()
     | Repeat, [ Matches ms; Int n ] ->
         Matches { ms with value = List.map ms.value ~f:(fun m -> M.pow m n.value) }
+    | Repeat_at_least, [ Matches _; Int n ] when n.value > ctx.max_example_len ->
+        eval ctx Empty []
+    | Repeat_at_least, [ ms; n ] ->
+        eval ctx Repeat_range [ ms; n; Int (wrap0 ctx.max_example_len) ]
     | Repeat_range, ([ Error; _; _ ] | [ _; Error; _ ] | [ _; _; Error ]) -> Error
     | Repeat_range, [ _; Int min; Int max ] when max.value < min.value -> Error
     | Repeat_range, [ Matches ms; Int min; Int max ] ->
@@ -291,6 +310,7 @@ module Value = struct
     let ctx =
       Ctx.create
         [ ("1e", true); ("1", true); ("e", true); ("111e", true); ("eee11ee", true) ]
+        0
     in
     print_s
       [%message
@@ -313,7 +333,7 @@ module Value = struct
         ((value (() () () ((1 (4))) ((3 (6))))) (holes ((buf "") (len 0)))))) |}]
 
   let%expect_test "" =
-    let ctx = Ctx.create [ ("1e", true); ("1", true); ("e", true); ("1.1e", true) ] in
+    let ctx = Ctx.create [ ("1e", true); ("1", true); ("e", true); ("1.1e", true) ] 0 in
     print_s
       [%message
         (Program.eval (eval_unmemoized ctx) Op.(P.apply num || P.apply alpha) : t)];
@@ -326,7 +346,7 @@ module Value = struct
          (holes ((buf "") (len 0)))))) |}]
 
   let%expect_test "" =
-    let ctx = Ctx.create [ ("1", true); ("11", true); ("111", true); ("1111", true) ] in
+    let ctx = Ctx.create [ ("1", true); ("11", true); ("111", true); ("1111", true) ] 0 in
     print_s
       [%message
         (Program.eval (eval_unmemoized ctx) Op.(repeat_range (P.apply num) 2 3) : t)];
@@ -339,8 +359,54 @@ module Value = struct
          (holes ((buf "") (len 0)))))) |}]
 
   let%expect_test "" =
+    let ctx =
+      Ctx.create
+        [ ("white snake", true); ("white snake valley", true); ("white  snake", false) ]
+        0
+    in
+    print_s [%message (Program.eval (eval_unmemoized ctx) Op.(empty) : t)];
+    [%expect
+      {|
+      ( "Program.eval (eval_unmemoized ctx)\
+       \n  (let open Op in repeat_range (P.apply num) 2 3)"
+       (Matches
+        ((value (() ((0 (2))) ((0 (2 3)) (1 (3))) ((0 (2 3)) (1 (3 4)) (2 (4)))))
+         (holes ((buf "") (len 0)))))) |}];
+    print_s [%message (Program.eval (eval_unmemoized ctx) Op.(not empty) : t)];
+    [%expect
+      {|
+      ( "Program.eval (eval_unmemoized ctx)\
+       \n  (let open Op in repeat_range (P.apply num) 2 3)"
+       (Matches
+        ((value (() ((0 (2))) ((0 (2 3)) (1 (3))) ((0 (2 3)) (1 (3 4)) (2 (4)))))
+         (holes ((buf "") (len 0)))))) |}]
+
+  let%expect_test "" =
+    let ctx = Ctx.create [ ("%%%", false) ] 0 in
+    print_s
+      [%message
+        (Program.eval (eval_unmemoized ctx) Op.(repeat_at_least (P.apply @@ class_ '%') 4)
+          : t)];
+    [%expect
+      {|
+      ( "Program.eval (eval_unmemoized ctx)\
+       \n  (let open Op in repeat_range (P.apply num) 2 3)"
+       (Matches
+        ((value (() ((0 (2))) ((0 (2 3)) (1 (3))) ((0 (2 3)) (1 (3 4)) (2 (4)))))
+         (holes ((buf "") (len 0)))))) |}];
+    print_s
+      [%message
+        (Program.eval (eval_unmemoized ctx) Op.(repeat (P.apply @@ class_ '%') 4) : t)];
+    print_s
+      [%message
+        (Program.eval (eval_unmemoized ctx)
+           Op.(concat (P.apply @@ class_ '%') (P.apply @@ class_ '%'))
+          : t)];
+    print_s [%message (Program.eval (eval_unmemoized ctx) Op.(P.apply @@ class_ '%') : t)]
+
+  let%expect_test "" =
     let input = "123456789.123" in
-    let ctx = Ctx.create [ (input, true) ] in
+    let ctx = Ctx.create [ (input, true) ] 0 in
     print_s [%message (eval_unmemoized ctx (Op.class_ '.') [] : t)];
     [%expect
       {|
@@ -382,6 +448,7 @@ module Value = struct
           (* ("1.12345", false); *)
           (* (".1234", false); *);
         ]
+        0
     in
     let dot = P.apply (Op.class_ '.') in
     let empty = Op.empty in
@@ -467,7 +534,7 @@ module Value = struct
 
   let%expect_test "" =
     let input = "123456789.123" in
-    let ctx = Ctx.create [ (input, true) ] in
+    let ctx = Ctx.create [ (input, true) ] 0 in
     let c1 = eval_unmemoized ctx (Op.class_ '1') [] in
     let c2 = eval_unmemoized ctx (Op.class_ '2') [] in
     let c3 =
