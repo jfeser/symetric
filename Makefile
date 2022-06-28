@@ -12,4 +12,4 @@ send-container:
 	csail ssh feser@$(REMOTE) "docker load < /scratch/feser/metric-synth.tar"
 
 get-runs:
-	csail rsync --exclude='*.bin' -r --progress feser@$(REMOTE):/scratch/feser/staged-synth/runs/ runs/
+	csail rsync --exclude='*.bin' -r --progress --ignore-existing feser@$(REMOTE):/scratch/feser/staged-synth/runs/ runs/

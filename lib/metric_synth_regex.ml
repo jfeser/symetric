@@ -17,7 +17,7 @@ let all_classes = single_char_classes @ multi_char_classes
 let ints = List.map (List.range ~stop:`inclusive 1 max_int) ~f:(fun i -> Op.Int i)
 
 let operators =
-  [ Op.Concat; And; Or; Repeat_range; Optional; Not ]
+  [ Op.Concat; And; Or; Repeat_range; Repeat; Repeat_at_least; Optional; Not; Empty ]
   @ single_char_classes @ multi_char_classes @ ints
 
 (* parameters *)
@@ -368,11 +368,10 @@ let run_extract eval height class_ =
 
 let backwards_pass class_ =
   let max_cost = max_cost () and ectx = ectx () in
-  let height = Int.ceil_log2 max_cost in
-  if [%equal: Type.t] (S.Class.type_ class_) Type.output then
-    let eval = Value.mk_eval_memoized () ectx in
-    Iter.forever (fun () -> run_extract eval height class_ |> Option.map ~f:local_search)
-  else Iter.empty
+  let height = 1 + Int.ceil_log2 max_cost in
+  assert ([%equal: Type.t] (S.Class.type_ class_) Type.output);
+  let eval = Value.mk_eval_memoized () ectx in
+  Iter.forever (fun () -> run_extract eval height class_ |> Option.map ~f:local_search)
 
 let synthesize () =
   eprint_s [%message (ectx () : Value.Ctx.t)];
