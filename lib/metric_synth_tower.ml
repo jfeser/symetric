@@ -5,7 +5,7 @@ module S = Search_state_all.Make (Lang)
 module Gen = Generate.Gen_iter (Lang)
 
 let operators =
-  [ Op.Loop; Drop_v; Drop_h; Move_l; Move_r; Embed; Nop ]
+  [ Op.Loop; Drop_v; Drop_h; Move_l; Move_r; Embed; Seq ]
   @ (Iter.int_range ~start:1 ~stop:8 |> Iter.map (fun i -> Op.Int i) |> Iter.to_list)
 
 (* parameters *)
@@ -207,8 +207,8 @@ let write_output m_prog =
   in
   Out_channel.with_file (output_file ()) ~f:(fun ch -> Safe.to_channel ch json)
 
-let distance = Value.distance
-let relative_distance = Value.distance
+let distance v v' = Value.distance (ectx ()) v v'
+let relative_distance v v' = Value.distance (ectx ()) v v'
 let target_value = lazy (P.eval (Value.eval (ectx ())) (Lazy.force bench))
 
 let target =
@@ -217,13 +217,30 @@ let target =
     | Trans x -> (List.hd_exn x.summary).blocks
     | Int _ -> assert false)
 
-let target_distance v = Value.target_distance (Lazy.force target) v
+let target_distance v = Value.target_distance (ectx ()) (Lazy.force target) v
 
 let rewrite : Op.t P.t -> Op.t P.t list = function
   | Apply (Int x, []) ->
       if x < 1 then [ Apply (Int (x + 1), []) ]
       else if x > 8 then [ Apply (Int (x - 1), []) ]
       else [ Apply (Int (x + 1), []); Apply (Int (x - 1), []) ]
+  | Apply (Embed, [ p ]) -> [ p ]
+  | Apply (Drop_v, [ p ]) as d ->
+      [
+        Apply (Drop_h, [ p ]);
+        Apply (Embed, [ Apply (Seq, [ Apply (Move_l, [ Apply (Int 1, []) ]); d ]) ]);
+        Apply (Embed, [ Apply (Seq, [ Apply (Move_r, [ Apply (Int 1, []) ]); d ]) ]);
+      ]
+  | Apply (Drop_h, [ p ]) as d ->
+      [
+        Apply (Drop_v, [ p ]);
+        Apply (Embed, [ Apply (Seq, [ Apply (Move_l, [ Apply (Int 1, []) ]); d ]) ]);
+        Apply (Embed, [ Apply (Seq, [ Apply (Move_r, [ Apply (Int 1, []) ]); d ]) ]);
+      ]
+  | Apply
+      (Seq, [ (Apply ((Move_l | Move_r), _) as m); (Apply ((Drop_v | Drop_h), []) as d) ])
+    ->
+      [ Apply (Seq, [ d; m ]) ]
   | _ -> []
 
 let local_search_untimed p =
@@ -365,8 +382,8 @@ let backwards_pass class_ =
 
 let synthesize () =
   print_s [%message (Lazy.force bench : Op.t P.t)];
-  Fmt.pr "Synthesizing:@,%a\n" (Value.pp (ectx ())) (Lazy.force target);
 
+  Fmt.epr "Synthesizing:@,%a%!\n" (Value.pp (ectx ())) (Lazy.force target);
   Timer.start stats.runtime;
 
   let ectx = ectx () and backward_pass_repeats = backward_pass_repeats () in
@@ -409,30 +426,31 @@ let synthesize () =
                  Log.log 2 (fun m ->
                      m "@.%a" (Value.pp ectx) (List.hd_exn x.summary).blocks)
              | _ -> ());
+
              backwards_pass class_
              |> Iter.take backward_pass_repeats
              |> Iter.filter_map Fun.id
              |> Iter.mapi (fun backwards_pass_i (local_search_i, p) ->
                     ((backwards_pass_i, local_search_i), p))
-             |> Iter.min_floor
-                  ~to_float:(fun (_, p) ->
-                    target_distance @@ Program.eval (Value.eval ectx) p)
-                  0.0
-             |> Option.iter ~f:(fun ((backwards_pass_iters, local_search_iters), p) ->
-                    let found_value = Program.eval (Value.eval ectx) p in
-
+             |> Iter.map (fun (stats, p) ->
+                    let v = Program.eval (Value.eval ectx) p in
+                    let d = target_distance v in
+                    (stats, d, v, p))
+             |> Iter.min_floor ~to_float:(fun (_, d, _, _) -> d) 0.0
+             |> Option.iter
+                  ~f:(fun
+                       ((backwards_pass_iters, local_search_iters), dist, found_value, p)
+                     ->
                     (match found_value with
-                    | Trans x ->
+                    | Value.Trans x ->
                         Log.log 2 (fun m ->
-                            m "Best:@.%a" (Value.pp ectx) (List.hd_exn x.summary).blocks)
+                            m "Best (d=%f):@.%a" dist (Value.pp ectx)
+                              (List.hd_exn x.summary).blocks)
                     | _ -> ());
 
-                    (* Log.log 2 (fun m -> *)
-                    (*     m "Best (d=%f):@.%a" (target_distance found_value) (Value.pp ectx) *)
-                    (*       found_value); *)
                     Log.sexp 2 (lazy ([%sexp_of: Op.t Program.t] p));
 
-                    if Float.(target_distance found_value = 0.) then (
+                    if Float.(dist = 0.) then (
                       Log.log 0 (fun m -> m "local search iters %d" local_search_iters);
                       Log.log 0 (fun m ->
                           m "backwards pass iters %d" backwards_pass_iters);

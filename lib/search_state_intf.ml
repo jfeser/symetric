@@ -14,7 +14,7 @@ module type S = sig
     val type_ : t -> type_
   end
 
-  type t
+  type t [@@deriving sexp]
 
   module Path : sig
     type ctx = t

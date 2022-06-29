@@ -1,4 +1,11 @@
 (executable
+ (name run_tower)
+ (modules run_tower)
+ (libraries core staged_synth core_unix.command_unix)
+ (preprocess
+  (pps ppx_jane)))
+
+(executable
  (name metric_synth_cad)
  (modules metric_synth_cad)
  (libraries core staged_synth core_unix.command_unix)
