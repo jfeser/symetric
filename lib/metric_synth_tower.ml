@@ -5,8 +5,11 @@ module S = Search_state_all.Make (Lang)
 module Gen = Generate.Gen_iter (Lang)
 
 let operators =
-  [ Op.Loop; Drop_v; Drop_h; Move_l; Move_r; Embed; Seq ]
+  [ Op.Loop; Drop_v; Drop_h; Embed; Seq ]
   @ (Iter.int_range ~start:1 ~stop:8 |> Iter.map (fun i -> Op.Int i) |> Iter.to_list)
+  @ (Iter.append (Iter.int_range ~start:(-8) ~stop:(-1)) (Iter.int_range ~start:1 ~stop:8)
+    |> Iter.map (fun i -> Iter.of_list [ Op.Move_p i; Op.Move_s i ])
+    |> Iter.concat |> Iter.to_list)
 
 (* parameters *)
 module Params = struct
@@ -307,7 +310,9 @@ let insert_states (all_edges : Edge.t Iter.t) =
   Hashtbl.iteri groups.groups ~f:(fun ~key:(group_center, center_edges) ~data:members ->
       (match group_center with
       | Trans x ->
-          Log.log 2 (fun m -> m "@.%a" (Value.pp (ectx ())) (List.hd_exn x.summary))
+          Log.log 2 (fun m -> m "group center\n");
+          List.iter x.summary ~f:(fun x ->
+              Log.log 2 (fun m -> m "@.%a" (Value.pp (ectx ())) x))
       | _ -> ());
 
       let op, args =

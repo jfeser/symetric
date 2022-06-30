@@ -10,22 +10,35 @@ module Type = struct
 end
 
 module Op = struct
-  type t = Loop | Move_l | Move_r | Drop_v | Drop_h | Embed | Int of int | Seq
+  type t =
+    | Loop
+    | Move_s of int
+    | Move_p of int
+    | Move_l
+    | Move_r
+    | Drop_v
+    | Drop_h
+    | Embed
+    | Int of int
+    | Seq
   [@@deriving compare, equal, hash, sexp, yojson]
 
   let default = Int (-1)
   let cost _ = 1
 
   let ret_type : _ -> Type.t = function
-    | Loop | Move_l | Move_r | Drop_v | Drop_h | Embed | Seq -> Tower
+    | Loop | Move_s _ | Move_p _ | Drop_v | Drop_h | Embed | Seq -> Tower
     | Int _ -> Int
+    | _ -> assert false
 
   let args_type : _ -> Type.t list = function
     | Embed -> [ Tower ]
     | Seq -> [ Tower; Tower ]
-    | Move_l | Move_r -> [ Int ]
+    | Move_s _ -> [ Tower ]
+    | Move_p _ -> [ Tower ]
     | Loop -> [ Int; Tower ]
     | Drop_v | Drop_h | Int _ -> []
+    | _ -> assert false
 
   let arity op = List.length @@ args_type op
   let is_commutative _ = false
@@ -92,6 +105,7 @@ module Value = struct
     in
 
     Fmt.pf fmt "@[<v>";
+    Fmt.pf fmt "%a@," Sexp.pp_hum ([%sexp_of: State.t] s);
     for i = 0 to ctx.dim - 1 do
       if i = s.hand then Fmt.pf fmt "v" else Fmt.pf fmt " "
     done;
@@ -114,6 +128,19 @@ module Value = struct
       in
       P.Apply (op, arg_progs)
     in
+    let trans func =
+      Trans
+        {
+          func;
+          summary =
+            (let s0 = State.default ctx.dim in
+             let s1 = func s0 in
+             let s2 = func s1 in
+             let s3 = func s2 in
+             [ s1; s2; s3 ]);
+          prog;
+        }
+    in
     match (op, args) with
     | Int _, _ :: _ -> fail ()
     | Int x, [] -> Int x
@@ -135,7 +162,7 @@ module Value = struct
             in
             { s with blocks; tops }
         in
-        Trans { func; summary = List.map ~f:func ctx.summary_states; prog }
+        trans func
     | Drop_v, [] ->
         let func (s : State.t) : State.t =
           let v_pos = Small_int_array.get s.tops s.hand in
@@ -145,31 +172,24 @@ module Value = struct
             let tops = Small_int_array.set s.tops s.hand (v_pos + 3) in
             { s with blocks; tops }
         in
-        Trans { func; summary = List.map ~f:func ctx.summary_states; prog }
+        trans func
     | Embed, ([] | [ Int _ ] | _ :: _ :: _) -> fail ()
-    | Embed, [ Trans p ] ->
-        let func (s : State.t) : State.t = { (p.func s) with hand = s.hand } in
-        Trans { func; summary = List.map ~f:func ctx.summary_states; prog }
+    | Embed, [ Trans p ] -> trans (fun s -> { (p.func s) with hand = s.hand })
     | Seq, ([] | [ _ ] | [ Int _; _ ] | [ _; Int _ ] | _ :: _ :: _ :: _) -> fail ()
-    | Seq, [ Trans t; Trans p ] ->
-        let func (s : State.t) : State.t = t.func s |> p.func in
-        Trans { prog; func; summary = List.map ~f:func ctx.summary_states }
-    | (Move_l | Move_r), ([] | [ Trans _ ] | _ :: _ :: _) -> fail ()
-    | Move_l, [ Int x ] ->
-        let func (s : State.t) : State.t = { s with hand = max 0 (s.hand - x) } in
-        Trans { func; summary = List.map ~f:func ctx.summary_states; prog }
-    | Move_r, [ Int x ] ->
-        let func (s : State.t) : State.t =
-          { s with hand = min (ctx.dim - 2) (s.hand + x) }
-        in
-        Trans { func; summary = List.map ~f:func ctx.summary_states; prog }
+    | Seq, [ Trans t; Trans p ] -> trans (fun s -> t.func s |> p.func)
+    | (Move_s _ | Move_p _), ([] | [ Int _ ] | _ :: _ :: _) -> fail ()
+    | Move_s x, [ Trans t ] ->
+        trans (fun s -> { (t.func s) with hand = min (ctx.dim - 2) (max 0 (s.hand + x)) })
+    | Move_p x, [ Trans t ] ->
+        trans (fun s -> t.func { s with hand = min (ctx.dim - 2) (max 0 (s.hand + x)) })
     | Loop, ([] | [ _ ] | [ Trans _; _ ] | [ _; Int _ ] | _ :: _ :: _ :: _) -> fail ()
     | Loop, [ Int x; Trans p ] ->
         let func (s : State.t) : State.t =
           let rec loop x' s = if x' >= x then s else loop (x' + 1) (p.func s) in
           loop 0 s
         in
-        Trans { func; summary = List.map ~f:func ctx.summary_states; prog }
+        trans func
+    | _ -> assert false
 
   let mk_eval_memoized () =
     let module Key = struct
@@ -274,38 +294,71 @@ module Value = struct
     | Trans x, Trans x' ->
         if [%equal: transition] x x' then 0.
         else
+          (* if *)
+          (*   List.for_all2_exn x.summary x'.summary ~f:(fun s s' -> *)
+          (*       Set.is_empty s.blocks && Set.is_empty s'.blocks) *)
+          (* then *)
+          (*   if List.exists2_exn x.summary x.summary ~f:(fun s s' -> s.hand <> s'.hand) then *)
+          (*     1.0 *)
+          (*   else 0. *)
+          (* else *)
           let dist =
             List.map2_exn x.summary x'.summary ~f:(fun s s' ->
                 blocks_distance ctx s.blocks s'.blocks
-                +. Float.of_int (abs (s.hand - s'.hand)))
-            |> List.sum (module Float) ~f:Fun.id
+                (* +. Float.of_int (abs (s.hand - s'.hand)) *))
+            |> Iter.of_list |> Iter.mean
           in
           (* Fmt.epr "Distance (d=%f):@,%a@,%a@." dist (pp ctx) *)
           (*   (List.hd_exn x.summary).blocks (pp ctx) (List.hd_exn x'.summary).blocks; *)
-          dist
+          Option.value ~default:0. dist
     | _, _ -> Float.infinity
 
   let blocks_distance _ctx s s' =
     Set.length (Set.diff s s') + (5 * Set.length (Set.diff s' s))
 
-  let shift =
+  let shift_down =
     Set.filter_map
       (module Block)
       ~f:(fun (b : Block.t) -> if b.y > 0 then Some { b with y = b.y - 1 } else None)
 
+  let shift_right (ctx : Ctx.t) bs =
+    if
+      (not (Set.is_empty bs))
+      && Set.for_all bs ~f:(fun (b : Block.t) -> b.x < ctx.dim - 1)
+    then Some (Set.map (module Block) bs ~f:(fun (b : Block.t) -> { b with x = b.x + 1 }))
+    else None
+
+  let shift_up (ctx : Ctx.t) bs =
+    if
+      (not (Set.is_empty bs))
+      && Set.for_all bs ~f:(fun (b : Block.t) -> b.y < ctx.dim - 1)
+    then Some (Set.map (module Block) bs ~f:(fun (b : Block.t) -> { b with y = b.y + 1 }))
+    else None
+
+  let motif_count ctx b b' =
+    let rec rshift ct b' =
+      let ct = ct + if Set.is_subset b' ~of_:b then 1 else 0 in
+      match shift_right ctx b' with Some b' -> rshift ct b' | None -> ct
+    in
+    let rec ushift ct b' =
+      let ct = rshift ct b' in
+      match shift_up ctx b' with Some b' -> ushift ct b' | None -> ct
+    in
+    ushift 0 b'
+
   let rec iter_shifts b f =
     f b;
-    let b' = shift b in
+    let b' = shift_down b in
     if not (Set.is_empty b') then iter_shifts b' f
 
   let target_distance ctx t = function
     | Int _ -> 1.
     | Trans x ->
-        iter_shifts t
-        |> Iter.map (fun b ->
-               blocks_distance ctx b (List.hd_exn x.summary).blocks
-               + Set.length (Set.diff t b))
-        |> Iter.min_exn ~lt:( < ) |> Float.of_int
+        let b = (List.hd_exn x.summary).blocks in
+        let b_len = Float.of_int (Set.length b) in
+        1.
+        /. ((Float.of_int @@ motif_count ctx t (List.hd_exn x.summary).blocks)
+           *. Float.(1.5 ** b_len))
 end
 
 let int x = P.apply (Op.Int x)
@@ -325,3 +378,53 @@ and parse = function
   | List [ x ] -> parse_op x
   | List (x :: xs) -> Apply (Seq, [ parse_op x; parse (List xs) ])
   | List [] | Atom _ -> failwith "unexpected empty list"
+
+let rec desugar : Op.t P.t -> Op.t P.t = function
+  | Apply (Seq, [ Apply (Move_l, [ Apply (Int i, []) ]); p ]) ->
+      Apply (Move_p (-i), [ desugar p ])
+  | Apply (Seq, [ Apply (Move_r, [ Apply (Int i, []) ]); p ]) ->
+      Apply (Move_p i, [ desugar p ])
+  | Apply (Seq, [ p; Apply (Move_l, [ Apply (Int i, []) ]) ]) ->
+      Apply (Move_s (-i), [ desugar p ])
+  | Apply (Seq, [ p; Apply (Move_r, [ Apply (Int i, []) ]) ]) ->
+      Apply (Move_s i, [ desugar p ])
+  | Apply (Move_l, _) | Apply (Move_r, _) -> assert false
+  | Apply (op, args) -> Apply (op, List.map ~f:desugar args)
+
+let parse s = parse s |> desugar
+
+let%expect_test "" =
+  let bridge =
+    parse @@ Sexp.of_string "((for 3 (for 3 v (r 4) v (l 4)) (r 2) h (r 4)))"
+  in
+  let bridge_top = parse @@ Sexp.of_string "((r 2) (for 3 h (r 6)))" in
+  let bridge_pillar = parse @@ Sexp.of_string "((for 3 (embed v (r 4) v)) (r 2) h)" in
+  let bridge_pillar_part = parse @@ Sexp.of_string "((for 3 (embed v (r 4))))" in
+  let ctx = Value.Ctx.create () in
+  let target =
+    match P.eval (Value.eval ctx) bridge with
+    | Trans t -> (List.hd_exn t.summary).blocks
+    | _ -> assert false
+  in
+  print_s
+    [%message
+      (Value.target_distance ctx target (P.eval (Value.eval ctx) bridge_top) : float)];
+  print_s
+    [%message
+      (Value.distance ctx
+         (P.eval (Value.eval ctx) bridge_pillar)
+         (P.eval (Value.eval ctx) bridge_pillar_part)
+        : float)];
+  print_s
+    [%message
+      (Value.distance ctx
+         (P.eval (Value.eval ctx) bridge_pillar)
+         (P.eval (Value.eval ctx) bridge_top)
+        : float)];
+  print_s
+    [%message
+      (Value.target_distance ctx target (P.eval (Value.eval ctx) bridge_pillar) : float)];
+  print_s
+    [%message
+      (Value.target_distance ctx target (P.eval (Value.eval ctx) bridge_pillar_part)
+        : float)]
