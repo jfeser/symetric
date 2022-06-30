@@ -147,30 +147,34 @@ module Value = struct
     | (Drop_h | Drop_v), _ :: _ -> fail ()
     | Drop_h, [] ->
         let func (s : State.t) : State.t =
-          let v_pos =
-            Small_int_array.(
-              max (get s.tops s.hand)
-              @@ max (get s.tops (s.hand + 1)) (get s.tops (s.hand + 2)))
-          in
-          if v_pos >= ctx.dim then s
+          if s.hand < 0 || s.hand > ctx.dim - 2 then s
           else
-            let blocks = Set.add s.blocks { x = s.hand; y = v_pos; kind = 0 } in
-            let tops =
-              Small_int_array.set_many s.tops
-                (Iter.int_range ~start:s.hand ~stop:(min (ctx.dim - 1) (s.hand + 2))
-                |> Iter.map (fun i -> (i, v_pos + 1)))
+            let v_pos =
+              Small_int_array.(
+                max (get s.tops s.hand)
+                @@ max (get s.tops (s.hand + 1)) (get s.tops (s.hand + 2)))
             in
-            { s with blocks; tops }
+            if v_pos >= ctx.dim then s
+            else
+              let blocks = Set.add s.blocks { x = s.hand; y = v_pos; kind = 0 } in
+              let tops =
+                Small_int_array.set_many s.tops
+                  (Iter.int_range ~start:s.hand ~stop:(min (ctx.dim - 1) (s.hand + 2))
+                  |> Iter.map (fun i -> (i, v_pos + 1)))
+              in
+              { s with blocks; tops }
         in
         trans func
     | Drop_v, [] ->
         let func (s : State.t) : State.t =
-          let v_pos = Small_int_array.get s.tops s.hand in
-          if v_pos >= ctx.dim then s
+          if s.hand < 0 || s.hand > ctx.dim - 2 then s
           else
-            let blocks = Set.add s.blocks { x = s.hand; y = v_pos; kind = 1 } in
-            let tops = Small_int_array.set s.tops s.hand (v_pos + 3) in
-            { s with blocks; tops }
+            let v_pos = Small_int_array.get s.tops s.hand in
+            if v_pos >= ctx.dim then s
+            else
+              let blocks = Set.add s.blocks { x = s.hand; y = v_pos; kind = 1 } in
+              let tops = Small_int_array.set s.tops s.hand (v_pos + 3) in
+              { s with blocks; tops }
         in
         trans func
     | Embed, ([] | [ Int _ ] | _ :: _ :: _) -> fail ()
@@ -178,10 +182,8 @@ module Value = struct
     | Seq, ([] | [ _ ] | [ Int _; _ ] | [ _; Int _ ] | _ :: _ :: _ :: _) -> fail ()
     | Seq, [ Trans t; Trans p ] -> trans (fun s -> t.func s |> p.func)
     | (Move_s _ | Move_p _), ([] | [ Int _ ] | _ :: _ :: _) -> fail ()
-    | Move_s x, [ Trans t ] ->
-        trans (fun s -> { (t.func s) with hand = min (ctx.dim - 2) (max 0 (s.hand + x)) })
-    | Move_p x, [ Trans t ] ->
-        trans (fun s -> t.func { s with hand = min (ctx.dim - 2) (max 0 (s.hand + x)) })
+    | Move_s x, [ Trans t ] -> trans (fun s -> { (t.func s) with hand = s.hand + x })
+    | Move_p x, [ Trans t ] -> trans (fun s -> t.func { s with hand = s.hand + x })
     | Loop, ([] | [ _ ] | [ Trans _; _ ] | [ _; Int _ ] | _ :: _ :: _ :: _) -> fail ()
     | Loop, [ Int x; Trans p ] ->
         let func (s : State.t) : State.t =
@@ -286,35 +288,7 @@ module Value = struct
   let blocks_distance _ctx s s' =
     let n = Float.of_int @@ Set.length (Set.inter s s') in
     let d = Float.of_int @@ Set.length (Set.union s s') in
-    if Float.(d = 0.) then 0. else 100. *. (1. -. (n /. d))
-
-  let distance ctx v v' =
-    match (v, v') with
-    | Int x, Int x' -> if x = x' then 0. else Float.infinity
-    | Trans x, Trans x' ->
-        if [%equal: transition] x x' then 0.
-        else
-          (* if *)
-          (*   List.for_all2_exn x.summary x'.summary ~f:(fun s s' -> *)
-          (*       Set.is_empty s.blocks && Set.is_empty s'.blocks) *)
-          (* then *)
-          (*   if List.exists2_exn x.summary x.summary ~f:(fun s s' -> s.hand <> s'.hand) then *)
-          (*     1.0 *)
-          (*   else 0. *)
-          (* else *)
-          let dist =
-            List.map2_exn x.summary x'.summary ~f:(fun s s' ->
-                blocks_distance ctx s.blocks s'.blocks
-                (* +. Float.of_int (abs (s.hand - s'.hand)) *))
-            |> Iter.of_list |> Iter.mean
-          in
-          (* Fmt.epr "Distance (d=%f):@,%a@,%a@." dist (pp ctx) *)
-          (*   (List.hd_exn x.summary).blocks (pp ctx) (List.hd_exn x'.summary).blocks; *)
-          Option.value ~default:0. dist
-    | _, _ -> Float.infinity
-
-  let blocks_distance _ctx s s' =
-    Set.length (Set.diff s s') + (5 * Set.length (Set.diff s' s))
+    if Float.(d = 0.) then 0. else 1. -. (n /. d)
 
   let shift_down =
     Set.filter_map
@@ -335,6 +309,41 @@ module Value = struct
     then Some (Set.map (module Block) bs ~f:(fun (b : Block.t) -> { b with y = b.y + 1 }))
     else None
 
+  let shift_left bs =
+    if (not (Set.is_empty bs)) && Set.for_all bs ~f:(fun (b : Block.t) -> b.x > 0) then
+      Some (Set.map (module Block) bs ~f:(fun (b : Block.t) -> { b with x = b.x - 1 }))
+    else None
+
+  let rec zero bs = match shift_left bs with Some bs -> zero bs | None -> bs
+
+  let distance ctx v v' =
+    match (v, v') with
+    | Int x, Int x' -> if x = x' then 0. else Float.infinity
+    | Trans x, Trans x' ->
+        if [%equal: transition] x x' then 0.
+        else
+          (* if *)
+          (*   List.for_all2_exn x.summary x'.summary ~f:(fun s s' -> *)
+          (*       Set.is_empty s.blocks && Set.is_empty s'.blocks) *)
+          (* then *)
+          (*   if List.exists2_exn x.summary x.summary ~f:(fun s s' -> s.hand <> s'.hand) then *)
+          (*     1.0 *)
+          (*   else 0. *)
+          (* else *)
+          let dist =
+            List.map2_exn x.summary x'.summary ~f:(fun s s' ->
+                blocks_distance ctx (zero s.blocks) (zero s'.blocks)
+                (* +. Float.of_int (abs (s.hand - s'.hand)) *))
+            |> Iter.of_list |> Iter.mean
+          in
+          (* Fmt.epr "Distance (d=%f):@,%a@,%a@." dist (pp ctx) *)
+          (*   (List.hd_exn x.summary).blocks (pp ctx) (List.hd_exn x'.summary).blocks; *)
+          Option.value ~default:0. dist
+    | _, _ -> Float.infinity
+
+  let blocks_distance _ctx s s' =
+    Set.length (Set.diff s s') + (5 * Set.length (Set.diff s' s))
+
   let motif_count ctx b b' =
     let rec rshift ct b' =
       let ct = ct + if Set.is_subset b' ~of_:b then 1 else 0 in
@@ -354,11 +363,12 @@ module Value = struct
   let target_distance ctx t = function
     | Int _ -> 1.
     | Trans x ->
-        let b = (List.hd_exn x.summary).blocks in
-        let b_len = Float.of_int (Set.length b) in
-        1.
-        /. ((Float.of_int @@ motif_count ctx t (List.hd_exn x.summary).blocks)
-           *. Float.(1.5 ** b_len))
+        Float.of_int (blocks_distance ctx (zero t) (zero (List.hd_exn x.summary).blocks))
+  (* let b = (List.hd_exn x.summary).blocks in *)
+  (* let b_len = Float.of_int (Set.length b) in *)
+  (* 1. *)
+  (* /. ((Float.of_int @@ motif_count ctx t (List.hd_exn x.summary).blocks) *)
+  (*    *. Float.(1.5 ** b_len)) *)
 end
 
 let int x = P.apply (Op.Int x)

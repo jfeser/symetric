@@ -15,7 +15,6 @@ let load_examples ch =
   |> Iter.to_list
 
 let load_ground_truth ch =
-  let open Option.Let_syntax in
   let buf =
     In_channel.input_lines ch |> Iter.of_list |> Iter.map String.strip
     |> Iter.drop_while (fun line -> not ([%equal: string] line "// gt"))

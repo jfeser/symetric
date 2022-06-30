@@ -308,13 +308,12 @@ let insert_states (all_edges : Edge.t Iter.t) =
         groups.n_samples);
 
   Hashtbl.iteri groups.groups ~f:(fun ~key:(group_center, center_edges) ~data:members ->
-      (match group_center with
-      | Trans x ->
-          Log.log 2 (fun m -> m "group center\n");
-          List.iter x.summary ~f:(fun x ->
-              Log.log 2 (fun m -> m "@.%a" (Value.pp (ectx ())) x))
-      | _ -> ());
-
+      (* (match group_center with *)
+      (* | Trans x -> *)
+      (*     Log.log 2 (fun m -> m "group center\n"); *)
+      (*     List.iter x.summary ~f:(fun x -> *)
+      (*         Log.log 2 (fun m -> m "@.%a" (Value.pp (ectx ())) x)) *)
+      (* | _ -> ()); *)
       let op, args =
         match center_edges with (_, op, args) :: _ -> (op, args) | _ -> assert false
       in
@@ -391,8 +390,6 @@ let backwards_pass class_ =
   Iter.forever (fun () -> run_extract eval height class_ |> Option.map ~f:local_search)
 
 let synthesize () =
-  print_s [%message (Lazy.force bench : Op.t P.t)];
-
   Fmt.epr "Synthesizing:@,%a%!\n" (Value.pp (ectx ())) (Lazy.force target);
   Timer.start stats.runtime;
 
