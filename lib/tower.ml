@@ -33,19 +33,24 @@ module Op = struct
 end
 
 module Value = struct
+  module Block = struct
+    module T = struct
+      type t = { x : int; y : int; kind : int } [@@deriving compare, equal, hash, sexp]
+    end
+
+    include T
+    include Comparator.Make (T)
+  end
+
   module State = struct
-    type t = {
-      hand : int;
-      tops : Small_int_array.t;
-      blocks : (Set.M(Int).t * Set.M(Int).t) Map.M(Int).t;
-    }
+    type t = { hand : int; tops : Small_int_array.t; blocks : Set.M(Block).t }
     [@@deriving compare, equal, hash, sexp]
 
     let default dim =
       {
         hand = 0;
         tops = Small_int_array.init (dim + 2) ~f:(fun _ -> 0);
-        blocks = Map.empty (module Int);
+        blocks = Set.empty (module Block);
       }
   end
 
@@ -67,20 +72,16 @@ module Value = struct
         ?(summary_states =
           [
             State.default dim;
-            { (State.default dim) with hand = dim / 2 };
-            { (State.default dim) with hand = dim - 2 };
+            (* { (State.default dim) with hand = dim / 2 }; *)
+            (* { (State.default dim) with hand = dim - 2 }; *)
           ]) () =
       { summary_states; dim }
   end
 
-  let pp (ctx : Ctx.t) fmt b =
-    print_s [%message (b : (Set.M(Int).t * Set.M(Int).t) Map.M(Int).t)];
-    let is_h b x y =
-      match Map.find b y with Some (row_h, _) -> Set.mem row_h x | None -> false
-    in
-    let is_v b x y =
-      match Map.find b y with Some (_, row_v) -> Set.mem row_v x | None -> false
-    in
+  let pp (ctx : Ctx.t) fmt (s : State.t) =
+    let b = s.blocks in
+    let is_h b x y = Set.mem b Block.{ x; y; kind = 0 } in
+    let is_v b x y = Set.mem b Block.{ x; y; kind = 1 } in
     let is_on b x y =
       is_h b x y
       || is_h b (x - 1) y
@@ -91,6 +92,10 @@ module Value = struct
     in
 
     Fmt.pf fmt "@[<v>";
+    for i = 0 to ctx.dim - 1 do
+      if i = s.hand then Fmt.pf fmt "v" else Fmt.pf fmt " "
+    done;
+    Fmt.pf fmt "@,";
     for j = ctx.dim - 1 downto 0 do
       for i = 0 to ctx.dim - 1 do
         if is_on b i j then Fmt.pf fmt "█" else Fmt.pf fmt "."
@@ -122,11 +127,7 @@ module Value = struct
           in
           if v_pos >= ctx.dim then s
           else
-            let blocks =
-              Map.update s.blocks v_pos ~f:(function
-                | Some (h_row, v_row) -> (Set.add h_row s.hand, v_row)
-                | None -> (Set.singleton (module Int) s.hand, empty))
-            in
+            let blocks = Set.add s.blocks { x = s.hand; y = v_pos; kind = 0 } in
             let tops =
               Small_int_array.set_many s.tops
                 (Iter.int_range ~start:s.hand ~stop:(min (ctx.dim - 1) (s.hand + 2))
@@ -140,11 +141,7 @@ module Value = struct
           let v_pos = Small_int_array.get s.tops s.hand in
           if v_pos >= ctx.dim then s
           else
-            let blocks =
-              Map.update s.blocks v_pos ~f:(function
-                | Some (h_row, v_row) -> (h_row, Set.add v_row s.hand)
-                | None -> (empty, Set.singleton (module Int) s.hand))
-            in
+            let blocks = Set.add s.blocks { x = s.hand; y = v_pos; kind = 1 } in
             let tops = Small_int_array.set s.tops s.hand (v_pos + 3) in
             { s with blocks; tops }
         in
@@ -266,18 +263,10 @@ module Value = struct
       (add_penalty * Set.length (Set.diff s s'))
       + (remove_penalty * Set.length (Set.diff s' s))
 
-  let blocks_distance ?(add_remove_penalty = 5) _ctx s s' =
-    Map.fold_symmetric_diff s s' ~data_equal:[%equal: Set.M(Int).t * Set.M(Int).t] ~init:0
-      ~f:(fun d (_, rows) ->
-        let h, v =
-          match rows with
-          | `Left (h_row, v_row) | `Right (h_row, v_row) ->
-              ( Set.length h_row * add_remove_penalty,
-                Set.length v_row * add_remove_penalty )
-          | `Unequal ((h_row, v_row), (h_row', v_row')) ->
-              (row_distance h_row h_row', row_distance v_row v_row')
-        in
-        d + (h + v))
+  let blocks_distance _ctx s s' =
+    let n = Float.of_int @@ Set.length (Set.inter s s') in
+    let d = Float.of_int @@ Set.length (Set.union s s') in
+    if Float.(d = 0.) then 0. else 100. *. (1. -. (n /. d))
 
   let distance ctx v v' =
     match (v, v') with
@@ -287,18 +276,36 @@ module Value = struct
         else
           let dist =
             List.map2_exn x.summary x'.summary ~f:(fun s s' ->
-                blocks_distance ctx s.blocks s'.blocks + (10 * abs (s.hand - s'.hand)))
-            |> List.sum (module Int) ~f:Fun.id
-            |> Float.of_int
+                blocks_distance ctx s.blocks s'.blocks
+                +. Float.of_int (abs (s.hand - s'.hand)))
+            |> List.sum (module Float) ~f:Fun.id
           in
           (* Fmt.epr "Distance (d=%f):@,%a@,%a@." dist (pp ctx) *)
           (*   (List.hd_exn x.summary).blocks (pp ctx) (List.hd_exn x'.summary).blocks; *)
           dist
     | _, _ -> Float.infinity
 
+  let blocks_distance _ctx s s' =
+    Set.length (Set.diff s s') + (5 * Set.length (Set.diff s' s))
+
+  let shift =
+    Set.filter_map
+      (module Block)
+      ~f:(fun (b : Block.t) -> if b.y > 0 then Some { b with y = b.y - 1 } else None)
+
+  let rec iter_shifts b f =
+    f b;
+    let b' = shift b in
+    if not (Set.is_empty b') then iter_shifts b' f
+
   let target_distance ctx t = function
     | Int _ -> 1.
-    | Trans x -> Float.of_int @@ blocks_distance ctx t (List.hd_exn x.summary).blocks
+    | Trans x ->
+        iter_shifts t
+        |> Iter.map (fun b ->
+               blocks_distance ctx b (List.hd_exn x.summary).blocks
+               + Set.length (Set.diff t b))
+        |> Iter.min_exn ~lt:( < ) |> Float.of_int
 end
 
 let int x = P.apply (Op.Int x)

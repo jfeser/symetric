@@ -214,10 +214,10 @@ let target_value = lazy (P.eval (Value.eval (ectx ())) (Lazy.force bench))
 let target =
   lazy
     (match Lazy.force target_value with
-    | Trans x -> (List.hd_exn x.summary).blocks
+    | Trans x -> List.hd_exn x.summary
     | Int _ -> assert false)
 
-let target_distance v = Value.target_distance (ectx ()) (Lazy.force target) v
+let target_distance v = Value.target_distance (ectx ()) (Lazy.force target).blocks v
 
 let rewrite : Op.t P.t -> Op.t P.t list = function
   | Apply (Int x, []) ->
@@ -305,6 +305,11 @@ let insert_states (all_edges : Edge.t Iter.t) =
         groups.n_samples);
 
   Hashtbl.iteri groups.groups ~f:(fun ~key:(group_center, center_edges) ~data:members ->
+      (match group_center with
+      | Trans x ->
+          Log.log 2 (fun m -> m "@.%a" (Value.pp (ectx ())) (List.hd_exn x.summary))
+      | _ -> ());
+
       let op, args =
         match center_edges with (_, op, args) :: _ -> (op, args) | _ -> assert false
       in
@@ -423,8 +428,7 @@ let synthesize () =
              Log.log 1 (fun m -> m "Searching candidate %d (d=%f)" i d);
              (match S.Class.value class_ with
              | Trans x ->
-                 Log.log 2 (fun m ->
-                     m "@.%a" (Value.pp ectx) (List.hd_exn x.summary).blocks)
+                 Log.log 2 (fun m -> m "@.%a" (Value.pp ectx) (List.hd_exn x.summary))
              | _ -> ());
 
              backwards_pass class_
@@ -445,7 +449,7 @@ let synthesize () =
                     | Value.Trans x ->
                         Log.log 2 (fun m ->
                             m "Best (d=%f):@.%a" dist (Value.pp ectx)
-                              (List.hd_exn x.summary).blocks)
+                              (List.hd_exn x.summary))
                     | _ -> ());
 
                     Log.sexp 2 (lazy ([%sexp_of: Op.t Program.t] p));
