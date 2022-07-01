@@ -49,21 +49,44 @@ module Value = struct
   module Block = struct
     module T = struct
       type t = { x : int; y : int; kind : int } [@@deriving compare, equal, hash, sexp]
+
+      let compare b b' =
+        match [%compare: int] b.x b'.x with
+        | 0 -> (
+            match [%compare: int] b.y b'.y with
+            | 0 -> [%compare: int] b.kind b'.kind
+            | c -> c)
+        | c -> c
     end
 
     include T
     include Comparator.Make (T)
   end
 
+  module Block_set = struct
+    type t = Block.t list [@@deriving compare, equal, hash, sexp]
+
+    let add bs b =
+      let[@tail_mod_cons] rec insert b = function
+        | [] -> [ b ]
+        | b' :: bs ->
+            if [%compare: Block.t] b b' <= 0 then b :: b' :: bs else b' :: insert b bs
+      in
+      insert b bs
+
+    let empty = []
+    let mem bs b = List.mem ~equal:[%equal: Block.t] bs b
+  end
+
   module State = struct
-    type t = { hand : int; tops : Small_int_array.t; blocks : Set.M(Block).t }
+    type t = { hand : int; tops : Small_int_array.t; blocks : Block_set.t }
     [@@deriving compare, equal, hash, sexp]
 
     let default dim =
       {
         hand = 0;
         tops = Small_int_array.init (dim + 2) ~f:(fun _ -> 0);
-        blocks = Set.empty (module Block);
+        blocks = Block_set.empty;
       }
   end
 
@@ -93,8 +116,8 @@ module Value = struct
 
   let pp (ctx : Ctx.t) fmt (s : State.t) =
     let b = s.blocks in
-    let is_h b x y = Set.mem b Block.{ x; y; kind = 0 } in
-    let is_v b x y = Set.mem b Block.{ x; y; kind = 1 } in
+    let is_h b x y = Block_set.mem b Block.{ x; y; kind = 0 } in
+    let is_v b x y = Block_set.mem b Block.{ x; y; kind = 1 } in
     let is_on b x y =
       is_h b x y
       || is_h b (x - 1) y
@@ -156,7 +179,7 @@ module Value = struct
             in
             if v_pos >= ctx.dim then s
             else
-              let blocks = Set.add s.blocks { x = s.hand; y = v_pos; kind = 0 } in
+              let blocks = Block_set.add s.blocks { x = s.hand; y = v_pos; kind = 0 } in
               let tops =
                 Small_int_array.set_many s.tops
                   (Iter.int_range ~start:s.hand ~stop:(min (ctx.dim - 1) (s.hand + 2))
@@ -172,7 +195,7 @@ module Value = struct
             let v_pos = Small_int_array.get s.tops s.hand in
             if v_pos >= ctx.dim then s
             else
-              let blocks = Set.add s.blocks { x = s.hand; y = v_pos; kind = 1 } in
+              let blocks = Block_set.add s.blocks { x = s.hand; y = v_pos; kind = 1 } in
               let tops = Small_int_array.set s.tops s.hand (v_pos + 3) in
               { s with blocks; tops }
         in
@@ -314,9 +337,66 @@ module Value = struct
       Some (Set.map (module Block) bs ~f:(fun (b : Block.t) -> { b with x = b.x - 1 }))
     else None
 
-  let rec zero bs = match shift_left bs with Some bs -> zero bs | None -> bs
+  (* let rec zero bs = match shift_left bs with Some bs -> zero bs | None -> bs *)
 
-  let distance ctx v v' =
+  let zeroed_overlap (s : Block_set.t) (s' : Block_set.t) =
+    let rec zeroed_distance left both right d (s : Block_set.t) d' (s' : Block_set.t) =
+      match (s, s') with
+      | [], [] -> (left, both, right)
+      | [], xs -> (left, both, right + List.length xs)
+      | xs, [] -> (left + List.length xs, both, right)
+      | b :: bs, b' :: bs' ->
+          let x0 = b.x - d in
+          let x0' = b'.x - d' in
+          let cmp =
+            match [%compare: int] x0 x0' with
+            | 0 -> (
+                match [%compare: int] b.y b'.y with
+                | 0 -> [%compare: int] b.kind b'.kind
+                | c -> c)
+            | c -> c
+          in
+
+          if cmp < 0 then zeroed_distance (left + 1) both right d bs d' s'
+          else if cmp > 0 then zeroed_distance left both (right + 1) d s d' bs'
+          else zeroed_distance left (both + 1) right d bs d' bs'
+    in
+
+    match (s, s') with
+    | [], [] -> (0, 0, 0)
+    | [], xs -> (0, 0, List.length xs)
+    | xs, [] -> (List.length xs, 0, 0)
+    | b :: _, b' :: _ ->
+        let min_x = b.x in
+        let min_x' = b'.x in
+        zeroed_distance 0 0 0 min_x s min_x' s'
+
+  let blocks_distance s s' =
+    let left, inter, right = zeroed_overlap s s' in
+    let union = left + inter + right in
+    if union = 0 then 0. else 1. -. Float.(of_int inter /. of_int union)
+
+  let rec zero bs =
+    let min_x =
+      Iter.of_set bs
+      |> Iter.map (fun (b : Block.t) -> b.x)
+      |> Iter.min |> Option.value ~default:0
+    in
+    Set.map (module Block) bs ~f:(fun b -> { b with x = b.x - min_x })
+
+  (* let blocks_distance_old s s' = *)
+  (*   let s = zero @@ Set.of_list (module Block) s in *)
+  (*   let s' = zero @@ Set.of_list (module Block) s' in *)
+  (*   let n = Float.of_int @@ Set.length (Set.inter s s') in *)
+  (*   let d = Float.of_int @@ Set.length (Set.union s s') in *)
+  (*   print_s [%message (n : float) (d : float)]; *)
+  (*   if Float.(d = 0.) then 0. else 1. -. (n /. d) *)
+
+  (* let blocks_distance s s' = *)
+  (*   [%test_result: float] ~expect:(blocks_distance_old s s') (blocks_distance s s'); *)
+  (*   blocks_distance s s' *)
+
+  let distance _ctx v v' =
     match (v, v') with
     | Int x, Int x' -> if x = x' then 0. else Float.infinity
     | Trans x, Trans x' ->
@@ -332,7 +412,7 @@ module Value = struct
           (* else *)
           let dist =
             List.map2_exn x.summary x'.summary ~f:(fun s s' ->
-                blocks_distance ctx (zero s.blocks) (zero s'.blocks)
+                blocks_distance s.blocks s'.blocks
                 (* +. Float.of_int (abs (s.hand - s'.hand)) *))
             |> Iter.of_list |> Iter.mean
           in
@@ -342,7 +422,8 @@ module Value = struct
     | _, _ -> Float.infinity
 
   let blocks_distance _ctx s s' =
-    Set.length (Set.diff s s') + (5 * Set.length (Set.diff s' s))
+    let left, _, right = zeroed_overlap s s' in
+    left + (5 * right)
 
   let motif_count ctx b b' =
     let rec rshift ct b' =
@@ -362,8 +443,7 @@ module Value = struct
 
   let target_distance ctx t = function
     | Int _ -> 1.
-    | Trans x ->
-        Float.of_int (blocks_distance ctx (zero t) (zero (List.hd_exn x.summary).blocks))
+    | Trans x -> Float.of_int (blocks_distance ctx t (List.hd_exn x.summary).blocks)
   (* let b = (List.hd_exn x.summary).blocks in *)
   (* let b_len = Float.of_int (Set.length b) in *)
   (* 1. *)

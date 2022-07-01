@@ -9,7 +9,7 @@ dry_run = False
 run_metric = True
 
 mlimit = 4 * 1000000 # 4GB
-tlimit = 300          # 5min
+tlimit = 1200          # 5min
 
 base_dir = $(pwd).strip()
 build_dir = base_dir + "/_build/default/"
@@ -34,11 +34,11 @@ if not dry_run:
         }, f)
 
 jobs = []
-ulimit_stanza = f"ulimit -v {mlimit}; ulimit -t {tlimit};"
+ulimit_stanza = f"ulimit -v {mlimit}; timeout {tlimit}s;"
 
 if run_metric:
-    for (c, g) in [(25, 20), (25, 40), (25, 80), (35, 20), (35, 40), (50, 10), (50, 20)]:
-        for t in [0.1, 0.2]:
+    for (c, g) in [(40, 40), (40, 80), (40, 160), (40, 320)]:
+        for t in [0.2]:
             for f in glob.glob(base_dir + '/bench/tower/test*.sexp'):
                 bench_name = os.path.basename(f)
                 # standard
@@ -62,7 +62,7 @@ if dry_run:
 with open('jobs', 'w') as f:
     f.writelines(jobs)
 
-parallel --will-cite --eta -j 20 --joblog joblog :::: jobs
+parallel --will-cite --eta --joblog joblog :::: jobs
 
 # Local Variables:
 # mode: python
