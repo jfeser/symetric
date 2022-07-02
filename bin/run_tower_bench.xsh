@@ -5,7 +5,7 @@ import json
 import os
 import random
 
-dry_run = False
+dry_run = True
 run_metric = True
 run_extract_ablation = True
 run_repair_ablation = True
@@ -38,49 +38,43 @@ if not dry_run:
 
 ulimit_stanza = f"ulimit -v {mlimit}; timeout {tlimit}s"
 
-jobs = []
-for (c, g) in [(40, 100)]:
-    for t in [0.4]:
-        for f in glob.glob(base_dir + '/bench/tower/test*.sexp'):
-            bench_name = os.path.basename(f)
+def mk_cmd(max_cost, n_groups, group_threshold, job_name, extra_args, bench_file):
+    return ' '.join([
+        ulimit_stanza,
+        f"{build_dir}/bin/metric_synth_tower.exe -max-cost {max_cost} -verbosity 2 -out {job_name}.json",
+        f"-group-threshold {group_threshold} -n-groups {n_groups} -backward-pass-repeats 10 -local-search-steps 100",
+        extra_args,
+        f"< {bench_file} 2> {job_name}.log\n"
+    ])
 
-            def mk_cmd(extra_args):
-                return ' '.join([
-                    ulimit_stanza,
-                    f"{build_dir}/bin/metric_synth_tower.exe -max-cost {c} -verbosity 2",
-                    f"-group-threshold {t} -n-groups {g} -backward-pass-repeats 10 -local-search-steps 100",
-                    extra_args,
-                    f"< {f} 2> {job_name}.log\n"
-                ])
+
+jobs = []
+for f in glob.glob(base_dir + '/bench/tower/test*.sexp'):
+    bench_name = os.path.basename(f)
+
+    for (c, g) in [(40, 100)]:
+        for t in [0.4]:
+            def mk_simple_cmd(job_name, extra_args=""):
+                return mk_cmd(c, g, t, job_name, extra_args, f)
 
             # standard
             if run_metric:
-                job_name = f"metric-tower-standard-{len(jobs)}"
-                cmd = mk_cmd(f"-out {job_name}.json")
-                jobs.append(cmd)
+                jobs.append(mk_simple_cmd(f"metric-tower-standard-{len(jobs)}"))
 
             # extract random
             if run_extract_ablation:
-                job_name = f"metric-tower-extractrandom-{len(jobs)}"
-                cmd = mk_cmd(f"-out {job_name}.json -extract random")
-                jobs.append(cmd)
+                jobs.append(mk_simple_cmd(f"metric-tower-extractrandom-{len(jobs)}", "-extract random"))
 
             # repair random
             if run_repair_ablation:
-                job_name = f"metric-tower-repairrandom-{len(jobs)}"
-                cmd = mk_cmd(f"-out {job_name}.json -repair random")
-                jobs.append(cmd)
+                jobs.append(mk_simple_cmd(f"metric-tower-repairrandom-{len(jobs)}", "-repair random"))
 
             # no rank
             if run_rank_ablation:
-                job_name = f"metric-tower-norank-{len(jobs)}"
-                cmd = mk_cmd(f"-out {job_name}.json -use-ranking false")
-                jobs.append(cmd)
+                jobs.append(mk_simple_cmd(f"metric-tower-norank-{len(jobs)}", "-use-ranking false"))
 
-            if run_cluster_ablation:
-                job_name = f"metric-tower-nocluster-{len(jobs)}"
-                cmd = mk_cmd(f"-out {job_name}.json -group-threshold 0.0")
-                jobs.append(cmd)
+        if run_cluster_ablation:
+            jobs.append(mk_cmd(c, g, 0, f"metric-tower-nocluster-{len(jobs)}", "", f))
 
 print('Jobs: ', len(jobs))
 
