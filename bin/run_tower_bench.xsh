@@ -5,7 +5,7 @@ import json
 import os
 import random
 
-dry_run = True
+dry_run = False
 run_metric = True
 run_extract_ablation = True
 run_repair_ablation = True
@@ -85,7 +85,7 @@ if dry_run:
 with open('jobs', 'w') as f:
     f.writelines(jobs)
 
-parallel --will-cite -j10 --eta --joblog joblog :::: jobs
+parallel --will-cite --eta --joblog joblog :::: jobs
 
 # Local Variables:
 # mode: python

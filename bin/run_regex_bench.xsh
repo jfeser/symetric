@@ -7,6 +7,10 @@ import random
 
 dry_run = False
 run_metric = True
+run_extract_ablation = True
+run_repair_ablation = True
+run_rank_ablation = True
+run_cluster_ablation = True
 
 mlimit = 4 * 1000000 # 4GB
 tlimit = 300          # 5min
@@ -34,43 +38,62 @@ if not dry_run:
         }, f)
 
 jobs = []
-ulimit_stanza = f"ulimit -v {mlimit}; ulimit -t {tlimit};"
 
-if run_metric:
-    for c in [20]:
-        for t in [0.3]:
-            for g in [10, 20, 40, 100, 200]:
-                for f in glob.glob(base_dir + '/vendor/regel/exp/so/benchmark/*'):
-                    bench_name = os.path.basename(f)
-                    sketch_file = f'{base_dir}/vendor/regel/exp/so/sketch/{bench_name}'
-                    with open(sketch_file, 'r') as sketch_f:
-                        sketches = sketch_f.readlines()
-                    for sketch in sketches:
-                        sketch = sketch.lstrip('0123456789').strip()
-                        print(sketch)
-                        # standard
-                        job_name = f"metric-{len(jobs)}"
-                        cmd = [
-                            ulimit_stanza,
-                            f"{build_dir}/bin/metric_synth_regex.exe -max-cost {c} -verbosity 2",
-                            f"-group-threshold {t} -n-groups {g}",
-                            f"-sketch '{sketch}'",
-                            f"-out {job_name}.json -backward-pass-repeats 10",
-                            f"-local-search-steps 100 < {f} 2> {job_name}.log\n"
-                        ]
-                        cmd = ' '.join(cmd)
-                        jobs.append(cmd)
+def mk_cmd(max_cost, n_groups, group_threshold, sketch, job_name, extra_args, bench_file):
+    return ' '.join([
+        f"ulimit -v {mlimit} -c 0; timeout {tlimit}s",
+        f"{build_dir}/bin/metric_synth_regex.exe -max-cost {max_cost} -verbosity 1",
+        f"-group-threshold {group_threshold} -n-groups {n_groups}",
+        f"-sketch '{sketch}'",
+        f"-out {job_name}.json -backward-pass-repeats 10",
+        extra_args,
+        f"-local-search-steps 100 < {bench_file} 2> {job_name}.log"
+    ])
+
+
+for f in glob.glob(base_dir + '/vendor/regel/exp/so/benchmark/*'):
+    bench_name = os.path.basename(f)
+    sketch_file = f'{base_dir}/vendor/regel/exp/so/sketch/{bench_name}'
+    with open(sketch_file, 'r') as sketch_f:
+        sketches = sketch_f.readlines()
+        sketches = [s.lstrip('0123456789').strip() for s in sketches]
+
+    for sketch in sketches:
+        for c in [(20, 200)]:
+            for t in [0.3]:
+                def mk_simple_cmd(job_name, extra_args=""):
+                    return mk_cmd(c, g, t, sketch, job_name, extra_args, f)
+
+                # standard
+                if run_metric:
+                    jobs.append(mk_simple_cmd(f"metric-regex-standard-{len(jobs)}"))
+
+                # extract random
+                if run_extract_ablation:
+                    jobs.append(mk_simple_cmd(f"metric-regex-extractrandom-{len(jobs)}", "-extract random"))
+
+                # repair random
+                if run_repair_ablation:
+                    jobs.append(mk_simple_cmd(f"metric-regex-repairrandom-{len(jobs)}", "-repair random"))
+
+                # no rank
+                if run_rank_ablation:
+                    jobs.append(mk_simple_cmd(f"metric-regex-norank-{len(jobs)}", "-use-ranking false"))
+
+            # no rank
+            if run_cluster_ablation:
+                jobs.append(mk_cmd(c, g, 0, sketch, f"metric-regex-nocluster-{len(jobs)}", "", f))
 
 print('Jobs: ', len(jobs))
 
 if dry_run:
-    print(''.join(jobs))
+    print('\n'.join(jobs))
     exit(0)
 
 with open('jobs', 'w') as f:
     f.writelines(jobs)
 
-parallel --will-cite --eta -j10 --joblog joblog :::: jobs
+parallel --will-cite --eta --joblog joblog :::: jobs
 
 # Local Variables:
 # mode: python
