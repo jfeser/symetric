@@ -61,6 +61,9 @@ module Value = struct
 
     include T
     include Comparator.Make (T)
+
+    let is_horiz b = b.kind = 0
+    let is_vert b = b.kind = 1
   end
 
   module Block_set = struct
@@ -76,6 +79,34 @@ module Value = struct
 
     let empty = []
     let mem bs b = List.mem ~equal:[%equal: Block.t] bs b
+
+    let zero : t -> _ = function
+      | [] -> []
+      | b :: bs ->
+          let min_x = b.x in
+          let min_y = b.y in
+          List.map (b :: bs) ~f:(fun b -> { b with x = b.x - min_x; y = b.y - min_y })
+
+    let pp dim fmt blocks =
+      let is_h b x y = mem b Block.{ x; y; kind = 0 } in
+      let is_v b x y = mem b Block.{ x; y; kind = 1 } in
+      let is_on b x y =
+        is_h b x y
+        || is_h b (x - 1) y
+        || is_h b (x - 2) y
+        || is_v b x y
+        || is_v b x (y - 1)
+        || is_v b x (y - 2)
+      in
+
+      Fmt.pf fmt "@[<v>";
+      for j = dim - 1 downto 0 do
+        for i = 0 to dim - 1 do
+          if is_on blocks i j then Fmt.pf fmt "█" else Fmt.pf fmt "."
+        done;
+        Fmt.pf fmt "@,"
+      done;
+      Fmt.pf fmt "@]"
   end
 
   module State = struct
@@ -102,43 +133,61 @@ module Value = struct
   let default = Int (-1)
 
   module Ctx = struct
-    type t = { summary_states : State.t list; dim : int } [@@deriving sexp]
+    type t = {
+      summary_states : State.t list;
+      dim : int;
+      slices : (Block_set.t * int) list;
+    }
+    [@@deriving sexp]
 
-    let create ?(dim = 32)
-        ?(summary_states =
-          [
-            State.default dim;
-            (* { (State.default dim) with hand = dim / 2 }; *)
-            (* { (State.default dim) with hand = dim - 2 }; *)
-          ]) () =
-      { summary_states; dim }
+    let slices dim (blocks : Block_set.t) =
+      let v_slices_l =
+        Iter.int_range ~start:0 ~stop:(dim - 1)
+        |> Iter.filter (fun min_x ->
+               not
+                 (List.exists
+                    ~f:(fun b ->
+                      Block.is_horiz b
+                      && (min_x = b.x || min_x - 1 = b.x || min_x - 2 = b.x))
+                    blocks))
+        |> Iter.map (fun min_x ->
+               let blocks' = List.filter blocks ~f:(fun b -> min_x <= b.x) in
+               (blocks', List.length blocks - List.length blocks'))
+        |> Iter.to_list
+        |> List.dedup_and_sort ~compare:[%compare: Block_set.t * int]
+        |> List.map ~f:(fun (b, d) -> (Block_set.zero b, d))
+      in
+      let v_slices_r =
+        Iter.int_range ~start:0 ~stop:(dim - 1)
+        |> Iter.filter (fun max_x ->
+               not
+                 (List.exists
+                    ~f:(fun b ->
+                      Block.is_horiz b
+                      && (max_x = b.x || max_x - 1 = b.x || max_x - 2 = b.x))
+                    blocks))
+        |> Iter.map (fun max_x ->
+               let blocks' = List.filter blocks ~f:(fun b -> max_x >= b.x) in
+               (blocks', List.length blocks - List.length blocks'))
+        |> Iter.to_list
+        |> List.dedup_and_sort ~compare:[%compare: Block_set.t * int]
+        |> List.map ~f:(fun (b, d) -> (Block_set.zero b, d))
+      in
+      v_slices_l @ v_slices_r
+
+    let create ?(dim = 32) ?(summary_states = [ State.default dim ]) ?target () =
+      let slices = Option.map target ~f:(slices dim) |> Option.value ~default:[] in
+      { summary_states; dim; slices }
   end
 
   let pp (ctx : Ctx.t) fmt (s : State.t) =
-    let b = s.blocks in
-    let is_h b x y = Block_set.mem b Block.{ x; y; kind = 0 } in
-    let is_v b x y = Block_set.mem b Block.{ x; y; kind = 1 } in
-    let is_on b x y =
-      is_h b x y
-      || is_h b (x - 1) y
-      || is_h b (x - 2) y
-      || is_v b x y
-      || is_v b x (y - 1)
-      || is_v b x (y - 2)
-    in
-
     Fmt.pf fmt "@[<v>";
     Fmt.pf fmt "%a@," Sexp.pp_hum ([%sexp_of: State.t] s);
     for i = 0 to ctx.dim - 1 do
       if i = s.hand then Fmt.pf fmt "v" else Fmt.pf fmt " "
     done;
     Fmt.pf fmt "@,";
-    for j = ctx.dim - 1 downto 0 do
-      for i = 0 to ctx.dim - 1 do
-        if is_on b i j then Fmt.pf fmt "█" else Fmt.pf fmt "."
-      done;
-      Fmt.pf fmt "@,"
-    done;
+    Block_set.pp ctx.dim fmt s.blocks;
     Fmt.pf fmt "@]"
 
   let empty = Set.empty (module Int)
@@ -239,106 +288,6 @@ module Value = struct
   let eval = eval_unmemoized
   let is_error _ = false
 
-  (* let emd (ctx : Ctx.t) s s' = *)
-  (*   let emd, _ = *)
-  (*     Iter.int_range ~start:0 ~stop:(ctx.dim - 1) *)
-  (*     |> Iter.fold *)
-  (*          (fun (emd_tot, emd_prev) i -> *)
-  (*            let p = Bool.to_int (Set.mem s i) in *)
-  (*            let q = Bool.to_int (Set.mem s' i) in *)
-  (*            let emd = p + emd_prev - q in *)
-  (*            (emd_tot + abs emd, emd)) *)
-  (*          (0, 0) *)
-  (*   in *)
-  (*   emd *)
-
-  let emd _ s s' =
-    let _, _, emd =
-      Set.merge_to_sequence ~order:`Increasing s s'
-      |> Sequence.fold ~init:(0, 0, 0) ~f:(fun (emd_prev, prev_bucket, emd_tot) ->
-           function
-           | Set.Merge_to_sequence_element.Left bucket ->
-               let emd = 1 + emd_prev in
-               let emd_tot =
-                 emd_tot + abs ((bucket - prev_bucket) * emd_prev) + abs emd
-               in
-               (emd, bucket, emd_tot)
-           | Right bucket ->
-               let emd = emd_prev - 1 in
-               let emd_tot =
-                 emd_tot + abs ((bucket - prev_bucket) * emd_prev) + abs emd
-               in
-               (emd, bucket, emd_tot)
-           | Both (bucket, _) ->
-               let emd = emd_prev in
-               let emd_tot =
-                 emd_tot + abs ((bucket - prev_bucket) * emd_prev) + abs emd
-               in
-               (emd, bucket, emd_tot))
-    in
-    emd
-
-  let blocks_distance ?(add_remove_penalty = 5) _ctx s s' =
-    Map.fold_symmetric_diff s s' ~data_equal:[%equal: Set.M(Int).t * Set.M(Int).t] ~init:0
-      ~f:(fun d (_, rows) ->
-        let l1_h, l1_v, emd_h, emd_v =
-          match rows with
-          | `Left (h_row, v_row) | `Right (h_row, v_row) ->
-              (Set.length h_row, Set.length v_row, 0, 0)
-          | `Unequal ((h_row, v_row), (h_row', v_row')) ->
-              let l1_h = abs (Set.length h_row - Set.length h_row') in
-              let l1_v = abs (Set.length v_row - Set.length v_row') in
-              let emd_h = emd _ctx h_row h_row' in
-              let emd_v = emd _ctx v_row v_row' in
-              (l1_h, l1_v, emd_h, emd_v)
-        in
-        d + ((l1_h + l1_v) * add_remove_penalty) + emd_h + emd_v)
-
-  let row_distance s s' =
-    let add_penalty = 1 and remove_penalty = 5 in
-    if Set.is_empty s then Set.length s' * remove_penalty
-    else if Set.is_empty s' then Set.length s * add_penalty
-    else
-      (* let min = Set.min_elt_exn s in *)
-      (* let min' = Set.min_elt_exn s' in *)
-      (* let diff = min' - min in *)
-      (* let s' = Set.map (module Int) ~f:(fun x -> x - diff) s' in *)
-      (* diff *)
-      (* + *)
-      (add_penalty * Set.length (Set.diff s s'))
-      + (remove_penalty * Set.length (Set.diff s' s))
-
-  let blocks_distance _ctx s s' =
-    let n = Float.of_int @@ Set.length (Set.inter s s') in
-    let d = Float.of_int @@ Set.length (Set.union s s') in
-    if Float.(d = 0.) then 0. else 1. -. (n /. d)
-
-  let shift_down =
-    Set.filter_map
-      (module Block)
-      ~f:(fun (b : Block.t) -> if b.y > 0 then Some { b with y = b.y - 1 } else None)
-
-  let shift_right (ctx : Ctx.t) bs =
-    if
-      (not (Set.is_empty bs))
-      && Set.for_all bs ~f:(fun (b : Block.t) -> b.x < ctx.dim - 1)
-    then Some (Set.map (module Block) bs ~f:(fun (b : Block.t) -> { b with x = b.x + 1 }))
-    else None
-
-  let shift_up (ctx : Ctx.t) bs =
-    if
-      (not (Set.is_empty bs))
-      && Set.for_all bs ~f:(fun (b : Block.t) -> b.y < ctx.dim - 1)
-    then Some (Set.map (module Block) bs ~f:(fun (b : Block.t) -> { b with y = b.y + 1 }))
-    else None
-
-  let shift_left bs =
-    if (not (Set.is_empty bs)) && Set.for_all bs ~f:(fun (b : Block.t) -> b.x > 0) then
-      Some (Set.map (module Block) bs ~f:(fun (b : Block.t) -> { b with x = b.x - 1 }))
-    else None
-
-  (* let rec zero bs = match shift_left bs with Some bs -> zero bs | None -> bs *)
-
   let zeroed_overlap (s : Block_set.t) (s' : Block_set.t) =
     let rec zeroed_distance left both right d (s : Block_set.t) d' (s' : Block_set.t) =
       match (s, s') with
@@ -376,79 +325,33 @@ module Value = struct
     let union = left + inter + right in
     if union = 0 then 0. else 1. -. Float.(of_int inter /. of_int union)
 
-  let rec zero bs =
-    let min_x =
-      Iter.of_set bs
-      |> Iter.map (fun (b : Block.t) -> b.x)
-      |> Iter.min |> Option.value ~default:0
-    in
-    Set.map (module Block) bs ~f:(fun b -> { b with x = b.x - min_x })
-
-  (* let blocks_distance_old s s' = *)
-  (*   let s = zero @@ Set.of_list (module Block) s in *)
-  (*   let s' = zero @@ Set.of_list (module Block) s' in *)
-  (*   let n = Float.of_int @@ Set.length (Set.inter s s') in *)
-  (*   let d = Float.of_int @@ Set.length (Set.union s s') in *)
-  (*   print_s [%message (n : float) (d : float)]; *)
-  (*   if Float.(d = 0.) then 0. else 1. -. (n /. d) *)
-
-  (* let blocks_distance s s' = *)
-  (*   [%test_result: float] ~expect:(blocks_distance_old s s') (blocks_distance s s'); *)
-  (*   blocks_distance s s' *)
-
   let distance _ctx v v' =
     match (v, v') with
     | Int x, Int x' -> if x = x' then 0. else Float.infinity
     | Trans x, Trans x' ->
         if [%equal: transition] x x' then 0.
-        else
-          (* if *)
-          (*   List.for_all2_exn x.summary x'.summary ~f:(fun s s' -> *)
-          (*       Set.is_empty s.blocks && Set.is_empty s'.blocks) *)
-          (* then *)
-          (*   if List.exists2_exn x.summary x.summary ~f:(fun s s' -> s.hand <> s'.hand) then *)
-          (*     1.0 *)
-          (*   else 0. *)
-          (* else *)
-          let dist =
-            List.map2_exn x.summary x'.summary ~f:(fun s s' ->
-                blocks_distance s.blocks s'.blocks
-                (* +. Float.of_int (abs (s.hand - s'.hand)) *))
-            |> Iter.of_list |> Iter.mean
-          in
-          (* Fmt.epr "Distance (d=%f):@,%a@,%a@." dist (pp ctx) *)
-          (*   (List.hd_exn x.summary).blocks (pp ctx) (List.hd_exn x'.summary).blocks; *)
-          Option.value ~default:0. dist
+        else (
+          assert (List.length x.summary > 0);
+          assert (List.length x'.summary > 0);
+          List.map2_exn x.summary x'.summary ~f:(fun s s' ->
+              blocks_distance s.blocks s'.blocks)
+          |> Iter.of_list |> Iter.mean |> Option.value ~default:0.)
     | _, _ -> Float.infinity
 
   let blocks_distance _ctx s s' =
     let left, _, right = zeroed_overlap s s' in
-    left + (5 * right)
+    left + (10 * right)
 
-  let motif_count ctx b b' =
-    let rec rshift ct b' =
-      let ct = ct + if Set.is_subset b' ~of_:b then 1 else 0 in
-      match shift_right ctx b' with Some b' -> rshift ct b' | None -> ct
-    in
-    let rec ushift ct b' =
-      let ct = rshift ct b' in
-      match shift_up ctx b' with Some b' -> ushift ct b' | None -> ct
-    in
-    ushift 0 b'
-
-  let rec iter_shifts b f =
-    f b;
-    let b' = shift_down b in
-    if not (Set.is_empty b') then iter_shifts b' f
-
-  let target_distance ctx t = function
+  let target_distance (ctx : Ctx.t) _t = function
     | Int _ -> 1.
-    | Trans x -> Float.of_int (blocks_distance ctx t (List.hd_exn x.summary).blocks)
-  (* let b = (List.hd_exn x.summary).blocks in *)
-  (* let b_len = Float.of_int (Set.length b) in *)
-  (* 1. *)
-  (* /. ((Float.of_int @@ motif_count ctx t (List.hd_exn x.summary).blocks) *)
-  (*    *. Float.(1.5 ** b_len)) *)
+    | Trans x ->
+        Iter.of_list ctx.slices
+        |> Iter.map (fun (slice, dropped) ->
+               Iter.of_list x.summary
+               |> Iter.map (fun (candidate : State.t) ->
+                      Float.of_int dropped
+                      +. Float.of_int (blocks_distance ctx slice candidate.blocks)))
+        |> Iter.concat |> Iter.min |> Option.value ~default:1.
 end
 
 let int x = P.apply (Op.Int x)
@@ -482,39 +385,3 @@ let rec desugar : Op.t P.t -> Op.t P.t = function
   | Apply (op, args) -> Apply (op, List.map ~f:desugar args)
 
 let parse s = parse s |> desugar
-
-let%expect_test "" =
-  let bridge =
-    parse @@ Sexp.of_string "((for 3 (for 3 v (r 4) v (l 4)) (r 2) h (r 4)))"
-  in
-  let bridge_top = parse @@ Sexp.of_string "((r 2) (for 3 h (r 6)))" in
-  let bridge_pillar = parse @@ Sexp.of_string "((for 3 (embed v (r 4) v)) (r 2) h)" in
-  let bridge_pillar_part = parse @@ Sexp.of_string "((for 3 (embed v (r 4))))" in
-  let ctx = Value.Ctx.create () in
-  let target =
-    match P.eval (Value.eval ctx) bridge with
-    | Trans t -> (List.hd_exn t.summary).blocks
-    | _ -> assert false
-  in
-  print_s
-    [%message
-      (Value.target_distance ctx target (P.eval (Value.eval ctx) bridge_top) : float)];
-  print_s
-    [%message
-      (Value.distance ctx
-         (P.eval (Value.eval ctx) bridge_pillar)
-         (P.eval (Value.eval ctx) bridge_pillar_part)
-        : float)];
-  print_s
-    [%message
-      (Value.distance ctx
-         (P.eval (Value.eval ctx) bridge_pillar)
-         (P.eval (Value.eval ctx) bridge_top)
-        : float)];
-  print_s
-    [%message
-      (Value.target_distance ctx target (P.eval (Value.eval ctx) bridge_pillar) : float)];
-  print_s
-    [%message
-      (Value.target_distance ctx target (P.eval (Value.eval ctx) bridge_pillar_part)
-        : float)]

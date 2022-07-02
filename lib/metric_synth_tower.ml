@@ -134,6 +134,8 @@ let[@inline] backward_pass_repeats () =
 let[@inline] local_search_steps () =
   (Set_once.get_exn params [%here]).Params.local_search_steps
 
+let max_height = max_cost
+
 module Log = struct
   let start_time = Time.now ()
 
@@ -152,7 +154,6 @@ end
 let search_state = ref (S.create ())
 let[@inline] get_search_state () = !search_state
 let bench = lazy (Sexp.input_sexp In_channel.stdin |> Tower.parse)
-let[@inline] ectx () = Value.Ctx.create ()
 
 type time_span = Time.Span.t
 
@@ -210,9 +211,7 @@ let write_output m_prog =
   in
   Out_channel.with_file (output_file ()) ~f:(fun ch -> Safe.to_channel ch json)
 
-let distance v v' = Value.distance (ectx ()) v v'
-let relative_distance v v' = Value.distance (ectx ()) v v'
-let target_value = lazy (P.eval (Value.eval (ectx ())) (Lazy.force bench))
+let target_value = lazy (P.eval (Value.eval (Value.Ctx.create ())) (Lazy.force bench))
 
 let target =
   lazy
@@ -220,7 +219,11 @@ let target =
     | Trans x -> List.hd_exn x.summary
     | Int _ -> assert false)
 
+let ectx = lazy (Value.Ctx.create ~target:(Lazy.force target).blocks ())
+let ectx () = Lazy.force ectx
 let target_distance v = Value.target_distance (ectx ()) (Lazy.force target).blocks v
+let distance v v' = Value.distance (ectx ()) v v'
+let relative_distance v v' = Value.distance (ectx ()) v v'
 
 let rewrite : Op.t P.t -> Op.t P.t list = function
   | Apply (Int x, []) ->
@@ -277,10 +280,27 @@ module Edge = struct
   let distance (v, _, _) (v', _, _) = relative_distance v v'
 end
 
+exception Done of Op.t Program.t
+
 let select_top_k_edges edges =
   Iter.ordered_groupby (module Value) ~score:Edge.score ~key:(fun (v, _, _) -> v) edges
   |> Iter.timed stats.rank_time
-  |> Iter.map (fun (v, (_, es)) -> (v, es))
+  |> Iter.map (fun (v, (d, es)) ->
+         if Float.(d = 0.) then
+           match es with
+           | (_, op, args) :: _ ->
+               List.map args
+                 ~f:
+                   (S.local_greedy (get_search_state ()) (max_height ())
+                      (Value.eval (ectx ()))
+                      target_distance)
+               |> Option.all
+               |> Option.iter ~f:(fun args -> raise (Done (Apply (op, args))));
+               failwith "early exit extract failed"
+               (* ; *)
+               (* (v, es) *)
+           | _ -> (v, es)
+         else (v, es))
 
 let select_arbitrary edges = Iter.map (fun ((v, _, _) as edge) -> (v, [ edge ])) edges
 
@@ -309,10 +329,12 @@ let insert_states (all_edges : Edge.t Iter.t) =
 
   Hashtbl.iteri groups.groups ~f:(fun ~key:(group_center, center_edges) ~data:members ->
       (* (match group_center with *)
-      (* | Trans x -> *)
-      (*     Log.log 2 (fun m -> m "group center\n"); *)
-      (*     List.iter x.summary ~f:(fun x -> *)
-      (*         Log.log 2 (fun m -> m "@.%a" (Value.pp (ectx ())) x)) *)
+      (* | Trans _ -> *)
+      (*     Log.log 2 (fun m -> *)
+      (*         m "group center (d=%f) (members=%d)\n" *)
+      (*           (target_distance group_center) *)
+      (*           (List.length members)) *)
+      (* (\* Log.log 2 (fun m -> m "@.%a" (Value.pp (ectx ())) (List.hd_exn x.summary)) *\) *)
       (* | _ -> ()); *)
       let op, args =
         match center_edges with (_, op, args) :: _ -> (op, args) | _ -> assert false
@@ -369,103 +391,96 @@ let fill_search_space () =
   let (), xfta_time = Synth_utils.timed fill_search_space_untimed in
   stats.xfta_time := xfta_time
 
-let run_extract_untimed eval height class_ =
+let run_extract_untimed eval class_ =
   let search_state = get_search_state () in
   match extract () with
-  | `Greedy -> S.local_greedy search_state height eval target_distance class_
-  | `Random -> S.random search_state height class_
+  | `Greedy -> S.local_greedy search_state (max_height ()) eval target_distance class_
+  | `Random -> S.random search_state (max_height ()) class_
 
-let run_extract eval height class_ =
-  let ret, extract_time =
-    Synth_utils.timed (fun () -> run_extract_untimed eval height class_)
-  in
+let run_extract eval class_ =
+  let ret, extract_time = Synth_utils.timed (fun () -> run_extract_untimed eval class_) in
   (stats.extract_time := Time.Span.(!(stats.extract_time) + extract_time));
   ret
 
 let backwards_pass class_ =
-  let max_cost = max_cost () and ectx = ectx () in
-  let height = max_cost in
+  let ectx = ectx () in
   assert ([%equal: Type.t] (S.Class.type_ class_) Type.output);
   let eval = Value.mk_eval_memoized () ectx in
-  Iter.forever (fun () -> run_extract eval height class_ |> Option.map ~f:local_search)
+  Iter.forever (fun () -> run_extract eval class_ |> Option.map ~f:local_search)
 
 let synthesize () =
   Fmt.epr "Synthesizing:@,%a%!\n" (Value.pp (ectx ())) (Lazy.force target);
   Timer.start stats.runtime;
 
+  List.iter (ectx ()).slices ~f:(fun (t, d) ->
+      Fmt.epr "Slice (dropped=%d):@,%a@.%!\n" d (Value.Block_set.pp (ectx ()).dim) t);
+
   let ectx = ectx () and backward_pass_repeats = backward_pass_repeats () in
 
-  (match load_search_space () with
-  | Some fn -> In_channel.with_file fn ~f:(fun ch -> search_state := S.of_channel ch)
-  | None ->
-      fill_search_space ();
-      Option.iter (dump_search_space ()) ~f:(fun fn ->
-          Out_channel.with_file fn ~f:(fun ch -> S.to_channel ch @@ get_search_state ())));
+  try
+    (match load_search_space () with
+    | Some fn -> In_channel.with_file fn ~f:(fun ch -> search_state := S.of_channel ch)
+    | None ->
+        fill_search_space ();
+        Option.iter (dump_search_space ()) ~f:(fun fn ->
+            Out_channel.with_file fn ~f:(fun ch -> S.to_channel ch @@ get_search_state ())));
 
-  write_output None;
-  let search_state = get_search_state () in
+    write_output None;
+    let search_state = get_search_state () in
 
-  if validate () then
-    S.validate search_state (Value.eval ectx) distance (group_threshold ());
+    if validate () then
+      S.validate search_state (Value.eval ectx) distance (group_threshold ());
 
-  let exception Done of Op.t Program.t in
-  Log.log 1 (fun m -> m "Starting backwards pass");
+    Log.log 1 (fun m -> m "Starting backwards pass");
 
-  let valid_classes =
-    S.classes search_state
-    |> Iter.filter (fun c -> [%equal: Type.t] Type.output (S.Class.type_ c))
-    |> Iter.map (fun c -> (target_distance @@ S.Class.value c, c))
-  in
-  let classes_ =
-    match extract () with
-    | `Greedy ->
-        valid_classes |> Iter.sort ~cmp:(fun (d, _) (d', _) -> [%compare: float] d d')
-    | `Random -> valid_classes |> Iter.to_list |> List.permute |> Iter.of_list
-  in
-  let ret =
-    try
-      classes_
-      |> Iter.iteri (fun i (d, (class_ : S.Class.t)) ->
-             incr stats.groups_searched;
-             Log.log 1 (fun m -> m "Searching candidate %d (d=%f)" i d);
-             (match S.Class.value class_ with
-             | Trans x ->
-                 Log.log 2 (fun m -> m "@.%a" (Value.pp ectx) (List.hd_exn x.summary))
-             | _ -> ());
+    let valid_classes =
+      S.classes search_state
+      |> Iter.filter (fun c -> [%equal: Type.t] Type.output (S.Class.type_ c))
+      |> Iter.map (fun c -> (target_distance @@ S.Class.value c, c))
+    in
+    let classes_ =
+      match extract () with
+      | `Greedy ->
+          valid_classes |> Iter.sort ~cmp:(fun (d, _) (d', _) -> [%compare: float] d d')
+      | `Random -> valid_classes |> Iter.to_list |> List.permute |> Iter.of_list
+    in
+    Iter.iteri
+      (fun i (d, (class_ : S.Class.t)) ->
+        incr stats.groups_searched;
+        Log.log 1 (fun m -> m "Searching candidate %d (d=%f)" i d);
+        (match S.Class.value class_ with
+        | Trans x -> Log.log 2 (fun m -> m "@.%a" (Value.pp ectx) (List.hd_exn x.summary))
+        | _ -> ());
 
-             backwards_pass class_
-             |> Iter.take backward_pass_repeats
-             |> Iter.filter_map Fun.id
-             |> Iter.mapi (fun backwards_pass_i (local_search_i, p) ->
-                    ((backwards_pass_i, local_search_i), p))
-             |> Iter.map (fun (stats, p) ->
-                    let v = Program.eval (Value.eval ectx) p in
-                    let d = target_distance v in
-                    (stats, d, v, p))
-             |> Iter.min_floor ~to_float:(fun (_, d, _, _) -> d) 0.0
-             |> Option.iter
-                  ~f:(fun
-                       ((backwards_pass_iters, local_search_iters), dist, found_value, p)
-                     ->
-                    (match found_value with
-                    | Value.Trans x ->
-                        Log.log 2 (fun m ->
-                            m "Best (d=%f):@.%a" dist (Value.pp ectx)
-                              (List.hd_exn x.summary))
-                    | _ -> ());
+        backwards_pass class_
+        |> Iter.take backward_pass_repeats
+        |> Iter.filter_map Fun.id
+        |> Iter.mapi (fun backwards_pass_i (local_search_i, p) ->
+               ((backwards_pass_i, local_search_i), p))
+        |> Iter.map (fun (stats, p) ->
+               let v = Program.eval (Value.eval ectx) p in
+               let d = target_distance v in
+               (stats, d, v, p))
+        |> Iter.min_floor ~to_float:(fun (_, d, _, _) -> d) 0.0
+        |> Option.iter
+             ~f:(fun ((backwards_pass_iters, local_search_iters), dist, found_value, p) ->
+               (match found_value with
+               | Value.Trans x ->
+                   Log.log 2 (fun m ->
+                       m "Best (d=%f):@.%a" dist (Value.pp ectx) (List.hd_exn x.summary))
+               | _ -> ());
 
-                    Log.sexp 2 (lazy ([%sexp_of: Op.t Program.t] p));
+               Log.sexp 2 (lazy ([%sexp_of: Op.t Program.t] p));
 
-                    if Float.(dist = 0.) then (
-                      Log.log 0 (fun m -> m "local search iters %d" local_search_iters);
-                      Log.log 0 (fun m ->
-                          m "backwards pass iters %d" backwards_pass_iters);
-                      raise (Done p))));
-      None
-    with Done p -> Some p
-  in
-  Timer.stop stats.runtime;
-  write_output ret
+               if Float.(dist = 0.) then (
+                 Log.log 0 (fun m -> m "local search iters %d" local_search_iters);
+                 Log.log 0 (fun m -> m "backwards pass iters %d" backwards_pass_iters);
+                 raise (Done p))))
+      classes_;
+    write_output None
+  with Done p ->
+    Timer.stop stats.runtime;
+    write_output (Some p)
 
 let cmd =
   let open Command.Let_syntax in

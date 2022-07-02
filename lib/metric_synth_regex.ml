@@ -125,6 +125,7 @@ let params = Set_once.create ()
 let[@inline] group_threshold () = (Set_once.get_exn params [%here]).Params.group_threshold
 let[@inline] operators () = (Set_once.get_exn params [%here]).Params.operators
 let[@inline] max_cost () = (Set_once.get_exn params [%here]).Params.max_cost
+let max_height = max_cost
 let[@inline] verbosity () = (Set_once.get_exn params [%here]).Params.verbosity
 let[@inline] validate () = (Set_once.get_exn params [%here]).Params.validate
 let[@inline] target_groups () = (Set_once.get_exn params [%here]).Params.target_groups
@@ -267,10 +268,27 @@ module Edge = struct
   let distance (v, _, _) (v', _, _) = relative_distance v v'
 end
 
+exception Done of Op.t Program.t
+
 let select_top_k_edges edges =
   Iter.ordered_groupby (module Value) ~score:Edge.score ~key:(fun (v, _, _) -> v) edges
   |> Iter.timed stats.rank_time
-  |> Iter.map (fun (v, (_, es)) -> (v, es))
+  |> Iter.map (fun (v, (d, es)) ->
+         if Float.(d = 0.) then
+           match es with
+           | (_, op, args) :: _ ->
+               List.map args
+                 ~f:
+                   (S.local_greedy (get_search_state ()) (max_height ())
+                      (Value.eval (ectx ()))
+                      target_distance)
+               |> Option.all
+               |> Option.iter ~f:(fun args -> raise (Done (Apply (op, args))));
+               failwith "early exit extract failed"
+               (* ; *)
+               (* (v, es) *)
+           | _ -> (v, es)
+         else (v, es))
 
 let select_arbitrary edges = Iter.map (fun ((v, _, _) as edge) -> (v, [ edge ])) edges
 
@@ -353,25 +371,22 @@ let fill_search_space () =
   let (), xfta_time = Synth_utils.timed fill_search_space_untimed in
   stats.xfta_time := xfta_time
 
-let run_extract_untimed eval height class_ =
+let run_extract_untimed eval class_ =
   let search_state = get_search_state () in
   match extract () with
-  | `Greedy -> S.local_greedy search_state height eval target_distance class_
-  | `Random -> S.random search_state height class_
+  | `Greedy -> S.local_greedy search_state (max_height ()) eval target_distance class_
+  | `Random -> S.random search_state (max_height ()) class_
 
-let run_extract eval height class_ =
-  let ret, extract_time =
-    Synth_utils.timed (fun () -> run_extract_untimed eval height class_)
-  in
+let run_extract eval class_ =
+  let ret, extract_time = Synth_utils.timed (fun () -> run_extract_untimed eval class_) in
   (stats.extract_time := Time.Span.(!(stats.extract_time) + extract_time));
   ret
 
 let backwards_pass class_ =
-  let max_cost = max_cost () and ectx = ectx () in
-  let height = 1 + Int.ceil_log2 max_cost in
+  let ectx = ectx () in
   assert ([%equal: Type.t] (S.Class.type_ class_) Type.output);
   let eval = Value.mk_eval_memoized () ectx in
-  Iter.forever (fun () -> run_extract eval height class_ |> Option.map ~f:local_search)
+  Iter.forever (fun () -> run_extract eval class_ |> Option.map ~f:local_search)
 
 let synthesize () =
   eprint_s [%message (ectx () : Value.Ctx.t)];
@@ -380,68 +395,64 @@ let synthesize () =
 
   let ectx = ectx () and backward_pass_repeats = backward_pass_repeats () in
 
-  (match load_search_space () with
-  | Some fn -> In_channel.with_file fn ~f:(fun ch -> search_state := S.of_channel ch)
-  | None ->
-      fill_search_space ();
-      Option.iter (dump_search_space ()) ~f:(fun fn ->
-          Out_channel.with_file fn ~f:(fun ch -> S.to_channel ch @@ get_search_state ())));
+  try
+    (match load_search_space () with
+    | Some fn -> In_channel.with_file fn ~f:(fun ch -> search_state := S.of_channel ch)
+    | None ->
+        fill_search_space ();
+        Option.iter (dump_search_space ()) ~f:(fun fn ->
+            Out_channel.with_file fn ~f:(fun ch -> S.to_channel ch @@ get_search_state ())));
 
-  write_output None;
-  let search_state = get_search_state () in
+    write_output None;
+    let search_state = get_search_state () in
 
-  if validate () then
-    S.validate search_state (Value.eval ectx) distance (group_threshold ());
+    if validate () then
+      S.validate search_state (Value.eval ectx) distance (group_threshold ());
 
-  let exception Done of Op.t Program.t in
-  Log.log 1 (fun m -> m "Starting backwards pass");
+    Log.log 1 (fun m -> m "Starting backwards pass");
 
-  let valid_classes =
-    S.classes search_state
-    |> Iter.filter (fun c -> [%equal: Type.t] Type.output (S.Class.type_ c))
-    |> Iter.map (fun c -> (target_distance @@ S.Class.value c, c))
-  in
-  let classes_ =
-    match extract () with
-    | `Greedy ->
-        valid_classes |> Iter.sort ~cmp:(fun (d, _) (d', _) -> [%compare: float] d d')
-    | `Random -> valid_classes |> Iter.to_list |> List.permute |> Iter.of_list
-  in
-  let ret =
-    try
-      classes_
-      |> Iter.iteri (fun i (d, (class_ : S.Class.t)) ->
-             incr stats.groups_searched;
-             Log.log 1 (fun m -> m "Searching candidate %d (d=%f)" i d);
-             Log.log 2 (fun m -> m "@.%a" Value.pp (S.Class.value class_));
+    let valid_classes =
+      S.classes search_state
+      |> Iter.filter (fun c -> [%equal: Type.t] Type.output (S.Class.type_ c))
+      |> Iter.map (fun c -> (target_distance @@ S.Class.value c, c))
+    in
+    let classes_ =
+      match extract () with
+      | `Greedy ->
+          valid_classes |> Iter.sort ~cmp:(fun (d, _) (d', _) -> [%compare: float] d d')
+      | `Random -> valid_classes |> Iter.to_list |> List.permute |> Iter.of_list
+    in
 
-             backwards_pass class_
-             |> Iter.take backward_pass_repeats
-             |> Iter.filter_map Fun.id
-             |> Iter.mapi (fun backwards_pass_i (local_search_i, p) ->
-                    ((backwards_pass_i, local_search_i), p))
-             |> Iter.min_floor
-                  ~to_float:(fun (_, p) ->
-                    target_distance @@ Program.eval (Value.eval ectx) p)
-                  0.0
-             |> Option.iter ~f:(fun ((backwards_pass_iters, local_search_iters), p) ->
-                    let found_value = Program.eval (Value.eval ectx) p in
+    Iter.iteri
+      (fun i (d, (class_ : S.Class.t)) ->
+        incr stats.groups_searched;
+        Log.log 1 (fun m -> m "Searching candidate %d (d=%f)" i d);
+        Log.log 2 (fun m -> m "@.%a" Value.pp (S.Class.value class_));
 
-                    Log.log 2 (fun m ->
-                        m "Best (d=%f):@.%a" (target_distance found_value) Value.pp
-                          found_value);
-                    Log.sexp 2 (lazy ([%sexp_of: Op.t Program.t] p));
+        backwards_pass class_
+        |> Iter.take backward_pass_repeats
+        |> Iter.filter_map Fun.id
+        |> Iter.mapi (fun backwards_pass_i (local_search_i, p) ->
+               ((backwards_pass_i, local_search_i), p))
+        |> Iter.min_floor
+             ~to_float:(fun (_, p) -> target_distance @@ Program.eval (Value.eval ectx) p)
+             0.0
+        |> Option.iter ~f:(fun ((backwards_pass_iters, local_search_iters), p) ->
+               let found_value = Program.eval (Value.eval ectx) p in
 
-                    if Float.(target_distance found_value = 0.) then (
-                      Log.log 0 (fun m -> m "local search iters %d" local_search_iters);
-                      Log.log 0 (fun m ->
-                          m "backwards pass iters %d" backwards_pass_iters);
-                      raise (Done p))));
-      None
-    with Done p -> Some p
-  in
-  Timer.stop stats.runtime;
-  write_output ret
+               Log.log 2 (fun m ->
+                   m "Best (d=%f):@.%a" (target_distance found_value) Value.pp found_value);
+               Log.sexp 2 (lazy ([%sexp_of: Op.t Program.t] p));
+
+               if Float.(target_distance found_value = 0.) then (
+                 Log.log 0 (fun m -> m "local search iters %d" local_search_iters);
+                 Log.log 0 (fun m -> m "backwards pass iters %d" backwards_pass_iters);
+                 raise (Done p))))
+      classes_;
+    write_output None
+  with Done p ->
+    Timer.stop stats.runtime;
+    write_output (Some p)
 
 let cmd =
   let open Command.Let_syntax in

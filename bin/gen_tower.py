@@ -14,7 +14,7 @@ twoArches = [
 ]
 
 brick_next_to_bridges = [
-    f"({brick(w1, h1)} (r 8) {bridge(w2, h2)})"
+    f"({brick(w1, h1)} (r 16) {bridge(w2, h2)})"
     for w1, h1, w2, h2 in [(4, 8, 5, 8), (4, 6, 5, 8), (4, 6, 5, 6), (4, 8, 5, 6)]
 ]
 
