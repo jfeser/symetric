@@ -39,7 +39,7 @@ ulimit_stanza = f"ulimit -v {mlimit}; ulimit -t {tlimit};"
 if run_metric:
     for c in [20]:
         for t in [0.3]:
-            for g in [200]:
+            for g in [10, 20, 40, 100, 200]:
                 for f in glob.glob(base_dir + '/vendor/regel/exp/so/benchmark/*'):
                     bench_name = os.path.basename(f)
                     sketch_file = f'{base_dir}/vendor/regel/exp/so/sketch/{bench_name}'
@@ -55,7 +55,7 @@ if run_metric:
                             f"{build_dir}/bin/metric_synth_regex.exe -max-cost {c} -verbosity 2",
                             f"-group-threshold {t} -n-groups {g}",
                             f"-sketch '{sketch}'",
-                            f"-out {job_name}.json -backward-pass-repeats 20",
+                            f"-out {job_name}.json -backward-pass-repeats 10",
                             f"-local-search-steps 100 < {f} 2> {job_name}.log\n"
                         ]
                         cmd = ' '.join(cmd)
@@ -70,7 +70,7 @@ if dry_run:
 with open('jobs', 'w') as f:
     f.writelines(jobs)
 
-parallel --will-cite --eta -j 20 --joblog joblog :::: jobs
+parallel --will-cite --eta -j10 --joblog joblog :::: jobs
 
 # Local Variables:
 # mode: python

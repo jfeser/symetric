@@ -91,7 +91,7 @@ if dry_run:
 with open('jobs', 'w') as f:
     f.writelines(jobs)
 
-parallel --will-cite --eta --joblog joblog :::: jobs
+parallel --will-cite -j10 --eta --joblog joblog :::: jobs
 
 # Local Variables:
 # mode: python
