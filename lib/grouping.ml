@@ -71,28 +71,25 @@ let create_m (type a) (module M : Base.Hashtbl.Key.S with type t = a) thresh dis
   let runtime = ref Time.Span.zero in
   with_return (fun r ->
       states (fun v ->
-          let (), time =
-            Synth_utils.timed (fun () ->
-                if Hashtbl.mem groups v then Hashtbl.add_multi groups ~key:v ~data:v
-                else (
-                  incr n_samples;
-                  let no_existing_group =
-                    find_close v
-                    |> Iter.iter_is_empty (fun c' ->
-                           Hashtbl.add_multi groups ~key:c' ~data:c')
-                  in
-                  if no_existing_group then (
-                    if Hashtbl.length groups = k then
-                      r.return
-                        {
-                          groups;
-                          n_queries = !n_queries;
-                          n_samples = !n_samples;
-                          runtime = !runtime;
-                        };
-                    Hashtbl.add_exn groups ~key:v ~data:[ v ];
-                    M_tree.insert reference v)))
-          in
-          runtime := Time.Span.(!runtime + time));
+          Synth_utils.timed (`Add runtime) (fun () ->
+              if Hashtbl.mem groups v then Hashtbl.add_multi groups ~key:v ~data:v
+              else (
+                incr n_samples;
+                let no_existing_group =
+                  find_close v
+                  |> Iter.iter_is_empty (fun c' ->
+                         Hashtbl.add_multi groups ~key:c' ~data:c')
+                in
+                if no_existing_group then (
+                  if Hashtbl.length groups = k then
+                    r.return
+                      {
+                        groups;
+                        n_queries = !n_queries;
+                        n_samples = !n_samples;
+                        runtime = !runtime;
+                      };
+                  Hashtbl.add_exn groups ~key:v ~data:[ v ];
+                  M_tree.insert reference v))));
       r.return
         { groups; n_queries = !n_queries; n_samples = !n_samples; runtime = !runtime })

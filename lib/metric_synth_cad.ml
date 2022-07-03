@@ -298,9 +298,7 @@ let local_search_untimed p =
   |> Option.value ~default:(-1, p)
 
 let local_search p =
-  let ret, time = Synth_utils.timed (fun () -> local_search_untimed p) in
-  (stats.repair_time := Time.Span.(time + !(stats.repair_time)));
-  ret
+  Synth_utils.timed (`Add stats.repair_time) (fun () -> local_search_untimed p)
 
 module Edge = struct
   type t = Value.t * (Op.t[@compare.ignore]) * (S.Class.t list[@compare.ignore])
@@ -383,21 +381,19 @@ let fill_search_space_untimed () =
       |> Iter.timed stats.expansion_time
     in
 
-    let (), run_time =
-      Synth_utils.timed (fun () ->
-          if use_beam_search () then insert_states_beam (states_iter ())
-          else insert_states (states_iter ()))
-    in
+    let run_time = ref Time.Span.zero in
+    Synth_utils.timed (`Set run_time) (fun () ->
+        if use_beam_search () then insert_states_beam (states_iter ())
+        else insert_states (states_iter ()));
 
     incr stats.max_cost_generated;
     write_output None;
     Log.log 1 (fun m ->
-        m "Finish generating states of cost %d (runtime=%a)" cost Time.Span.pp run_time)
+        m "Finish generating states of cost %d (runtime=%a)" cost Time.Span.pp !run_time)
   done
 
 let fill_search_space () =
-  let (), xfta_time = Synth_utils.timed fill_search_space_untimed in
-  stats.xfta_time := xfta_time
+  Synth_utils.timed (`Set stats.xfta_time) fill_search_space_untimed
 
 let run_extract_untimed eval height class_ =
   let search_state = get_search_state () in
@@ -406,11 +402,8 @@ let run_extract_untimed eval height class_ =
   | `Random -> S.random search_state height class_
 
 let run_extract eval height class_ =
-  let ret, extract_time =
-    Synth_utils.timed (fun () -> run_extract_untimed eval height class_)
-  in
-  (stats.extract_time := Time.Span.(!(stats.extract_time) + extract_time));
-  ret
+  Synth_utils.timed (`Add stats.extract_time) (fun () ->
+      run_extract_untimed eval height class_)
 
 let backwards_pass class_ =
   let max_cost = max_cost () and ectx = ectx () in

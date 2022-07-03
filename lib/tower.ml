@@ -350,8 +350,10 @@ module Value = struct
         Iter.of_list ctx.slices
         |> Iter.map (fun (slice, dropped) ->
                Iter.of_list x.summary
-               |> Iter.map (fun (candidate : State.t) ->
-                      Float.of_int dropped +. blocks_distance ctx slice candidate.blocks))
+               |> Iter.mapi (fun iter (candidate : State.t) ->
+                      Float.of_int dropped
+                      +. blocks_distance ctx slice candidate.blocks
+                      +. Float.of_int iter))
         |> Iter.concat |> Iter.min |> Option.value ~default:1.
 end
 

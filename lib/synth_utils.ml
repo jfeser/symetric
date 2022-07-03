@@ -1,33 +1,16 @@
 open Std
 
-let timed f =
+let timed action f =
   let start = Time.now () in
-  let ret = f () in
-  let end_ = Time.now () in
-  (ret, Time.diff end_ start)
-
-let time ?(repeat = 10) f =
-  let times =
-    Array.init repeat ~f:(fun _ ->
-        let _, t = timed f in
-        Time.Span.to_ms t)
-  in
-  let median = Array.median [%compare: float] times and stddev = Array.stddev times in
-  sprintf "%fms+-%fms" median stddev
+  Exn.protect ~f ~finally:(fun () ->
+      let runtime = Time.diff (Time.now ()) start in
+      match action with `Set r -> r := runtime | `Add r -> r := Time.Span.(!r + runtime))
 
 exception Break
 
 let break _ = raise Break
 let () = Caml.Sys.(set_signal sigint (Signal_handle break))
 let print_json = Yojson.Basic.to_channel Out_channel.stdout
-
-let run_synth constr params print () =
-  Random.set_state @@ Random.State.make [| Params.(get params seed) |];
-  let synth = constr params in
-  let output, time = timed (fun () -> try synth#run with Break -> None) in
-  print output;
-  Params.(get params runtime) := time;
-  if Params.(get params print_json) then print_json @@ Dumb_params.json params
 
 let rec luby_cutoff base max_pow =
   if max_pow = 0 then Iter.singleton 1.0

@@ -22,14 +22,16 @@ let () =
   in
 
   let n_groups = 10_000 in
-  let groups_vp, vp_time =
-    Synth_utils.timed (fun () ->
+  let vp_time = ref Time.Span.zero in
+  let groups_vp =
+    Synth_utils.timed (`Set vp_time) (fun () ->
         create_vp (module Value) 0.2 distance n_groups @@ Iter.of_list states)
   in
   let vp_distance_calls = !distance_calls in
   distance_calls := 0;
-  let groups_m, m_time =
-    Synth_utils.timed (fun () ->
+  let m_time = ref Time.Span.zero in
+  let groups_m =
+    Synth_utils.timed (`Set m_time) (fun () ->
         create_m (module Value) 0.2 distance n_groups @@ Iter.of_list states)
   in
   let m_distance_calls = !distance_calls in
@@ -37,7 +39,7 @@ let () =
     [%message
       (Hashtbl.length groups_vp.groups : int)
         (Hashtbl.length groups_m.groups : int)
-        (vp_time : Time.Span.t)
-        (m_time : Time.Span.t)
+        (!vp_time : Time.Span.t)
+        (!m_time : Time.Span.t)
         (vp_distance_calls : int)
         (m_distance_calls : int)]
