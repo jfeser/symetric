@@ -47,7 +47,7 @@ def mk_cmd(max_cost, n_groups, group_threshold, sketch, job_name, extra_args, be
         f"-sketch '{sketch}'",
         f"-out {job_name}.json -backward-pass-repeats 10",
         extra_args,
-        f"-local-search-steps 100 < {bench_file} 2> {job_name}.log"
+        f"-local-search-steps 100 < {bench_file} 2> {job_name}.log\n"
     ])
 
 
@@ -59,7 +59,7 @@ for f in glob.glob(base_dir + '/vendor/regel/exp/so/benchmark/*'):
         sketches = [s.lstrip('0123456789').strip() for s in sketches]
 
     for sketch in sketches:
-        for c in [(20, 200)]:
+        for (c, g) in [(20, 200)]:
             for t in [0.3]:
                 def mk_simple_cmd(job_name, extra_args=""):
                     return mk_cmd(c, g, t, sketch, job_name, extra_args, f)

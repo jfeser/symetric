@@ -1,15 +1,15 @@
-REMOTE=sketch2.csail.mit.edu
+REMOTE=ec2-user@ec2-100-24-115-131.compute-1.amazonaws.com
 
 .PHONY: get-runs send-code send-container build-table
 
 send-code:
-	cd ..; csail rsync -rL --progress --exclude _build --exclude runs staged-synth bitarray feser@$(REMOTE):/scratch/feser/
+	cd ..; rsync -e "ssh -i /home/feser/.ssh/aws-popl2023.pem" -rL --progress --exclude _build --exclude runs staged-synth bitarray $(REMOTE):
 
 send-container:
 	podman build -t localhost/metric-synth .
 	podman save localhost/metric-synth | pv > /tmp/metric-synth.tar
-	csail rsync --progress /tmp/metric-synth.tar feser@$(REMOTE):/scratch/feser/
-	csail ssh feser@$(REMOTE) "docker load < /scratch/feser/metric-synth.tar"
+	rsync -e "ssh -i /home/feser/.ssh/aws-popl2023.pem" --progress /tmp/metric-synth.tar $(REMOTE):
+	# csail ssh feser@$(REMOTE) "docker load < /scratch/feser/metric-synth.tar"
 
 get-runs:
-	csail rsync --exclude='*.bin' -r --progress -zu feser@$(REMOTE):/scratch/feser/staged-synth/runs/ runs/
+	rsync -e "ssh -i /home/feser/.ssh/aws-popl2023.pem" -r --progress -zu $(REMOTE):staged-synth/runs/ runs/
