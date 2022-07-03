@@ -230,23 +230,33 @@ let rewrite : Op.t P.t -> Op.t P.t list = function
       if x < 1 then [ Apply (Int (x + 1), []) ]
       else if x > 8 then [ Apply (Int (x - 1), []) ]
       else [ Apply (Int (x + 1), []); Apply (Int (x - 1), []) ]
-  | Apply (Embed, [ p ]) -> [ p ]
-  | Apply (Drop_v, [ p ]) as d ->
-      [
-        Apply (Drop_h, [ p ]);
-        Apply (Embed, [ Apply (Seq, [ Apply (Move_l, [ Apply (Int 1, []) ]); d ]) ]);
-        Apply (Embed, [ Apply (Seq, [ Apply (Move_r, [ Apply (Int 1, []) ]); d ]) ]);
-      ]
-  | Apply (Drop_h, [ p ]) as d ->
-      [
-        Apply (Drop_v, [ p ]);
-        Apply (Embed, [ Apply (Seq, [ Apply (Move_l, [ Apply (Int 1, []) ]); d ]) ]);
-        Apply (Embed, [ Apply (Seq, [ Apply (Move_r, [ Apply (Int 1, []) ]); d ]) ]);
-      ]
-  | Apply
-      (Seq, [ (Apply ((Move_l | Move_r), _) as m); (Apply ((Drop_v | Drop_h), []) as d) ])
-    ->
-      [ Apply (Seq, [ d; m ]) ]
+  | Apply (Move_s x, args) ->
+      let ret = [] in
+      let ret = if x > -8 then P.Apply (Op.Move_s (x - 1), args) :: ret else ret in
+      let ret = if x < 8 then P.Apply (Op.Move_s (x + 1), args) :: ret else ret in
+      ret
+  | Apply (Move_p x, args) ->
+      let ret = [] in
+      let ret = if x > -8 then P.Apply (Op.Move_p (x - 1), args) :: ret else ret in
+      let ret = if x < 8 then P.Apply (Op.Move_p (x + 1), args) :: ret else ret in
+      ret
+  (* | Apply (Embed, [ p ]) -> [ p ] *)
+  (* | Apply (Drop_v, [ p ]) as d -> *)
+  (*     [ *)
+  (*       Apply (Drop_h, [ p ]); *)
+  (*       Apply (Embed, [ Apply (Seq, [ Apply (Move_l, [ Apply (Int 1, []) ]); d ]) ]); *)
+  (*       Apply (Embed, [ Apply (Seq, [ Apply (Move_r, [ Apply (Int 1, []) ]); d ]) ]); *)
+  (*     ] *)
+  (* | Apply (Drop_h, [ p ]) as d -> *)
+  (*     [ *)
+  (*       Apply (Drop_v, [ p ]); *)
+  (*       Apply (Embed, [ Apply (Seq, [ Apply (Move_l, [ Apply (Int 1, []) ]); d ]) ]); *)
+  (*       Apply (Embed, [ Apply (Seq, [ Apply (Move_r, [ Apply (Int 1, []) ]); d ]) ]); *)
+  (*     ] *)
+  (* | Apply *)
+  (*     (Seq, [ (Apply ((Move_l | Move_r), _) as m); (Apply ((Drop_v | Drop_h), []) as d) ]) *)
+  (*   -> *)
+  (*     [ Apply (Seq, [ d; m ]) ] *)
   | _ -> []
 
 let local_search_untimed p =
@@ -286,16 +296,23 @@ let select_top_k_edges edges =
   Iter.ordered_groupby (module Value) ~score:Edge.score ~key:(fun (v, _, _) -> v) edges
   |> Iter.timed stats.rank_time
   |> Iter.map (fun (v, (d, es)) ->
+         let ectx = ectx () in
          if Float.(d = 0.) then
            match es with
-           | (_, op, args) :: _ ->
+           | (value, op, args) :: _ ->
                List.map args
                  ~f:
-                   (S.local_greedy (get_search_state ()) (max_height ())
-                      (Value.eval (ectx ()))
+                   (S.local_greedy (get_search_state ()) (max_height ()) (Value.eval ectx)
                       target_distance)
                |> Option.all
-               |> Option.iter ~f:(fun args -> raise (Done (Apply (op, args))));
+               |> Option.iter ~f:(fun args ->
+                      (match value with
+                      | Value.Trans x ->
+                          Fmt.pr "Found:@,%a@,Gold:@,%a@," (Value.pp ectx)
+                            (List.hd_exn x.summary) (Value.pp ectx) (Lazy.force target)
+                      | _ -> ());
+
+                      raise (Done (Apply (op, args))));
                failwith "early exit extract failed"
                (* ; *)
                (* (v, es) *)
@@ -473,6 +490,11 @@ let synthesize () =
                Log.sexp 2 (lazy ([%sexp_of: Op.t Program.t] p));
 
                if Float.(dist = 0.) then (
+                 (match found_value with
+                 | Value.Trans x ->
+                     Fmt.pr "Found:@,%a@,Gold:@,%a@," (Value.pp ectx)
+                       (List.hd_exn x.summary) (Value.pp ectx) (Lazy.force target)
+                 | _ -> ());
                  Log.log 0 (fun m -> m "local search iters %d" local_search_iters);
                  Log.log 0 (fun m -> m "backwards pass iters %d" backwards_pass_iters);
                  raise (Done p))))

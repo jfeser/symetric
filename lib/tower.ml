@@ -312,16 +312,18 @@ module Value = struct
     in
 
     match (s, s') with
-    | [], [] -> (0, 0, 0)
-    | [], xs -> (0, 0, List.length xs)
-    | xs, [] -> (List.length xs, 0, 0)
+    | [], [] -> (0, 0, 0, 0)
+    | [], xs -> (0, 0, List.length xs, 0)
+    | xs, [] -> (List.length xs, 0, 0, 0)
     | b :: _, b' :: _ ->
         let min_x = b.x in
         let min_x' = b'.x in
-        zeroed_distance 0 0 0 min_x s min_x' s'
+        let x_dist = abs (b.x - b'.x) in
+        let l, b, r = zeroed_distance 0 0 0 min_x s min_x' s' in
+        (l, b, r, x_dist)
 
   let blocks_distance s s' =
-    let left, inter, right = zeroed_overlap s s' in
+    let left, inter, right, _ = zeroed_overlap s s' in
     let union = left + inter + right in
     if union = 0 then 0. else 1. -. Float.(of_int inter /. of_int union)
 
@@ -338,9 +340,9 @@ module Value = struct
           |> Iter.of_list |> Iter.mean |> Option.value ~default:0.)
     | _, _ -> Float.infinity
 
-  let blocks_distance _ctx s s' =
-    let left, _, right = zeroed_overlap s s' in
-    left + (10 * right)
+  let blocks_distance (ctx : Ctx.t) s s' =
+    let left, _, right, x_dist = zeroed_overlap s s' in
+    Float.of_int (left + (10 * right)) +. (Float.of_int x_dist /. Float.of_int ctx.dim)
 
   let target_distance (ctx : Ctx.t) _t = function
     | Int _ -> 1.
@@ -349,8 +351,7 @@ module Value = struct
         |> Iter.map (fun (slice, dropped) ->
                Iter.of_list x.summary
                |> Iter.map (fun (candidate : State.t) ->
-                      Float.of_int dropped
-                      +. Float.of_int (blocks_distance ctx slice candidate.blocks)))
+                      Float.of_int dropped +. blocks_distance ctx slice candidate.blocks))
         |> Iter.concat |> Iter.min |> Option.value ~default:1.
 end
 
