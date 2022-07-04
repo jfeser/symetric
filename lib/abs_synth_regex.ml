@@ -41,7 +41,7 @@ struct
           |> Option.value ~default:[]
         in
         Iter.of_list (mx @ p)
-    | _ -> failwith "unexpected value"
+    | v -> raise_s [%message "unexpected value" (v : Value.t)]
 
   module P = struct
     module T = struct
@@ -134,6 +134,8 @@ struct
     match (a, b, c) with
     | `Pred (Max_match_is_at_most x), _, `Concrete (Value.Int i) ->
         [ `Pred (Max_match_is_at_most (min (String.length input) (x * i.value))) ]
+    | _, `Concrete (Value.Int i), `Concrete (Value.Int j) when i.value > j.value ->
+        [ `False ]
     | _ -> []
 
   let transfer ctx example (op : Op.t) args =
@@ -143,7 +145,9 @@ struct
     match all_concrete_m with
     | Some args ->
         let c = Value.eval { ctx with input = [ example ] } op args in
-        `True :: `Concrete c :: (Iter.to_list @@ Iter.map (fun p -> `Pred p) @@ lift c)
+        if Value.is_error c then [ `False ]
+        else
+          `True :: `Concrete c :: (Iter.to_list @@ Iter.map (fun p -> `Pred p) @@ lift c)
     | None -> (
         let input, _ = example in
         match (op, args) with

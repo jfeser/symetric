@@ -186,7 +186,7 @@ struct
       [@@deriving compare, equal, sexp]
 
       let create ?(max_conjuncts = 3) ectx =
-        { preds = Set.singleton (module Pred) `True; max_conjuncts; ectx }
+        { preds = Set.of_list (module Pred) [ `True; `False ]; max_conjuncts; ectx }
     end
 
     let eval_single (ctx : Ctx.t) example op args =
@@ -413,7 +413,7 @@ struct
 
       Some { ctx with preds = preds' }
 
-    let is_error _ = false
+    let is_error = List.exists ~f:(fun s -> Set.mem s `False)
   end
 
   let synth check_abs_example check_example ectx examples ops =
