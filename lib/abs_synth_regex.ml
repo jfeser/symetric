@@ -16,10 +16,7 @@ struct
   type measure = Longest_match [@@deriving compare, equal, hash, sexp]
   type bound = Lower | Upper [@@deriving compare, equal, hash, sexp]
 
-  type t =
-    | Match_at of (int * int * bool)
-    | Max_match_is_at_most of int
-    | Fills_hole of int
+  type t = Max_match_is_at_most of int | First_match_is_after of int | Fills_hole of int
   [@@deriving compare, equal, hash, sexp]
 
   let cost = function `Concrete _ -> 10 | _ -> 1
@@ -29,14 +26,12 @@ struct
     let n = Bitarray.Blocked_matrix.dim ms in
     for i = 0 to n - 1 do
       for j = i to n - 1 do
-        f (Match_at (i, j, Bitarray.Blocked_matrix.get ms i j))
+        if Bitarray.Blocked_matrix.get ms i j then f (i, j)
       done
     done
 
-  let longest_match ms =
-    all_matches ms
-    |> Iter.filter_map (function Match_at (i, j, true) -> Some (j - i) | _ -> None)
-    |> Iter.max
+  let longest_match ms = all_matches ms |> Iter.map (function i, j -> j - i) |> Iter.max
+  let first_match ms = all_matches ms |> Iter.map (function i, _ -> i) |> Iter.min
 
   let fills hole =
     Bitarray.to_list hole
@@ -46,13 +41,17 @@ struct
     | Value.Int _ -> Iter.empty
     | Value.Error -> Iter.singleton `False
     | Value.Matches { value = [ ms ]; holes } ->
-        (* let mx = Iter.to_list @@ Iter.map (fun p -> `Pred p) @@ all_matches ms in *)
         let p =
           longest_match ms
           |> Option.map ~f:(fun l -> [ `Pred (Max_match_is_at_most l) ])
-          |> Option.value ~default:[]
+          |> Option.value ~default:[ `Pred (Max_match_is_at_most (-1)) ]
         in
-        Iter.of_list ((* mx @ *) p @ fills holes)
+        let pf =
+          first_match ms
+          |> Option.map ~f:(fun l -> [ `Pred (First_match_is_after l) ])
+          |> Option.value ~default:[ `Pred (First_match_is_after Int.max_value) ]
+        in
+        Iter.of_list (p @ pf @ fills holes)
     | v -> raise_s [%message "unexpected value" (v : Value.t)]
 
   module P = struct
@@ -69,9 +68,9 @@ struct
     | `Concrete c -> `Concrete c :: (Iter.to_list @@ lift c)
     | `Pred (Max_match_is_at_most x) ->
         List.range x 30 |> List.map ~f:(fun x -> `Pred (Max_match_is_at_most x))
-    | (`Pred (Match_at _) | `Pred (Fills_hole _)) as p -> [ p ]
-    | `True -> [ `True ]
-    | `False -> [ `False ]
+    | `Pred (First_match_is_after x) ->
+        List.range x 30 |> List.map ~f:(fun x -> `Pred (First_match_is_after x))
+    | (`True | `False | `Pred (Fills_hole _)) as p -> [ p ]
 
   let implies ps ps' =
     Set.is_subset
@@ -80,93 +79,65 @@ struct
 
   let eval p c =
     match (p, c) with
-    | Match_at (i, j, b), Value.Matches { value = [ ms ]; _ } ->
-        Bool.(Bitarray.Blocked_matrix.get ms i j = b)
     | Max_match_is_at_most k, Value.Matches { value = [ ms ]; _ } ->
-        all_matches ms
-        |> Iter.for_all (function Match_at (i, j, true) -> j - i <= k | _ -> true)
+        all_matches ms |> Iter.for_all (function i, j -> j - i <= k)
+    | First_match_is_after k, Value.Matches { value = [ ms ]; _ } ->
+        all_matches ms |> Iter.for_all (function i, _ -> k <= i)
     | Fills_hole i, (Value.Matches { holes; _ } | Value.Int { holes; _ }) ->
         Bitarray.get holes i
-    | _ -> false
+    | (Fills_hole _ | Max_match_is_at_most _ | First_match_is_after _), _ ->
+        failwith "unexpected value"
 
-  let transfer_not = function
-    | `Pred (Match_at (i, j, b)) -> [ `Pred (Match_at (i, j, not b)) ]
+  let transfer_not = function `Pred (Fills_hole _) as p -> [ p ] | _ -> []
+
+  let transfer_optional = function
+    | `True -> [ `Pred (First_match_is_after 0) ]
     | `Pred (Fills_hole _) as p -> [ p ]
     | _ -> []
 
-  let transfer_optional input = function
-    | `True -> List.init (String.length input) ~f:(fun i -> `Pred (Match_at (i, i, true)))
-    | `Pred (Match_at (_, _, true) as p) -> [ `Pred p ]
-    | `Pred (Match_at (i, j, false) as p) -> if i = j then [] else [ `Pred p ]
-    | `Pred (Fills_hole _) as p -> [ p ]
-    | _ -> []
-
-  let transfer_and a b =
+  let transfer_and input a b =
     match (a, b) with
-    | `Pred (Match_at (i, j, false)), `True | `True, `Pred (Match_at (i, j, false)) ->
-        [ `Pred (Match_at (i, j, false)) ]
-    | `Pred (Match_at (i, j, b)), `Pred (Match_at (i', j', b')) when i = i' && j = j' ->
-        [ `Pred (Match_at (i, j, b && b')) ]
-    | `Pred (Match_at (i, j, b)), `Concrete c | `Concrete c, `Pred (Match_at (i, j, b))
-      -> (
-        match c with
-        | Value.Matches { value = [ ms ] } ->
-            [ `Pred (Match_at (i, j, b && Bitarray.Blocked_matrix.get ms i j)) ]
-        | _ -> [])
     | `Pred (Max_match_is_at_most m), `Pred (Max_match_is_at_most m') ->
         [ `Pred (Max_match_is_at_most (min m m')) ]
+    | `Pred (First_match_is_after k), `Pred (First_match_is_after k') ->
+        [ `Pred (First_match_is_after (max k k')) ]
+    | `True, `Pred (First_match_is_after k) | `Pred (First_match_is_after k), `True ->
+        [ `Pred (Max_match_is_at_most (String.length input - k)) ]
     | `True, (`Pred (Fills_hole _) as p) | (`Pred (Fills_hole _) as p), `True -> [ p ]
     | _ -> []
 
-  let transfer_or input a b =
+  let transfer_or a b =
     match (a, b) with
-    | `Pred (Match_at (i, j, true)), `True | `True, `Pred (Match_at (i, j, true)) ->
-        [ `Pred (Match_at (i, j, true)) ]
-    | `Pred (Match_at (i, j, b)), `Pred (Match_at (i', j', b')) when i = i' && j = j' ->
-        [ `Pred (Match_at (i, j, b || b')) ]
-    | `Concrete c, `True | `True, `Concrete c -> (
-        match c with
-        | Value.Matches { value = [ ms ] } ->
-            let ret = ref [] in
-            for i = 0 to String.length input do
-              for j = i to String.length input do
-                if Bitarray.Blocked_matrix.get ms i j then
-                  ret := `Pred (Match_at (i, j, true)) :: !ret
-              done
-            done;
-            !ret
-        | _ -> [])
     | `Pred (Max_match_is_at_most m), `Pred (Max_match_is_at_most m') ->
         [ `Pred (Max_match_is_at_most (max m m')) ]
+    | `Pred (Max_match_is_at_most m), `Concrete (Value.Matches { value = [ ms ]; _ })
+    | `Concrete (Value.Matches { value = [ ms ]; _ }), `Pred (Max_match_is_at_most m) ->
+        [
+          `Pred
+            (Max_match_is_at_most (max m (Option.value ~default:(-1) @@ longest_match ms)));
+        ]
+    | `Pred (First_match_is_after k), `Pred (First_match_is_after k') ->
+        [ `Pred (First_match_is_after (min k k')) ]
+    | `Pred (First_match_is_after k), `Concrete (Value.Matches { value = [ ms ]; _ })
+    | `Concrete (Value.Matches { value = [ ms ]; _ }), `Pred (First_match_is_after k) ->
+        [
+          `Pred
+            (First_match_is_after
+               (min k (Option.value ~default:Int.max_value @@ first_match ms)));
+        ]
     | `True, (`Pred (Fills_hole _) as p) | (`Pred (Fills_hole _) as p), `True -> [ p ]
     | _ -> []
 
   let transfer_concat input a b =
     match (a, b) with
-    | `Pred (Match_at (i, j, true)), `Pred (Match_at (j', k, true)) when j = j' ->
-        [ `Pred (Match_at (i, k, true)) ]
-    | `Concrete c, `Pred (Match_at (j, k, true)) -> (
-        match c with
-        | Value.Matches { value = [ ms ] } ->
-            all_matches ms
-            |> Iter.filter_map (function
-                 | Match_at (i, j', true) when j = j' ->
-                     Some (`Pred (Match_at (i, k, true)))
-                 | _ -> None)
-            |> Iter.to_list
-        | _ -> [])
-    | `Pred (Match_at (i, j, true)), `Concrete c -> (
-        match c with
-        | Value.Matches { value = [ ms ] } ->
-            all_matches ms
-            |> Iter.filter_map (function
-                 | Match_at (j', k, true) when j = j' ->
-                     Some (`Pred (Match_at (i, k, true)))
-                 | _ -> None)
-            |> Iter.to_list
-        | _ -> [])
     | `Pred (Max_match_is_at_most m), `Pred (Max_match_is_at_most m') ->
         [ `Pred (Max_match_is_at_most (min (String.length input) (m + m'))) ]
+    | `Pred (Max_match_is_at_most m), `Concrete (Value.Matches { value = [ ms ]; _ })
+    | `Concrete (Value.Matches { value = [ ms ]; _ }), `Pred (Max_match_is_at_most m) -> (
+        match longest_match ms with
+        | Some m' -> [ `Pred (Max_match_is_at_most (min (String.length input) (m + m'))) ]
+        | None -> [ `Pred (Max_match_is_at_most 0) ])
+    | (`Pred (First_match_is_after _) as p), `True -> [ p ]
     | `True, (`Pred (Fills_hole _) as p) | (`Pred (Fills_hole _) as p), `True -> [ p ]
     | _ -> []
 
@@ -174,11 +145,13 @@ struct
     match (a, b) with
     | `Pred (Max_match_is_at_most x), `Concrete (Value.Int i) ->
         [ `Pred (Max_match_is_at_most (min (String.length input) (x * i.value))) ]
+    | (`Pred (First_match_is_after _) as p), `True -> [ p ]
     | `True, (`Pred (Fills_hole _) as p) | (`Pred (Fills_hole _) as p), `True -> [ p ]
     | _ -> []
 
   let transfer_repeat_at_least a b =
     match (a, b) with
+    | (`Pred (First_match_is_after _) as p), `True -> [ p ]
     | `True, (`Pred (Fills_hole _) as p) | (`Pred (Fills_hole _) as p), `True -> [ p ]
     | _ -> []
 
@@ -188,6 +161,7 @@ struct
         [ `Pred (Max_match_is_at_most (min (String.length input) (x * i.value))) ]
     | _, `Concrete (Value.Int i), `Concrete (Value.Int j) when i.value > j.value ->
         [ `False ]
+    | (`Pred (First_match_is_after _) as p), `True, `True -> [ p ]
     | `True, `True, (`Pred (Fills_hole _) as p)
     | `True, (`Pred (Fills_hole _) as p), `True
     | (`Pred (Fills_hole _) as p), `True, `True ->
@@ -207,27 +181,25 @@ struct
         let input, _ = example in
         match (op, args) with
         | Not, [ a ] -> transfer_not a
-        | Optional, [ a ] -> transfer_optional input a
-        | And, [ a; b ] -> transfer_and a b
-        | Or, [ a; b ] -> transfer_or input a b
+        | Optional, [ a ] -> transfer_optional a
+        | And, [ a; b ] -> transfer_and input a b
+        | Or, [ a; b ] -> transfer_or a b
         | Concat, [ a; b ] -> transfer_concat input a b
         | Repeat, [ a; b ] -> transfer_repeat input a b
         | Repeat_at_least, [ a; b ] -> transfer_repeat_at_least a b
         | Repeat_range, [ a; b; c ] -> transfer_repeat_range input a b c
         | Sketch sk, args ->
             if
-              List.exists2_exn sk.arg_types args ~f:(fun (_, holes) p ->
-                  match p with
-                  | `Pred (Fills_hole i) -> not (Bitarray.get holes i)
-                  | _ -> false)
-            then [ `False ]
+              List.for_all2_exn sk.arg_types args ~f:(fun (_, holes) p ->
+                  match p with `Pred (Fills_hole i) -> Bitarray.get holes i | _ -> false)
+            then fills sk.ret_hole_mask
             else
               let value_preds =
                 Set.to_list
                 @@ transfer_sketch preds ctx example sk
                 @@ List.map ~f:(Set.singleton (module P)) args
               in
-              fills sk.ret_hole_mask @ value_preds
+              value_preds
         | _ -> failwith "unexpected arguments")
 
   and transfer_list preds ctx example op args =
@@ -270,20 +242,20 @@ let cmd =
       fun () ->
         let ctx, ops = Regex_bench.load_sketch_bench sketch In_channel.stdin in
         let check_abs_example (lhs, rhs) abs =
-          Set.for_all abs ~f:(function
-            | `True -> true
-            | `False -> false
-            | `Concrete (Value.Matches { value = [ ms ] }) ->
-                Bool.(Bitarray.Blocked_matrix.get ms 0 (String.length lhs) = rhs)
-            | `Concrete (Value.Matches { value = _ }) ->
-                failwith "unexpected number of matches"
-            | `Concrete Value.Error -> false
-            | `Concrete (Value.Int _) -> failwith "wrong type of value"
-            | `Pred (Abs_value.Match_at (i, j, b)) ->
-                if i = 0 && j = String.length lhs then Bool.(b = rhs) else true
-            | `Pred (Abs_value.Max_match_is_at_most k) ->
-                if rhs && String.length lhs > k then false else true
-            | `Pred (Fills_hole _) -> true)
+          Set.mem abs (`Pred (Abs_value.Fills_hole 0))
+          && Set.for_all abs ~f:(function
+               | `True -> true
+               | `False -> false
+               | `Concrete (Value.Matches { value = [ ms ] }) ->
+                   Bool.(Bitarray.Blocked_matrix.get ms 0 (String.length lhs) = rhs)
+               | `Concrete (Value.Matches { value = _ }) ->
+                   failwith "unexpected number of matches"
+               | `Concrete Value.Error -> false
+               | `Concrete (Value.Int _) -> failwith "wrong type of value"
+               | `Pred (Abs_value.Max_match_is_at_most k) ->
+                   if rhs && String.length lhs > k then false else true
+               | `Pred (Abs_value.First_match_is_after k) -> if rhs then k = 0 else k > 0
+               | `Pred (Fills_hole _) -> true)
         in
         let check_example p (lhs, rhs) =
           match Program.eval (Value.eval { ctx with input = [ (lhs, rhs) ] }) p with
@@ -293,5 +265,8 @@ let cmd =
           | _ -> false
         in
         let examples = ctx.input in
-        Synth.synth check_abs_example check_example ctx examples
+        Synth.synth
+          ~initial_preds:
+            (List.init ctx.n_holes ~f:(fun i -> `Pred (Abs_value.Fills_hole i)))
+          check_abs_example check_example ctx examples
           (Op.default_operators 15 @ ops)]

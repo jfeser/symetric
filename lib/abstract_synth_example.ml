@@ -176,8 +176,12 @@ struct
       }
       [@@deriving compare, equal, sexp]
 
-      let create ?(max_conjuncts = 3) ectx =
-        { preds = Set.of_list (module Pred) [ `True; `False ]; max_conjuncts; ectx }
+      let create ?(max_conjuncts = 3) ?(initial_preds = []) ectx =
+        {
+          preds = Set.of_list (module Pred) ([ `True; `False ] @ initial_preds);
+          max_conjuncts;
+          ectx;
+        }
     end
 
     let eval_single (ctx : Ctx.t) example op args =
@@ -387,6 +391,10 @@ struct
       in
       let p = eval_all ctx p in
 
+      print_s
+        [%message
+          (p : (Op.t * Value.t * Set.M(Pred).t) Program.t) (ctx.preds : Set.M(Pred).t)];
+
       let (Apply ((_, conc, abs), _)) = p in
       let p' =
         strengthen_program ctx example p
@@ -410,7 +418,7 @@ struct
     let is_error = List.exists ~f:(fun s -> Set.mem s `False)
   end
 
-  let synth check_abs_example check_example ectx examples ops =
+  let synth ?initial_preds check_abs_example check_example ectx examples ops =
     let module Abs = struct
       include Lang
 
@@ -426,7 +434,7 @@ struct
     let rec loop iters ctx =
       let ctx' =
         let sctx =
-          Synth.Ctx.create ~max_cost:40 ctx ops
+          Synth.Ctx.create ~max_cost:40 ~verbose:debug ctx ops
           @@ `Pred
                (fun op s ->
                  [%equal: Abs.Type.t] (Abs.Op.ret_type op) Abs.Type.output
@@ -454,7 +462,7 @@ struct
           loop (iters + 1) ctx'
       | None -> failwith "refinement failed"
     in
-    let ctx = Abs.Value.Ctx.create ectx in
+    let ctx = Abs.Value.Ctx.create ?initial_preds ectx in
     try ignore (loop 0 ctx : Abs_value.Ctx.t)
     with Done (iters, p) ->
       eprint_s
