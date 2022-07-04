@@ -4,21 +4,7 @@ open Lang
 module S = Search_state_all.Make (Lang)
 module Gen = Generate.Gen_iter (Lang)
 
-(* constants *)
 let max_int = 15
-
-let single_char_classes =
-  Iter.to_list
-  @@ Iter.map (fun c -> Op.Class (Single (Char.of_int_exn c)))
-  @@ Iter.int_range ~start:32 ~stop:126
-
-let multi_char_classes = [ Op.alpha; Op.num; Op.any; Op.cap; Op.low ]
-let all_classes = single_char_classes @ multi_char_classes
-let ints = List.map (List.range ~stop:`inclusive 1 max_int) ~f:(fun i -> Op.Int i)
-
-let operators =
-  [ Op.Concat; And; Or; Repeat_range; Repeat; Repeat_at_least; Optional; Not; Empty ]
-  @ single_char_classes @ multi_char_classes @ ints
 
 (* parameters *)
 module Params = struct
@@ -49,7 +35,7 @@ module Params = struct
       sketch;
       validate;
       local_search_steps;
-      operators;
+      operators = Regex.Op.default_operators max_int;
       group_threshold;
       max_cost;
       backward_pass_repeats;

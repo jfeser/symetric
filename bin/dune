@@ -41,6 +41,13 @@
   (pps ppx_jane)))
 
 (executable
+ (name abs_synth_regex)
+ (modules abs_synth_regex)
+ (libraries core staged_synth core_unix.command_unix)
+ (preprocess
+  (pps ppx_jane)))
+
+(executable
  (name pixels)
  (modules pixels)
  (libraries core fmt staged_synth core_unix.command_unix)

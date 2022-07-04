@@ -4,14 +4,14 @@ let debug = true
 
 module type Lang_intf = sig
   module Type : sig
-    type t [@@deriving compare, hash, sexp]
+    type t [@@deriving compare, equal, hash, sexp]
 
     val default : t
     val output : t
   end
 
   module Op : sig
-    type t [@@deriving compare, hash, sexp]
+    type t [@@deriving compare, equal, hash, sexp]
 
     val default : t
     val pp : t Fmt.t
@@ -23,7 +23,7 @@ module type Lang_intf = sig
   end
 
   module Value : sig
-    type t [@@deriving compare, hash, sexp]
+    type t [@@deriving compare, equal, hash, sexp]
 
     module Ctx : sig
       type t
@@ -40,7 +40,7 @@ module type Domain_pred_intf = sig
   type concrete
   type op
   type ctx
-  type t [@@deriving compare, hash, sexp]
+  type t [@@deriving compare, equal, hash, sexp]
 
   val pp : t Fmt.t
   val cost : [ `Concrete of concrete | `Pred of t ] -> int
@@ -150,7 +150,7 @@ struct
         | Preds ps ->
             Set.for_all ps ~f:(function
               | `Pred p -> Domain_pred.eval p v
-              | `Concrete v' -> [%compare.equal: Value.t] v v')
+              | `Concrete v' -> [%equal: Value.t] v v')
 
       let length = function Bottom -> 0 | Preds ps -> Set.length ps
       let singleton p = of_iter @@ Iter.singleton p
@@ -163,11 +163,11 @@ struct
       type nonrec t = {
         preds : Set.M(Pred).t;
         max_conjuncts : int;
-        ectx : (Value.Ctx.t[@opaque]); [@compare.ignore]
+        ectx : (Value.Ctx.t[@opaque]); [@ignore]
         refine_log :
           ((Op.t * Value.t * t) Program.t * Set.M(Pred).t * Set.M(Pred).t) Queue.t;
       }
-      [@@deriving compare, sexp]
+      [@@deriving compare, equal, sexp]
 
       let create ?(max_conjuncts = 1) ectx =
         {
@@ -326,19 +326,14 @@ struct
 
     let strengthen = strengthen_enum
 
-    let strengthen_root (ctx : Ctx.t) too_strong too_weak target =
+    let strengthen_root (ctx : Ctx.t) too_strong too_weak contains_target =
       if debug then
-        Fmt.epr
-          "@[<v>Strengthening program root.@,\
-           Too strong: %a@,\
-           Too weak: %a@,\
-           Target: %a@,\
-           %!@]"
-          Value.pp too_strong pp too_weak Value.pp target;
+        Fmt.epr "@[<v>Strengthening program root.@,Too strong: %a@,Too weak: %a@,%!@]"
+          Value.pp too_strong pp too_weak;
       let new_pred =
         match
           strengthen ~k:ctx.max_conjuncts [ too_strong ] [ too_weak ] (function
-            | [ p ] -> not (contains p target)
+            | [ p ] -> not (contains_target p)
             | _ -> assert false)
         with
         | [ p ] -> p
@@ -361,7 +356,7 @@ struct
       in
       Program.Apply ((op, conc, abs, out), args')
 
-    let refine (ctx : Ctx.t) (target : Value.t) p : Ctx.t option =
+    let refine (ctx : Ctx.t) contains_target p : Ctx.t option =
       (* Annotate program with concrete & restricted abstract values. *)
       let rec eval_all (ctx : Ctx.t) (Program.Apply (op, args)) =
         let args' = List.map args ~f:(eval_all ctx) in
@@ -375,7 +370,7 @@ struct
       let p = eval_all ctx p in
 
       let (Apply ((_, conc, abs), _)) = p in
-      let p' = strengthen_program ctx p (strengthen_root ctx conc abs target) in
+      let p' = strengthen_program ctx p (strengthen_root ctx conc abs contains_target) in
       let preds =
         Program.iter p'
         |> Iter.map (fun ((_, _, _, ps), _) -> to_iter ps)
@@ -395,7 +390,7 @@ struct
     let is_error = function Bottom -> true | _ -> false
   end
 
-  let synth ectx target ops =
+  let synth contains_target equals_target ectx ops =
     let module Abs = struct
       include Lang
 
@@ -414,23 +409,23 @@ struct
           Synth.Ctx.create ~max_cost:40 ctx ops
           @@ `Pred
                (fun op s ->
-                 [%compare.equal: Abs.Type.t] (Abs.Op.ret_type op) Abs.Type.output
-                 && Abs.Value.contains s target)
+                 [%equal: Abs.Type.t] (Abs.Op.ret_type op) Abs.Type.output
+                 && contains_target s)
         in
         let synth = new Synth.synthesizer sctx in
         match synth#run with
         | Some p ->
             Fmt.epr "Found program: %a\n%!" (Program.pp Lang.Op.pp) p;
             let v = Program.eval (Lang.Value.eval ctx.ectx) p in
-            if [%compare.equal: Lang.Value.t] v target then raise @@ Done (iters, p)
+            if equals_target v then raise @@ Done (iters, p)
             else (
               Fmt.epr "Refining...\n%!";
-              Abs.Value.refine ctx target p)
+              Abs.Value.refine ctx contains_target p)
         | None -> failwith "synthesis failed"
       in
       match ctx' with
       | Some ctx' ->
-          if [%compare.equal: Abs.Value.Ctx.t] ctx ctx' then
+          if [%equal: Abs.Value.Ctx.t] ctx ctx' then
             raise_s
               [%message
                 "refinement failed" (ctx : Abs.Value.Ctx.t) (ctx' : Abs.Value.Ctx.t)];
@@ -447,4 +442,7 @@ struct
              (Program.size p : int)
              (p : Abs.Op.t Program.t)]);
     ctx.refine_log
+
+  let synth_simple ectx target ops =
+    synth (fun a -> Abs_value.contains a target) ([%equal: Lang.Value.t] target) ectx ops
 end

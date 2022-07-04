@@ -1,9 +1,24 @@
-* DONE Collect 10 benchmarks of different sizes
-* DONE Try using top-k instead of range queries
+* DONE Rerun towers benchmark with faster distance function
+* DONE Run regex benchmark on sketch4
+** DONE Try running with narrower beams
+* WAIT Run regel benchmarks
+* TODO Update results section
+** TODO Turn benchmarks into plots for the paper
+*** DONE Generate ablation plots
+*** TODO Generate runtime breakdown tables
+*** TODO Program space size plots?
+*** TODO Comparison table for regex?
+* TODO Revise intro section
+* TODO Add sections on regex & towers dsls
+* DONE Modify towers dsl
+
+* Old
+** DONE Collect 10 benchmarks of different sizes
+** DONE Try using top-k instead of range queries
 ** DONE Figure out if vp-trees are needed at all
-* DONE Add switch for overlap & edge filtering
-* TODO Clarify constraints on the algorithm
-** Background
+** DONE Add switch for overlap & edge filtering
+** TODO Clarify constraints on the algorithm
+*** Background
  I've been thinking about the algorithm, and it seems to me that it can't
 possibly work in general.
 

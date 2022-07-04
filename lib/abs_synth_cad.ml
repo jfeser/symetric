@@ -17,7 +17,7 @@ end
 
 let abs_value size =
   let module V = struct
-    type t = Pixel_set of int * int * bool [@@deriving compare, hash, sexp]
+    type t = Pixel_set of int * int * bool [@@deriving compare, equal, hash, sexp]
 
     let pp fmt = function Pixel_set (x, y, b) -> Fmt.pf fmt "(%d, %d, %b)" x y b
 
@@ -192,7 +192,7 @@ let abs_value size =
 let synth size target ops =
   let module Abs_value = (val abs_value size) in
   let module Synth = Abstract_synth.Make (Cad_ext) (Abs_value) in
-  let (_ : _ Queue.t) = Synth.synth (Cad_ext.Value.Ctx.create size) target ops in
+  let (_ : _ Queue.t) = Synth.synth_simple (Cad_ext.Value.Ctx.create size) target ops in
   ()
 
 let cmd =

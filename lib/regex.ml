@@ -116,6 +116,20 @@ module Op = struct
   let low = Class (Multi low)
   let any = Class (Multi any)
 
+  let default_operators max_int =
+    let single_char_classes =
+      Iter.to_list
+      @@ Iter.map (fun c -> Class (Single (Char.of_int_exn c)))
+      @@ Iter.int_range ~start:32 ~stop:126
+    in
+
+    let multi_char_classes = [ alpha; num; any; cap; low ] in
+    let all_classes = single_char_classes @ multi_char_classes in
+    let ints = List.map (List.range ~stop:`inclusive 1 max_int) ~f:(fun i -> Int i) in
+
+    [ Concat; And; Or; Repeat_range; Repeat; Repeat_at_least; Optional; Not; Empty ]
+    @ all_classes @ ints
+
   let class_of_string_exn s =
     if String.length s = 1 then Class (Single s.[0])
     else
@@ -320,11 +334,7 @@ module Value = struct
         distance
     | _ -> 1.
 
-  let pp fmt = function
-    | Matches m ->
-        Sexp.pp_hum fmt
-          ([%sexp_of: bool list] (List.map m.value ~f:(fun m -> M.get m 0 (M.dim m - 1))))
-    | _ -> ()
+  let pp fmt x = Sexp.pp_hum fmt @@ [%sexp_of: t] x
 end
 
 let serialize = [%sexp_of: Op.t Program.t]

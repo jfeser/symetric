@@ -2,7 +2,7 @@ open Std
 
 module Dim = struct
   type t = { xres : int; yres : int; scaling : int }
-  [@@deriving compare, hash, sexp, yojson]
+  [@@deriving compare, equal, hash, sexp, yojson]
 
   let[@inline] xres x = x.xres
   let[@inline] yres x = x.xres
@@ -57,7 +57,7 @@ end
 module T = struct
   module H = Hash_cached.Make (Bitarray)
 
-  type t = { dim : Dim.t; buf : H.t } [@@deriving compare, hash, sexp]
+  type t = { dim : Dim.t; buf : H.t } [@@deriving compare, equal, hash, sexp]
 end
 
 include T

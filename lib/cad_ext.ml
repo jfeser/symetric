@@ -1,7 +1,7 @@
 let memoize = false
 
 module Type = struct
-  type t = Int | Rep_count | Scene | Error [@@deriving compare, hash, sexp]
+  type t = Int | Rep_count | Scene | Error [@@deriving compare, equal, hash, sexp]
 
   let default = Int
   let output = Scene
@@ -10,7 +10,7 @@ end
 
 module Op = struct
   type t = Union | Inter | Circle | Rect | Repl | Sub | Int of int | Rep_count of int
-  [@@deriving compare, hash, sexp, yojson]
+  [@@deriving compare, equal, hash, sexp, yojson]
 
   let default = Union
   let cost _ = 1
@@ -50,7 +50,7 @@ end
 
 module Value = struct
   type t = Int of int | Rep_count of int | Scene of Scene2d.t | Error
-  [@@deriving compare, hash, sexp]
+  [@@deriving compare, equal, hash, sexp]
 
   let default = Error
   let[@inline] is_scene = function Scene _ -> true | _ -> false

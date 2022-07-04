@@ -1,5 +1,5 @@
 module T = struct
-  type t = { lo : int; hi : int } [@@deriving compare, hash, sexp]
+  type t = { lo : int; hi : int } [@@deriving compare, equal, hash, sexp]
 
   module Elt = struct
     type t = int [@@deriving compare, equal, hash, sexp]

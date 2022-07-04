@@ -1,6 +1,6 @@
 module Dim : sig
   type t = { xres : int; yres : int; scaling : int }
-  [@@deriving compare, hash, sexp, yojson]
+  [@@deriving compare, equal, hash, sexp, yojson]
 
   val xres : t -> int
   val yres : t -> int
@@ -14,7 +14,7 @@ module Dim : sig
   val param : t Command.Param.t
 end
 
-type t [@@deriving compare, hash, sexp]
+type t [@@deriving compare, equal, hash, sexp]
 
 include Comparator.S with type t := t
 

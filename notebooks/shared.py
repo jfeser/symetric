@@ -185,3 +185,57 @@ def plot_ablations(df):
     ax.set_xlabel("Time (s)")
     ax.set_title(r"Effect of Ablations on \textsc{SyMetric} Performance")
     return ax
+
+
+def method_table(df, **kwargs):
+    df = df[df["success"]].agg(["median", "max"])
+    print(
+        r"""
+\begin{tabular}{lrrrrrr}
+\toprule
+Benchmark & \multicolumn{2}{c}{\textsc{ConstructXFTA}} & \multicolumn{2}{c}{\textsc{Extract}} & \multicolumn{2}{c}{\textsc{Repair}} \\
+& Median & Max & Median & Max & Median & Max \\
+\midrule
+""",
+        **kwargs
+    )
+    print(
+        "All & {:.1f} & {:.1f} & {:.1f} & {:.1f} & {:.1f} & {:.1f} \\\\".format(
+            float(df.loc["median"]["xfta_time"]),
+            float(df.loc["max"]["xfta_time"]),
+            float(df.loc["median"]["extract_time"]),
+            float(df.loc["max"]["extract_time"]),
+            float(df.loc["median"]["repair_time"]),
+            float(df.loc["max"]["repair_time"]),
+        ),
+        **kwargs
+    )
+    print(r"\bottomrule", **kwargs)
+    print(r"\end{tabular}", **kwargs)
+
+
+def construct_table(df, **kwargs):
+    df = df[df["success"]].agg(["median", "max"])
+    print(
+        r"""
+\begin{tabular}{lrrrrrr}
+\toprule
+Benchmark & \multicolumn{2}{c}{Expansion} & \multicolumn{2}{c}{Clustering} & \multicolumn{2}{c}{Ranking} \\
+& Median & Max & Median & Max & Median & Max \\
+\midrule
+""",
+        **kwargs
+    )
+    print(
+        "All & {:.1f} & {:.1f} & {:.1f} & {:.1f} & {:.1f} & {:.1f} \\\\".format(
+            float(df.loc["median"]["expansion_time"]),
+            float(df.loc["max"]["expansion_time"]),
+            float(df.loc["median"]["cluster_time"]),
+            float(df.loc["max"]["cluster_time"]),
+            float(df.loc["median"]["rank_time"]),
+            float(df.loc["max"]["rank_time"]),
+        ),
+        **kwargs
+    )
+    print(r"\bottomrule", **kwargs)
+    print(r"\end{tabular}", **kwargs)
