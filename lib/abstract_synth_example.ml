@@ -1,6 +1,6 @@
 open Std
 
-let debug = true
+let debug = false
 
 module type Lang_intf = sig
   module Type : sig
@@ -391,9 +391,10 @@ struct
       in
       let p = eval_all ctx p in
 
-      print_s
-        [%message
-          (p : (Op.t * Value.t * Set.M(Pred).t) Program.t) (ctx.preds : Set.M(Pred).t)];
+      if debug then
+        print_s
+          [%message
+            (p : (Op.t * Value.t * Set.M(Pred).t) Program.t) (ctx.preds : Set.M(Pred).t)];
 
       let (Apply ((_, conc, abs), _)) = p in
       let p' =
@@ -463,12 +464,15 @@ struct
       | None -> failwith "refinement failed"
     in
     let ctx = Abs.Value.Ctx.create ?initial_preds ectx in
-    try ignore (loop 0 ctx : Abs_value.Ctx.t)
+    try
+      ignore (loop 0 ctx : Abs_value.Ctx.t);
+      None
     with Done (iters, p) ->
       eprint_s
         [%message
           "synthesis completed"
             (iters : int)
             (Program.size p : int)
-            (p : Abs.Op.t Program.t)]
+            (p : Abs.Op.t Program.t)];
+      Some p
 end

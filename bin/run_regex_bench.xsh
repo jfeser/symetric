@@ -7,6 +7,7 @@ import random
 
 dry_run = False
 run_abs = True
+run_enum = True
 run_metric = False
 run_extract_ablation = False
 run_repair_ablation = False
@@ -22,7 +23,7 @@ runs_dir = base_dir + "/runs/"
 print(base_dir, build_dir, runs_dir)
 
 if not dry_run:
-    dune build --profile=release bin/metric_synth_regex.exe bin/abs_synth_regex.exe
+    dune build --profile=release bin/metric_synth_regex.exe bin/abs_synth_regex.exe bin/enumerate_regex.exe
 
 run_dir = runs_dir + $(date '+%Y-%m-%d-%H:%M:%S').strip()
 if not dry_run:
@@ -59,15 +60,25 @@ for f in glob.glob(base_dir + '/vendor/regel/exp/so/benchmark/*'):
         sketches = sketch_f.readlines()
         sketches = [s.lstrip('0123456789').strip() for s in sketches]
 
-    if run_abs:
-        job_name = f"abs-regex-{len(jobs)}"
-        cmd = ' '.join([
-            f"ulimit -v {mlimit} -c 0; timeout {tlimit}s",
-            f"{build_dir}/bin/abs_synth_regex.exe < {f} 2> {job_name}.log\n",
-        ])
-        jobs.append(cmd)
-
     for sketch in sketches:
+        if run_abs:
+            job_name = f"abs-regex-{len(jobs)}"
+            cmd = ' '.join([
+                f"ulimit -v {mlimit} -c 0; timeout {tlimit}s",
+                f"{build_dir}/bin/abs_synth_regex.exe -sketch '{sketch}' -out {job_name}.json",
+                f"< {f} 2> {job_name}.log\n",
+            ])
+            jobs.append(cmd)
+
+        if run_enum:
+            job_name = f"enum-regex-{len(jobs)}"
+            cmd = ' '.join([
+                f"ulimit -v {mlimit}; ulimit -c 0; timeout {tlimit}s",
+                f"{build_dir}/bin/enumerate_regex.exe -sketch '{sketch}' -out {job_name}.json",
+                f"< {f} 2> {job_name}.log\n",
+            ])
+            jobs.append(cmd)
+
         for (c, g) in [(20, 200)]:
             for t in [0.3]:
                 def mk_simple_cmd(job_name, extra_args=""):

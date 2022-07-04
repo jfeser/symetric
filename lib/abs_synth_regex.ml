@@ -234,11 +234,41 @@ end
 
 module Synth = Abstract_synth_example.Make (Regex) (Abs_value)
 
+module Stats = struct
+  type t = { runtime : Timer.t } [@@deriving yojson_of]
+
+  let create () = { runtime = Timer.create () }
+end
+
+let stats = Stats.create ()
+
+let write_output file m_prog =
+  let program_size =
+    Option.map m_prog ~f:(fun p -> Float.of_int @@ Program.size p)
+    |> Option.value ~default:Float.nan
+  in
+  let program_json =
+    Option.map m_prog ~f:(fun p -> `String (Sexp.to_string @@ Regex.serialize p))
+    |> Option.value ~default:`Null
+  in
+  let open Yojson in
+  let json =
+    `Assoc
+      [
+        ("method", `String "syngar");
+        ("program", program_json);
+        ("program_size", `Float program_size);
+        ("stats", [%yojson_of: Stats.t] stats);
+      ]
+  in
+  Out_channel.with_file file ~f:(fun ch -> Safe.to_channel ch json)
+
 let cmd =
   let open Command.Let_syntax in
   Command.basic ~summary:"Solve regex problems with abstraction guided synthesis."
     [%map_open
-      let sketch = flag "-sketch" (required string) ~doc:" regex sketch" in
+      let sketch = flag "-sketch" (required string) ~doc:" regex sketch"
+      and out = flag "-out" (required string) ~doc:" result file" in
       fun () ->
         let ctx, ops = Regex_bench.load_sketch_bench sketch In_channel.stdin in
         let check_abs_example (lhs, rhs) abs =
@@ -265,8 +295,14 @@ let cmd =
           | _ -> false
         in
         let examples = ctx.input in
-        Synth.synth
-          ~initial_preds:
-            (List.init ctx.n_holes ~f:(fun i -> `Pred (Abs_value.Fills_hole i)))
-          check_abs_example check_example ctx examples
-          (Op.default_operators 15 @ ops)]
+        write_output out None;
+        Timer.start stats.runtime;
+        let p =
+          Synth.synth
+            ~initial_preds:
+              (List.init ctx.n_holes ~f:(fun i -> `Pred (Abs_value.Fills_hole i)))
+            check_abs_example check_example ctx examples
+            (Op.default_operators 15 @ ops)
+        in
+        Timer.stop stats.runtime;
+        write_output out p]
