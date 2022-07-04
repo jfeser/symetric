@@ -47,7 +47,7 @@ module type Domain_pred_intf = sig
 
   val pp : t Fmt.t
   val cost : [ `Concrete of concrete | `Pred of t ] -> int
-  val lift : concrete -> t Iter.t
+  val lift : concrete -> [ `Pred of t | `False ] Iter.t
 
   val implies :
     [ `Concrete of concrete | `Pred of t | `True | `False ] list ->
@@ -57,6 +57,7 @@ module type Domain_pred_intf = sig
   val eval : t -> concrete -> bool
 
   val transfer :
+    [ `Concrete of concrete | `Pred of t | `True | `False ] list ->
     ctx ->
     example ->
     op ->
@@ -85,7 +86,7 @@ struct
       include Comparator.Make (T)
 
       let cost = function
-        | `True -> 1
+        | `True | `False -> 1
         | (`Concrete _ | `Pred _) as p -> Domain_pred.cost p
 
       let pp fmt = function
@@ -93,16 +94,6 @@ struct
         | `Pred p -> Domain_pred.pp fmt p
         | `True -> Fmt.pf fmt "true"
         | `False -> Fmt.pf fmt "false"
-
-      let glb = function
-        | `True, p | p, `True -> [ p ]
-        | `False, _ | _, `False -> [ `False ]
-        | `Concrete c, `Concrete c' ->
-            if [%equal: Value.t] c c' then [ `Concrete c ] else [ `False ]
-        | `Pred p, `Pred p' ->
-            if [%equal: Domain_pred.t] p p' then [ `Pred p ] else [ `Pred p; `Pred p' ]
-        | `Concrete c, `Pred p | `Pred p, `Concrete c ->
-            if Domain_pred.eval p c then [ `Concrete c ] else [ `False ]
     end
 
     module T = struct
@@ -193,7 +184,8 @@ struct
       List.map args ~f:(fun ps -> Iter.cons `True @@ Iter.of_set ps)
       |> Iter.list_product
       |> Iter.map (fun simple_args ->
-             Domain_pred.transfer ctx.ectx example op simple_args |> Iter.of_list)
+             Domain_pred.transfer (Set.to_list ctx.preds) ctx.ectx example op simple_args
+             |> Iter.of_list)
       |> Iter.concat
       |> Iter.fold Set.add (Set.empty (module Pred))
 
@@ -219,7 +211,7 @@ struct
     let eval_restricted_single (ctx : Ctx.t) example op args =
       eval_single ctx example op args |> Set.inter ctx.preds
 
-    let conjuncts ~k l =
+    let conjuncts ~k (l : Pred.t list) =
       let k = min k (List.length l) in
       let ret =
         Iter.(0 -- k)
@@ -333,8 +325,10 @@ struct
     let strengthen_simple ~k too_strong too_weak implies =
       let candidates =
         List.map too_strong ~f:(fun c ->
-            let ps = Iter.to_list @@ Domain_pred.lift c in
-            `Concrete c :: List.map ps ~f:(fun p -> `Pred p))
+            let (ps : Pred.t list) =
+              (Iter.to_list @@ Domain_pred.lift c :> Pred.t list)
+            in
+            `Concrete c :: ps)
         |> per_arg_conjuncts ~k
         |> Iter.sort ~cmp:(fun (c, _) (c', _) -> [%compare: int] c c')
         |> Iter.to_list
