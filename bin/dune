@@ -62,6 +62,13 @@
   (pps ppx_jane)))
 
 (executable
+ (name enumerate_tower)
+ (modules enumerate_tower)
+ (libraries core staged_synth core_unix.command_unix)
+ (preprocess
+  (pps ppx_jane)))
+
+(executable
  (name enumerate_regex)
  (modules enumerate_regex)
  (libraries core staged_synth core_unix.command_unix)

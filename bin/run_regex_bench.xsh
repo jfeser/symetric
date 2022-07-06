@@ -7,7 +7,7 @@ import random
 
 dry_run = False
 run_abs = True
-run_enum = True
+run_enum = False
 run_metric = False
 run_extract_ablation = False
 run_repair_ablation = False

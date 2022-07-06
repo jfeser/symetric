@@ -241,18 +241,18 @@ let rewrite : Op.t P.t -> Op.t P.t list = function
       let ret = if x < 8 then P.Apply (Op.Move_p (x + 1), args) :: ret else ret in
       ret
   (* | Apply (Embed, [ p ]) -> [ p ] *)
-  (* | Apply (Drop_v, [ p ]) as d -> *)
+  (* | Apply (Drop_v, [ _p ]) as d -> *)
   (*     [ *)
-  (*       Apply (Drop_h, [ p ]); *)
+  (*       (\* Apply (Drop_h, [ p ]); *\) *)
   (*       Apply (Embed, [ Apply (Seq, [ Apply (Move_l, [ Apply (Int 1, []) ]); d ]) ]); *)
   (*       Apply (Embed, [ Apply (Seq, [ Apply (Move_r, [ Apply (Int 1, []) ]); d ]) ]); *)
   (*     ] *)
-  | Apply (Drop_h, [ p ]) as d ->
-      [
-        Apply (Drop_v, [ p ]);
-        Apply (Embed, [ Apply (Seq, [ Apply (Move_l, [ Apply (Int 1, []) ]); d ]) ]);
-        Apply (Embed, [ Apply (Seq, [ Apply (Move_r, [ Apply (Int 1, []) ]); d ]) ]);
-      ]
+  (* | Apply (Drop_h, [ _p ]) as d -> *)
+  (*     [ *)
+  (*       (\* Apply (Drop_v, [ p ]); *\) *)
+  (*       Apply (Embed, [ Apply (Seq, [ Apply (Move_l, [ Apply (Int 1, []) ]); d ]) ]); *)
+  (*       Apply (Embed, [ Apply (Seq, [ Apply (Move_r, [ Apply (Int 1, []) ]); d ]) ]); *)
+  (*     ] *)
   (* | Apply *)
   (*     (Seq, [ (Apply ((Move_l | Move_r), _) as m); (Apply ((Drop_v | Drop_h), []) as d) ]) *)
   (*   -> *)
