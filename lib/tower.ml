@@ -355,19 +355,6 @@ module Value = struct
                       +. blocks_distance ctx slice candidate.blocks
                       +. Float.of_int iter))
         |> Iter.concat |> Iter.min |> Option.value ~default:1.
-
-  let target_distance (ctx : Ctx.t) _t = function
-    | Int _ -> 1.
-    | Trans x ->
-        Iter.of_list ctx.slices
-        |> Iter.map (fun (slice, dropped) ->
-               Iter.of_list x.summary
-               |> Iter.mapi (fun iter (candidate : State.t) ->
-                      Float.of_int dropped
-                      +. blocks_distance ctx slice candidate.blocks
-                      +. Float.of_int iter)
-               |> Iter.mean |> Option.value ~default:0.)
-        |> Iter.min |> Option.value ~default:0.
 end
 
 let int x = P.apply (Op.Int x)
