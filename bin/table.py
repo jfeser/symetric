@@ -737,12 +737,12 @@ def ablation_plot(metric_df, beam_df, er_df, gen_plot):
 
 
 def main(args):
-    ablation_plot(
-        load(args.ablation_metric),
-        load(args.ablation_no_cluster),
-        load(args.ablation_extract_random),
-        args.generated_plot,
-    )
+    # ablation_plot(
+    #     load(args.ablation_metric),
+    #     load(args.ablation_no_cluster),
+    #     load(args.ablation_extract_random),
+    #     args.generated_plot,
+    # )
 
     joblog_df = load_joblog(args.bench)
     joblog_df = joblog_df[

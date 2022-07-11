@@ -8,8 +8,8 @@ dry_run = False
 run_metric = False
 run_ablations = False
 run_exhaustive = False
-run_sketch = True
-run_abstract = False
+run_sketch = False
+run_abstract = True
 
 run_extract_ablation = True
 run_repair_ablation = False
@@ -49,7 +49,7 @@ ulimit_stanza = f"ulimit -v {mlimit}; ulimit -t {tlimit};"
 if run_abstract:
     for (d, _) in benchmarks:
         for f in glob.glob(base_dir + '/bench/cad_ext/' + d + '/*'):
-            for repl in [True, False]:
+            for repl in [False]:
                 bench_name = $(basename @(f)).strip()
                 job_name = f"abstract-{bench_name}-{len(jobs)}"
                 repl_flag = "" if repl else "-no-repl"

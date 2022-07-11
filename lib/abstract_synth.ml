@@ -406,7 +406,7 @@ struct
     let rec loop iters ctx =
       let ctx' =
         let sctx =
-          Synth.Ctx.create ~max_cost:40 ctx ops
+          Synth.Ctx.create ~max_cost:1000 ctx ops
           @@ `Pred
                (fun op s ->
                  [%equal: Abs.Type.t] (Abs.Op.ret_type op) Abs.Type.output

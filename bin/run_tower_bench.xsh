@@ -50,7 +50,7 @@ def mk_cmd(max_cost, n_groups, group_threshold, job_name, extra_args, bench_file
 
 
 jobs = []
-for f in glob.glob(base_dir + '/bench/tower/test12.sexp'):
+for f in glob.glob(base_dir + '/bench/tower/test*.sexp'):
     bench_name = os.path.basename(f)
 
     if run_enum:

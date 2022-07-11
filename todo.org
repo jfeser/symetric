@@ -61,3 +61,7 @@ Bottom-up enumerative synthesis suffers from this issue as well
 
 
 [1] The expected Jaccard distance between two random vectors is 0.5.
+
+* TODO Fta-syngar-nr either show results in charts or only show nr
+* TODO Reorg evaluation with a section for each domain
+* TODO Try to connect related work better
