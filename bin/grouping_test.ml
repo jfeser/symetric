@@ -1,1 +1,1 @@
-let () = Core.Command.run Staged_synth.Grouping_test.cmd
+let () = Core.Command.run Symetric.Grouping_test.cmd

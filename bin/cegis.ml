@@ -1,5 +1,5 @@
 open! Core
-open Staged_synth
+open Symetric
 module Gr = Grammar
 
 module Sketch = struct

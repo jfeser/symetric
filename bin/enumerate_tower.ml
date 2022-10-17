@@ -1,1 +1,1 @@
-let () = Command_unix.run Staged_synth.Enumerate_towers.cmd
+let () = Command_unix.run Symetric.Enumerate_towers.cmd

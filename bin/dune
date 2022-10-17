@@ -1,112 +1,112 @@
 (executable
  (name run_tower)
  (modules run_tower)
- (libraries core staged_synth core_unix.command_unix)
+ (libraries core symetric core_unix.command_unix)
  (preprocess
   (pps ppx_jane)))
 
 (executable
  (name metric_synth_cad)
  (modules metric_synth_cad)
- (libraries core staged_synth core_unix.command_unix)
+ (libraries core symetric core_unix.command_unix)
  (preprocess
   (pps ppx_jane)))
 
 (executable
  (name metric_synth_regex)
  (modules metric_synth_regex)
- (libraries core staged_synth core_unix.command_unix)
+ (libraries core symetric core_unix.command_unix)
  (preprocess
   (pps ppx_jane)))
 
 (executable
  (name metric_synth_tower)
  (modules metric_synth_tower)
- (libraries core staged_synth core_unix.command_unix)
+ (libraries core symetric core_unix.command_unix)
  (preprocess
   (pps ppx_jane)))
 
 (executable
  (name test_regex)
  (modules test_regex)
- (libraries core staged_synth core_unix.command_unix)
+ (libraries core symetric core_unix.command_unix)
  (preprocess
   (pps ppx_jane)))
 
 (executable
  (name abs_synth_cad)
  (modules abs_synth_cad)
- (libraries core staged_synth core_unix.command_unix)
+ (libraries core symetric core_unix.command_unix)
  (preprocess
   (pps ppx_jane)))
 
 (executable
  (name abs_synth_regex)
  (modules abs_synth_regex)
- (libraries core staged_synth core_unix.command_unix)
+ (libraries core symetric core_unix.command_unix)
  (preprocess
   (pps ppx_jane)))
 
 (executable
  (name pixels)
  (modules pixels)
- (libraries core fmt staged_synth core_unix.command_unix)
+ (libraries core fmt symetric core_unix.command_unix)
  (preprocess
   (pps ppx_jane)))
 
 (executable
  (name enumerate_cad)
  (modules enumerate_cad)
- (libraries core staged_synth core_unix.command_unix)
+ (libraries core symetric core_unix.command_unix)
  (preprocess
   (pps ppx_jane)))
 
 (executable
  (name enumerate_tower)
  (modules enumerate_tower)
- (libraries core staged_synth core_unix.command_unix)
+ (libraries core symetric core_unix.command_unix)
  (preprocess
   (pps ppx_jane)))
 
 (executable
  (name enumerate_regex)
  (modules enumerate_regex)
- (libraries core staged_synth core_unix.command_unix)
+ (libraries core symetric core_unix.command_unix)
  (preprocess
   (pps ppx_jane)))
 
 (executable
  (name print_bench)
  (modules print_bench)
- (libraries core staged_synth core_unix.command_unix)
+ (libraries core symetric core_unix.command_unix)
  (preprocess
   (pps ppx_jane)))
 
 (executable
  (name subprograms)
  (modules subprograms)
- (libraries core staged_synth core_unix.command_unix)
+ (libraries core symetric core_unix.command_unix)
  (preprocess
   (pps ppx_jane)))
 
 (executable
  (name similarity)
  (modules similarity)
- (libraries core staged_synth core_unix.command_unix)
+ (libraries core symetric core_unix.command_unix)
  (preprocess
   (pps ppx_jane)))
 
 (executable
  (name gen_cad)
  (modules gen_cad)
- (libraries core staged_synth core_unix.command_unix)
+ (libraries core symetric core_unix.command_unix)
  (preprocess
   (pps ppx_jane)))
 
 (executable
  (name grouping_bench)
  (modules grouping_bench)
- (libraries core staged_synth)
+ (libraries core symetric)
  (preprocess
   (pps ppx_jane))
  (instrumentation (backend landmarks)))

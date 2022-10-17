@@ -1,7 +1,7 @@
 (lang dune 2.7)
 (generate_opam_files true)
 (package
- (name staged_synth)
+ (name symetric)
  (synopsis "tool")
  (maintainers jack.feser@gmail.com)
  (depends

@@ -8,8 +8,8 @@ RUN dnf install -y bison flex g++ java && dnf clean all
 COPY hole_hardcoder.patch /opt/sketch/sketch-backend
 RUN cd /opt/sketch/sketch-backend && patch -p0 --binary < hole_hardcoder.patch && ./configure && make -j
 
-COPY staged_synth.opam /tmp
-RUN opam install -y --deps-only /tmp/staged_synth.opam
+COPY symetric.opam /tmp
+RUN opam install -y --deps-only /tmp/symetric.opam
 
 RUN echo 'PATH=$PATH:/opt/sketch/sketch-frontend' >> /root/.bashrc && \
     echo 'SKETCH_HOME=/opt/sketch/sketch-frontend/runtime' >> /root/.bashrc && \

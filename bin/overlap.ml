@@ -1,5 +1,5 @@
 open Core
-open Staged_synth
+open Symetric
 open Std
 open Cad_ext
 module S = Metric_synth_cad.S

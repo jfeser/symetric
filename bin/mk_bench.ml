@@ -1,5 +1,5 @@
 open! Core
-open Staged_synth
+open Symetric
 
 let main () =
   Synth.Log.set_level (Some Debug);

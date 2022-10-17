@@ -1,5 +1,5 @@
 (library
- (public_name staged_synth)
+ (public_name symetric)
  (libraries core core_kernel.pairing_heap combinat fmt vpt logs yojson
    bitarray bheap sek gen)
  (preprocess

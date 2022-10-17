@@ -1,5 +1,5 @@
 open! Core
-open Staged_synth
+open Symetric
 module Core = Cstage_core.Make ()
 
 module Code = struct

@@ -1,5 +1,5 @@
 open! Core
-open Staged_synth
+open Symetric
 
 let () =
   let bar = Dumb_progress.basic_bar 100 in

@@ -1,6 +1,6 @@
 (library
  (name tests)
- (libraries staged_synth core base_quickcheck)
+ (libraries symetric core base_quickcheck)
  (preprocess
   (pps ppx_jane))
  (inline_tests)

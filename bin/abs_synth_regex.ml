@@ -1,1 +1,1 @@
-let () = Command_unix.run Staged_synth.Abs_synth_regex.cmd
+let () = Command_unix.run Symetric.Abs_synth_regex.cmd

@@ -1,5 +1,5 @@
 open! Core
-open Staged_synth
+open Symetric
 
 let pp_iters_fixed =
   let pp fmt n = Format.fprintf fmt "%10Ld" n in

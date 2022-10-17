@@ -1,5 +1,5 @@
 open Core
-open Staged_synth
+open Symetric
 open Cad_ext
 module Synth = Local_search_diverse.Make (Cad_ext)
 module S = Synth.Search_state
