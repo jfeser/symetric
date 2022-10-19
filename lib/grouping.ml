@@ -35,7 +35,7 @@ let create_vp m thresh distance k states =
             incr n_samples;
             let no_existing_group =
               find_close v
-              |> Iter.iter_is_empty (fun c' -> Hashtbl.add_multi groups ~key:c' ~data:c')
+              |> Iter.iter_is_empty (fun c' -> Hashtbl.add_multi groups ~key:c' ~data:v)
             in
             if no_existing_group then (
               if Hashtbl.length groups = k then
@@ -78,7 +78,7 @@ let create_m (type a) (module M : Base.Hashtbl.Key.S with type t = a) thresh dis
                 let no_existing_group =
                   find_close v
                   |> Iter.iter_is_empty (fun c' ->
-                         Hashtbl.add_multi groups ~key:c' ~data:c')
+                         Hashtbl.add_multi groups ~key:c' ~data:v)
                 in
                 if no_existing_group then (
                   if Hashtbl.length groups = k then
