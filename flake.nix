@@ -45,6 +45,7 @@
           src = ./.;
         };
       in {
+        packages = { symetric = symetric; };
         defaultPackage = symetric;
         devShell = pkgs.mkShell {
           nativeBuildInputs =
