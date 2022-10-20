@@ -26,7 +26,7 @@ module Params = struct
     output_file : string;
     use_beam_search : bool; (* if true, then disable clustering *)
     use_ranking : bool; (* if false, disable ranking clustered states *)
-    extract : [ `Greedy | `Random ];
+    extract : [ `Greedy | `Random | `Centroid ];
     repair : [ `Guided | `Random ]; (* if true, do not use distance to guide repair *)
   }
   [@@deriving yojson]
@@ -106,6 +106,7 @@ module Params = struct
           match extract with
           | "greedy" -> `Greedy
           | "random" -> `Random
+          | "centroid" -> `Centroid
           | _ -> raise_s [%message "unexpected extraction method" (extract : string)]
         in
         let repair =
@@ -400,6 +401,7 @@ let run_extract_untimed eval height class_ =
   match extract () with
   | `Greedy -> S.local_greedy search_state height eval target_distance class_
   | `Random -> S.random search_state height class_
+  | `Centroid -> S.centroid search_state height class_
 
 let run_extract eval height class_ =
   Synth_utils.timed (`Add stats.extract_time) (fun () ->
@@ -439,20 +441,15 @@ let synthesize () =
   Log.log 1 (fun m -> m "Starting backwards pass");
 
   (* classes of type Scene *)
-  let valid_classes =
+  let classes =
     S.classes search_state
     |> Iter.filter (fun c -> [%compare.equal: Type.t] Scene (S.Class.type_ c))
     |> Iter.map (fun c -> (target_distance @@ S.Class.value c, c))
-  in
-  let classes_ =
-    match extract () with
-    | `Greedy ->
-        valid_classes |> Iter.sort ~cmp:(fun (d, _) (d', _) -> [%compare: float] d d')
-    | `Random -> valid_classes |> Iter.to_list |> List.permute |> Iter.of_list
+    |> Iter.sort ~cmp:(fun (d, _) (d', _) -> [%compare: float] d d')
   in
   let ret =
     try
-      classes_
+      classes
       |> Iter.iteri (fun i (d, (class_ : S.Class.t)) ->
              incr stats.groups_searched;
              Log.log 1 (fun m -> m "Searching candidate %d (d=%f)" i d);

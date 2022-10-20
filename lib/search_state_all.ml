@@ -2,14 +2,14 @@ open Std
 
 module type Lang_intf = sig
   module Type : sig
-    type t [@@deriving compare, hash, sexp]
+    type t [@@deriving compare, equal, hash, sexp]
 
     val default : t
     val output : t
   end
 
   module Op : sig
-    type t [@@deriving compare, hash, sexp]
+    type t [@@deriving compare, equal, hash, sexp]
 
     val default : t
     val cost : t -> int
@@ -21,7 +21,7 @@ module type Lang_intf = sig
   end
 
   module Value : sig
-    type t [@@deriving compare, hash, sexp]
+    type t [@@deriving compare, equal, hash, sexp]
 
     val default : t
   end
@@ -334,17 +334,25 @@ module Make (Lang : Lang_intf) = struct
     let prog = Apply (best_path.op, arg_progs) in
     return prog
 
+  let rec centroid ss max_height (class_ : Class.t) =
+    let open Option.Let_syntax in
+    let%bind path =
+      Sek.E.find_opt Sek.forward
+        (fun (p : Path.t) ->
+          Path.height ss p <= max_height
+          && [%equal: Value.t] (Class.value class_) (Path.value p))
+        (H.find_exn ss.paths class_).paths
+    in
+    let%map args = List.map path.args ~f:(centroid ss (max_height - 1)) |> Option.all in
+    Apply (path.op, args)
+
   let rec random ss max_height (class_ : Class.t) =
     let open Option.Let_syntax in
-    let all_paths = (H.find_exn ss.paths class_).paths in
-
-    let eligible_paths =
-      Sek.E.filter (fun (p : Path.t) -> Path.height ss p <= max_height) all_paths
-    in
     let%bind best_path =
-      Iter.of_sek_e eligible_paths |> Iter.sample 1 |> Array.random_element
+      (H.find_exn ss.paths class_).paths
+      |> Sek.E.filter (fun (p : Path.t) -> Path.height ss p <= max_height)
+      |> Iter.of_sek_e |> Iter.sample 1 |> Array.random_element
     in
-
     let rec select_args i = function
       | [] -> Some []
       | c :: cs ->
@@ -355,46 +363,6 @@ module Make (Lang : Lang_intf) = struct
     let%bind arg_progs = select_args 0 best_path.args in
     let prog = Apply (best_path.op, arg_progs) in
     return prog
-
-  let rec local_greedy_new ss max_height eval dist (class_ : Class.t) =
-    let open Option.Let_syntax in
-    let%bind _, best_path =
-      let sampler = Sample.Incremental.weighted () in
-
-      (H.find_exn ss.paths class_).paths
-      |> Sek.E.iter Sek.forward (fun (p : Path.t) ->
-             if Path.height ss p <= max_height then sampler.add p (1.0 -. dist p.value));
-      sampler.get_sample ()
-    in
-    let best_path_arg_values = List.map best_path.args ~f:Class.value in
-    let%bind args =
-      List.mapi best_path.args ~f:(fun i arg_class ->
-          let dist' v = dist (eval best_path.op @@ List.set best_path_arg_values i v) in
-          local_greedy_new ss (max_height - 1) eval dist' arg_class)
-      |> Option.all
-    in
-    return (Apply (best_path.op, args))
-
-  let rec local_greedy_v2 ss max_height eval dist (class_ : Class.t) =
-    let open Option.Let_syntax in
-    let all_paths = (H.find_exn ss.paths class_).paths in
-
-    let eligible_paths =
-      Sek.E.filter (fun (p : Path.t) -> Path.height ss p <= max_height) all_paths
-    in
-    let%bind _, best_path =
-      Iter.of_sek_e eligible_paths
-      |> Iter.map (fun (p : Path.t) -> (dist p.value, p))
-      |> Iter.min ~lt:(fun (d, _) (d', _) -> Float.(d < d'))
-    in
-
-    let best_path_arg_values = List.map best_path.args ~f:(fun c -> c.value) in
-
-    List.mapi best_path.args ~f:(fun i arg_class ->
-        let dist' v = dist (eval best_path.op @@ List.set best_path_arg_values i v) in
-        local_greedy_v2 ss (max_height - 1) eval dist' arg_class)
-    |> Option.all
-    |> Option.map ~f:(fun arg_progs -> Apply (best_path.op, arg_progs))
 
   let rec exhaustive ss max_height eval dist (class_ : Class.t) =
     let all_paths = (H.find_exn ss.paths class_).paths in

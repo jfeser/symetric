@@ -59,7 +59,7 @@ def load(run_dir):
         with open(os.path.join(run_dir, fn), "r") as f:
             bench_json = json.load(f)
 
-        method = fn.split("-")[0]
+        method = "-".join(fn.split("-")[:-1])
         if "params" in bench_json:
             max_cost = int(bench_json["params"]["max_cost"])
             group_count = int(bench_json["params"]["target_groups"])

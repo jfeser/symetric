@@ -1,13 +1,13 @@
 module type Lang_intf = sig
   module Type : sig
-    type t [@@deriving compare, hash, sexp]
+    type t [@@deriving compare, equal, hash, sexp]
 
     val default : t
     val output : t
   end
 
   module Op : sig
-    type t [@@deriving compare, hash, sexp]
+    type t [@@deriving compare, equal, hash, sexp]
 
     val default : t
     val cost : t -> int
@@ -19,7 +19,7 @@ module type Lang_intf = sig
   end
 
   module Value : sig
-    type t [@@deriving compare, hash, sexp]
+    type t [@@deriving compare, equal, hash, sexp]
 
     val default : t
   end

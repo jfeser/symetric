@@ -64,4 +64,5 @@ module type S = sig
     op Program.t option
 
   val random : t -> int -> Class.t -> op Program.t option
+  val centroid : t -> int -> Class.t -> op Program.t option
 end

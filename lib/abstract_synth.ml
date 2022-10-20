@@ -73,7 +73,7 @@ struct
     module Pred = struct
       module T = struct
         type t = [ `Concrete of Value.t | `Pred of Domain_pred.t ]
-        [@@deriving compare, hash, sexp]
+        [@@deriving compare, equal, hash, sexp]
       end
 
       include T
@@ -227,7 +227,7 @@ struct
 
       let module Conjunct_lang = struct
         module Type = struct
-          type t = Args | Pred of int [@@deriving compare, hash, sexp]
+          type t = Args | Pred of int [@@deriving compare, equal, hash, sexp]
 
           let output = Args
           let default = Args
@@ -235,7 +235,7 @@ struct
 
         module Op = struct
           type t = Args | And of int | Pred of int * [ Pred.t | `True ]
-          [@@deriving compare, hash, sexp]
+          [@@deriving compare, equal, hash, sexp]
 
           let default = Args
           let pp = Fmt.nop
@@ -260,7 +260,8 @@ struct
         end
 
         module Value = struct
-          type nonrec t = Args of t list | Pred of t [@@deriving compare, hash, sexp]
+          type nonrec t = Args of t list | Pred of t
+          [@@deriving compare, equal, hash, sexp]
 
           module Ctx = Unit
 
