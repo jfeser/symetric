@@ -364,14 +364,14 @@ module Make (Lang : Lang_intf) = struct
     let prog = Apply (best_path.op, arg_progs) in
     return prog
 
-  let rec exhaustive ss max_height eval dist (class_ : Class.t) =
+  let rec exhaustive ?(width = 4) ss max_height eval dist (class_ : Class.t) =
     let all_paths = (H.find_exn ss.paths class_).paths in
 
     Sek.E.filter (fun (p : Path.t) -> Path.height ss p <= max_height) all_paths
     |> Iter.of_sek_e
     |> Iter.map (fun (p : Path.t) -> (dist p.value, p))
     |> Iter.sort ~cmp:(fun (d, _) (d', _) -> [%compare: float] d d')
-    |> Iter.take 4
+    |> Iter.take width
     |> Iter.filter_map (fun (_, p) ->
            let open Option.Let_syntax in
            let arg_values = List.map p.args ~f:(fun c -> c.value) in

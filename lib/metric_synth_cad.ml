@@ -27,14 +27,17 @@ module Params = struct
     use_beam_search : bool; (* if true, then disable clustering *)
     use_ranking : bool; (* if false, disable ranking clustered states *)
     extract : [ `Greedy | `Random | `Centroid | `Exhaustive ];
-    repair : [ `Guided | `Random ]; (* if true, do not use distance to guide repair *)
+    repair : [ `Guided | `Random ];
+    distance : [ `Jaccard | `Relative_jaccard ];
+    exhaustive_width : int;
   }
   [@@deriving yojson]
 
   let create : dim:Scene2d.Dim.t -> _ =
    fun ~dim:size ~group_threshold ~max_cost ~local_search_steps ~backward_pass_repeats
        ~verbosity ~validate ~n_groups ~dump_search_space ~load_search_space ~output_file
-       ~use_beam_search ~use_ranking ~extract ~repair target_prog ->
+       ~use_beam_search ~use_ranking ~extract ~repair ~distance ~exhaustive_width
+       target_prog ->
     let operators = Cad_ext.Op.default_operators ~xres:size.xres ~yres:size.yres in
 
     List.find (Program.ops target_prog) ~f:(fun op ->
@@ -59,6 +62,8 @@ module Params = struct
       use_ranking;
       extract;
       repair;
+      distance;
+      exhaustive_width;
     }
 
   let cmd =
@@ -87,6 +92,9 @@ module Params = struct
         flag "-verbosity" (optional_with_default 0 int) ~doc:" set verbosity"
       and validate = flag "-validate" no_arg ~doc:" turn on validation"
       and use_beam_search = flag "-use-beam-search" no_arg ~doc:" use beam search"
+      and exhaustive_width =
+        flag "-exhaustive-width" (optional_with_default 4 int)
+          ~doc:" search width for exhaustive extraction"
       and use_ranking =
         flag "-use-ranking"
           (optional_with_default true bool)
@@ -99,6 +107,10 @@ module Params = struct
         flag "-repair"
           (optional_with_default "guided" string)
           ~doc:" method of program repair"
+      and distance =
+        flag "-distance"
+          (optional_with_default "relative" string)
+          ~doc:" distance function"
       and output_file = flag "-out" (required string) ~doc:" output to file" in
       fun () ->
         let target_prog = Lang.parse @@ Sexp.input_sexp In_channel.stdin in
@@ -108,45 +120,47 @@ module Params = struct
           | "random" -> `Random
           | "centroid" -> `Centroid
           | "exhaustive" -> `Exhaustive
-          | _ -> raise_s [%message "unexpected extraction method" (extract : string)]
+          | _ -> raise_s [%message "unexpected" (extract : string)]
         in
         let repair =
           match repair with
           | "guided" -> `Guided
           | "random" -> `Random
-          | _ -> raise_s [%message "unexpected extraction method" (repair : string)]
+          | _ -> raise_s [%message "unexpected" (repair : string)]
+        in
+        let distance =
+          match distance with
+          | "jaccard" -> `Jaccard
+          | "relative" -> `Relative_jaccard
+          | _ -> raise_s [%message "unexpected" (distance : string)]
         in
         create ~max_cost ~group_threshold ~local_search_steps ~dim ~backward_pass_repeats
           ~verbosity ~validate ~n_groups ~dump_search_space ~load_search_space
-          ~output_file ~use_beam_search ~use_ranking ~extract ~repair target_prog]
+          ~output_file ~use_beam_search ~use_ranking ~extract ~repair ~distance
+          ~exhaustive_width target_prog]
 end
 
 let params = Set_once.create ()
-let[@inline] size () = (Set_once.get_exn params [%here]).Params.size
-let[@inline] group_threshold () = (Set_once.get_exn params [%here]).Params.group_threshold
-let[@inline] operators () = (Set_once.get_exn params [%here]).Params.operators
-let[@inline] max_cost () = (Set_once.get_exn params [%here]).Params.max_cost
-let[@inline] verbosity () = (Set_once.get_exn params [%here]).Params.verbosity
-let[@inline] target_program () = (Set_once.get_exn params [%here]).Params.target_program
-let[@inline] validate () = (Set_once.get_exn params [%here]).Params.validate
-let[@inline] target_groups () = (Set_once.get_exn params [%here]).Params.target_groups
-let[@inline] output_file () = (Set_once.get_exn params [%here]).Params.output_file
-let[@inline] use_beam_search () = (Set_once.get_exn params [%here]).Params.use_beam_search
-let[@inline] extract () = (Set_once.get_exn params [%here]).Params.extract
-let[@inline] repair () = (Set_once.get_exn params [%here]).Params.repair
-let[@inline] use_ranking () = (Set_once.get_exn params [%here]).Params.use_ranking
-
-let[@inline] dump_search_space () =
-  (Set_once.get_exn params [%here]).Params.dump_search_space
-
-let[@inline] load_search_space () =
-  (Set_once.get_exn params [%here]).Params.load_search_space
-
-let[@inline] backward_pass_repeats () =
-  (Set_once.get_exn params [%here]).Params.backward_pass_repeats
-
-let[@inline] local_search_steps () =
-  (Set_once.get_exn params [%here]).Params.local_search_steps
+let get_params = Set_once.get_exn params
+let[@inline] size () = (get_params [%here]).Params.size
+let[@inline] group_threshold () = (get_params [%here]).Params.group_threshold
+let[@inline] operators () = (get_params [%here]).Params.operators
+let[@inline] max_cost () = (get_params [%here]).Params.max_cost
+let[@inline] verbosity () = (get_params [%here]).Params.verbosity
+let[@inline] target_program () = (get_params [%here]).Params.target_program
+let[@inline] validate () = (get_params [%here]).Params.validate
+let[@inline] target_groups () = (get_params [%here]).Params.target_groups
+let[@inline] output_file () = (get_params [%here]).Params.output_file
+let[@inline] use_beam_search () = (get_params [%here]).Params.use_beam_search
+let[@inline] extract () = (get_params [%here]).Params.extract
+let[@inline] repair () = (get_params [%here]).Params.repair
+let[@inline] distance () = (get_params [%here]).Params.distance
+let[@inline] use_ranking () = (get_params [%here]).Params.use_ranking
+let[@inline] dump_search_space () = (get_params [%here]).Params.dump_search_space
+let[@inline] load_search_space () = (get_params [%here]).Params.load_search_space
+let[@inline] backward_pass_repeats () = (get_params [%here]).Params.backward_pass_repeats
+let[@inline] local_search_steps () = (get_params [%here]).Params.local_search_steps
+let[@inline] exhaustive_width () = (get_params [%here]).Params.exhaustive_width
 
 module Log = struct
   let start_time = Time.now ()
@@ -221,29 +235,33 @@ let write_output m_prog =
         ("program", program_json);
         ("program_size", `Float program_size);
         ("stats", [%yojson_of: Stats.t] stats);
-        ("params", [%yojson_of: Params.t] @@ Set_once.get_exn params [%here]);
+        ("params", [%yojson_of: Params.t] (get_params [%here]));
       ]
   in
   Out_channel.with_file (output_file ()) ~f:(fun ch -> Safe.to_channel ch json)
 
-let relative_distance (v : Value.t) (v' : Value.t) =
-  match (v, v') with
-  | Scene x, Scene x' ->
-      let target_scene = match target () with Scene t -> t | _ -> assert false in
-      let n = Scene2d.(pixels @@ sub target_scene x)
-      and n' = Scene2d.(pixels @@ sub target_scene x') in
-      let p = Scene2d.(pixels @@ sub x target_scene)
-      and p' = Scene2d.(pixels @@ sub x' target_scene) in
-      let union = Bitarray.(O.(hamming_weight (n lor n') + hamming_weight (p lor p')))
-      and inter =
-        Bitarray.(O.(hamming_weight (n land n') + hamming_weight (p land p')))
-      in
-      assert (union >= inter && inter >= 0);
-      if union = 0 then 0.0 else 1.0 -. (Float.of_int inter /. Float.of_int union)
-  | v, v' -> if [%compare.equal: Value.t] v v' then 0.0 else Float.infinity
+let distance v v' =
+  let relative_distance (v : Value.t) (v' : Value.t) =
+    match (v, v') with
+    | Scene x, Scene x' ->
+        let target_scene = match target () with Scene t -> t | _ -> assert false in
+        let n = Scene2d.(pixels @@ sub target_scene x)
+        and n' = Scene2d.(pixels @@ sub target_scene x') in
+        let p = Scene2d.(pixels @@ sub x target_scene)
+        and p' = Scene2d.(pixels @@ sub x' target_scene) in
+        let union = Bitarray.(O.(hamming_weight (n lor n') + hamming_weight (p lor p')))
+        and inter =
+          Bitarray.(O.(hamming_weight (n land n') + hamming_weight (p land p')))
+        in
+        assert (union >= inter && inter >= 0);
+        if union = 0 then 0.0 else 1.0 -. (Float.of_int inter /. Float.of_int union)
+    | v, v' -> if [%compare.equal: Value.t] v v' then 0.0 else Float.infinity
+  in
+  match distance () with
+  | `Jaccard -> Value.distance v v'
+  | `Relative_jaccard -> relative_distance v v'
 
-let distance = Value.distance
-let target_distance v = distance (target ()) v
+let target_distance v = Value.distance (target ()) v
 
 let local_search_untimed p =
   let size = size () and steps = local_search_steps () and ectx = ectx () in
@@ -308,7 +326,7 @@ module Edge = struct
 
   let value (v, _, _) = v
   let score value = -1. *. target_distance value
-  let distance (v, _, _) (v', _, _) = relative_distance v v'
+  let distance (v, _, _) (v', _, _) = distance v v'
 end
 
 let select_top_k_edges edges =
@@ -328,7 +346,7 @@ let insert_states (all_edges : Edge.t Iter.t) =
   let module Edges = struct
     type t = Value.t * (Edge.t list[@compare.ignore]) [@@deriving compare, hash, sexp]
 
-    let distance (v, _) (v', _) = relative_distance v v'
+    let distance (v, _) (v', _) = distance v v'
   end in
   let groups =
     all_edges |> select_edges
@@ -401,7 +419,9 @@ let run_extract_untimed eval height class_ =
   let search_state = get_search_state () in
   match extract () with
   | `Greedy -> S.local_greedy search_state height eval target_distance class_
-  | `Exhaustive -> S.exhaustive search_state height eval target_distance class_
+  | `Exhaustive ->
+      S.exhaustive ~width:(exhaustive_width ()) search_state height eval target_distance
+        class_
   | `Random -> S.random search_state height class_
   | `Centroid -> S.centroid search_state height class_
 
@@ -435,9 +455,6 @@ let synthesize () =
 
   write_output None;
   let search_state = get_search_state () in
-
-  if validate () then
-    S.validate search_state (Value.eval ectx) distance (group_threshold ());
 
   let exception Done of Op.t Program.t in
   Log.log 1 (fun m -> m "Starting backwards pass");

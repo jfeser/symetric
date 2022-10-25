@@ -64,6 +64,7 @@ module type S = sig
     op Program.t option
 
   val exhaustive :
+    ?width:int ->
     t ->
     int ->
     (op -> value list -> value) ->
