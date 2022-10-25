@@ -63,6 +63,14 @@ module type S = sig
     Class.t ->
     op Program.t option
 
+  val exhaustive :
+    t ->
+    int ->
+    (op -> value list -> value) ->
+    (value -> float) ->
+    Class.t ->
+    op Program.t option
+
   val random : t -> int -> Class.t -> op Program.t option
   val centroid : t -> int -> Class.t -> op Program.t option
 end

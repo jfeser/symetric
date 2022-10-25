@@ -26,7 +26,7 @@ module Params = struct
     output_file : string;
     use_beam_search : bool; (* if true, then disable clustering *)
     use_ranking : bool; (* if false, disable ranking clustered states *)
-    extract : [ `Greedy | `Random | `Centroid ];
+    extract : [ `Greedy | `Random | `Centroid | `Exhaustive ];
     repair : [ `Guided | `Random ]; (* if true, do not use distance to guide repair *)
   }
   [@@deriving yojson]
@@ -107,6 +107,7 @@ module Params = struct
           | "greedy" -> `Greedy
           | "random" -> `Random
           | "centroid" -> `Centroid
+          | "exhaustive" -> `Exhaustive
           | _ -> raise_s [%message "unexpected extraction method" (extract : string)]
         in
         let repair =
@@ -400,6 +401,7 @@ let run_extract_untimed eval height class_ =
   let search_state = get_search_state () in
   match extract () with
   | `Greedy -> S.local_greedy search_state height eval target_distance class_
+  | `Exhaustive -> S.exhaustive search_state height eval target_distance class_
   | `Random -> S.random search_state height class_
   | `Centroid -> S.centroid search_state height class_
 

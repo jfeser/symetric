@@ -16,6 +16,11 @@ run_repair_ablation = False
 run_rank_ablation = False
 run_cluster_ablation = False
 
+run_extract_random = True
+run_extract_greedy = True
+run_extract_centroid = True
+run_extract_exhaustive = True
+
 mlimit = 4 * 1000000 # 4GB
 tlimit = 60 * 60     # 1hr
 
@@ -124,39 +129,52 @@ if run_ablations:
         for f in glob.glob(base_dir + '/bench/cad_ext/' + d + '/*'):
             for n_groups in [200]:
                 # extract random
-                if run_extract_ablation:
+                if run_extract_ablation and run_extract_random:
                     job_name = f"metric-extractrandom-{len(jobs)}"
                     cmd = [
                         ulimit_stanza,
                         f"{build_dir}/bin/metric_synth_cad.exe -max-cost {max_cost} -verbosity 1",
                         f"-group-threshold 0.2 -scaling 2 -n-groups {n_groups} -extract random",
-                        f"-out {job_name}.json -backward-pass-repeats 20",
+                        f"-out {job_name}.json -backward-pass-repeats 1",
                         f"-local-search-steps 500 < {f} 2> {job_name}.log\n"
                     ]
                     cmd = ' '.join(cmd)
                     jobs.append(cmd)
 
                 # extract centroid
-                if run_extract_ablation:
+                if run_extract_ablation and run_extract_centroid:
                     job_name = f"metric-extractcentroid-{len(jobs)}"
                     cmd = [
                         ulimit_stanza,
                         f"{build_dir}/bin/metric_synth_cad.exe -max-cost {max_cost} -verbosity 1",
                         f"-group-threshold 0.2 -scaling 2 -n-groups {n_groups} -extract centroid",
-                        f"-out {job_name}.json -backward-pass-repeats 20",
+                        f"-out {job_name}.json -backward-pass-repeats 1",
                         f"-local-search-steps 500 < {f} 2> {job_name}.log\n"
                     ]
                     cmd = ' '.join(cmd)
                     jobs.append(cmd)
 
                 # extract local
-                if run_extract_ablation:
+                if run_extract_ablation and run_extract_greedy:
                     job_name = f"metric-extractgreedy-{len(jobs)}"
                     cmd = [
                         ulimit_stanza,
                         f"{build_dir}/bin/metric_synth_cad.exe -max-cost {max_cost} -verbosity 1",
                         f"-group-threshold 0.2 -scaling 2 -n-groups {n_groups} -extract greedy",
-                        f"-out {job_name}.json -backward-pass-repeats 20",
+                        f"-out {job_name}.json -backward-pass-repeats 1",
+                        f"-local-search-steps 500 < {f} 2> {job_name}.log\n"
+                    ]
+                    cmd = ' '.join(cmd)
+                    jobs.append(cmd)
+
+                # extract exhaustive
+                if run_extract_ablation and run_extract_exhaustive:
+                    job_name = f"metric-exhaustive-{len(jobs)}"
+                    cmd = [
+                        ulimit_stanza,
+                        f"{build_dir}/bin/metric_synth_cad.exe -max-cost {max_cost} -verbosity 1",
+                        f"-group-threshold 0.2 -scaling 2 -n-groups {n_groups} -extract exhaustive",
+                        f"-out {job_name}.json -backward-pass-repeats 1",
                         f"-local-search-steps 500 < {f} 2> {job_name}.log\n"
                     ]
                     cmd = ' '.join(cmd)
@@ -169,7 +187,7 @@ if run_ablations:
                         ulimit_stanza,
                         f"{build_dir}/bin/metric_synth_cad.exe -max-cost {max_cost} -verbosity 1",
                         f"-group-threshold 0.2 -scaling 2 -n-groups {n_groups} -repair random",
-                        f"-out {job_name}.json -backward-pass-repeats 20",
+                        f"-out {job_name}.json -backward-pass-repeats 1",
                         f"-local-search-steps 500 < {f} 2> {job_name}.log\n"
                     ]
                     cmd = ' '.join(cmd)
@@ -182,7 +200,7 @@ if run_ablations:
                         ulimit_stanza,
                         f"{build_dir}/bin/metric_synth_cad.exe -max-cost {max_cost} -verbosity 1",
                         f"-group-threshold 0.2 -scaling 2 -n-groups {n_groups} -use-ranking false",
-                        f"-out {job_name}.json -backward-pass-repeats 20",
+                        f"-out {job_name}.json -backward-pass-repeats 1",
                         f"-local-search-steps 500 < {f} 2> {job_name}.log\n"
                     ]
                     cmd = ' '.join(cmd)
@@ -195,7 +213,7 @@ if run_ablations:
                         ulimit_stanza,
                         f"{build_dir}/bin/metric_synth_cad.exe -max-cost {max_cost} -verbosity 1",
                         f"-group-threshold 0.2 -scaling 2 -n-groups {n_groups} -group-threshold 0.0",
-                        f"-out {job_name}.json -backward-pass-repeats 20 -use-beam-search",
+                        f"-out {job_name}.json -backward-pass-repeats 1 -use-beam-search",
                         f"-local-search-steps 500 < {f} 2> {job_name}.log\n"
                     ]
                     cmd = ' '.join(cmd)
