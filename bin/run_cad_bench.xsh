@@ -54,16 +54,14 @@ ulimit_stanza = f"ulimit -v {mlimit}; ulimit -t {tlimit};"
 if run_abstract:
     for (d, _) in benchmarks:
         for f in glob.glob(base_dir + '/bench/cad_ext/' + d + '/*'):
-            for repl in [False]:
-                bench_name = $(basename @(f)).strip()
-                job_name = f"abstract-{bench_name}-{len(jobs)}"
-                repl_flag = "" if repl else "-no-repl"
-                cmd = [
-                    ulimit_stanza,
-                    f"{build_dir}/bin/abs_synth_cad.exe -scaling 2 {repl_flag} < {f} &> {job_name}.log"
-                ]
-                cmd = ' '.join(cmd) + '\n'
-                jobs.append(cmd)
+            bench_name = $(basename @(f)).strip()
+            job_name = f"abstract-{bench_name}-{len(jobs)}"
+            cmd = [
+                ulimit_stanza,
+                f"{build_dir}/bin/abs_synth_cad.exe -scaling 2 -no-repl < {f} &> {job_name}.log"
+            ]
+            cmd = ' '.join(cmd) + '\n'
+            jobs.append(cmd)
 
 if run_exhaustive:
     for (d, _) in benchmarks:
@@ -78,11 +76,6 @@ if run_exhaustive:
             jobs.append(cmd)
 
 if run_sketch:
-    # for (d, max_cost) in benchmarks:
-    #     # for f in glob.glob(base_dir + '/bench/cad_ext/' + d + '/*'):
-    #     for f in [base_dir + '/bench/cad_ext/small/skew']:
-
-            # for par in [False]:
     f = base_dir + '/bench/cad_ext/small/skew'
     max_cost = 20
     par = False
@@ -109,115 +102,69 @@ if run_sketch:
     cmd = ' '.join(cmd) + '\n'
     jobs.append(cmd)
 
+def build_metric_command(bench_file,
+                         max_cost,
+                         name="metric",
+                         group_threshold=0.2,
+                         scaling=2,
+                         n_groups = 200,
+                         backward_pass_repeats = 1,
+                         local_search_steps = 500,
+                         extract = "greedy",
+                         exhaustive_width=4,
+                         repair="guided",
+                         use_ranking="true",
+                         extra_args=""):
+    job_name = f"{name}-{len(jobs)}"
+    cmd = [
+        ulimit_stanza,
+        f"{build_dir}/bin/metric_synth_cad.exe -max-cost {max_cost} -verbosity 1",
+        f"-group-threshold {group_threshold} -scaling {scaling} -n-groups {n_groups}",
+        f"-out {job_name}.json -backward-pass-repeats {backward_pass_repeats}",
+        f"-local-search-steps {local_search_steps} -extract {extract}",
+        f"-exhaustive-width {exhaustive_width} -repair {repair} -use-ranking {use_ranking}"
+        f"{extra_args} < {bench_file} 2> {job_name}.log\n"
+    ]
+    return ' '.join(cmd)
+
 if run_metric:
     for (d, max_cost) in benchmarks:
         for f in glob.glob(base_dir + '/bench/cad_ext/' + d + '/*'):
-            # standard
-            job_name = f"metric-{len(jobs)}"
-            cmd = [
-                ulimit_stanza,
-                f"{build_dir}/bin/metric_synth_cad.exe -max-cost {max_cost} -verbosity 1",
-                f"-group-threshold 0.2 -scaling 2 -n-groups 200",
-                f"-out {job_name}.json -backward-pass-repeats 20",
-                f"-local-search-steps 500 < {f} 2> {job_name}.log\n"
-            ]
-            cmd = ' '.join(cmd)
-            jobs.append(cmd)
+            jobs.append(build_metric_command(f, max_cost))
 
 if run_ablations:
     for (d, max_cost) in [('generated', 35)]:
         for f in glob.glob(base_dir + '/bench/cad_ext/' + d + '/*'):
-            for n_groups in [200]:
-                # extract random
-                if run_extract_ablation and run_extract_random:
-                    job_name = f"metric-extractrandom-{len(jobs)}"
-                    cmd = [
-                        ulimit_stanza,
-                        f"{build_dir}/bin/metric_synth_cad.exe -max-cost {max_cost} -verbosity 1",
-                        f"-group-threshold 0.2 -scaling 2 -n-groups {n_groups} -extract random",
-                        f"-out {job_name}.json -backward-pass-repeats 1",
-                        f"-local-search-steps 500 < {f} 2> {job_name}.log\n"
-                    ]
-                    cmd = ' '.join(cmd)
-                    jobs.append(cmd)
+            # extract random
+            if run_extract_ablation and run_extract_random:
+                jobs.append(build_metric_command(f, max_cost, name="metric-extractrandom", extract="random"))
 
-                # extract centroid
-                if run_extract_ablation and run_extract_centroid:
-                    job_name = f"metric-extractcentroid-{len(jobs)}"
-                    cmd = [
-                        ulimit_stanza,
-                        f"{build_dir}/bin/metric_synth_cad.exe -max-cost {max_cost} -verbosity 1",
-                        f"-group-threshold 0.2 -scaling 2 -n-groups {n_groups} -extract centroid",
-                        f"-out {job_name}.json -backward-pass-repeats 1",
-                        f"-local-search-steps 500 < {f} 2> {job_name}.log\n"
-                    ]
-                    cmd = ' '.join(cmd)
-                    jobs.append(cmd)
+            # extract centroid
+            if run_extract_ablation and run_extract_centroid:
+                jobs.append(build_metric_command(f, max_cost, name="metric-extractcentroid", extract="centroid"))
 
-                # extract local
-                if run_extract_ablation and run_extract_greedy:
-                    job_name = f"metric-extractgreedy-{len(jobs)}"
-                    cmd = [
-                        ulimit_stanza,
-                        f"{build_dir}/bin/metric_synth_cad.exe -max-cost {max_cost} -verbosity 1",
-                        f"-group-threshold 0.2 -scaling 2 -n-groups {n_groups} -extract greedy",
-                        f"-out {job_name}.json -backward-pass-repeats 1",
-                        f"-local-search-steps 500 < {f} 2> {job_name}.log\n"
-                    ]
-                    cmd = ' '.join(cmd)
-                    jobs.append(cmd)
+            # extract local
+            if run_extract_ablation and run_extract_greedy:
+                jobs.append(build_metric_command(f, max_cost, name="metric-extractgreedy", extract="greedy"))
 
-                # extract exhaustive
-                if run_extract_ablation and run_extract_exhaustive:
-                    job_name = f"metric-exhaustive-{len(jobs)}"
-                    cmd = [
-                        ulimit_stanza,
-                        f"{build_dir}/bin/metric_synth_cad.exe -max-cost {max_cost} -verbosity 1",
-                        f"-group-threshold 0.2 -scaling 2 -n-groups {n_groups} -extract exhaustive",
-                        f"-out {job_name}.json -backward-pass-repeats 1",
-                        f"-local-search-steps 500 < {f} 2> {job_name}.log\n"
-                    ]
-                    cmd = ' '.join(cmd)
-                    jobs.append(cmd)
+            # extract exhaustive
+            if run_extract_ablation and run_extract_exhaustive:
+                for width in [2, 4, 8, 16]:
+                    jobs.append(build_metric_command(f, max_cost, name="metric-exhaustive",
+                                                     extract="exhaustive", exhaustive_width=width))
 
-                # repair random
-                if run_repair_ablation:
-                    job_name = f"metric-repairrandom-{len(jobs)}"
-                    cmd = [
-                        ulimit_stanza,
-                        f"{build_dir}/bin/metric_synth_cad.exe -max-cost {max_cost} -verbosity 1",
-                        f"-group-threshold 0.2 -scaling 2 -n-groups {n_groups} -repair random",
-                        f"-out {job_name}.json -backward-pass-repeats 1",
-                        f"-local-search-steps 500 < {f} 2> {job_name}.log\n"
-                    ]
-                    cmd = ' '.join(cmd)
-                    jobs.append(cmd)
+            # repair random
+            if run_repair_ablation:
+                jobs.append(build_metric_command(f, max_cost, name="metric-repairrandom", repair="random"))
 
-                # no rank
-                if run_rank_ablation:
-                    job_name = f"metric-norank-{len(jobs)}"
-                    cmd = [
-                        ulimit_stanza,
-                        f"{build_dir}/bin/metric_synth_cad.exe -max-cost {max_cost} -verbosity 1",
-                        f"-group-threshold 0.2 -scaling 2 -n-groups {n_groups} -use-ranking false",
-                        f"-out {job_name}.json -backward-pass-repeats 1",
-                        f"-local-search-steps 500 < {f} 2> {job_name}.log\n"
-                    ]
-                    cmd = ' '.join(cmd)
-                    jobs.append(cmd)
+            # no rank
+            if run_rank_ablation:
+                jobs.append(build_metric_command(f, max_cost, name="metric-norank", use_ranking="false"))
 
-                # no cluster
-                if run_cluster_ablation:
-                    job_name = f"metric-nocluster-{len(jobs)}"
-                    cmd = [
-                        ulimit_stanza,
-                        f"{build_dir}/bin/metric_synth_cad.exe -max-cost {max_cost} -verbosity 1",
-                        f"-group-threshold 0.2 -scaling 2 -n-groups {n_groups} -group-threshold 0.0",
-                        f"-out {job_name}.json -backward-pass-repeats 1 -use-beam-search",
-                        f"-local-search-steps 500 < {f} 2> {job_name}.log\n"
-                    ]
-                    cmd = ' '.join(cmd)
-                    jobs.append(cmd)
+            # no cluster
+            if run_cluster_ablation:
+                jobs.append(build_metric_command(f, max_cost, name="metric-nocluster",
+                                                 group_threshold=0.0, extra_args="-use-beam-search"))
 
 print('Jobs: ', len(jobs))
 
@@ -228,7 +175,7 @@ if dry_run:
 with open('jobs', 'w') as f:
     f.writelines(jobs)
 
-parallel --will-cite --eta -j 40 --joblog joblog :::: jobs
+parallel --will-cite --eta -j 32 --joblog joblog :::: jobs
 
 # Local Variables:
 # mode: python
