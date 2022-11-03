@@ -26,15 +26,16 @@ module Params = struct
     load_search_space : string option;
     use_beam_search : bool; (* if true, then disable clustering *)
     use_ranking : bool; (* if false, disable ranking clustered states *)
-    extract : [ `Greedy | `Random ];
+    extract : [ `Greedy | `Random | `Exhaustive ];
     repair : [ `Guided | `Random ]; (* if true, do not use distance to guide repair *)
     output_file : string;
+    exhaustive_width : int;
   }
   [@@deriving yojson]
 
   let create ~group_threshold ~max_cost ~local_search_steps ~backward_pass_repeats
       ~verbosity ~validate ~n_groups ~dump_search_space ~load_search_space
-      ~use_beam_search ~use_ranking ~extract ~repair ~output_file =
+      ~use_beam_search ~use_ranking ~extract ~repair ~output_file ~exhaustive_width =
     {
       validate;
       local_search_steps;
@@ -51,6 +52,7 @@ module Params = struct
       extract;
       repair;
       output_file;
+      exhaustive_width;
     }
 
   let cmd =
@@ -84,7 +86,7 @@ module Params = struct
           ~doc:" ranking during XFTA construction"
       and extract =
         flag "-extract"
-          (optional_with_default "greedy" string)
+          (optional_with_default "exhaustive" string)
           ~doc:" method of program extraction"
       and repair =
         flag "-repair"
@@ -96,6 +98,7 @@ module Params = struct
           match extract with
           | "greedy" -> `Greedy
           | "random" -> `Random
+          | "exhaustive" -> `Exhaustive
           | _ -> raise_s [%message "unexpected extraction method" (extract : string)]
         in
         let repair =
@@ -106,7 +109,7 @@ module Params = struct
         in
         create ~max_cost ~group_threshold ~local_search_steps ~backward_pass_repeats
           ~verbosity ~validate ~n_groups ~dump_search_space ~load_search_space
-          ~use_beam_search ~use_ranking ~extract ~repair ~output_file]
+          ~use_beam_search ~use_ranking ~extract ~repair ~output_file ~exhaustive_width:16]
 end
 
 let params = Set_once.create ()
@@ -133,6 +136,9 @@ let[@inline] backward_pass_repeats () =
 
 let[@inline] local_search_steps () =
   (Set_once.get_exn params [%here]).Params.local_search_steps
+
+let[@inline] exhaustive_width () =
+  (Set_once.get_exn params [%here]).Params.exhaustive_width
 
 let max_height = max_cost
 
@@ -409,6 +415,9 @@ let run_extract_untimed eval class_ =
   match extract () with
   | `Greedy -> S.local_greedy search_state (max_height ()) eval target_distance class_
   | `Random -> S.random search_state (max_height ()) class_
+  | `Exhaustive ->
+      S.exhaustive ~width:(exhaustive_width ()) search_state (max_height ()) eval
+        target_distance class_
 
 let run_extract eval class_ =
   Synth_utils.timed (`Add stats.extract_time) (fun () -> run_extract_untimed eval class_)
@@ -444,16 +453,11 @@ let synthesize () =
 
     Log.log 1 (fun m -> m "Starting backwards pass");
 
-    let valid_classes =
+    let classes =
       S.classes search_state
-      |> Iter.filter (fun c -> [%equal: Type.t] Type.output (S.Class.type_ c))
+      |> Iter.filter (fun c -> [%compare.equal: Type.t] Tower (S.Class.type_ c))
       |> Iter.map (fun c -> (target_distance @@ S.Class.value c, c))
-    in
-    let classes_ =
-      match extract () with
-      | `Greedy ->
-          valid_classes |> Iter.sort ~cmp:(fun (d, _) (d', _) -> [%compare: float] d d')
-      | `Random -> valid_classes |> Iter.to_list |> List.permute |> Iter.of_list
+      |> Iter.sort ~cmp:(fun (d, _) (d', _) -> [%compare: float] d d')
     in
     Iter.iteri
       (fun i (d, (class_ : S.Class.t)) ->
@@ -492,7 +496,7 @@ let synthesize () =
                  Log.log 0 (fun m -> m "local search iters %d" local_search_iters);
                  Log.log 0 (fun m -> m "backwards pass iters %d" backwards_pass_iters);
                  raise (Done p))))
-      classes_;
+      classes;
     write_output None
   with Done p ->
     Timer.stop stats.runtime;
