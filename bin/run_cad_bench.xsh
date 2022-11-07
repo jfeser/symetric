@@ -5,27 +5,23 @@ import json
 import random
 
 dry_run = False
-run_metric = False
+run_metric = True
 run_ablations = True
 run_exhaustive = False
 run_sketch = False
 run_abstract = False
 
 run_extract_ablation = True
-run_repair_ablation = False
-run_rank_ablation = False
-run_cluster_ablation = False
-
-run_extract_random = True
-run_extract_greedy = True
-run_extract_centroid = True
-run_extract_exhaustive = True
+run_repair_ablation = True
+run_rank_ablation = True
+run_cluster_ablation = True
+run_distance_ablation = True
 
 mlimit = 4 * 1000000 # 4GB
 tlimit = 60 * 60     # 1hr
 
 base_dir = $(pwd).strip()
-build_dir = base_dir + "/_build/default/"
+build_dir = base_dir + "/../_build/default/symetric/"
 runs_dir = base_dir + "/runs/"
 print(base_dir, build_dir, runs_dir)
 
@@ -110,8 +106,8 @@ def build_metric_command(bench_file,
                          n_groups = 200,
                          backward_pass_repeats = 1,
                          local_search_steps = 500,
-                         extract = "greedy",
-                         exhaustive_width=4,
+                         extract = "exhaustive",
+                         exhaustive_width=16,
                          repair="guided",
                          use_ranking="true",
                          extra_args=""):
@@ -122,7 +118,7 @@ def build_metric_command(bench_file,
         f"-group-threshold {group_threshold} -scaling {scaling} -n-groups {n_groups}",
         f"-out {job_name}.json -backward-pass-repeats {backward_pass_repeats}",
         f"-local-search-steps {local_search_steps} -extract {extract}",
-        f"-exhaustive-width {exhaustive_width} -repair {repair} -use-ranking {use_ranking}"
+        f"-exhaustive-width {exhaustive_width} -repair {repair} -use-ranking {use_ranking}",
         f"{extra_args} < {bench_file} 2> {job_name}.log\n"
     ]
     return ' '.join(cmd)
@@ -136,22 +132,8 @@ if run_ablations:
     for (d, max_cost) in [('generated', 35)]:
         for f in glob.glob(base_dir + '/bench/cad_ext/' + d + '/*'):
             # extract random
-            if run_extract_ablation and run_extract_random:
+            if run_extract_ablation:
                 jobs.append(build_metric_command(f, max_cost, name="metric-extractrandom", extract="random"))
-
-            # extract centroid
-            if run_extract_ablation and run_extract_centroid:
-                jobs.append(build_metric_command(f, max_cost, name="metric-extractcentroid", extract="centroid"))
-
-            # extract local
-            if run_extract_ablation and run_extract_greedy:
-                jobs.append(build_metric_command(f, max_cost, name="metric-extractgreedy", extract="greedy"))
-
-            # extract exhaustive
-            if run_extract_ablation and run_extract_exhaustive:
-                for width in [2, 4, 8, 16]:
-                    jobs.append(build_metric_command(f, max_cost, name="metric-exhaustive",
-                                                     extract="exhaustive", exhaustive_width=width))
 
             # repair random
             if run_repair_ablation:
@@ -165,6 +147,11 @@ if run_ablations:
             if run_cluster_ablation:
                 jobs.append(build_metric_command(f, max_cost, name="metric-nocluster",
                                                  group_threshold=0.0, extra_args="-use-beam-search"))
+
+            # simple distance
+            if run_distance_ablation:
+                jobs.append(build_metric_command(f, max_cost, name="metric-simpledist",
+                                                 extra_args="-distance jaccard"))
 
 print('Jobs: ', len(jobs))
 

@@ -3,7 +3,6 @@ import os
 import json
 import re
 from tqdm import tqdm
-import matplotlib.pyplot as plt
 
 
 def runtime(results):
@@ -51,6 +50,7 @@ def load(run_dir):
         "extract_time",
         "rank_time",
         "expansion_time",
+        "exhaustive_width",
     ]
     results = []
     for fn in tqdm(os.listdir(run_dir)):
@@ -66,6 +66,10 @@ def load(run_dir):
             thresh = float(bench_json["params"]["group_threshold"])
             local_search_steps = bench_json["params"]["local_search_steps"]
             backward_pass_repeats = bench_json["params"]["backward_pass_repeats"]
+            if "exhaustive_width" in bench_json["params"]:
+                exhaustive_width = bench_json["params"]["exhaustive_width"]
+            else:
+                exhaustive_width = None
             if "extract" in bench_json["params"]:
                 extract = bench_json["params"]["extract"][0]
             else:
@@ -87,6 +91,7 @@ def load(run_dir):
             repair = None
             rank = None
             backward_pass_repeats = None
+            exhaustive_width = None
 
         if "stats" in bench_json:
             repair_time = bench_json["stats"].get("repair_time")
@@ -128,117 +133,13 @@ def load(run_dir):
             extract_time,
             rank_time,
             expansion_time,
+            exhaustive_width,
         ]
         results += [result_row]
 
     df = pd.DataFrame(results, columns=header)
     df = df.sort_values(["bench", "method"])
     return df
-
-
-def plot_ablations(df):
-    plt.tight_layout()
-    fig = plt.figure(figsize=(9, 3.2))
-    ax = fig.add_subplot(1, 1, 1)
-
-    std = df[
-        (df["extract"] == "Greedy")
-        & (df["repair"] == "Guided")
-        & (df["threshold"] > 0)
-        & (df["rank"])
-    ]["runtime"]
-    std = std.sort_values().fillna(1e10)
-    ax.plot(
-        [0] + list(std), range(0, len(std) + 1), label=r"\textsc{SyMetric}", color="C2"
-    )
-
-    nocluster = df[
-        (df["extract"] == "Greedy")
-        & (df["repair"] == "Guided")
-        & (df["threshold"] == 0)
-        & (df["rank"])
-    ]["runtime"]
-    nocluster = nocluster.sort_values().fillna(1e10)
-    ax.plot(
-        [0] + list(nocluster),
-        range(0, len(nocluster) + 1),
-        label=r"\textsc{NoCluster}",
-        color="C0",
-    )
-
-    norank = df[
-        (df["extract"] == "Greedy")
-        & (df["repair"] == "Guided")
-        & (df["threshold"] > 0)
-        & (~df["rank"])
-    ]["runtime"]
-    norank = norank.sort_values().fillna(1e10)
-    ax.plot(
-        [0] + list(norank),
-        range(0, len(norank) + 1),
-        label=r"\textsc{NoRank}",
-        color="C1",
-    )
-
-    extractrandom = df[
-        (df["extract"] == "Random")
-        & (df["repair"] == "Guided")
-        & (df["threshold"] > 0)
-        & (df["rank"])
-    ]["runtime"]
-    extractrandom = extractrandom.sort_values().fillna(1e10)
-    ax.plot(
-        [0] + list(extractrandom),
-        range(0, len(extractrandom) + 1),
-        label=r"\textsc{ExtractRandom}",
-        color="C5",
-    )
-
-    repairrandom = df[
-        (df["extract"] == "Greedy")
-        & (df["repair"] == "Random")
-        & (df["threshold"] > 0)
-        & (df["rank"])
-    ]["runtime"]
-    repairrandom = repairrandom.sort_values().fillna(1e10)
-    ax.plot(
-        [0] + list(repairrandom),
-        range(0, len(repairrandom) + 1),
-        label=r"\textsc{RepairRandom}",
-        color="C4",
-    )
-
-    ax.set_ylabel("Benchmarks solved")
-    ax.set_xlabel("Time (s)")
-    ax.set_title(r"Effect of Ablations on \textsc{SyMetric} Performance")
-    return ax
-
-
-def method_table(df, **kwargs):
-    df = df[df["success"]].agg(["median", "max"])
-    print(
-        r"""
-\begin{tabular}{lrrrrrr}
-\toprule
-Benchmark & \multicolumn{2}{c}{\textsc{ConstructXFTA}} & \multicolumn{2}{c}{\textsc{Extract}} & \multicolumn{2}{c}{\textsc{Repair}} \\
-& Median & Max & Median & Max & Median & Max \\
-\midrule
-""",
-        **kwargs
-    )
-    print(
-        "All & {:.1f} & {:.1f} & {:.1f} & {:.1f} & {:.1f} & {:.1f} \\\\".format(
-            float(df.loc["median"]["xfta_time"]),
-            float(df.loc["max"]["xfta_time"]),
-            float(df.loc["median"]["extract_time"]),
-            float(df.loc["max"]["extract_time"]),
-            float(df.loc["median"]["repair_time"]),
-            float(df.loc["max"]["repair_time"]),
-        ),
-        **kwargs
-    )
-    print(r"\bottomrule", **kwargs)
-    print(r"\end{tabular}", **kwargs)
 
 
 def construct_table(df, **kwargs):
@@ -270,15 +171,10 @@ Benchmark & \multicolumn{2}{c}{Expansion} & \multicolumn{2}{c}{Clustering} & \mu
 
 def classify_method(x):
     if "metric_synth_cad" in x:
-        if (
-            "-extract random" in x
-            or "-use-ranking false" in x
-            or "-repair random" in x
-            or "-use-beam-search" in x
-            or "-n-groups 400" in x
-        ):
+        if re.search("metric-[0-9]+.json", x) is not None:
+            return "metric"
+        else:
             return "ablation"
-        return "metric"
     if "abs_synth_cad" in x:
         if "-no-repl" in x:
             return "abstract_norepl"
@@ -313,7 +209,7 @@ def classify_bench(x):
     return "Hand-written"
 
 
-out_re = re.compile("metric-[0-9]+\.json")
+out_re = re.compile("[a-z-]+-[0-9]+\.json")
 
 
 def load_joblog(run_dir, name="joblog"):
@@ -330,6 +226,12 @@ def load_joblog(run_dir, name="joblog"):
                 return "time"
             if "MEM_RSS" in log:
                 return "memory"
+
+        if x["method"] == "metric":
+            out_file = out_re.search(x["Command"]).group(0)
+            with open(run_dir + "/" + out_file, "r") as f:
+                out = json.load(f)
+                return "failure" if out["program"] is None else "success"
 
         e = x["Exitval"]
         if e == 0:

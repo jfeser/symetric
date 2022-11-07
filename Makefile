@@ -1,4 +1,4 @@
-REMOTE=ec2-user@ec2-3-92-91-46.compute-1.amazonaws.com
+REMOTE=ec2-user@ec2-3-80-213-96.compute-1.amazonaws.com
 PREFIX=/home/ec2-user/
 
 .PHONY: get-runs send-code send-container build-table

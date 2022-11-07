@@ -6,9 +6,9 @@ import os
 import random
 
 dry_run = False
-run_abs = True
+run_abs = False
 run_enum = False
-run_metric = False
+run_metric = True
 run_extract_ablation = False
 run_repair_ablation = False
 run_rank_ablation = False
@@ -18,7 +18,7 @@ mlimit = 4 * 1000000 # 4GB
 tlimit = 300          # 5min
 
 base_dir = $(pwd).strip()
-build_dir = base_dir + "/_build/default/"
+build_dir = base_dir + "/../_build/default/symetric/"
 runs_dir = base_dir + "/runs/"
 print(base_dir, build_dir, runs_dir)
 
@@ -41,13 +41,13 @@ if not dry_run:
 
 jobs = []
 
-def mk_cmd(max_cost, n_groups, group_threshold, sketch, job_name, extra_args, bench_file):
+def mk_cmd(sketch, job_name, bench_file, max_cost=20, n_groups=200, group_threshold=0.3, extra_args=""):
     return ' '.join([
         f"ulimit -v {mlimit} -c 0; timeout {tlimit}s",
         f"{build_dir}/bin/metric_synth_regex.exe -max-cost {max_cost} -verbosity 1",
         f"-group-threshold {group_threshold} -n-groups {n_groups}",
         f"-sketch '{sketch}'",
-        f"-out {job_name}.json -backward-pass-repeats 10",
+        f"-out {job_name}.json -backward-pass-repeats 1",
         extra_args,
         f"-local-search-steps 100 < {bench_file} 2> {job_name}.log\n"
     ])
@@ -79,30 +79,10 @@ for f in glob.glob(base_dir + '/vendor/regel/exp/so/benchmark/*'):
             ])
             jobs.append(cmd)
 
-        for (c, g) in [(20, 200)]:
-            for t in [0.3]:
-                def mk_simple_cmd(job_name, extra_args=""):
-                    return mk_cmd(c, g, t, sketch, job_name, extra_args, f)
+        # standard
+        if run_metric:
+            jobs.append(mk_cmd(sketch, f"metric-regex-standard-{len(jobs)}", f))
 
-                # standard
-                if run_metric:
-                    jobs.append(mk_simple_cmd(f"metric-regex-standard-{len(jobs)}"))
-
-                # extract random
-                if run_extract_ablation:
-                    jobs.append(mk_simple_cmd(f"metric-regex-extractrandom-{len(jobs)}", "-extract random"))
-
-                # repair random
-                if run_repair_ablation:
-                    jobs.append(mk_simple_cmd(f"metric-regex-repairrandom-{len(jobs)}", "-repair random"))
-
-                # no rank
-                if run_rank_ablation:
-                    jobs.append(mk_simple_cmd(f"metric-regex-norank-{len(jobs)}", "-use-ranking false"))
-
-            # no rank
-            if run_cluster_ablation:
-                jobs.append(mk_cmd(c, g, 0, sketch, f"metric-regex-nocluster-{len(jobs)}", "", f))
 
 print('Jobs: ', len(jobs))
 
@@ -113,7 +93,7 @@ if dry_run:
 with open('jobs', 'w') as f:
     f.writelines(jobs)
 
-parallel --will-cite --eta -j 60 --joblog joblog :::: jobs
+parallel --will-cite --eta --joblog joblog :::: jobs
 
 # Local Variables:
 # mode: python
