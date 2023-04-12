@@ -33,3 +33,7 @@ job_name = "metric-{2}-{3}-{4}-{5}-{1/}"
 cmd = "%s/bin/metric_synth_cad.exe -max-cost {2} -verbosity 1 -group-threshold {5} -scaling 2 -n-groups {4} -dump-search-space %s.bin -out %s.json < {1} 2> %s.log" % (build_dir, job_name, job_name, job_name)
 print('Cmd: ', cmd)
 parallel -j 20 --eta --joblog metric_joblog --timeout 10m --colsep ' ' --memsuspend 8G @(cmd) :::: jobs
+
+# Local Variables:
+# mode: python
+# End:

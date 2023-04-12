@@ -22,7 +22,7 @@
         symetric = ocamlPkgs.buildDunePackage rec {
           pname = "symetric";
           version = "0.1";
-          useDune3 = true;
+          duneVersion = "3";
           minimalOCamlVersion = "4.13";
           nativeBuildInputs = [
             ocamlPkgs.core
@@ -36,9 +36,9 @@
             ocamlPkgs.iter
             ocamlPkgs.bheap
             ocamlPkgs.logs
-            combinat.defaultPackage.${system}
-            bitarray.defaultPackage.${system}
-            vp-tree.defaultPackage.${system}
+            # combinat.defaultPackage.${system}
+            # bitarray.defaultPackage.${system}
+            # vp-tree.defaultPackage.${system}
           ];
           propagatedBuildInputs =
             [ ocamlPkgs.base ocamlPkgs.fmt ocamlPkgs.sek ];
@@ -48,8 +48,13 @@
         packages = { symetric = symetric; };
         defaultPackage = symetric;
         devShell = pkgs.mkShell {
-          nativeBuildInputs =
-            [ pkgs.ocamlformat pkgs.opam pkgs.ocamlPackages.ocaml-lsp ];
+          nativeBuildInputs = [
+            pkgs.ocamlformat
+            pkgs.opam
+            pkgs.ocamlPackages.ocaml-lsp
+            pkgs.openai
+            pkgs.python310Packages.docopt
+          ];
           inputsFrom = [ symetric ];
         };
       });

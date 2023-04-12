@@ -2,14 +2,15 @@
 
 import glob
 import json
+import os
 import random
 
 dry_run = False
-run_metric = True
-run_ablations = True
+run_metric = False
+run_ablations = False
 run_exhaustive = False
-run_sketch = False
 run_abstract = False
+run_llm = True
 
 run_extract_ablation = True
 run_repair_ablation = True
@@ -71,33 +72,6 @@ if run_exhaustive:
             cmd = ' '.join(cmd) + '\n'
             jobs.append(cmd)
 
-if run_sketch:
-    f = base_dir + '/bench/cad_ext/small/skew'
-    max_cost = 20
-    par = False
-    parallel_stanza = '--slv-p-cpus 2 --slv-parallel' if par else ''
-    if max_cost <= 10:
-        height = 2
-    elif max_cost <= 20:
-        height = 4
-    else:
-        height = 6
-
-    bench_name = $(basename @(f)).strip()
-    job_name = f"sketch-{bench_name}-{len(jobs)}"
-    cmd = [
-        f"{build_dir}/bin/pixels.exe -scaling 2 < {f} > {job_name}.in;",
-        f"sed 's/INFILE/{job_name}.in/' cad.sk > {job_name}.sk;",
-        f"./timeout -t {tlimit} -s {mlimit}",
-        f"sketch -V5 --fe-output-test --fe-def SCALING=2 --fe-def DEPTH={height}",
-        f"--bnd-inbits 10 --bnd-unroll-amnt 5 --bnd-cbits 4 --bnd-int-range 3000 --bnd-inline-amnt {height + 1}",
-        f"--slv-nativeints",
-        parallel_stanza,
-        f"{job_name}.sk &> {job_name}.log"
-    ]
-    cmd = ' '.join(cmd) + '\n'
-    jobs.append(cmd)
-
 def build_metric_command(bench_file,
                          max_cost,
                          name="metric",
@@ -127,6 +101,20 @@ if run_metric:
     for (d, max_cost) in benchmarks:
         for f in glob.glob(base_dir + '/bench/cad_ext/' + d + '/*'):
             jobs.append(build_metric_command(f, max_cost))
+
+
+def build_llm_command(bench_file, repeat, name="llm"):
+    bench_name = os.path.basename(bench_file)
+    job_name = f"{name}-{bench_name}-{repeat}"
+    return f"{base_dir}/bin/run_cad_gpt.py < {bench_file} > {job_name}.out\n"
+
+
+if run_llm:
+    for (d, _) in benchmarks:
+        for f in glob.glob(base_dir + '/bench/cad_ext/' + d + '/*'):
+            for i in range(10):
+                jobs.append(build_llm_command(f, i))
+
 
 if run_ablations:
     for (d, max_cost) in [('generated', 35)]:
@@ -162,7 +150,7 @@ if dry_run:
 with open('jobs', 'w') as f:
     f.writelines(jobs)
 
-parallel --will-cite --eta -j 32 --joblog joblog :::: jobs
+parallel --will-cite --eta -j 1 --joblog joblog :::: jobs
 
 # Local Variables:
 # mode: python

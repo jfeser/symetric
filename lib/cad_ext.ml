@@ -1,4 +1,5 @@
 let memoize = false
+let error_on_trivial = ref true
 
 module Type = struct
   type t = Int | Rep_count | Scene | Error [@@deriving compare, equal, hash, sexp]
@@ -57,9 +58,9 @@ module Value = struct
   let[@inline] is_error = function Error -> true | _ -> false
 
   module Ctx = struct
-    type t = { size : Scene2d.Dim.t; unsound_pruning : bool }
+    type t = { size : Scene2d.Dim.t }
 
-    let create ?(unsound_pruning = false) size = { size; unsound_pruning }
+    let create size = { size }
   end
 
   let pp fmt = function
@@ -75,35 +76,29 @@ module Value = struct
     | Int x, [] -> Int x
     | Rep_count x, [] -> Rep_count x
     | Circle, [ Int x; Int y; Int radius ]
-      when x - radius < 0
-           || x + radius >= S.Dim.xres size
-           || y - radius < 0
-           || y + radius >= S.Dim.yres size
-           || radius = 0 ->
+      when !error_on_trivial
+           && (x - radius < 0
+              || x + radius >= S.Dim.xres size
+              || y - radius < 0
+              || y + radius >= S.Dim.yres size
+              || radius = 0) ->
         Error
     | Circle, [ Int center_x; Int center_y; Int radius ] ->
         Scene (S.circle size center_x center_y radius)
     | Rect, [ Int lo_left_x; Int lo_left_y; Int hi_right_x; Int hi_right_y ]
-      when lo_left_x >= hi_right_x || lo_left_y >= hi_right_y ->
+      when !error_on_trivial && (lo_left_x >= hi_right_x || lo_left_y >= hi_right_y) ->
         Error
     | Rect, [ Int lo_left_x; Int lo_left_y; Int hi_right_x; Int hi_right_y ] ->
         Scene (S.rect size lo_left_x lo_left_y hi_right_x hi_right_y)
     | (Inter | Union | Sub), ([ Error; _ ] | [ _; Error ]) -> Error
-    | Inter, [ Scene s; Scene s' ] ->
-        let s'' = S.inter s s' in
-        if ctx.unsound_pruning && S.(s = s'' || s' = s'') then Error else Scene s''
-    | Union, [ Scene s; Scene s' ] ->
-        let s'' = S.union s s' in
-        if ctx.unsound_pruning && S.(s = s'' || s' = s'') then Error else Scene s''
-    | Sub, [ Scene s; Scene s' ] ->
-        let s'' = S.sub s s' in
-        if ctx.unsound_pruning && S.(s = s'' || s' = s'') then Error else Scene s''
+    | Inter, [ Scene s; Scene s' ] -> Scene (S.inter s s')
+    | Union, [ Scene s; Scene s' ] -> Scene (S.union s s')
+    | Sub, [ Scene s; Scene s' ] -> Scene (S.sub s s')
     | Repl, [ Error; Int _; Int _; Rep_count _ ] -> Error
-    | Repl, [ Scene _; Int dx; Int dy; Rep_count c ] when (dx = 0 && dy = 0) || c <= 1 ->
+    | Repl, [ Scene _; Int dx; Int dy; Rep_count c ]
+      when !error_on_trivial && ((dx = 0 && dy = 0) || c <= 1) ->
         Error
-    | Repl, [ Scene s; Int dx; Int dy; Rep_count ct ] ->
-        let s' = S.repeat s dx dy ct in
-        if ctx.unsound_pruning && S.(s = s') then Error else Scene s'
+    | Repl, [ Scene s; Int dx; Int dy; Rep_count ct ] -> Scene (S.repeat s dx dy ct)
     | _ -> raise_s [%message "unexpected arguments" (op : Op.t) (args : t list)]
 
   let mk_eval_memoized () =

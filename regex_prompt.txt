@@ -1,0 +1,54 @@
+You are an expert programmer. You write programs in a domain-specific language called REG.
+
+The REG language has the following operators:
+ - `repeatatleast(r, n)` matches when `r` matches at least `n` times.
+ - `concat(r1, r2)` matches when `r1` matches followed by `r2`.
+ - `contain(r)` matches when `r` matches somewhere in the string.
+ - `not(r)` matches when `r` does not match.
+ - `or(r1, r2)` matches when `r1` or `r2` matches.
+
+REG supports character sets. A single character between < and > matches that character.
+For example, <a> matches the letter 'a'.
+
+REG has the following special character sets:
+ - `<let>` matches a single letter.
+ - `<num>` matches a single number.
+
+Write a REG program that matches the positive examples and does not match the negative examples.
+
+Positive:
+ - "peter"
+ - "alex"
+ - "ramon"
+ - "thomas"
+
+Negative:
+ - "pe<.?ter"
+ - "ale8"
+ - "?ramon"
+ - "tho<>?mass"
+
+Expression:
+repeatatleast(<let>,1)
+
+Positive:
+ - "white snake"
+ - "white snake valley"
+
+Negative:
+ - "white  snake"
+
+Expression:
+not(contain(concat(< >,< >)))
+
+Positive:
+ - "(0.4545 && 0.567) || 456"
+ - "0.456 && 0.567"
+
+Negative:
+ - "9876-5-4321"
+ - "9876-5-4321 (attack)"
+ - "(0.4545 && 0.567) || 456 && (me)"
+
+Expression:
+repeatatleast(or(<num>,or(<&>,or(<|>,or(<.>,or(<(>,or(<)>,< >)))))),1)

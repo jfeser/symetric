@@ -3,10 +3,7 @@ open Symetric
 open Std
 open Cad_ext
 
-let ctx =
-  Value.Ctx.create ~unsound_pruning:true
-    (Scene2d.Dim.create ~xres:16 ~yres:16 ~scaling:2 ())
-
+let ctx = Value.Ctx.create (Scene2d.Dim.create ~xres:16 ~yres:16 ~scaling:2 ())
 let eval = Program.eval (Value.eval ctx)
 
 let mean_primitive_distance prog =

@@ -12,13 +12,20 @@ let () =
         flag "-scene-height" (optional_with_default 16 int) ~doc:" scene height in pixels"
       and scaling =
         flag "-scaling" (optional_with_default 1 int) ~doc:" scene scaling factor"
+      and numeric =
+        flag "-numeric" no_arg ~doc:" print numeric output instead of ascii art"
       in
       fun () ->
-        let ectx =
-          Value.Ctx.create
-          @@ Scene2d.Dim.create ~xres:scene_width ~yres:scene_height ~scaling ()
-        in
+        let dim = Scene2d.Dim.create ~xres:scene_width ~yres:scene_height ~scaling () in
+        let ectx = Value.Ctx.create dim in
         let p = parse @@ Sexp.input_sexp In_channel.stdin in
-        Fmt.pr "cost=%d\n" (Program.size p);
-        Fmt.pr "%a\n" Value.pp @@ Program.eval (Value.eval ectx) p]
+        Cad_ext.error_on_trivial := false;
+        let value = Program.eval (Value.eval ectx) p in
+        if numeric then
+          match value with
+          | Scene s ->
+              Scene2d.to_iter dim s
+              |> Iter.iter (fun ((x, y), v) -> if v then Fmt.pr "%d %d@." x y)
+          | _ -> assert false
+        else Fmt.pr "%a@." Value.pp value]
   |> Command_unix.run

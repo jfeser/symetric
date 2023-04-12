@@ -94,7 +94,7 @@ let pp fmt x =
   let xres = Dim.scaled_xres x.dim in
   Fmt.pf fmt "@[<v>";
   Bitarray.iteri (pixels x) ~f:(fun i b ->
-      if b then Fmt.pf fmt "█" else Fmt.pf fmt ".";
+      if b then Fmt.pf fmt "X" else Fmt.pf fmt ".";
       if i mod xres = xres - 1 then Fmt.pf fmt "@,");
   Fmt.pf fmt "@]"
 
