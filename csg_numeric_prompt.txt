@@ -1,4 +1,5 @@
 You are an expert programmer. You write programs in a domain-specific language called CSG.
+CSG is a language for drawing 2D shapes.
 
 The CSG language has the following operators:
 - `(circle x y r)` draws a circle at position `(x, y)` with radius `r`.
@@ -6,6 +7,10 @@ The CSG language has the following operators:
 - `(union s1 s2)` takes the union of two shapes `s1` and `s2`.
 - `(sub s1 s2)` subtracts `s2` from `s1`.
 - `(repl s dx dy r)` translates a shape by `(dx, dy)`, repeating this translation `r` times. `dx` and `dy` must be nonzero 0 and `r` must be greater than or equal to 1.
+
+Running a CSG program produces a sequence of values "x, y".
+Each value is a point that is inside the CSG shape.
+Only points that are inside the shape are printed.
 
 Write a CSG program that generates the following output.
 

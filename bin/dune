@@ -90,6 +90,20 @@
   (pps ppx_jane)))
 
 (executable
+ (name print_regex)
+ (modules print_regex)
+ (libraries core symetric core_unix.command_unix)
+ (preprocess
+  (pps ppx_jane)))
+
+(executable
+ (name check_regex)
+ (modules check_regex)
+ (libraries core symetric core_unix.command_unix)
+ (preprocess
+  (pps ppx_jane)))
+
+(executable
  (name subprograms)
  (modules subprograms)
  (libraries core symetric core_unix.command_unix)

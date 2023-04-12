@@ -13,6 +13,7 @@ import subprocess
 cur_dir = os.path.dirname(os.path.realpath(__file__))
 
 numeric = True
+visual = False
 prompt_file = (
     cur_dir + "/../" + ("csg_numeric_prompt.txt" if numeric else "csg_prompt.txt")
 )
@@ -46,12 +47,13 @@ def main():
     )
     prog = response.choices[0]["message"]["content"]
     print(prog)
-    # print(
-    #     subprocess.check_output(
-    #         ["_build/default/bin/print_bench.exe", "-scaling", "2"],
-    #         input=prog,
-    #     ).decode("utf-8")
-    # )
+    if visual:
+        print(
+            subprocess.check_output(
+                ["_build/default/bin/print_bench.exe", "-scaling", "2"],
+                input=prog.encode("utf-8"),
+            ).decode("utf-8")
+        )
 
 
 if __name__ == "__main__":

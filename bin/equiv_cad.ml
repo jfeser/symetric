@@ -29,7 +29,7 @@ Returns:
       and scene_height =
         flag "-scene-height" (optional_with_default 16 int) ~doc:" scene height in pixels"
       and scaling =
-        flag "-scaling" (optional_with_default 2 int) ~doc:" scene scaling factor"
+        flag "-scaling" (optional_with_default 1 int) ~doc:" scene scaling factor"
       and p1 = anon ("p1" %: string)
       and p2 = anon ("p2" %: string) in
       fun () ->

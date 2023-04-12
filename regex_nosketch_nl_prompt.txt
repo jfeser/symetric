@@ -22,21 +22,10 @@ REG has the following special character sets:
  - `<cap>` matches capital letters.
  - `<low>` matches lowercase letters.
 
-A REG program conforms to a program sketch if it contains one of the expressions in each hole in the sketch.
-A hole is written ?{r1, r2, r3, ...}.
-A program conforms to this sketch if it contains r1 or r2 or r3.
+Write a REG program that matches the positive examples and does not match the negative examples.
 
-Here are some examples of program sketches:
- - repeatatleast(<let>,1) conforms to the program sketch ?{<let>}
- - repeatatleast(<let>,1) conforms to the program sketch ?{<let>,<a>}
- - repeatatleast(<let>,1) does not conform to the program sketch ?{<num>}
- - repeatatleast(<let>,1) conforms to the program sketch repeatatleast(?{<num>,<let>}, 1)
- - repeatatleast(<let>,1) does not conform to the program sketch repeat(?{<num>,<let>}, 1)
-
-Write a REG program that conforms to the program sketch, matches the positive examples, and does not match the negative examples.
-
-Sketch:
-?{<let>}
+Prompt:
+write a regular expression that only matches strings, no numbers, no special character, just letters from A - Z.
 
 Positive:
  - "peter"
@@ -53,8 +42,8 @@ Negative:
 Program:
 repeatatleast(<let>,1)
 
-Sketch:
-?{or(<&>,<|>),or(<.>,or(<(>,or(<)>,< >)))}
+Prompt:
+write regular expression that allows only digits, characters like "&" "|" "." "(" ")" and spaces
 
 Positive:
  - "(0.4545 && 0.567) || 456"

@@ -8,7 +8,8 @@ import random
 dry_run = False
 run_abs = False
 run_enum = False
-run_metric = True
+run_metric = False
+run_llm = True
 run_extract_ablation = False
 run_repair_ablation = False
 run_rank_ablation = False
@@ -52,6 +53,11 @@ def mk_cmd(sketch, job_name, bench_file, max_cost=20, n_groups=200, group_thresh
         f"-local-search-steps 100 < {bench_file} 2> {job_name}.log\n"
     ])
 
+def build_llm_command(bench_file, name="llm"):
+    bench_name = os.path.basename(bench_file)
+    job_name = f"{name}-{bench_name}"
+    return f"{base_dir}/bin/run_regex_gpt.py < {bench_file} > {job_name}.out\n"
+
 
 for f in glob.glob(base_dir + '/vendor/regel/exp/so/benchmark/*'):
     bench_name = os.path.basename(f)
@@ -59,6 +65,9 @@ for f in glob.glob(base_dir + '/vendor/regel/exp/so/benchmark/*'):
     with open(sketch_file, 'r') as sketch_f:
         sketches = sketch_f.readlines()
         sketches = [s.lstrip('0123456789').strip() for s in sketches]
+
+    if run_llm:
+        jobs.append(build_llm_command(f))
 
     for sketch in sketches:
         if run_abs:
@@ -93,7 +102,7 @@ if dry_run:
 with open('jobs', 'w') as f:
     f.writelines(jobs)
 
-parallel --will-cite --eta --joblog joblog :::: jobs
+parallel --will-cite --eta --joblog joblog -j 1 :::: jobs
 
 # Local Variables:
 # mode: python
