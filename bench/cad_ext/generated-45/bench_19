@@ -1,6 +1,0 @@
-(repl
- (union (repl (circle (6) (7) (3)) (9) (2) (3))
-  (union (circle (9) (11) (2))
-   (union (circle (4) (4) (4))
-    (repl (repl (circle (5) (6) (4)) (5) (0) (4)) (12) (13) (3)))))
- (0) (2) (4))

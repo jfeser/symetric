@@ -44,7 +44,7 @@ def main():
         ],
         max_tokens=100,
     )
-    prog = response.choices[0]["message"]["content"].encode("utf-8").replace(b"`", b"")
+    prog = response.choices[0]["message"]["content"]
     print(prog)
     # print(
     #     subprocess.check_output(

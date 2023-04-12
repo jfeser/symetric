@@ -83,6 +83,13 @@
   (pps ppx_jane)))
 
 (executable
+ (name equiv_cad)
+ (modules equiv_cad)
+ (libraries core symetric core_unix.command_unix)
+ (preprocess
+  (pps ppx_jane)))
+
+(executable
  (name subprograms)
  (modules subprograms)
  (libraries core symetric core_unix.command_unix)
