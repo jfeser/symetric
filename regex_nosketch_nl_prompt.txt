@@ -11,6 +11,11 @@ The REG language has the following operators:
  - `repeatrange(r, min, max)` matches when `r` matches between `min` and `max` times.
  - `optional(r)` matches either `r` or the empty string.
  - `not(r)` matches when `r` does not match.
+ - `startwith(r)` matches when the string starts with `r`.
+ - `endwith(r)` matches when the string ends with `r`.
+ - `contain(r)` matches when the string contains a match of `r`.
+ - `star(r)` matches when `r` matches any number of times.
+ - `sep(r1, r2)` matches when the string consists of matches of `r1` separated by matches of `r2`.
 
 REG supports character sets. A single character between < and > matches that character.
 For example, <a> matches the letter 'a'.
@@ -18,9 +23,14 @@ For example, <a> matches the letter 'a'.
 REG has the following special character sets:
  - `<let>` matches a single letter.
  - `<num>` matches a single number.
- - `<any>` matches any letter.
+ - `<num1-9` matches the numbers from 1 to 9.
+ - `<any>` matches any character.
  - `<cap>` matches capital letters.
  - `<low>` matches lowercase letters.
+ - `<vow>` matches vowels.
+ - `<spec>` matches special characters.
+ - `<alphanum>` matches alphanumeric characters.
+ - `<hex>` matches hexadecimal characters.
 
 Write a REG program that matches the positive examples and does not match the negative examples.
 

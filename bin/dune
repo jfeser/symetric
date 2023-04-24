@@ -104,6 +104,20 @@
   (pps ppx_jane)))
 
 (executable
+ (name print_tower)
+ (modules print_tower)
+ (libraries core symetric core_unix.command_unix)
+ (preprocess
+  (pps ppx_jane)))
+
+(executable
+ (name equiv_tower)
+ (modules equiv_tower)
+ (libraries core symetric core_unix.command_unix)
+ (preprocess
+  (pps ppx_jane)))
+
+(executable
  (name subprograms)
  (modules subprograms)
  (libraries core symetric core_unix.command_unix)

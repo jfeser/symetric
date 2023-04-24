@@ -1,0 +1,3 @@
+#!/usr/bin/sh
+
+../_build/default/bin/enumerate_par_cad.exe -n 10 -max-cost 16 < ../bench/cad_ext/generated/bench_0

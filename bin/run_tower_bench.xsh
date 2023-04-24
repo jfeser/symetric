@@ -7,7 +7,8 @@ import random
 
 dry_run = False
 run_enum = False
-run_metric = True
+run_metric = False
+run_llm = True
 run_extract_ablation = False
 run_repair_ablation = False
 run_rank_ablation = False
@@ -48,6 +49,11 @@ def mk_cmd(job_name, bench_file, extra_args="", max_cost = 40, n_groups=100, gro
         f"< {bench_file} 2> {job_name}.log\n"
     ])
 
+def build_llm_command(bench_file, name="llm"):
+    bench_name = os.path.basename(bench_file)
+    job_name = f"{name}-{bench_name}"
+    return f"{base_dir}/bin/run_tower_gpt.py < {bench_file} > {job_name}.out\n"
+
 jobs = []
 for f in glob.glob(base_dir + '/bench/tower/test*.sexp'):
     bench_name = os.path.basename(f)
@@ -64,6 +70,11 @@ for f in glob.glob(base_dir + '/bench/tower/test*.sexp'):
     # standard
     if run_metric:
         jobs.append(mk_cmd(f"metric-tower-standard-{len(jobs)}", f))
+
+    # standard
+    if run_llm:
+        jobs.append(build_llm_command(f))
+
 
 print('Jobs: ', len(jobs))
 

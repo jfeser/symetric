@@ -1,6 +1,8 @@
-type unop = Not | Startwith | Endwith | Contain | Star | Optional [@@deriving sexp]
-type binop = And | Or | Concat | Sep | Sketch [@@deriving sexp]
-type num = [ `Num of int | `Hole ] [@@deriving sexp]
+type unop = Not | Startwith | Endwith | Contain | Star | Optional
+[@@deriving equal, sexp]
+
+type binop = And | Or | Concat | Sep | Sketch [@@deriving equal, sexp]
+type num = [ `Num of int | `Hole ] [@@deriving equal, sexp]
 
 type 't ast =
   [ `Class of string
@@ -13,6 +15,39 @@ type 't ast =
 [@@deriving sexp]
 
 type t = t ast [@@deriving sexp]
+
+let rec contains t t' =
+  if matches t t' then true
+  else
+    match t with
+    | `Class _ | `Hole _ -> false
+    | `Unop (_, x) | `Repeat (x, _) | `Repeat_at_least (x, _) | `Repeat_range (x, _, _) ->
+        contains x t'
+    | `Binop (_, x, x') -> contains x t' || contains x' t'
+
+and matches_num n n' =
+  match (n, n') with `Num n, `Num n' -> n = n' | `Num _, `Hole -> true | _ -> false
+
+and matches (t : t) (t' : t) =
+  match (t, t') with
+  | `Class c, `Class c' -> [%equal: string] c c'
+  | `Unop (op, x), `Unop (op', x') -> [%equal: unop] op op' && matches x x'
+  | `Binop (op1, x1, x1'), `Binop (op2, x2, x2') ->
+      [%equal: binop] op1 op2 && matches x1 x2 && matches x1' x2'
+  | `Repeat (x, n), `Repeat (x', n') -> matches x x' && matches_num n n'
+  | `Repeat_at_least (x, n), `Repeat_at_least (x', n') -> matches x x' && matches_num n n'
+  | `Repeat_range (x, l, h), `Repeat_range (x', l', h') ->
+      matches x x' && matches_num l l' && matches_num h h'
+  | t, `Hole xs -> List.exists xs ~f:(contains t)
+  | _ -> false
+
+let%test _ = matches (`Class "a") (`Class "a")
+let%test _ = matches (`Class "a") (`Hole [ `Class "a" ])
+let%test _ = matches (`Class "a") (`Hole [ `Class "a"; `Class "b" ])
+let%test _ = not (matches (`Class "a") (`Hole [ `Class "b" ]))
+
+let%test _ =
+  matches (`Unop (Not, `Unop (Not, `Class "a"))) (`Unop (Not, `Hole [ `Class "a" ]))
 
 let number_holes sk =
   let id = ref 0 in
