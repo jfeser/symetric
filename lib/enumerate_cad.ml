@@ -9,6 +9,7 @@ module Params = struct
     target : Scene2d.t;
     operators : Op.t list;
     verbose : bool;
+    max_cost : int option;
   }
 end
 
@@ -18,6 +19,7 @@ let[@inline] ectx () = (Set_once.get_exn params [%here]).Params.ectx
 let[@inline] target () = (Set_once.get_exn params [%here]).Params.target
 let[@inline] operators () = (Set_once.get_exn params [%here]).Params.operators
 let[@inline] verbose () = (Set_once.get_exn params [%here]).Params.verbose
+let[@inline] max_cost () = (Set_once.get_exn params [%here]).Params.max_cost
 let runtime = ref Time.Span.zero
 
 let synthesize () =
@@ -27,7 +29,10 @@ let synthesize () =
   and operators = operators ()
   and target = target ()
   and verbose = verbose () in
-  let ctx = Synth.Ctx.create ~verbose ectx operators (`Value (Value.Scene target)) in
+  let ctx =
+    Synth.Ctx.create ~verbose ?max_cost:(max_cost ()) ectx operators
+      (`Value (Value.Scene target))
+  in
   let synth = new Synth.synthesizer ctx in
   let ret = synth#run in
   runtime := Time.diff (Time.now ()) start_time;
@@ -54,22 +59,23 @@ let print_output m_prog =
         ("program", program_json);
       ])
 
-let set_params ~dim:size ~verbose target =
+let set_params ~dim:size ~verbose ?max_cost target =
   let ectx = Value.Ctx.create size in
   let target_value = Program.eval (Value.eval ectx) target in
   let target_scene = match target_value with Scene s -> s | _ -> assert false in
   let operators = Op.default_operators ~xres:size.xres ~yres:size.yres in
 
   Set_once.set_exn params [%here]
-    Params.{ size; ectx; target = target_scene; operators; verbose }
+    Params.{ size; ectx; target = target_scene; operators; verbose; max_cost }
 
 let cmd =
   let open Command.Let_syntax in
   Command.basic ~summary:"Solve CAD problems with enumeration."
     [%map_open
       let dim = Scene2d.Dim.param
-      and verbose = flag "-verbose" no_arg ~doc:" increase verbosity" in
+      and verbose = flag "-verbose" no_arg ~doc:" increase verbosity"
+      and max_cost = flag "-max-cost" (optional int) ~doc:" maximum program cost" in
       fun () ->
         let prog = Cad_ext.parse @@ Sexp.input_sexp In_channel.stdin in
-        set_params ~dim ~verbose prog;
+        set_params ~dim ~verbose ?max_cost prog;
         synthesize () |> print_output]

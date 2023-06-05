@@ -46,6 +46,7 @@ module type S = sig
   val search : t -> cost:int -> type_:type_ -> value list
   val find_term : t -> op Program.t -> (op * Class.t list) Program.t
   val mem_class : t -> Class.t -> bool
+  val mem : t -> type_ -> value -> bool
   val insert_class_members : t -> Class.t -> (value * op * Class.t list) list -> unit
   val insert_class : t -> value -> op -> value list -> unit
   val length : t -> int

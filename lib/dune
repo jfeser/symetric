@@ -1,7 +1,7 @@
 (library
  (public_name symetric)
  (libraries core core_kernel.pairing_heap combinat fmt vpt logs yojson
-   bitarray bheap sek gen)
+   bitarray bheap sek gen ancient)
  (preprocess
   (pps ppx_sexp_conv ppx_hash ppx_compare ppx_sexp_message
     base_quickcheck.ppx_quickcheck ppx_variants_conv ppx_expect ppx_let
