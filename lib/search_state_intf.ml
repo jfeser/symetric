@@ -48,7 +48,7 @@ module type S = sig
   val mem_class : t -> Class.t -> bool
   val mem : t -> type_ -> value -> bool
   val insert_class_members : t -> Class.t -> (value * op * Class.t list) list -> unit
-  val insert_class : t -> value -> op -> value list -> unit
+  val insert_class : t -> value -> op -> Class.t list -> unit
   val length : t -> int
   val print_stats : t -> unit
   val program_of_op_args_exn : t -> int -> op -> Class.t list -> op Program.t

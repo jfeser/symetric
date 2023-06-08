@@ -366,7 +366,7 @@ let insert_states (all_edges : Edge.t Iter.t) =
       let class_ = S.Class.create group_center (Op.ret_type op) in
       (* insert new representative (some may already exist) *)
       if not @@ S.mem_class search_state class_ then
-        S.insert_class search_state group_center op @@ List.map ~f:S.Class.value args;
+        S.insert_class search_state group_center op args;
       List.iter members ~f:(fun (_, edges) ->
           S.insert_class_members search_state class_ edges))
 
@@ -383,7 +383,7 @@ let insert_states_beam all_edges =
   |> Iter.iter (fun (value, op, args) ->
          let class_ = S.Class.create value (Op.ret_type op) in
          if not (S.mem_class search_state class_) then
-           S.insert_class search_state value op @@ List.map ~f:S.Class.value args)
+           S.insert_class search_state value op args)
 
 let fill_search_space_untimed () =
   let ectx = ectx ()

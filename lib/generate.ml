@@ -78,11 +78,22 @@ module Gen_iter (Lang : Lang_intf) = struct
         if not (Value.is_error state) then f (state, op, args))
 
   let generate_args_2 search to_value params ss op c1 t1 c2 t2 f =
-    search ss ~cost:c1 ~type_:t1 (fun v ->
-        search ss ~cost:c2 ~type_:t2 (fun v' ->
-            let args = [ v; v' ] in
-            let state = Value.eval params op @@ List.map ~f:to_value args in
-            if not (Value.is_error state) then f (state, op, args)))
+    if Op.is_commutative op then
+      search ss ~cost:c1 ~type_:t1
+      |> Iter.iteri (fun i v ->
+             search ss ~cost:c2 ~type_:t2 |> Iter.drop i
+             |> Iter.iter (fun v' ->
+                    let args = [ v; v' ] in
+                    let state = Value.eval params op @@ List.map ~f:to_value args in
+                    if not (Value.is_error state) then f (state, op, args)))
+    else
+      search ss ~cost:c1 ~type_:t1
+      |> Iter.iter (fun v ->
+             search ss ~cost:c2 ~type_:t2
+             |> Iter.iter (fun v' ->
+                    let args = [ v; v' ] in
+                    let state = Value.eval params op @@ List.map ~f:to_value args in
+                    if not (Value.is_error state) then f (state, op, args)))
 
   let generate_args_n search to_value params ss op costs types_ f =
     let rec build_args i k =

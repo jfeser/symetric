@@ -140,7 +140,8 @@ module Make (Lang : Lang_intf) = struct
 
   let of_channel ch =
     let (classes, paths) =
-      (Marshal.from_channel ch : (Attr.t * Class.t list ref) list * (Class.t * paths) list)
+      (Marshal.from_channel ch
+        : (Attr.t * Class.t list ref) list * (Class.t * paths) list)
     in
     {
       classes = H.of_alist_exn (module Attr) classes;
@@ -237,10 +238,11 @@ module Make (Lang : Lang_intf) = struct
 
   let insert_class_members ctx class_ members =
     let old_paths = (H.find_exn ctx.paths class_).paths in
-    old_paths := List.fold_left members ~init:!old_paths ~f:(fun paths (value, op, args) -> (Path.create value op args)::paths)
+    old_paths :=
+      List.fold_left members ~init:!old_paths ~f:(fun paths (value, op, args) ->
+          Path.create value op args :: paths)
 
   let insert_class ctx value op args =
-    let args = List.map2_exn args (Op.args_type op) ~f:Class.create in
     let cost =
       let args_cost =
         List.sum (module Int) args ~f:(fun c -> (H.find_exn ctx.paths c).min_cost)
@@ -294,7 +296,7 @@ module Make (Lang : Lang_intf) = struct
       !((H.find_exn ctx.paths class_).paths)
       |> List.filter ~f:(fun (p : Path.t) -> p.cost <= max_cost)
     in
-    let p = List.random_element_exn low_cost_paths  in
+    let p = List.random_element_exn low_cost_paths in
     Apply (p.op, List.map p.args ~f:(random_program_exn ctx (Path.cost ctx p - 1)))
 
   let random_program_exn ?(max_cost = Int.max_value) ctx state =

@@ -89,8 +89,7 @@ module Make (Lang : Lang_intf) = struct
           Iter.filter
             (fun (state, op, args) ->
               let in_bank = S.mem search_state (Op.ret_type op) state in
-              if not in_bank then
-                S.insert_class search_state state op @@ List.map ~f:S.Class.value args;
+              if not in_bank then S.insert_class search_state state op args;
               not in_bank)
             states
         in
@@ -113,8 +112,7 @@ module Make (Lang : Lang_intf) = struct
         self#check_states inserted_states;
         if verbose then (
           Fmt.epr "Finished cost %d\n%!" cost;
-          S.print_stats search_state;
-          Gc.print_stat stderr)
+          S.print_stats search_state)
 
       method run =
         try
