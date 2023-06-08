@@ -287,7 +287,7 @@ let select_arbitrary edges = Iter.map (fun ((v, _, _) as edge) -> (v, [ edge ]))
 let select_edges edges =
   if use_ranking () then select_top_k_edges edges else select_arbitrary edges
 
-let insert_states (all_edges : Edge.t Iter.t) =
+let insert_states cost (all_edges : Edge.t Iter.t) =
   let target_groups = target_groups () in
   let search_state = get_search_state () in
 
@@ -311,27 +311,30 @@ let insert_states (all_edges : Edge.t Iter.t) =
       let op, args =
         match center_edges with (_, op, args) :: _ -> (op, args) | _ -> assert false
       in
-      let class_ = S.Class.create group_center (Op.ret_type op) in
+      let type_ = Op.ret_type op in
+      let class_ = S.Class.create type_ cost group_center in
       (* insert new representative (some may already exist) *)
       if not @@ S.mem_class search_state class_ then
-        S.insert_class search_state group_center op args;
+        S.insert_class search_state type_ cost group_center op args;
       List.iter members ~f:(fun (_, edges) ->
           S.insert_class_members search_state class_ edges))
 
-let insert_states_beam all_edges =
+let insert_states_beam cost all_edges =
   let search_state = get_search_state () in
 
   all_edges
   |> Iter.filter (fun (value, op, _) ->
-         let class_ = S.Class.create value (Op.ret_type op) in
+         let type_ = Op.ret_type op in
+         let class_ = S.Class.create type_ cost value in
          not (S.mem_class search_state class_))
   |> Iter.top_k_distinct
        (module Value)
        ~score:Edge.score ~key:Edge.value (target_groups ())
   |> Iter.iter (fun (value, op, args) ->
-         let class_ = S.Class.create value (Op.ret_type op) in
+         let type_ = Op.ret_type op in
+         let class_ = S.Class.create type_ cost value in
          if not (S.mem_class search_state class_) then
-           S.insert_class search_state value op args)
+           S.insert_class search_state type_ cost value op args)
 
 let fill_search_space_untimed () =
   let ectx = ectx ()
@@ -349,8 +352,8 @@ let fill_search_space_untimed () =
 
     let run_time = ref Time.Span.zero in
     Synth_utils.timed (`Set run_time) (fun () ->
-        if use_beam_search () then insert_states_beam (states_iter ())
-        else insert_states (states_iter ()));
+        if use_beam_search () then insert_states_beam cost (states_iter ())
+        else insert_states cost (states_iter ()));
 
     incr stats.max_cost_generated;
     write_output None;

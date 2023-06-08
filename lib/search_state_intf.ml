@@ -8,10 +8,10 @@ module type S = sig
 
     include Comparator.S with type t := t
 
-    val default : t
-    val create : value -> type_ -> t
+    val create : type_ -> int -> value -> t
     val value : t -> value
     val type_ : t -> type_
+    val cost : t -> int
   end
 
   type t [@@deriving sexp]
@@ -20,7 +20,6 @@ module type S = sig
     type ctx = t
     type t [@@deriving sexp]
 
-    val create : value -> op -> Class.t list -> t
     val pp : t Fmt.t
     val op : t -> op
     val args : t -> Class.t list
@@ -46,9 +45,9 @@ module type S = sig
   val search : t -> cost:int -> type_:type_ -> value list
   val find_term : t -> op Program.t -> (op * Class.t list) Program.t
   val mem_class : t -> Class.t -> bool
-  val mem : t -> type_ -> value -> bool
+  val mem : t -> type_ -> int -> value -> bool
   val insert_class_members : t -> Class.t -> (value * op * Class.t list) list -> unit
-  val insert_class : t -> value -> op -> Class.t list -> unit
+  val insert_class : t -> type_ -> int -> value -> op -> Class.t list -> unit
   val length : t -> int
   val print_stats : t -> unit
   val program_of_op_args_exn : t -> int -> op -> Class.t list -> op Program.t
