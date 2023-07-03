@@ -13,11 +13,7 @@
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
-        overlay = self: super: {
-          ppx_yojson_conv = self.callPackage ./nix/ppx_yojson_conv.nix { };
-          pprint = self.callPackage ./nix/pprint.nix { };
-        };
-        ocamlPkgs = pkgs.ocaml-ng.ocamlPackages.overrideScope' overlay;
+        ocamlPkgs = pkgs.ocaml-ng.ocamlPackages;
         symetric = ocamlPkgs.buildDunePackage rec {
           pname = "symetric";
           version = "0.1";
