@@ -55,7 +55,6 @@ module Iter = struct
   let of_set s k = Core.Set.iter ~f:k s
   let of_hashtbl x k = Hashtbl.iteri ~f:(fun ~key ~data -> k (key, data)) x
   let of_hashtbl_data x k = Hashtbl.iteri ~f:(fun ~key:_ ~data -> k data) x
-  let of_sek_e s k = Sek.E.iter Sek.forward k s
   let iter_while p seq = Iter.take_while p seq (fun _ -> ())
 
   let to_set (type t w) m iter =

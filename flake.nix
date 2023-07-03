@@ -1,6 +1,6 @@
 {
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     combinat.url = "github:jfeser/combinat";
     combinat.inputs.nixpkgs.follows = "nixpkgs";
@@ -15,7 +15,6 @@
         pkgs = nixpkgs.legacyPackages.${system};
         overlay = self: super: {
           ppx_yojson_conv = self.callPackage ./nix/ppx_yojson_conv.nix { };
-          sek = self.callPackage ./nix/sek.nix { };
           pprint = self.callPackage ./nix/pprint.nix { };
         };
         ocamlPkgs = pkgs.ocaml-ng.ocamlPackages.overrideScope' overlay;
@@ -24,7 +23,7 @@
           version = "0.1";
           duneVersion = "3";
           minimalOCamlVersion = "4.13";
-          nativeBuildInputs = [
+          propagatedBuildInputs = [
             ocamlPkgs.core
             ocamlPkgs.core_bench
             ocamlPkgs.core_unix
@@ -40,8 +39,6 @@
             # bitarray.defaultPackage.${system}
             # vp-tree.defaultPackage.${system}
           ];
-          propagatedBuildInputs =
-            [ ocamlPkgs.base ocamlPkgs.fmt ocamlPkgs.sek ];
           src = ./.;
         };
       in {

@@ -17,7 +17,6 @@ module Iter : sig
   val of_queue : 'a Queue.t -> 'a t
   val of_hashtbl : ('a, 'b) Base.Hashtbl.t -> ('a * 'b) t
   val of_hashtbl_data : ('a, 'b) Base.Hashtbl.t -> 'b t
-  val of_sek_e : 'a Sek.E.t -> 'a t
   val list_product : 'a t list -> 'a list t
   val group_by : 'a Base.Hashtbl.Key.t -> ('a * 'b) t -> ('a * 'b list) t
   val iter_while : ('a -> bool) -> 'a t -> unit

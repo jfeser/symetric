@@ -1,7 +1,7 @@
 (library
  (public_name symetric)
  (libraries core core_kernel.pairing_heap combinat fmt vpt logs yojson
-   bitarray bheap sek gen ancient)
+   bitarray bheap gen ancient)
  (preprocess
   (pps ppx_jane ppx_yojson_conv))
  (inline_tests)
