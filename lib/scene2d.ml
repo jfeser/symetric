@@ -8,8 +8,12 @@ module Dim = struct
   let[@inline] yres x = x.xres
   let scaled_xres x = x.xres * x.scaling
   let scaled_yres x = x.yres * x.scaling
+  let default_scaling = 2
+  let default_xres = 16
+  let default_yres = 16
 
-  let create ?(scaling = 1) ~xres ~yres () =
+  let create ?(scaling = default_scaling) ?(xres = default_xres) ?(yres = default_yres) ()
+      =
     assert (xres > 0 && yres > 0 && scaling >= 1);
     { xres; yres; scaling }
 
@@ -45,11 +49,17 @@ module Dim = struct
     let open Command.Let_syntax in
     [%map_open
       let scene_width =
-        flag "-scene-width" (optional_with_default 16 int) ~doc:" scene width in pixels"
+        flag "-scene-width"
+          (optional_with_default default_xres int)
+          ~doc:" scene width in pixels"
       and scene_height =
-        flag "-scene-height" (optional_with_default 16 int) ~doc:" scene height in pixels"
+        flag "-scene-height"
+          (optional_with_default default_yres int)
+          ~doc:" scene height in pixels"
       and scaling =
-        flag "-scaling" (optional_with_default 1 int) ~doc:" scene scaling factor"
+        flag "-scaling"
+          (optional_with_default default_scaling int)
+          ~doc:" scene scaling factor"
       in
       create ~scaling ~xres:scene_width ~yres:scene_height ()]
 end

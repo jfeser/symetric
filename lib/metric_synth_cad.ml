@@ -1,515 +1,124 @@
-open Std
-module Lang = Cad_ext
-open Lang
-module S = Search_state_all.Make (Lang)
-module Gen = Generate.Gen_iter (Lang)
+open Cad_ext
 
-(* constants *)
-let max_repeat_count = 4
-let target_groups_err = 0.1
-
-(* parameters *)
 module Params = struct
   type t = {
-    size : Scene2d.Dim.t;
-    local_search_steps : int;
-    group_threshold : float;
-    operators : Op.t list;
-    max_cost : int;
-    backward_pass_repeats : int;
-    verbosity : int;
-    target_program : Op.t Program.t;
-    validate : bool;
-    target_groups : int;
-    dump_search_space : string option;
-    load_search_space : string option;
-    output_file : string;
-    use_beam_search : bool; (* if true, then disable clustering *)
-    use_ranking : bool; (* if false, disable ranking clustered states *)
-    extract : [ `Greedy | `Random | `Centroid | `Exhaustive ];
-    repair : [ `Guided | `Random ];
-    distance : [ `Jaccard | `Relative_jaccard ];
-    exhaustive_width : int;
+    dim : Scene2d.Dim.t;
+    max_repeat_count : int;
+    distance : [ `Relative | `Jaccard ];
   }
   [@@deriving yojson]
 
-  let create : dim:Scene2d.Dim.t -> _ =
-   fun ~dim:size ~group_threshold ~max_cost ~local_search_steps ~backward_pass_repeats
-       ~verbosity ~validate ~n_groups ~dump_search_space ~load_search_space ~output_file
-       ~use_beam_search ~use_ranking ~extract ~repair ~distance ~exhaustive_width
-       target_prog ->
-    let operators = Cad_ext.Op.default_operators ~xres:size.xres ~yres:size.yres in
+  let default_max_repeat_count = 4
+  let default_dim = Scene2d.Dim.create ()
+  let default_distance = `Relative
 
-    List.find (Program.ops target_prog) ~f:(fun op ->
-        not @@ List.mem ~equal:[%compare.equal: Op.t] operators op)
-    |> Option.iter ~f:(fun op ->
-           raise_s [%message "program not in search space" (op : Op.t)]);
-    {
-      validate;
-      local_search_steps;
-      size;
-      operators;
-      group_threshold;
-      max_cost;
-      backward_pass_repeats;
-      verbosity;
-      target_program = target_prog;
-      target_groups = n_groups;
-      dump_search_space;
-      load_search_space;
-      output_file;
-      use_beam_search;
-      use_ranking;
-      extract;
-      repair;
-      distance;
-      exhaustive_width;
-    }
+  let create ?(max_repeat_count = default_max_repeat_count) ?(dim = default_dim)
+      ?(distance = default_distance) () =
+    { dim; max_repeat_count; distance }
 
-  let cmd =
+  let param =
     let open Command.Let_syntax in
-    [%map_open
-      let max_cost =
-        flag "-max-cost" (required int) ~doc:" the maximum size of program to evaluate"
-      and dump_search_space =
-        flag "-dump-search-space" (optional string)
-          ~doc:" dump the search space to a file"
-      and load_search_space =
-        flag "-load-search-space" (optional string)
-          ~doc:" load the search space from a file"
-      and group_threshold =
-        flag "-group-threshold" (required float)
-          ~doc:"distance threshold to trigger grouping"
-      and n_groups = flag "-n-groups" (required int) ~doc:" number of groups to retain"
-      and local_search_steps =
-        flag "-local-search-steps" (required int)
-          ~doc:" number of steps to run local search"
-      and backward_pass_repeats =
-        flag "-backward-pass-repeats" (required int)
-          ~doc:" number of times to run backward pass"
-      and dim = Scene2d.Dim.param
-      and verbosity =
-        flag "-verbosity" (optional_with_default 0 int) ~doc:" set verbosity"
-      and validate = flag "-validate" no_arg ~doc:" turn on validation"
-      and use_beam_search = flag "-use-beam-search" no_arg ~doc:" use beam search"
-      and exhaustive_width =
-        flag "-exhaustive-width" (optional_with_default 4 int)
-          ~doc:" search width for exhaustive extraction"
-      and use_ranking =
-        flag "-use-ranking"
-          (optional_with_default true bool)
-          ~doc:" ranking during XFTA construction"
-      and extract =
-        flag "-extract"
-          (optional_with_default "greedy" string)
-          ~doc:" method of program extraction"
-      and repair =
-        flag "-repair"
-          (optional_with_default "guided" string)
-          ~doc:" method of program repair"
-      and distance =
-        flag "-distance"
-          (optional_with_default "relative" string)
-          ~doc:" distance function"
-      and output_file = flag "-out" (required string) ~doc:" output to file" in
-      fun () ->
-        let target_prog = Lang.parse @@ Sexp.input_sexp In_channel.stdin in
-        let extract =
-          match extract with
-          | "greedy" -> `Greedy
-          | "random" -> `Random
-          | "centroid" -> `Centroid
-          | "exhaustive" -> `Exhaustive
-          | _ -> raise_s [%message "unexpected" (extract : string)]
-        in
-        let repair =
-          match repair with
-          | "guided" -> `Guided
-          | "random" -> `Random
-          | _ -> raise_s [%message "unexpected" (repair : string)]
-        in
-        let distance =
-          match distance with
-          | "jaccard" -> `Jaccard
-          | "relative" -> `Relative_jaccard
-          | _ -> raise_s [%message "unexpected" (distance : string)]
-        in
-        create ~max_cost ~group_threshold ~local_search_steps ~dim ~backward_pass_repeats
-          ~verbosity ~validate ~n_groups ~dump_search_space ~load_search_space
-          ~output_file ~use_beam_search ~use_ranking ~extract ~repair ~distance
-          ~exhaustive_width target_prog]
-end
-
-let params = Set_once.create ()
-let get_params = Set_once.get_exn params
-let[@inline] size () = (get_params [%here]).Params.size
-let[@inline] group_threshold () = (get_params [%here]).Params.group_threshold
-let[@inline] operators () = (get_params [%here]).Params.operators
-let[@inline] max_cost () = (get_params [%here]).Params.max_cost
-let[@inline] verbosity () = (get_params [%here]).Params.verbosity
-let[@inline] target_program () = (get_params [%here]).Params.target_program
-let[@inline] validate () = (get_params [%here]).Params.validate
-let[@inline] target_groups () = (get_params [%here]).Params.target_groups
-let[@inline] output_file () = (get_params [%here]).Params.output_file
-let[@inline] use_beam_search () = (get_params [%here]).Params.use_beam_search
-let[@inline] extract () = (get_params [%here]).Params.extract
-let[@inline] repair () = (get_params [%here]).Params.repair
-let[@inline] distance () = (get_params [%here]).Params.distance
-let[@inline] use_ranking () = (get_params [%here]).Params.use_ranking
-let[@inline] dump_search_space () = (get_params [%here]).Params.dump_search_space
-let[@inline] load_search_space () = (get_params [%here]).Params.load_search_space
-let[@inline] backward_pass_repeats () = (get_params [%here]).Params.backward_pass_repeats
-let[@inline] local_search_steps () = (get_params [%here]).Params.local_search_steps
-let[@inline] exhaustive_width () = (get_params [%here]).Params.exhaustive_width
-
-module Log = struct
-  let start_time = Time.now ()
-
-  let log level msgf =
-    let with_time fmt =
-      Format.fprintf Format.err_formatter
-        ("[%a] @[" ^^ fmt ^^ "@]@.%!")
-        Time.Span.pp
-        (Time.diff (Time.now ()) start_time)
+    let distance =
+      Command.Arg_type.create @@ function
+      | "relative" -> `Relative
+      | "jaccard" -> `Jaccard
+      | _ -> failwith "invalid distance type"
     in
-    if level <= verbosity () then msgf with_time
-
-  let sexp level lsexp = if level <= verbosity () then eprint_s @@ Lazy.force lsexp
+    [%map_open
+      let max_repeat_count =
+        flag "max-repeat-count"
+          (optional_with_default default_max_repeat_count int)
+          ~doc:"maximum value of repeat count"
+      and dim = Scene2d.Dim.param
+      and distance =
+        flag "distance"
+          (optional_with_default default_distance distance)
+          ~doc:"distance type"
+      in
+      create ~max_repeat_count ~dim ~distance ()]
 end
 
-let search_state = ref (S.create ())
-let[@inline] get_search_state () = !search_state
-let ectx = lazy (Value.Ctx.create (size ()))
-let[@inline] ectx () = Lazy.force ectx
-let target = lazy (Program.eval (Value.eval (ectx ())) @@ target_program ())
-let[@inline] target () = Lazy.force target
+let max_repeat_count = 4
 
-type time_span = Time.Span.t
+let relative_distance ~target (v : Value.t) (v' : Value.t) =
+  match (v, v') with
+  | Scene x, Scene x' ->
+      let target_scene = match target with Value.Scene t -> t | _ -> assert false in
+      let n = Scene2d.(pixels @@ sub target_scene x)
+      and n' = Scene2d.(pixels @@ sub target_scene x') in
+      let p = Scene2d.(pixels @@ sub x target_scene)
+      and p' = Scene2d.(pixels @@ sub x' target_scene) in
+      let union = Bitarray.(O.(hamming_weight (n lor n') + hamming_weight (p lor p')))
+      and inter =
+        Bitarray.(O.(hamming_weight (n land n') + hamming_weight (p land p')))
+      in
+      assert (union >= inter && inter >= 0);
+      if union = 0 then 0.0 else 1.0 -. (Float.of_int inter /. Float.of_int union)
+  | v, v' -> if [%equal: Value.t] v v' then 0.0 else Float.infinity
 
-let yojson_of_time_span t = `Float (Time.Span.to_sec t)
+let jaccard_distance = Value.distance
 
-module Stats = struct
-  type t = {
-    runtime : Timer.t;
-    max_cost_generated : int ref;
-    groups_searched : int ref;
-    cluster_time : time_span ref;
-    rank_time : time_span ref;
-    expansion_time : time_span ref;
-    repair_time : time_span ref;
-    xfta_time : time_span ref;
-    extract_time : time_span ref;
-  }
-  [@@deriving yojson_of]
-
-  let create () =
-    {
-      runtime = Timer.create ();
-      max_cost_generated = ref 0;
-      groups_searched = ref 0;
-      cluster_time = ref Time.Span.zero;
-      rank_time = ref Time.Span.zero;
-      expansion_time = ref Time.Span.zero;
-      repair_time = ref Time.Span.zero;
-      xfta_time = ref Time.Span.zero;
-      extract_time = ref Time.Span.zero;
-    }
-end
-
-let stats = Stats.create ()
-
-let write_output m_prog =
-  let program_size =
-    Option.map m_prog ~f:(fun p -> Float.of_int @@ Program.size p)
-    |> Option.value ~default:Float.nan
-  in
-  let program_json =
-    Option.map m_prog ~f:(fun p -> `String (Sexp.to_string @@ Lang.serialize p))
-    |> Option.value ~default:`Null
-  in
-  let open Yojson in
-  let json =
-    `Assoc
+let rewrite dim =
+  let res = max (Scene2d.Dim.xres dim) (Scene2d.Dim.yres dim) in
+  function
+  | Program.Apply (Op.Int x, []) ->
+      if x <= 0 then [ Program.Apply (Op.Int (x + 1), []) ]
+      else if x >= res then [ Apply (Int (x - 1), []) ]
+      else [ Apply (Int (x + 1), []); Apply (Int (x - 1), []) ]
+  | Apply (Rep_count x, []) ->
+      if x <= 1 then [ Apply (Rep_count (x + 1), []) ]
+      else if x >= max_repeat_count then [ Apply (Rep_count (x - 1), []) ]
+      else [ Apply (Rep_count (x + 1), []); Apply (Rep_count (x - 1), []) ]
+  | Apply (Circle, [ Apply (Int x, []); Apply (Int y, []); Apply (Int r, []) ]) ->
       [
-        ("method", `String "metric");
-        ("program", program_json);
-        ("program_size", `Float program_size);
-        ("stats", [%yojson_of: Stats.t] stats);
-        ("params", [%yojson_of: Params.t] (get_params [%here]));
-      ]
-  in
-  Out_channel.with_file (output_file ()) ~f:(fun ch -> Safe.to_channel ch json)
-
-let distance v v' =
-  let relative_distance (v : Value.t) (v' : Value.t) =
-    match (v, v') with
-    | Scene x, Scene x' ->
-        let target_scene = match target () with Scene t -> t | _ -> assert false in
-        let n = Scene2d.(pixels @@ sub target_scene x)
-        and n' = Scene2d.(pixels @@ sub target_scene x') in
-        let p = Scene2d.(pixels @@ sub x target_scene)
-        and p' = Scene2d.(pixels @@ sub x' target_scene) in
-        let union = Bitarray.(O.(hamming_weight (n lor n') + hamming_weight (p lor p')))
-        and inter =
-          Bitarray.(O.(hamming_weight (n land n') + hamming_weight (p land p')))
-        in
-        assert (union >= inter && inter >= 0);
-        if union = 0 then 0.0 else 1.0 -. (Float.of_int inter /. Float.of_int union)
-    | v, v' -> if [%compare.equal: Value.t] v v' then 0.0 else Float.infinity
-  in
-  match distance () with
-  | `Jaccard -> Value.distance v v'
-  | `Relative_jaccard -> relative_distance v v'
-
-let target_distance v = Value.distance (target ()) v
-
-let local_search_untimed p =
-  let size = size () and steps = local_search_steps () and ectx = ectx () in
-  let value_eval = Value.mk_eval_memoized () in
-  Local_search.of_unnormalize_tabu ~target_distance
-    ~random:(match repair () with `Guided -> false | `Random -> true)
-    (module Op)
-    (module Value)
-    (function
-      | Apply (Int x, []) ->
-          if x <= 0 then [ Apply (Int (x + 1), []) ]
-          else if x >= max size.Scene2d.Dim.xres size.yres then
-            [ Apply (Int (x - 1), []) ]
-          else [ Apply (Int (x + 1), []); Apply (Int (x - 1), []) ]
-      | Apply (Rep_count x, []) ->
-          if x <= 1 then [ Apply (Rep_count (x + 1), []) ]
-          else if x >= max_repeat_count then [ Apply (Rep_count (x - 1), []) ]
-          else [ Apply (Rep_count (x + 1), []); Apply (Rep_count (x - 1), []) ]
-      | Apply (Circle, [ Apply (Int x, []); Apply (Int y, []); Apply (Int r, []) ]) ->
-          [
-            Apply
-              ( Rect,
-                [
-                  Apply (Int (x - r), []);
-                  Apply (Int (y - r), []);
-                  Apply (Int (x + r), []);
-                  Apply (Int (y + r), []);
-                ] );
-          ]
-      | Apply
+        Apply
           ( Rect,
             [
-              Apply (Int lx, []);
-              Apply (Int ly, []);
-              Apply (Int hx, []);
-              Apply (Int hy, []);
-            ] )
-        when hx - lx = hy - ly ->
-          let r = (hx - lx) / 2 in
-          [
-            Apply
-              ( Circle,
-                [ Apply (Int (lx + r), []); Apply (Int (ly + r), []); Apply (Int r, []) ]
-              );
-          ]
-      | _ -> [])
-    (Program.eval (value_eval ectx))
-    p
-  |> Iter.map (fun p -> (target_distance (Program.eval (value_eval ectx) p), p))
-  |> Iter.take steps
-  |> Iter.mapi (fun i (d, x) -> (d, i, x))
-  |> Iter.min_floor ~to_float:(fun (d, _, _) -> d) 0.0
-  |> Option.map ~f:(fun (_, i, p) -> (i, p))
-  |> Option.value ~default:(-1, p)
+              Apply (Int (x - r), []);
+              Apply (Int (y - r), []);
+              Apply (Int (x + r), []);
+              Apply (Int (y + r), []);
+            ] );
+      ]
+  | Apply
+      ( Rect,
+        [ Apply (Int lx, []); Apply (Int ly, []); Apply (Int hx, []); Apply (Int hy, []) ]
+      )
+    when hx - lx = hy - ly ->
+      let r = (hx - lx) / 2 in
+      [
+        Apply
+          ( Circle,
+            [ Apply (Int (lx + r), []); Apply (Int (ly + r), []); Apply (Int r, []) ] );
+      ]
+  | _ -> []
 
-let local_search p =
-  Synth_utils.timed (`Add stats.repair_time) (fun () -> local_search_untimed p)
-
-module Edge = struct
-  type t = Value.t * (Op.t[@compare.ignore]) * (S.Class.t list[@compare.ignore])
-  [@@deriving compare, hash, sexp]
-
-  let value (v, _, _) = v
-  let score value = -1. *. target_distance value
-  let distance (v, _, _) (v', _, _) = distance v v'
-end
-
-let select_top_k_edges edges =
-  Iter.ordered_groupby (module Value) ~score:Edge.score ~key:(fun (v, _, _) -> v) edges
-  |> Iter.timed stats.rank_time
-  |> Iter.map (fun (v, (_, es)) -> (v, es))
-
-let select_arbitrary edges = Iter.map (fun ((v, _, _) as edge) -> (v, [ edge ])) edges
-
-let select_edges edges =
-  if use_ranking () then select_top_k_edges edges else select_arbitrary edges
-
-let insert_states cost (all_edges : Edge.t Iter.t) =
-  let target_groups = target_groups () in
-  let search_state = get_search_state () in
-
-  let module Edges = struct
-    type t = Value.t * (Edge.t list[@compare.ignore]) [@@deriving compare, hash, sexp]
-
-    let distance (v, _) (v', _) = distance v v'
-  end in
-  let groups =
-    all_edges |> select_edges
-    |> Grouping.create_m (module Edges) (group_threshold ()) Edges.distance target_groups
+let synthesize (metric_params : Metric_synth.Params.t) (dsl_params : Params.t) target =
+  let dim = dsl_params.dim in
+  let value_distance =
+    match dsl_params.distance with
+    | `Relative -> relative_distance ~target
+    | `Jaccard -> jaccard_distance
   in
-  (stats.cluster_time := Time.Span.(!(stats.cluster_time) + groups.runtime));
+  let dsl =
+    (module struct
+      module Type = Type
+      module Op = Op
 
-  Log.log 1 (fun m ->
-      m "Generated %d groups from %d edges"
-        (Hashtbl.length groups.groups)
-        groups.n_samples);
+      module Value = struct
+        include Value
 
-  Hashtbl.iteri groups.groups ~f:(fun ~key:(group_center, center_edges) ~data:members ->
-      let op, args =
-        match center_edges with (_, op, args) :: _ -> (op, args) | _ -> assert false
-      in
-      let type_ = Op.ret_type op in
-      let class_ = S.Class.create type_ cost group_center in
-      (* insert new representative (some may already exist) *)
-      if not @@ S.mem_class search_state class_ then
-        S.insert_class search_state type_ cost group_center op args;
-      List.iter members ~f:(fun (_, edges) ->
-          S.insert_class_members search_state class_ edges))
+        let eval = eval ~dim ~error_on_trivial:true
+        let distance = value_distance
+        let target_distance ~target = Value.distance target
+      end
 
-let insert_states_beam cost all_edges =
-  let search_state = get_search_state () in
-
-  all_edges
-  |> Iter.filter (fun (value, op, _) ->
-         let type_ = Op.ret_type op in
-         let class_ = S.Class.create type_ cost value in
-         not (S.mem_class search_state class_))
-  |> Iter.top_k_distinct
-       (module Value)
-       ~score:Edge.score ~key:Edge.value (target_groups ())
-  |> Iter.iter (fun (value, op, args) ->
-         let type_ = Op.ret_type op in
-         let class_ = S.Class.create type_ cost value in
-         if not (S.mem_class search_state class_) then
-           S.insert_class search_state type_ cost value op args)
-
-let fill_search_space_untimed () =
-  let ectx = ectx ()
-  and search_state = get_search_state ()
-  and ops = operators ()
-  and max_cost = max_cost () in
-
-  Log.log 1 (fun m -> m "Goal:\n%a" Value.pp (target ()));
-
-  for cost = 1 to max_cost do
-    Log.log 1 (fun m -> m "Start generating states of cost %d" cost);
-
-    let states_iter () =
-      Gen.generate_states S.search_iter S.Class.value ectx search_state ops cost
-      |> Iter.timed stats.expansion_time
-    in
-
-    let run_time = ref Time.Span.zero in
-    Synth_utils.timed (`Set run_time) (fun () ->
-        if use_beam_search () then insert_states_beam cost (states_iter ())
-        else insert_states cost (states_iter ()));
-
-    incr stats.max_cost_generated;
-    write_output None;
-    Log.log 1 (fun m ->
-        m "Finish generating states of cost %d (runtime=%a)" cost Time.Span.pp !run_time)
-  done
-
-let fill_search_space () =
-  Synth_utils.timed (`Set stats.xfta_time) fill_search_space_untimed
-
-let run_extract_untimed eval height class_ =
-  let search_state = get_search_state () in
-  match extract () with
-  | `Greedy -> S.local_greedy search_state height eval target_distance class_
-  | `Exhaustive ->
-      S.exhaustive ~width:(exhaustive_width ()) search_state height eval target_distance
-        class_
-  | `Random -> S.random search_state height class_
-  | `Centroid -> S.centroid search_state height class_
-
-let run_extract eval height class_ =
-  Synth_utils.timed (`Add stats.extract_time) (fun () ->
-      run_extract_untimed eval height class_)
-
-let backwards_pass class_ =
-  let max_cost = max_cost () and ectx = ectx () in
-  let height = Int.ceil_log2 max_cost in
-  match S.Class.value class_ with
-  | Value.Scene _ ->
-      let eval = Value.mk_eval_memoized () ectx in
-      Iter.forever (fun () ->
-          run_extract eval height class_ |> Option.map ~f:local_search)
-  | _ -> Iter.empty
-
-let synthesize () =
-  Timer.start stats.runtime;
-
-  let target = target ()
-  and ectx = ectx ()
-  and backward_pass_repeats = backward_pass_repeats () in
-
-  (match load_search_space () with
-  | Some fn -> In_channel.with_file fn ~f:(fun ch -> search_state := S.of_channel ch)
-  | None ->
-      fill_search_space ();
-      Option.iter (dump_search_space ()) ~f:(fun fn ->
-          Out_channel.with_file fn ~f:(fun ch -> S.to_channel ch @@ get_search_state ())));
-
-  write_output None;
-  let search_state = get_search_state () in
-
-  let exception Done of Op.t Program.t in
-  Log.log 1 (fun m -> m "Starting backwards pass");
-
-  (* classes of type Scene *)
-  let classes =
-    S.classes search_state
-    |> Iter.filter (fun c -> [%compare.equal: Type.t] Scene (S.Class.type_ c))
-    |> Iter.map (fun c -> (target_distance @@ S.Class.value c, c))
-    |> Iter.sort ~cmp:(fun (d, _) (d', _) -> [%compare: float] d d')
+      let operators = Op.default_operators ~xres:dim.xres ~yres:dim.yres
+      let parse = parse
+      let serialize = serialize
+      let rewrite = rewrite dim
+    end : Metric_synth.DSL
+      with type Value.t = _
+       and type Op.t = _)
   in
-  let ret =
-    try
-      classes
-      |> Iter.iteri (fun i (d, (class_ : S.Class.t)) ->
-             incr stats.groups_searched;
-             Log.log 1 (fun m -> m "Searching candidate %d (d=%f)" i d);
-             Log.log 2 (fun m -> m "@.%a" Value.pp (S.Class.value class_));
-
-             backwards_pass class_
-             |> Iter.take backward_pass_repeats
-             |> Iter.filter_map Fun.id
-             |> Iter.mapi (fun backwards_pass_i (local_search_i, p) ->
-                    ((backwards_pass_i, local_search_i), p))
-             |> Iter.min_floor
-                  ~to_float:(fun (_, p) ->
-                    target_distance @@ Program.eval (Value.eval ectx) p)
-                  0.0
-             |> Option.iter ~f:(fun ((backwards_pass_iters, local_search_iters), p) ->
-                    let found_value = Program.eval (Value.eval ectx) p in
-
-                    Log.log 2 (fun m ->
-                        m "Best (d=%f):@.%a" (target_distance found_value) Value.pp
-                          found_value);
-                    Log.sexp 2 (lazy [%message (p : Op.t Program.t)]);
-
-                    if [%compare.equal: Value.t] target found_value then (
-                      Log.log 0 (fun m -> m "local search iters %d" local_search_iters);
-                      Log.log 0 (fun m ->
-                          m "backwards pass iters %d" backwards_pass_iters);
-                      raise (Done p))));
-      None
-    with Done p -> Some p
-  in
-  Timer.stop stats.runtime;
-  write_output ret
-
-let cmd =
-  let open Command.Let_syntax in
-  Command.basic ~summary:"Solve CAD problems with metric synthesis."
-    [%map_open
-      let mk_params = Params.cmd in
-      fun () ->
-        Set_once.set_exn params [%here] @@ mk_params ();
-        synthesize ()]
+  Metric_synth.synthesize metric_params dsl target

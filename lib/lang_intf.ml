@@ -18,25 +18,10 @@ module type S = sig
     val default : t
   end
 
-  module Params : sig
-    type t [@@deriving yojson]
-
-    val param : t Command.Param.t
-  end
-
   module Value : sig
     type t [@@deriving compare, equal, hash, sexp]
 
-    module Ctx : sig
-      type t
-
-      val of_params : Params.t -> t
-    end
-
-    include Comparator.S with type t := t
-
-    val mk_eval_memoized : unit -> Ctx.t -> Op.t -> t list -> t
-    val eval : Ctx.t -> Op.t -> t list -> t
+    val eval : Op.t -> t list -> t
     val distance : t -> t -> float
     val is_error : t -> bool
     val default : t

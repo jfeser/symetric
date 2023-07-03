@@ -33,3 +33,26 @@ let geometric_cutoff base =
 let%expect_test "" =
   print_s [%message (Iter.take 10 @@ geometric_cutoff 1.3 : int Iter.t)];
   [%expect {| ("(Iter.take 10) @@ (geometric_cutoff 1.3)" (1 1 2 2 3 4 6 8 10 13)) |}]
+
+module type DSL = sig
+  module Op : sig
+    type t [@@deriving compare, hash, sexp]
+  end
+
+  module Value : sig
+    type t [@@deriving compare, hash, sexp]
+
+    val eval : Op.t -> t list -> t
+  end
+end
+
+let memoized_eval (type value op) ?cache_size_bound
+    (module Dsl : DSL with type Value.t = value and type Op.t = op) =
+  let module Key = struct
+    type t = Dsl.Op.t * Dsl.Value.t list [@@deriving compare, hash, sexp]
+  end in
+  let hashable = Base.Hashable.of_key (module Key) in
+  let memoized =
+    Memo.general ~hashable ?cache_size_bound (fun (op, args) -> Dsl.Value.eval op args)
+  in
+  fun op args -> memoized (op, args)

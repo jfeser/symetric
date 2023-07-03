@@ -6,7 +6,7 @@ module Dim : sig
   val yres : t -> int
   val scaled_xres : t -> int
   val scaled_yres : t -> int
-  val create : ?scaling:int -> xres:int -> yres:int -> unit -> t
+  val create : ?scaling:int -> ?xres:int -> ?yres:int -> unit -> t
   val npixels : t -> int
   val offset : t -> int -> int -> int
   val pixels : t -> (int * int) Gen.t

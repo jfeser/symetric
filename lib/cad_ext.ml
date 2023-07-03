@@ -1,6 +1,3 @@
-let memoize = false
-let error_on_trivial = ref true
-
 module Type = struct
   type t = Int | Rep_count | Scene | Error [@@deriving compare, equal, hash, sexp]
 
@@ -57,71 +54,42 @@ module Value = struct
   let[@inline] is_scene = function Scene _ -> true | _ -> false
   let[@inline] is_error = function Error -> true | _ -> false
 
-  module Ctx = struct
-    type t = { size : Scene2d.Dim.t }
-
-    let create size = { size }
-  end
-
   let pp fmt = function
     | Scene s -> Scene2d.pp fmt s
     | Int x -> Fmt.pf fmt "%d" x
     | Rep_count x -> Fmt.pf fmt "%d" x
     | Error -> Fmt.pf fmt "err"
 
-  let eval_unmemoized (ctx : Ctx.t) (op : Op.t) args =
+  let eval ~error_on_trivial ~dim (op : Op.t) args =
     let module S = Scene2d in
-    let size = ctx.size in
     match (op, args) with
     | Int x, [] -> Int x
     | Rep_count x, [] -> Rep_count x
     | Circle, [ Int x; Int y; Int radius ]
-      when !error_on_trivial
+      when error_on_trivial
            && (x - radius < 0
-              || x + radius >= S.Dim.xres size
+              || x + radius >= S.Dim.xres dim
               || y - radius < 0
-              || y + radius >= S.Dim.yres size
+              || y + radius >= S.Dim.yres dim
               || radius = 0) ->
         Error
     | Circle, [ Int center_x; Int center_y; Int radius ] ->
-        Scene (S.circle size center_x center_y radius)
+        Scene (S.circle dim center_x center_y radius)
     | Rect, [ Int lo_left_x; Int lo_left_y; Int hi_right_x; Int hi_right_y ]
-      when !error_on_trivial && (lo_left_x >= hi_right_x || lo_left_y >= hi_right_y) ->
+      when error_on_trivial && (lo_left_x >= hi_right_x || lo_left_y >= hi_right_y) ->
         Error
     | Rect, [ Int lo_left_x; Int lo_left_y; Int hi_right_x; Int hi_right_y ] ->
-        Scene (S.rect size lo_left_x lo_left_y hi_right_x hi_right_y)
+        Scene (S.rect dim lo_left_x lo_left_y hi_right_x hi_right_y)
     | (Inter | Union | Sub), ([ Error; _ ] | [ _; Error ]) -> Error
     | Inter, [ Scene s; Scene s' ] -> Scene (S.inter s s')
     | Union, [ Scene s; Scene s' ] -> Scene (S.union s s')
     | Sub, [ Scene s; Scene s' ] -> Scene (S.sub s s')
     | Repl, [ Error; Int _; Int _; Rep_count _ ] -> Error
     | Repl, [ Scene _; Int dx; Int dy; Rep_count c ]
-      when !error_on_trivial && ((dx = 0 && dy = 0) || c <= 1) ->
+      when error_on_trivial && ((dx = 0 && dy = 0) || c <= 1) ->
         Error
     | Repl, [ Scene s; Int dx; Int dy; Rep_count ct ] -> Scene (S.repeat s dx dy ct)
     | _ -> raise_s [%message "unexpected arguments" (op : Op.t) (args : t list)]
-
-  let mk_eval_memoized () =
-    let module Key = struct
-      module T = struct
-        type nonrec t = Op.t * t list [@@deriving compare, hash, sexp]
-      end
-
-      include T
-      include Comparable.Make (T)
-    end in
-    let tbl = Hashtbl.create (module Key) in
-    let find_or_eval (ctx : Ctx.t) op args =
-      match Hashtbl.find tbl (op, args) with
-      | Some v -> v
-      | None ->
-          let v = eval_unmemoized ctx op args in
-          Hashtbl.set tbl ~key:(op, args) ~data:v;
-          v
-    in
-    find_or_eval
-
-  let eval = if memoize then mk_eval_memoized () else eval_unmemoized
 
   let distance v v' =
     match (v, v') with
@@ -155,9 +123,7 @@ let rec parse =
       repl (parse_int x) (parse_int y) (parse_int c) (parse e)
   | s -> raise_s [%message "unexpected" (s : Sexp.t)]
 
-open Sexp
-
-let serialize_op : Op.t -> _ = function
+let serialize_op : Op.t -> Sexp.t = function
   | Union -> Atom "union"
   | Inter -> Atom "inter"
   | Sub -> Atom "sub"
@@ -166,5 +132,5 @@ let serialize_op : Op.t -> _ = function
   | Repl -> Atom "repl"
   | Int x | Rep_count x -> Atom (sprintf "%d" x)
 
-let rec serialize (Program.Apply (op, args)) =
+let rec serialize (Program.Apply (op, args)) : Sexp.t =
   List (serialize_op op :: List.map args ~f:serialize)

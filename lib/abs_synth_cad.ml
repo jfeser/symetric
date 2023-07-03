@@ -1,10 +1,7 @@
 open Cad_ext
 
 module type Pred_intf =
-  Abstract_synth.Domain_pred_intf
-    with type concrete := Value.t
-     and type op := Op.t
-     and type ctx := Value.Ctx.t
+  Abstract_synth.Domain_pred_intf with type concrete := Value.t and type op := Op.t
 
 module I2 = struct
   module T = struct

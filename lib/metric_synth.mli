@@ -19,17 +19,9 @@ module type DSL = sig
   module Value : sig
     type t [@@deriving compare, equal, hash, sexp]
 
-    module Ctx : sig
-      type t
-
-      val default : t
-    end
-
-    include Comparator.S with type t := t
-
-    val mk_eval_memoized : unit -> Ctx.t -> Op.t -> t list -> t
-    val eval : Ctx.t -> Op.t -> t list -> t
+    val eval : Op.t -> t list -> t
     val distance : t -> t -> float
+    val target_distance : target:t -> t -> float
     val is_error : t -> bool
     val pp : t Fmt.t
   end
@@ -40,4 +32,27 @@ module type DSL = sig
   val rewrite : Op.t Program.t -> Op.t Program.t list
 end
 
-val cmd : (module DSL) -> Command.t
+module Params : sig
+  type t = {
+    local_search_steps : int;
+    group_threshold : float;
+    max_cost : int;
+    backward_pass_repeats : int;
+    verbosity : int;
+    target_groups : int;
+    output_file : string;
+    use_ranking : bool;
+    extract : [ `Centroid | `Exhaustive | `Greedy | `Random ];
+    repair : [ `Guided | `Random ];
+    exhaustive_width : int;
+  }
+  [@@deriving yojson]
+
+  val param : t Command.Param.t
+end
+
+val synthesize :
+  Params.t ->
+  (module DSL with type Value.t = 'value and type Op.t = 'op) ->
+  'value ->
+  'op Program.t option
