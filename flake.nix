@@ -52,10 +52,11 @@
             pkgs.ocamlformat
             pkgs.opam
             pkgs.ocamlPackages.ocaml-lsp
+            pkgs.ocamlPackages.odoc
             pkgs.openai
-            pkgs.python310Packages.docopt
-            pkgs.python310Packages.pandas
-            pkgs.python310Packages.tqdm
+            pkgs.python3Packages.docopt
+            pkgs.python3Packages.pandas
+            pkgs.python3Packages.tqdm
           ];
           inputsFrom = [ symetric ];
         };
