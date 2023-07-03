@@ -18,7 +18,6 @@
           pname = "symetric";
           version = "0.1";
           duneVersion = "3";
-          minimalOCamlVersion = "4.13";
           propagatedBuildInputs = [
             ocamlPkgs.core
             ocamlPkgs.core_bench
@@ -27,7 +26,6 @@
             ocamlPkgs.menhir
             ocamlPkgs.fmt
             ocamlPkgs.yojson
-            ocamlPkgs.gen
             ocamlPkgs.iter
             ocamlPkgs.bheap
             ocamlPkgs.logs
