@@ -23,7 +23,7 @@ module type DSL = sig
 
     val eval : Op.t -> t list -> t
     val distance : t -> t -> float
-    val target_distance : target:t -> t -> float
+    val target_distance : t -> float
     val is_error : t -> bool
     val pp : t Fmt.t
   end
@@ -43,6 +43,7 @@ module Params = struct
     local_search_steps : int;
     group_threshold : float;
     max_cost : int;
+    max_height : int;
     backward_pass_repeats : int;
     verbosity : int;
     target_groups : int;
@@ -64,12 +65,14 @@ module Params = struct
   let create ?(backward_pass_repeats = default_backwards_pass_repeats)
       ?(verbosity = default_verbosity) ?(use_ranking = default_use_ranking)
       ?(extract = default_extract) ?(repair = default_repair)
-      ?(exhaustive_width = default_exhaustive_width) ~local_search_steps ~group_threshold
-      ~max_cost ~n_groups ~output_file () =
+      ?(exhaustive_width = default_exhaustive_width) ?max_height ~local_search_steps
+      ~group_threshold ~max_cost ~n_groups ~output_file () =
+    let max_height = Option.value max_height ~default:(1 + Int.ceil_log2 max_cost) in
     {
       local_search_steps;
       group_threshold;
       max_cost;
+      max_height;
       backward_pass_repeats;
       verbosity;
       target_groups = n_groups;
@@ -99,6 +102,8 @@ module Params = struct
     [%map_open
       let max_cost =
         flag "-max-cost" (required int) ~doc:" the maximum size of program to evaluate"
+      and max_height =
+        flag "-max-cost" (optional int) ~doc:" the maximum height of program to evaluate"
       and group_threshold =
         flag "-group-threshold" (required float)
           ~doc:"distance threshold to trigger grouping"
@@ -130,19 +135,9 @@ module Params = struct
           (optional_with_default default_repair repair)
           ~doc:" method of program repair"
       and output_file = flag "-out" (required string) ~doc:" output to file" in
-      {
-        local_search_steps;
-        group_threshold;
-        max_cost;
-        backward_pass_repeats;
-        verbosity;
-        target_groups = n_groups;
-        output_file;
-        use_ranking;
-        extract;
-        repair;
-        exhaustive_width;
-      }]
+      create ~max_cost ?max_height ~group_threshold ~n_groups ~local_search_steps
+        ~backward_pass_repeats ~verbosity ~use_ranking ~extract ~repair ~exhaustive_width
+        ~output_file ()]
 end
 
 module Stats = struct
@@ -197,9 +192,9 @@ module Make (Dsl : DSL) = struct
   open Dsl
   module S = Search_state_all.Make (Dsl)
 
+  exception Done of Op.t Program.t
+
   let search_state = S.create ()
-  let target_ref = Set_once.create ()
-  let[@inline] target () = Set_once.get_exn target_ref [%here]
   let stats = Stats.create ()
 
   let write_output (p : Params.t) m_prog =
@@ -225,7 +220,7 @@ module Make (Dsl : DSL) = struct
     Out_channel.with_file p.output_file ~f:(fun ch -> Safe.to_channel ch json)
 
   let distance = Value.distance
-  let target_distance v = Value.target_distance ~target:(target ()) v
+  let target_distance = Value.target_distance
 
   let local_search (p : Params.t) program =
     Synth_utils.timed (`Add stats.repair_time) (fun () ->
@@ -251,15 +246,27 @@ module Make (Dsl : DSL) = struct
     let distance (v, _, _) (v', _, _) = distance v v'
   end
 
-  let select_top_k_edges edges =
+  let select_top_k_edges (p : Params.t) edges =
     Iter.ordered_groupby (module Value) ~score:Edge.score ~key:(fun (v, _, _) -> v) edges
     |> Iter.timed stats.rank_time
-    |> Iter.map (fun (v, (_, es)) -> (v, es))
+    |> Iter.map (fun (v, (d, es)) ->
+           if Float.(d = 0.) then
+             match es with
+             | (_, op, args) :: _ ->
+                 List.map args
+                   ~f:
+                     (S.local_greedy search_state p.max_height Value.eval target_distance)
+                 |> Option.all
+                 |> Option.iter ~f:(fun args -> raise (Done (Apply (op, args))));
+                 Log.log p 1 (fun m -> m "Warning: early extract failed");
+                 (v, es)
+             | _ -> (v, es)
+           else (v, es))
 
   let select_arbitrary edges = Iter.map (fun ((v, _, _) as edge) -> (v, [ edge ])) edges
 
   let select_edges (p : Params.t) edges =
-    if p.use_ranking then select_top_k_edges edges else select_arbitrary edges
+    if p.use_ranking then select_top_k_edges p edges else select_arbitrary edges
 
   let insert_states (p : Params.t) cost (all_edges : Edge.t Iter.t) =
     let module Edges = struct
@@ -310,8 +317,6 @@ module Make (Dsl : DSL) = struct
 
   let fill_search_space (p : Params.t) =
     Synth_utils.timed (`Set stats.xfta_time) (fun () ->
-        Log.log p 1 (fun m -> m "Goal:\n%a" Value.pp (target ()));
-
         let states_iter cost = Iter.timed stats.expansion_time (generate cost) in
 
         let run_time = ref Time.Span.zero in
@@ -331,32 +336,27 @@ module Make (Dsl : DSL) = struct
                 !run_time)
         done)
 
-  let extract (p : Params.t) eval height class_ =
+  let extract (p : Params.t) eval class_ =
     Synth_utils.timed (`Add stats.extract_time) (fun () ->
         match p.extract with
-        | `Greedy -> S.local_greedy search_state height eval target_distance class_
+        | `Greedy -> S.local_greedy search_state p.max_height eval target_distance class_
         | `Exhaustive ->
-            S.exhaustive ~width:p.exhaustive_width search_state height eval
+            S.exhaustive ~width:p.exhaustive_width search_state p.max_height eval
               target_distance class_
-        | `Random -> S.random search_state height class_
-        | `Centroid -> S.centroid search_state height class_)
+        | `Random -> S.random search_state p.max_height class_
+        | `Centroid -> S.centroid search_state p.max_height class_)
 
   let backwards_pass (p : Params.t) class_ =
-    let height = Int.ceil_log2 p.max_cost in
     if [%equal: Type.t] (S.Class.type_ class_) Type.output then
       let eval = Synth_utils.memoized_eval (module Dsl) in
-      Iter.forever (fun () ->
-          extract p eval height class_ |> Option.map ~f:(local_search p))
+      Iter.forever (fun () -> extract p eval class_ |> Option.map ~f:(local_search p))
     else Iter.empty
 
-  let synthesize (p : Params.t) target' =
-    Set_once.set_exn target_ref [%here] target';
-    let target = target () in
+  let synthesize (p : Params.t) =
     Timer.start stats.runtime;
 
     write_output p None;
 
-    let exception Done of Op.t Program.t in
     Log.log p 1 (fun m -> m "Starting backwards pass");
 
     let classes =
@@ -390,7 +390,7 @@ module Make (Dsl : DSL) = struct
                             found_value);
                       Log.sexp p 2 (lazy [%message (program : Op.t Program.t)]);
 
-                      if [%compare.equal: Value.t] target found_value then (
+                      if Float.(target_distance found_value = 0.) then (
                         Log.log p 0 (fun m ->
                             m "local search iters %d" local_search_iters);
                         Log.log p 0 (fun m ->
@@ -404,7 +404,6 @@ module Make (Dsl : DSL) = struct
     ret
 end
 
-let synthesize (type value op) p
-    (module Dsl : DSL with type Value.t = value and type Op.t = op) (target : value) =
+let synthesize (type op) p (module Dsl : DSL with type Op.t = op) =
   let module Synth = Make (Dsl) in
-  Synth.synthesize p target
+  Synth.synthesize p

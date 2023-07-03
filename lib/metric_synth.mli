@@ -21,7 +21,7 @@ module type DSL = sig
 
     val eval : Op.t -> t list -> t
     val distance : t -> t -> float
-    val target_distance : target:t -> t -> float
+    val target_distance : t -> float
     val is_error : t -> bool
     val pp : t Fmt.t
   end
@@ -37,6 +37,7 @@ module Params : sig
     local_search_steps : int;
     group_threshold : float;
     max_cost : int;
+    max_height : int;
     backward_pass_repeats : int;
     verbosity : int;
     target_groups : int;
@@ -48,11 +49,23 @@ module Params : sig
   }
   [@@deriving yojson]
 
+  val create :
+    ?backward_pass_repeats:int ->
+    ?verbosity:int ->
+    ?use_ranking:bool ->
+    ?extract:[ `Centroid | `Exhaustive | `Greedy | `Random ] ->
+    ?repair:[ `Guided | `Random ] ->
+    ?exhaustive_width:int ->
+    ?max_height:int ->
+    local_search_steps:int ->
+    group_threshold:float ->
+    max_cost:int ->
+    n_groups:int ->
+    output_file:string ->
+    unit ->
+    t
+
   val param : t Command.Param.t
 end
 
-val synthesize :
-  Params.t ->
-  (module DSL with type Value.t = 'value and type Op.t = 'op) ->
-  'value ->
-  'op Program.t option
+val synthesize : Params.t -> (module DSL with type Op.t = 'op) -> 'op Program.t option

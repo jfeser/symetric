@@ -110,7 +110,7 @@ let synthesize (metric_params : Metric_synth.Params.t) (dsl_params : Params.t) t
 
         let eval = eval ~dim ~error_on_trivial:true
         let distance = value_distance
-        let target_distance ~target = Value.distance target
+        let target_distance = Value.distance target
       end
 
       let operators = Op.default_operators ~xres:dim.xres ~yres:dim.yres
@@ -118,7 +118,6 @@ let synthesize (metric_params : Metric_synth.Params.t) (dsl_params : Params.t) t
       let serialize = serialize
       let rewrite = rewrite dim
     end : Metric_synth.DSL
-      with type Value.t = _
-       and type Op.t = _)
+      with type Op.t = _)
   in
-  Metric_synth.synthesize metric_params dsl target
+  Metric_synth.synthesize metric_params dsl
