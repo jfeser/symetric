@@ -1,6 +1,6 @@
 module type S = sig
   type op
-  type t [@@deriving compare, equal, hash, sexp_of]
+  type t [@@deriving compare, equal, hash, sexp]
 
   module Ctx : sig
     type t
@@ -12,4 +12,6 @@ module type S = sig
 
   val eval : Ctx.t -> op -> t list -> t
   val dist : Ctx.t -> t -> t -> float
+  val is_error : t -> bool
+  val default : t
 end

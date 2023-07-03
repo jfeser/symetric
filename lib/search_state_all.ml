@@ -1,33 +1,22 @@
 open Std
 
-module type Lang_intf = sig
+module type DSL = sig
   module Type : sig
     type t [@@deriving compare, equal, hash, sexp]
-
-    val default : t
-    val output : t
   end
 
   module Op : sig
     type t [@@deriving compare, equal, hash, sexp]
 
-    val default : t
-    val cost : t -> int
-    val arity : t -> int
-    val args_type : t -> Type.t list
-    val ret_type : t -> Type.t
     val pp : t Fmt.t
-    val is_commutative : t -> bool
   end
 
   module Value : sig
     type t [@@deriving compare, equal, hash, sexp]
-
-    val default : t
   end
 end
 
-module Make (Lang : Lang_intf) = struct
+module Make (Lang : DSL) = struct
   open Lang
   open Program.T
   module H = Hashtbl

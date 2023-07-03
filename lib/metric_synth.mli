@@ -1,9 +1,8 @@
-module type S = sig
+module type DSL = sig
   module Type : sig
     type t [@@deriving compare, equal, hash, sexp]
 
     val output : t
-    val default : t
   end
 
   module Op : sig
@@ -15,13 +14,6 @@ module type S = sig
     val ret_type : t -> Type.t
     val is_commutative : t -> bool
     val pp : t Fmt.t
-    val default : t
-  end
-
-  module Params : sig
-    type t [@@deriving yojson]
-
-    val param : t Command.Param.t
   end
 
   module Value : sig
@@ -30,7 +22,7 @@ module type S = sig
     module Ctx : sig
       type t
 
-      val of_params : Params.t -> t
+      val default : t
     end
 
     include Comparator.S with type t := t
@@ -39,21 +31,13 @@ module type S = sig
     val eval : Ctx.t -> Op.t -> t list -> t
     val distance : t -> t -> float
     val is_error : t -> bool
-    val default : t
     val pp : t Fmt.t
   end
 
+  val operators : Op.t list
   val parse : Sexp.t -> Op.t Program.t
   val serialize : Op.t Program.t -> Sexp.t
+  val rewrite : Op.t Program.t -> Op.t Program.t list
 end
 
-module type S_with_gen = sig
-  include S
-
-  module Gen : sig
-    val random_program : Params.t -> int -> (Op.t Program.t * Op.t list) option
-
-    (* val to_bench : Dumb_params.t -> Op.t list -> Op.t Program.t -> Value.t -> Bench.t *)
-    val spec : Dumb_params.Spec.t
-  end
-end
+val cmd : (module DSL) -> Command.t
