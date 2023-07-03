@@ -8,8 +8,11 @@
     bitarray.inputs.nixpkgs.follows = "nixpkgs";
     vp-tree.url = "github:jfeser/vp-tree";
     vp-tree.inputs.nixpkgs.follows = "nixpkgs";
+    ancient.url = "github:jfeser/ocaml-ancient";
+    ancient.inputs.nixpkgs.follows = "nixpkgs";
   };
-  outputs = { self, flake-utils, nixpkgs, bitarray, combinat, vp-tree }@inputs:
+  outputs =
+    { self, flake-utils, nixpkgs, bitarray, combinat, vp-tree, ancient }@inputs:
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
@@ -29,9 +32,10 @@
             ocamlPkgs.iter
             ocamlPkgs.bheap
             ocamlPkgs.logs
-            # combinat.defaultPackage.${system}
-            # bitarray.defaultPackage.${system}
-            # vp-tree.defaultPackage.${system}
+            combinat.defaultPackage.${system}
+            bitarray.defaultPackage.${system}
+            vp-tree.defaultPackage.${system}
+            ancient.defaultPackage.${system}
           ];
           src = ./.;
         };
