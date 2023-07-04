@@ -1,10 +1,9 @@
 open Std
 
-module type Lang_intf = sig
+module type DSL = sig
   module Type : sig
     type t [@@deriving compare, equal, hash, sexp]
 
-    val default : t
     val output : t
   end
 
@@ -23,42 +22,90 @@ module type Lang_intf = sig
   module Value : sig
     type t [@@deriving compare, equal, hash, sexp]
 
-    module Ctx : sig
-      type t
-    end
-
     val default : t
-    val eval : Ctx.t -> Op.t -> t list -> t
+    val eval : Op.t -> t list -> t
     val is_error : t -> bool
   end
+
+  val operators : Op.t list
 end
 
-module Make (Lang : Lang_intf) = struct
+module Params = struct
+  type t = { max_cost : int; verbose : bool } [@@deriving yojson]
+
+  let default_verbose = false
+  let create ?(verbose = default_verbose) ~max_cost () = { max_cost; verbose }
+
+  let param =
+    let open Command.Let_syntax in
+    [%map_open
+      let max_cost =
+        flag "max-cost" (required int) ~doc:"maximum cost of programs to consider"
+      and verbose = flag "verbose" no_arg ~doc:"print verbose output" in
+      create ~verbose ~max_cost ()]
+end
+
+module Stats = struct
+  type t = { bank_size : float ref; program_cost : float ref } [@@deriving yojson]
+
+  let create () = { bank_size = ref 0.; program_cost = ref Float.nan }
+end
+
+module Make (Lang : DSL) = struct
   open Lang
   module S = Search_state_all.Make (Lang)
-  module Gen = Generate.Gen_iter (Lang)
 
   exception Done of Op.t Program.t
 
-  module Ctx = struct
-    type t = {
-      max_cost : int;
-      verbose : bool;
-      ectx : Value.Ctx.t;
-      ops : Op.t list;
-      goal : Op.t -> Value.t -> bool;
-      bank_size : float ref;
-      found_program : bool ref;
-      program_cost : float ref;
-    }
+  type t = {
+    params : Params.t;
+    goal : Op.t -> Value.t -> bool;
+    stats : Stats.t;
+    search_state : S.t;
+  }
 
-    let create ?stats ?(verbose = false) ?(max_cost = Int.max_value) ectx ops goal =
-      let stats = Option.value_lazy stats ~default:(lazy (Stats.create ())) in
+  let generate_states this cost =
+    Generate.generate
+      (module Lang)
+      (S.search_iter this.search_state)
+      S.Class.value operators cost
+
+  let insert_states this cost states =
+    let new_states =
+      Iter.filter
+        (fun (state, op, args) ->
+          let type_ = Op.ret_type op in
+          let in_bank = S.mem this.search_state type_ cost state in
+          if not in_bank then S.insert_class this.search_state type_ cost state op args;
+          not in_bank)
+        states
+    in
+    this.stats.bank_size := Float.of_int @@ S.length this.search_state;
+    new_states
+
+  let check_states this states =
+    Iter.iter
+      (fun (s, op, args) ->
+        if this.goal op s then
+          let p =
+            S.program_of_op_args_exn this.search_state
+              (Int.ceil_log2 this.params.max_cost)
+              op args
+          in
+          raise (Done p))
+      states
+
+  let fill this cost =
+    let new_states = generate_states this cost in
+    let inserted_states = insert_states this cost new_states in
+    check_states this inserted_states;
+    if this.params.verbose then (
+      Fmt.epr "Finished cost %d\n%!" cost;
+      S.print_stats this.search_state)
+
+  let synthesize ?(output_stats = fun _ -> ()) params goal =
+    let this =
       {
-        max_cost;
-        verbose;
-        ectx;
-        ops;
         goal =
           (match goal with
           | `Value v ->
@@ -66,64 +113,26 @@ module Make (Lang : Lang_intf) = struct
                 [%compare.equal: Type.t] (Op.ret_type op) Type.output
                 && [%compare.equal: Value.t] v v'
           | `Pred p -> p);
-        bank_size = Stats.add_probe_exn stats "bank-size";
-        found_program = ref false;
-        program_cost = Stats.add_probe_exn stats "program-cost";
+        stats = Stats.create ();
+        search_state = S.create ();
+        params;
       }
-  end
-
-  class synthesizer (ctx : Ctx.t) =
-    object (self : 'self)
-      val max_cost = ctx.max_cost
-      val verbose = ctx.verbose
-      val search_state = S.create ()
-      val eval_ctx = ctx.ectx
-      val ops = ctx.ops
-      method get_search_state = search_state
-
-      method generate_states cost =
-        Gen.generate_states S.search_iter S.Class.value eval_ctx search_state ops cost
-
-      method insert_states cost states =
-        let new_states =
-          Iter.filter
-            (fun (state, op, args) ->
-              let type_ = Op.ret_type op in
-              let in_bank = S.mem search_state type_ cost state in
-              if not in_bank then S.insert_class search_state type_ cost state op args;
-              not in_bank)
-            states
-        in
-        ctx.bank_size := Float.of_int @@ S.length search_state;
-        new_states
-
-      method check_states states =
-        Iter.iter
-          (fun (s, op, args) ->
-            if ctx.goal op s then
-              let p =
-                S.program_of_op_args_exn search_state (Int.ceil_log2 max_cost) op args
-              in
-              raise (Done p))
-          states
-
-      method fill cost =
-        let new_states = self#generate_states cost in
-        let inserted_states = self#insert_states cost new_states in
-        self#check_states inserted_states;
-        if verbose then (
-          Fmt.epr "Finished cost %d\n%!" cost;
-          S.print_stats search_state)
-
-      method run =
-        try
-          for cost = 0 to max_cost do
-            self#fill cost
-          done;
-          None
-        with Done p ->
-          ctx.found_program := true;
-          ctx.program_cost := Float.of_int @@ Program.size p;
-          Some p
-    end
+    in
+    try
+      for cost = 0 to params.max_cost do
+        fill this cost;
+        output_stats this.stats
+      done;
+      None
+    with Done p ->
+      this.stats.program_cost := Float.of_int @@ Program.size p;
+      output_stats this.stats;
+      Some p
 end
+
+let synthesize (type op value)
+    (module Dsl : DSL with type Op.t = op and type Value.t = value) ?output_stats params
+    goal =
+  let module Synth = Make (Dsl) in
+  let output_stats = Option.map output_stats ~f:(fun f s -> f (Stats.yojson_of_t s)) in
+  Synth.synthesize ?output_stats params goal
