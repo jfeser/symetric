@@ -191,7 +191,7 @@ module Make (Dsl : DSL) = struct
   exception Done of Op.t Program.t
 
   type t = {
-    search_state : S.t;
+    xfta : S.t;
     stats : Stats.t;
     params : Params.t;
     output_stats : t -> Op.t Program.t option -> unit;
@@ -224,8 +224,8 @@ module Make (Dsl : DSL) = struct
     let distance (v, _, _) (v', _, _) = distance v v'
   end
 
-  let select_top_k_edges
-      ({ search_state; params = { max_height; verbosity; _ }; _ } as this) edges =
+  let select_top_k_edges ({ xfta; params = { max_height; verbosity; _ }; _ } as this)
+      edges =
     Iter.ordered_groupby (module Value) ~score:Edge.score ~key:(fun (v, _, _) -> v) edges
     |> Iter.timed this.stats.rank_time
     |> Iter.map (fun (v, (d, es)) ->
@@ -233,7 +233,7 @@ module Make (Dsl : DSL) = struct
              match es with
              | (_, op, args) :: _ ->
                  List.map args
-                   ~f:(S.local_greedy search_state max_height Value.eval target_distance)
+                   ~f:(S.local_greedy xfta max_height Value.eval target_distance)
                  |> Option.all
                  |> Option.iter ~f:(fun args -> raise (Done (Apply (op, args))));
                  Log.log verbosity 1 (fun m -> m "Warning: early extract failed");
@@ -247,8 +247,8 @@ module Make (Dsl : DSL) = struct
     if use_ranking then select_top_k_edges this edges else select_arbitrary edges
 
   let insert_states
-      ({ stats; search_state; params = { group_threshold; target_groups; verbosity; _ } }
-      as this) cost (all_edges : Edge.t Iter.t) =
+      ({ stats; xfta; params = { group_threshold; target_groups; verbosity; _ } } as this)
+      cost (all_edges : Edge.t Iter.t) =
     let module Edges = struct
       type t = Value.t * (Edge.t list[@compare.ignore]) [@@deriving compare, hash, sexp]
 
@@ -272,40 +272,36 @@ module Make (Dsl : DSL) = struct
         let type_ = Op.ret_type op in
         let class_ = S.Class.create type_ cost group_center in
         (* insert new representative (some may already exist) *)
-        if not @@ S.mem_class search_state class_ then
-          S.insert_class search_state type_ cost group_center op args;
-        List.iter members ~f:(fun (_, edges) ->
-            S.insert_class_members search_state class_ edges))
+        if not @@ S.mem_class xfta class_ then
+          S.insert_class xfta type_ cost group_center op args;
+        List.iter members ~f:(fun (_, edges) -> S.insert_class_members xfta class_ edges))
 
-  let insert_states_beam { search_state; params = { target_groups; _ }; _ } cost all_edges
-      =
+  let insert_states_beam { xfta; params = { target_groups; _ }; _ } cost all_edges =
     all_edges
     |> Iter.filter (fun (value, op, _) ->
            let type_ = Op.ret_type op in
            let class_ = S.Class.create type_ cost value in
-           not (S.mem_class search_state class_))
+           not (S.mem_class xfta class_))
     |> Iter.top_k_distinct (module Value) ~score:Edge.score ~key:Edge.value target_groups
     |> Iter.iter (fun (value, op, args) ->
            let type_ = Op.ret_type op in
            let class_ = S.Class.create type_ cost value in
-           if not (S.mem_class search_state class_) then
-             S.insert_class search_state type_ cost value op args)
+           if not (S.mem_class xfta class_) then
+             S.insert_class xfta type_ cost value op args)
 
-  let generate search_state =
-    Generate.generate (module Dsl) (S.search_iter search_state) S.Class.value operators
+  let generate xfta =
+    Generate.generate (module Dsl) (S.search_iter xfta) S.Class.value operators
 
   let fill_search_space
       ({
          stats;
-         search_state;
+         xfta;
          params = { max_cost; verbosity; group_threshold; _ };
          output_stats;
          _;
        } as this) =
     Synth_utils.timed (`Set stats.xfta_time) (fun () ->
-        let states_iter cost =
-          Iter.timed stats.expansion_time (generate search_state cost)
-        in
+        let states_iter cost = Iter.timed stats.expansion_time (generate xfta cost) in
 
         let run_time = ref Time.Span.zero in
 
@@ -324,17 +320,16 @@ module Make (Dsl : DSL) = struct
                 !run_time)
         done)
 
-  let extract
-      { stats; search_state; params = { extract; max_height; exhaustive_width; _ }; _ }
+  let extract { stats; xfta; params = { extract; max_height; exhaustive_width; _ }; _ }
       eval class_ =
     Synth_utils.timed (`Add stats.extract_time) (fun () ->
         match extract with
-        | `Greedy -> S.local_greedy search_state max_height eval target_distance class_
+        | `Greedy -> S.local_greedy xfta max_height eval target_distance class_
         | `Exhaustive ->
-            S.exhaustive ~width:exhaustive_width search_state max_height eval
-              target_distance class_
-        | `Random -> S.random search_state max_height class_
-        | `Centroid -> S.centroid search_state max_height class_)
+            S.exhaustive ~width:exhaustive_width xfta max_height eval target_distance
+              class_
+        | `Random -> S.random xfta max_height class_
+        | `Centroid -> S.centroid xfta max_height class_)
 
   let backwards_pass this class_ =
     if [%equal: Type.t] (S.Class.type_ class_) Type.output then
@@ -365,10 +360,8 @@ module Make (Dsl : DSL) = struct
   let synthesize ?(output_stats = fun _ -> ())
       ({ Params.verbosity; backward_pass_repeats } as params) =
     let stats = Stats.create () in
-    let search_state = S.create () in
-    let this =
-      { stats; params; search_state; output_stats = output_metric_stats output_stats }
-    in
+    let xfta = S.create () in
+    let this = { stats; params; xfta; output_stats = output_metric_stats output_stats } in
 
     Timer.start stats.runtime;
 
@@ -377,7 +370,7 @@ module Make (Dsl : DSL) = struct
     Log.log verbosity 1 (fun m -> m "Starting backwards pass");
 
     let classes =
-      S.classes search_state
+      S.classes xfta
       |> Iter.filter (fun c -> [%compare.equal: Type.t] Type.output (S.Class.type_ c))
       |> Iter.map (fun c -> (target_distance @@ S.Class.value c, c))
       |> Iter.sort ~cmp:(fun (d, _) (d', _) -> [%compare: float] d d')
