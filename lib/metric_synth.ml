@@ -29,7 +29,6 @@ module type DSL = sig
   end
 
   val operators : Op.t list
-  val parse : Sexp.t -> Op.t Program.t
   val serialize : Op.t Program.t -> Sexp.t
   val rewrite : Op.t Program.t -> Op.t Program.t list
 end
@@ -47,7 +46,6 @@ module Params = struct
     backward_pass_repeats : int;
     verbosity : int;
     target_groups : int;
-    output_file : string;
     use_ranking : bool; (* if false, disable ranking clustered states *)
     extract : [ `Greedy | `Random | `Centroid | `Exhaustive ];
     repair : [ `Guided | `Random ];
@@ -66,7 +64,7 @@ module Params = struct
       ?(verbosity = default_verbosity) ?(use_ranking = default_use_ranking)
       ?(extract = default_extract) ?(repair = default_repair)
       ?(exhaustive_width = default_exhaustive_width) ?max_height ~local_search_steps
-      ~group_threshold ~max_cost ~n_groups ~output_file () =
+      ~group_threshold ~max_cost ~n_groups () =
     let max_height = Option.value max_height ~default:(1 + Int.ceil_log2 max_cost) in
     {
       local_search_steps;
@@ -76,7 +74,6 @@ module Params = struct
       backward_pass_repeats;
       verbosity;
       target_groups = n_groups;
-      output_file;
       use_ranking;
       extract;
       repair;
@@ -134,10 +131,10 @@ module Params = struct
         flag "-repair"
           (optional_with_default default_repair repair)
           ~doc:" method of program repair"
-      and output_file = flag "-out" (required string) ~doc:" output to file" in
+      in
       create ~max_cost ?max_height ~group_threshold ~n_groups ~local_search_steps
         ~backward_pass_repeats ~verbosity ~use_ranking ~extract ~repair ~exhaustive_width
-        ~output_file ()]
+        ()]
 end
 
 module Stats = struct
@@ -175,17 +172,16 @@ end
 module Log = struct
   let start_time = Time.now ()
 
-  let log (p : Params.t) level msgf =
+  let log verbosity level msgf =
     let with_time fmt =
       Format.fprintf Format.err_formatter
         ("[%a] @[" ^^ fmt ^^ "@]@.%!")
         Time.Span.pp
         (Time.diff (Time.now ()) start_time)
     in
-    if level <= p.verbosity then msgf with_time
+    if level <= verbosity then msgf with_time
 
-  let sexp (p : Params.t) level lsexp =
-    if level <= p.verbosity then eprint_s @@ Lazy.force lsexp
+  let sexp verbosity level lsexp = if level <= verbosity then eprint_s @@ Lazy.force lsexp
 end
 
 module Make (Dsl : DSL) = struct
@@ -194,44 +190,26 @@ module Make (Dsl : DSL) = struct
 
   exception Done of Op.t Program.t
 
-  let search_state = S.create ()
-  let stats = Stats.create ()
-
-  let write_output (p : Params.t) m_prog =
-    let program_size =
-      Option.map m_prog ~f:(fun p -> Float.of_int @@ Program.size p)
-      |> Option.value ~default:Float.nan
-    in
-    let program_json =
-      Option.map m_prog ~f:(fun p -> `String (Sexp.to_string @@ serialize p))
-      |> Option.value ~default:`Null
-    in
-    let open Yojson in
-    let json =
-      `Assoc
-        [
-          ("method", `String "metric");
-          ("program", program_json);
-          ("program_size", `Float program_size);
-          ("stats", [%yojson_of: Stats.t] stats);
-          ("params", [%yojson_of: Params.t] p);
-        ]
-    in
-    Out_channel.with_file p.output_file ~f:(fun ch -> Safe.to_channel ch json)
+  type t = {
+    search_state : S.t;
+    stats : Stats.t;
+    params : Params.t;
+    output_stats : t -> Op.t Program.t option -> unit;
+  }
 
   let distance = Value.distance
   let target_distance = Value.target_distance
 
-  let local_search (p : Params.t) program =
+  let local_search { stats; params = { local_search_steps; repair; _ }; _ } program =
     Synth_utils.timed (`Add stats.repair_time) (fun () ->
         let value_eval = Synth_utils.memoized_eval (module Dsl) in
         Local_search.of_unnormalize_tabu ~target_distance
-          ~random:(match p.repair with `Guided -> false | `Random -> true)
+          ~random:(match repair with `Guided -> false | `Random -> true)
           (module Op)
           (module Value)
           rewrite (Program.eval value_eval) program
         |> Iter.map (fun p -> (target_distance (Program.eval value_eval p), p))
-        |> Iter.take p.local_search_steps
+        |> Iter.take local_search_steps
         |> Iter.mapi (fun i (d, x) -> (d, i, x))
         |> Iter.min_floor ~to_float:(fun (d, _, _) -> d) 0.0
         |> Option.map ~f:(fun (_, i, p) -> (i, p))
@@ -246,41 +224,43 @@ module Make (Dsl : DSL) = struct
     let distance (v, _, _) (v', _, _) = distance v v'
   end
 
-  let select_top_k_edges (p : Params.t) edges =
+  let select_top_k_edges
+      ({ search_state; params = { max_height; verbosity; _ }; _ } as this) edges =
     Iter.ordered_groupby (module Value) ~score:Edge.score ~key:(fun (v, _, _) -> v) edges
-    |> Iter.timed stats.rank_time
+    |> Iter.timed this.stats.rank_time
     |> Iter.map (fun (v, (d, es)) ->
            if Float.(d = 0.) then
              match es with
              | (_, op, args) :: _ ->
                  List.map args
-                   ~f:
-                     (S.local_greedy search_state p.max_height Value.eval target_distance)
+                   ~f:(S.local_greedy search_state max_height Value.eval target_distance)
                  |> Option.all
                  |> Option.iter ~f:(fun args -> raise (Done (Apply (op, args))));
-                 Log.log p 1 (fun m -> m "Warning: early extract failed");
+                 Log.log verbosity 1 (fun m -> m "Warning: early extract failed");
                  (v, es)
              | _ -> (v, es)
            else (v, es))
 
   let select_arbitrary edges = Iter.map (fun ((v, _, _) as edge) -> (v, [ edge ])) edges
 
-  let select_edges (p : Params.t) edges =
-    if p.use_ranking then select_top_k_edges p edges else select_arbitrary edges
+  let select_edges ({ params = { use_ranking; _ }; _ } as this) edges =
+    if use_ranking then select_top_k_edges this edges else select_arbitrary edges
 
-  let insert_states (p : Params.t) cost (all_edges : Edge.t Iter.t) =
+  let insert_states
+      ({ stats; search_state; params = { group_threshold; target_groups; verbosity; _ } }
+      as this) cost (all_edges : Edge.t Iter.t) =
     let module Edges = struct
       type t = Value.t * (Edge.t list[@compare.ignore]) [@@deriving compare, hash, sexp]
 
       let distance (v, _) (v', _) = distance v v'
     end in
     let groups =
-      all_edges |> select_edges p
-      |> Grouping.create_m (module Edges) p.group_threshold Edges.distance p.target_groups
+      all_edges |> select_edges this
+      |> Grouping.create_m (module Edges) group_threshold Edges.distance target_groups
     in
     (stats.cluster_time := Time.Span.(!(stats.cluster_time) + groups.runtime));
 
-    Log.log p 1 (fun m ->
+    Log.log verbosity 1 (fun m ->
         m "Generated %d groups from %d edges"
           (Hashtbl.length groups.groups)
           groups.n_samples);
@@ -297,67 +277,104 @@ module Make (Dsl : DSL) = struct
         List.iter members ~f:(fun (_, edges) ->
             S.insert_class_members search_state class_ edges))
 
-  let insert_states_beam (p : Params.t) cost all_edges =
+  let insert_states_beam { search_state; params = { target_groups; _ }; _ } cost all_edges
+      =
     all_edges
     |> Iter.filter (fun (value, op, _) ->
            let type_ = Op.ret_type op in
            let class_ = S.Class.create type_ cost value in
            not (S.mem_class search_state class_))
-    |> Iter.top_k_distinct
-         (module Value)
-         ~score:Edge.score ~key:Edge.value p.target_groups
+    |> Iter.top_k_distinct (module Value) ~score:Edge.score ~key:Edge.value target_groups
     |> Iter.iter (fun (value, op, args) ->
            let type_ = Op.ret_type op in
            let class_ = S.Class.create type_ cost value in
            if not (S.mem_class search_state class_) then
              S.insert_class search_state type_ cost value op args)
 
-  let generate =
+  let generate search_state =
     Generate.generate (module Dsl) (S.search_iter search_state) S.Class.value operators
 
-  let fill_search_space (p : Params.t) =
+  let fill_search_space
+      ({
+         stats;
+         search_state;
+         params = { max_cost; verbosity; group_threshold; _ };
+         output_stats;
+         _;
+       } as this) =
     Synth_utils.timed (`Set stats.xfta_time) (fun () ->
-        let states_iter cost = Iter.timed stats.expansion_time (generate cost) in
+        let states_iter cost =
+          Iter.timed stats.expansion_time (generate search_state cost)
+        in
 
         let run_time = ref Time.Span.zero in
 
-        for cost = 1 to p.max_cost do
-          Log.log p 1 (fun m -> m "Start generating states of cost %d" cost);
+        for cost = 1 to max_cost do
+          Log.log verbosity 1 (fun m -> m "Start generating states of cost %d" cost);
 
           Synth_utils.timed (`Set run_time) (fun () ->
-              if Float.(0. = p.group_threshold) then
-                insert_states_beam p cost (states_iter cost)
-              else insert_states p cost (states_iter cost));
+              if Float.(0. = group_threshold) then
+                insert_states_beam this cost (states_iter cost)
+              else insert_states this cost (states_iter cost));
 
           incr stats.max_cost_generated;
-          write_output p None;
-          Log.log p 1 (fun m ->
+          output_stats this None;
+          Log.log verbosity 1 (fun m ->
               m "Finish generating states of cost %d (runtime=%a)" cost Time.Span.pp
                 !run_time)
         done)
 
-  let extract (p : Params.t) eval class_ =
+  let extract
+      { stats; search_state; params = { extract; max_height; exhaustive_width; _ }; _ }
+      eval class_ =
     Synth_utils.timed (`Add stats.extract_time) (fun () ->
-        match p.extract with
-        | `Greedy -> S.local_greedy search_state p.max_height eval target_distance class_
+        match extract with
+        | `Greedy -> S.local_greedy search_state max_height eval target_distance class_
         | `Exhaustive ->
-            S.exhaustive ~width:p.exhaustive_width search_state p.max_height eval
+            S.exhaustive ~width:exhaustive_width search_state max_height eval
               target_distance class_
-        | `Random -> S.random search_state p.max_height class_
-        | `Centroid -> S.centroid search_state p.max_height class_)
+        | `Random -> S.random search_state max_height class_
+        | `Centroid -> S.centroid search_state max_height class_)
 
-  let backwards_pass (p : Params.t) class_ =
+  let backwards_pass this class_ =
     if [%equal: Type.t] (S.Class.type_ class_) Type.output then
       let eval = Synth_utils.memoized_eval (module Dsl) in
-      Iter.forever (fun () -> extract p eval class_ |> Option.map ~f:(local_search p))
+      Iter.forever (fun () ->
+          extract this eval class_ |> Option.map ~f:(local_search this))
     else Iter.empty
 
-  let synthesize (p : Params.t) =
+  let output_metric_stats output this m_prog =
+    let program_size =
+      Option.map m_prog ~f:(fun p -> Float.of_int @@ Program.size p)
+      |> Option.value ~default:Float.nan
+    in
+    let program_json =
+      Option.map m_prog ~f:(fun p -> `String (Sexp.to_string @@ serialize p))
+      |> Option.value ~default:`Null
+    in
+    output
+      (`Assoc
+        [
+          ("method", `String "metric");
+          ("program", program_json);
+          ("program_size", `Float program_size);
+          ("stats", [%yojson_of: Stats.t] this.stats);
+          ("params", [%yojson_of: Params.t] this.params);
+        ])
+
+  let synthesize ?(output_stats = fun _ -> ())
+      ({ Params.verbosity; backward_pass_repeats } as params) =
+    let stats = Stats.create () in
+    let search_state = S.create () in
+    let this =
+      { stats; params; search_state; output_stats = output_metric_stats output_stats }
+    in
+
     Timer.start stats.runtime;
 
-    write_output p None;
+    this.output_stats this None;
 
-    Log.log p 1 (fun m -> m "Starting backwards pass");
+    Log.log verbosity 1 (fun m -> m "Starting backwards pass");
 
     let classes =
       S.classes search_state
@@ -370,11 +387,11 @@ module Make (Dsl : DSL) = struct
         classes
         |> Iter.iteri (fun i (d, (class_ : S.Class.t)) ->
                incr stats.groups_searched;
-               Log.log p 1 (fun m -> m "Searching candidate %d (d=%f)" i d);
-               Log.log p 2 (fun m -> m "@.%a" Value.pp (S.Class.value class_));
+               Log.log verbosity 1 (fun m -> m "Searching candidate %d (d=%f)" i d);
+               Log.log verbosity 2 (fun m -> m "@.%a" Value.pp (S.Class.value class_));
 
-               backwards_pass p class_
-               |> Iter.take p.backward_pass_repeats
+               backwards_pass this class_
+               |> Iter.take backward_pass_repeats
                |> Iter.filter_map Fun.id
                |> Iter.mapi (fun backwards_pass_i (local_search_i, p) ->
                       ((backwards_pass_i, local_search_i), p))
@@ -385,25 +402,25 @@ module Make (Dsl : DSL) = struct
                     ~f:(fun ((backwards_pass_iters, local_search_iters), program) ->
                       let found_value = Program.eval Value.eval program in
 
-                      Log.log p 2 (fun m ->
+                      Log.log verbosity 2 (fun m ->
                           m "Best (d=%f):@.%a" (target_distance found_value) Value.pp
                             found_value);
-                      Log.sexp p 2 (lazy [%message (program : Op.t Program.t)]);
+                      Log.sexp verbosity 2 (lazy [%message (program : Op.t Program.t)]);
 
                       if Float.(target_distance found_value = 0.) then (
-                        Log.log p 0 (fun m ->
+                        Log.log verbosity 0 (fun m ->
                             m "local search iters %d" local_search_iters);
-                        Log.log p 0 (fun m ->
+                        Log.log verbosity 0 (fun m ->
                             m "backwards pass iters %d" backwards_pass_iters);
                         raise (Done program))));
         None
       with Done p -> Some p
     in
     Timer.stop stats.runtime;
-    write_output p ret;
+    this.output_stats this ret;
     ret
 end
 
-let synthesize (type op) p (module Dsl : DSL with type Op.t = op) =
+let synthesize (type op) ?output_stats p (module Dsl : DSL with type Op.t = op) =
   let module Synth = Make (Dsl) in
-  Synth.synthesize p
+  Synth.synthesize ?output_stats p

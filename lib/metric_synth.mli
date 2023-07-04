@@ -27,7 +27,6 @@ module type DSL = sig
   end
 
   val operators : Op.t list
-  val parse : Sexp.t -> Op.t Program.t
   val serialize : Op.t Program.t -> Sexp.t
   val rewrite : Op.t Program.t -> Op.t Program.t list
 end
@@ -41,7 +40,6 @@ module Params : sig
     backward_pass_repeats : int;
     verbosity : int;
     target_groups : int;
-    output_file : string;
     use_ranking : bool;
     extract : [ `Centroid | `Exhaustive | `Greedy | `Random ];
     repair : [ `Guided | `Random ];
@@ -61,11 +59,14 @@ module Params : sig
     group_threshold:float ->
     max_cost:int ->
     n_groups:int ->
-    output_file:string ->
     unit ->
     t
 
   val param : t Command.Param.t
 end
 
-val synthesize : Params.t -> (module DSL with type Op.t = 'op) -> 'op Program.t option
+val synthesize :
+  ?output_stats:([> `Assoc of (string * Yojson.Safe.t) list ] -> unit) ->
+  Params.t ->
+  (module DSL with type Op.t = 'op) ->
+  'op Program.t option
