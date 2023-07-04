@@ -138,20 +138,16 @@ module Params = struct
 end
 
 module Stats = struct
-  type time_span = Time.Span.t
-
-  let yojson_of_time_span t = `Float (Time.Span.to_sec t)
-
   type t = {
     runtime : Timer.t;
     max_cost_generated : int ref;
     groups_searched : int ref;
-    cluster_time : time_span ref;
-    rank_time : time_span ref;
-    expansion_time : time_span ref;
-    repair_time : time_span ref;
-    xfta_time : time_span ref;
-    extract_time : time_span ref;
+    cluster_time : Time.Span.t ref;
+    rank_time : Time.Span.t ref;
+    expansion_time : Time.Span.t ref;
+    repair_time : Time.Span.t ref;
+    xfta_time : Time.Span.t ref;
+    extract_time : Time.Span.t ref;
   }
   [@@deriving yojson_of]
 

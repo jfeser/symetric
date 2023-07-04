@@ -406,3 +406,17 @@ module Set = struct
 
   let union_map m ~f s = Iter.of_set s |> Iter.map f |> Iter.fold Set.union (Set.empty m)
 end
+
+module Time = struct
+  include Time
+
+  module Span = struct
+    include Span
+
+    let yojson_of_t t = `Float (Time.Span.to_sec t)
+
+    let t_of_yojson = function
+      | `Float f -> Time.Span.of_sec f
+      | _ -> failwith "expected float"
+  end
+end

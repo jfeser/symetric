@@ -110,3 +110,14 @@ end
 
 val rank_stability :
   int -> int list Iter.t -> (float, [> `Not_enough_objects | `No_ranks ]) result
+
+module Time : sig
+  include module type of Time
+
+  module Span : sig
+    include module type of Time.Span
+
+    val yojson_of_t : t -> Yojson.Safe.t
+    val t_of_yojson : Yojson.Safe.t -> t
+  end
+end
