@@ -31,6 +31,20 @@ let write_output out m_prog =
   in
   Out_channel.with_file out ~f:(fun ch -> Safe.to_channel ch json)
 
+let synthesize (synth_params : Baseline.Params.t) (dsl_params : Cad_ext.Params.t) target =
+  let module Dsl = struct
+    include Regex
+
+    module Value = struct
+      include Value
+
+      let eval = eval ~error_on_trivial:true ~dim:dsl_params.dim
+    end
+
+    let operators = Op.default_operators 15 @ ops
+  end in
+  Baseline.synthesize (module Dsl) synth_params (`Value target)
+
 let cmd =
   let open Command.Let_syntax in
   Command.basic ~summary:"Solve regex problems with enumeration."

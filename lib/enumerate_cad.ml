@@ -1,81 +1,47 @@
 open Std
-open Cad_ext
-module Synth = Baseline.Make (Cad_ext)
 
-module Params = struct
-  type t = {
-    size : Scene2d.Dim.t;
-    ectx : Value.Ctx.t;
-    target : Scene2d.t;
-    operators : Op.t list;
-    verbose : bool;
-    max_cost : int option;
-  }
-end
+(* let print_output m_prog = *)
+(*   let program_size = *)
+(*     Option.map m_prog ~f:(fun p -> Float.of_int @@ Program.size p) *)
+(*     |> Option.value ~default:Float.nan *)
+(*   in *)
+(*   let program_json = *)
+(*     Option.map m_prog ~f:(fun p -> `String (Sexp.to_string @@ Cad_ext.serialize p)) *)
+(*     |> Option.value ~default:`Null *)
+(*   in *)
+(*   let open Yojson in *)
+(*   Basic.to_channel Out_channel.stdout *)
+(*     (`Assoc *)
+(*       [ *)
+(*         ("method", `String "enumeration"); *)
+(*         ("scene_width", `Int (size ()).xres); *)
+(*         ("scene_height", `Int (size ()).yres); *)
+(*         ("program_size", `Float program_size); *)
+(*         ("runtime", `Float (Time.Span.to_sec !runtime)); *)
+(*         ("program", program_json); *)
+(*       ]) *)
 
-let params = Set_once.create ()
-let[@inline] size () = (Set_once.get_exn params [%here]).Params.size
-let[@inline] ectx () = (Set_once.get_exn params [%here]).Params.ectx
-let[@inline] target () = (Set_once.get_exn params [%here]).Params.target
-let[@inline] operators () = (Set_once.get_exn params [%here]).Params.operators
-let[@inline] verbose () = (Set_once.get_exn params [%here]).Params.verbose
-let[@inline] max_cost () = (Set_once.get_exn params [%here]).Params.max_cost
-let runtime = ref Time.Span.zero
+let synthesize (synth_params : Baseline.Params.t) (dsl_params : Cad_ext.Params.t) target =
+  let module Dsl = struct
+    include Cad_ext
 
-let synthesize () =
-  let start_time = Time.now () in
+    module Value = struct
+      include Value
 
-  let ectx = ectx ()
-  and operators = operators ()
-  and target = target ()
-  and verbose = verbose () in
-  let ctx =
-    Synth.Ctx.create ~verbose ?max_cost:(max_cost ()) ectx operators
-      (`Value (Value.Scene target))
-  in
-  let synth = new Synth.synthesizer ctx in
-  let ret = synth#run in
-  runtime := Time.diff (Time.now ()) start_time;
-  ret
+      let eval = eval ~error_on_trivial:true ~dim:dsl_params.dim
+    end
 
-let print_output m_prog =
-  let program_size =
-    Option.map m_prog ~f:(fun p -> Float.of_int @@ Program.size p)
-    |> Option.value ~default:Float.nan
-  in
-  let program_json =
-    Option.map m_prog ~f:(fun p -> `String (Sexp.to_string @@ Cad_ext.serialize p))
-    |> Option.value ~default:`Null
-  in
-  let open Yojson in
-  Basic.to_channel Out_channel.stdout
-    (`Assoc
-      [
-        ("method", `String "enumeration");
-        ("scene_width", `Int (size ()).xres);
-        ("scene_height", `Int (size ()).yres);
-        ("program_size", `Float program_size);
-        ("runtime", `Float (Time.Span.to_sec !runtime));
-        ("program", program_json);
-      ])
+    let operators =
+      Cad_ext.Op.default_operators ~xres:dsl_params.dim.xres ~yres:dsl_params.dim.yres
+  end in
+  Baseline.synthesize (module Dsl) synth_params (`Value target)
 
-let set_params ~dim:size ~verbose ?max_cost target =
-  let ectx = Value.Ctx.create size in
-  let target_value = Program.eval (Value.eval ectx) target in
-  let target_scene = match target_value with Scene s -> s | _ -> assert false in
-  let operators = Op.default_operators ~xres:size.xres ~yres:size.yres in
-
-  Set_once.set_exn params [%here]
-    Params.{ size; ectx; target = target_scene; operators; verbose; max_cost }
-
-let cmd =
-  let open Command.Let_syntax in
-  Command.basic ~summary:"Solve CAD problems with enumeration."
-    [%map_open
-      let dim = Scene2d.Dim.param
-      and verbose = flag "-verbose" no_arg ~doc:" increase verbosity"
-      and max_cost = flag "-max-cost" (optional int) ~doc:" maximum program cost" in
-      fun () ->
-        let prog = Cad_ext.parse @@ Sexp.input_sexp In_channel.stdin in
-        set_params ~dim ~verbose ?max_cost prog;
-        synthesize () |> print_output]
+(* let cmd = *)
+(*   let open Command.Let_syntax in *)
+(*   Command.basic ~summary:"Solve CAD problems with enumeration." *)
+(*     [%map_open *)
+(*       let synth_params = Baseline.Params.param and dsl_params = Cad_ext.Params.param in *)
+(*       fun () -> *)
+(*         let prog = Cad_ext.parse @@ Sexp.input_sexp In_channel.stdin in *)
+(*         set_params ~dim ~verbose ?max_cost prog; *)
+(*         synthesize () |> print_output] *)

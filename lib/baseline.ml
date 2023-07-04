@@ -46,9 +46,11 @@ module Params = struct
 end
 
 module Stats = struct
-  type t = { bank_size : float ref; program_cost : float ref } [@@deriving yojson]
+  type t = { runtime : Timer.t; bank_size : float ref; program_cost : float ref }
+  [@@deriving yojson_of]
 
-  let create () = { bank_size = ref 0.; program_cost = ref Float.nan }
+  let create () =
+    { runtime = Timer.create (); bank_size = ref 0.; program_cost = ref Float.nan }
 end
 
 module Make (Lang : DSL) = struct
@@ -118,15 +120,18 @@ module Make (Lang : DSL) = struct
         params;
       }
     in
+    Timer.start this.stats.runtime;
     try
       for cost = 0 to params.max_cost do
         fill this cost;
         output_stats this.stats
       done;
+      Timer.stop this.stats.runtime;
       None
     with Done p ->
       this.stats.program_cost := Float.of_int @@ Program.size p;
       output_stats this.stats;
+      Timer.stop this.stats.runtime;
       Some p
 end
 

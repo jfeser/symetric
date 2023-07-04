@@ -101,68 +101,6 @@ struct
 
       let default = []
       let pp fmt x = Iter.pp_seq Pred.pp fmt @@ Iter.of_set x
-
-      (* let pp fmt = function *)
-      (*   | Bottom -> Fmt.pf fmt "⊥" *)
-      (*   | Preds ps -> *)
-      (*       let iter f x = Set.iter ~f x in *)
-      (*       (Fmt.brackets (Fmt.iter ~sep:Fmt.semi iter Pred.pp)) fmt ps *)
-
-      (* let of_iter iter = *)
-      (*   Iter.fold *)
-      (*     (fun ps p -> *)
-      (*       match (ps, p) with *)
-      (*       | ps, `True -> ps *)
-      (*       | _, `False | Bottom, _ -> Bottom *)
-      (*       | Preds pp, ((`Pred _ | `Concrete _) as p) -> Preds (Set.add pp p)) *)
-      (*     true_ iter *)
-
-      (* let to_iter = function *)
-      (*   | Bottom -> Iter.empty *)
-      (*   | Preds ps -> *)
-      (*       Iter.cons `True *)
-      (*       @@ Iter.map (function #Pred.t as p -> p) *)
-      (*       @@ (Iter.of_set ps :> [> Pred.t ] Iter.t) *)
-
-      (* let lift conc = *)
-      (*   let domain = Domain_pred.lift conc |> Iter.map (fun p -> `Pred p) in *)
-      (*   of_iter (Iter.cons (`Concrete conc) domain) *)
-
-      (* let and_ p p' = *)
-      (*   match (p, p') with *)
-      (*   | Bottom, _ | _, Bottom -> Bottom *)
-      (*   | Preds ps, Preds ps' -> Preds (List.map2_exn ~f:Set.union ps ps') *)
-
-      (* let and_many = Iter.fold and_ true_ *)
-
-      (* let pack ps = *)
-      (*   let concrete = *)
-      (*     Iter.of_set ps |> Iter.find (function `Concrete _ as c -> Some c | _ -> None) *)
-      (*   in *)
-      (*   match concrete with *)
-      (*   | Some c -> c *)
-      (*   | None -> *)
-      (*       `Preds *)
-      (*         (Iter.of_set ps *)
-      (*         |> Iter.map (function `Pred p -> p | `Concrete _ -> assert false) *)
-      (*         |> Iter.to_list) *)
-
-      (* let implies p p' = *)
-      (*   match (p, p') with *)
-      (*   | Bottom, _ -> true *)
-      (*   | _, Bottom -> false *)
-      (*   | Preds ps, Preds ps' -> Domain_pred.implies (pack ps) (pack ps') *)
-
-      (* let contains p v = *)
-      (*   match p with *)
-      (*   | Bottom -> false *)
-      (*   | Preds ps -> *)
-      (*       Set.for_all ps ~f:(function *)
-      (*         | `Pred p -> Domain_pred.eval p v *)
-      (*         | `Concrete v' -> [%equal: Value.t] v v') *)
-
-      (* let length = function Bottom -> 0 | Preds ps -> Set.length ps *)
-      (* let singleton p = of_iter @@ Iter.singleton p *)
     end
 
     include T
@@ -238,93 +176,6 @@ struct
             |> Iter.map (fun ((c, x), (c', xs')) -> (c + c', x :: xs'))
       in
       per_arg_conjuncts args
-
-    (* let strengthen_enum ~k too_strong too_weak check = *)
-    (*   let n_args = List.length too_strong in *)
-    (*   assert (List.length too_weak = n_args); *)
-
-    (*   let module Conjunct_lang = struct *)
-    (*     module Type = struct *)
-    (*       type t = Args | Pred of int [@@deriving compare, hash, sexp] *)
-
-    (*       let output = Args *)
-    (*       let default = Args *)
-    (*     end *)
-
-    (*     module Op = struct *)
-    (*       type t = Args | And of int | Pred of int * Pred.t *)
-    (*       [@@deriving compare, hash, sexp] *)
-
-    (*       let default = Args *)
-    (*       let pp = Fmt.nop *)
-    (*       let arity = function Args -> n_args | And _ -> 2 | Pred _ -> 0 *)
-
-    (*       let ret_type : _ -> Type.t = function *)
-    (*         | Args -> Args *)
-    (*         | And slot -> Pred slot *)
-    (*         | Pred (slot, _) -> Pred slot *)
-
-    (*       let args_type = function *)
-    (*         | Args -> List.init n_args ~f:(fun slot -> Type.Pred slot) *)
-    (*         | And slot -> [ Type.Pred slot; Type.Pred slot ] *)
-    (*         | Pred _ -> [] *)
-
-    (*       let is_commutative _ = false *)
-
-    (*       let cost = function *)
-    (*         | Pred (_, `True) -> 1 *)
-    (*         | Pred (_, (#Pred.t as p)) -> Pred.cost p *)
-    (*         | Args | And _ -> 1 *)
-    (*     end *)
-
-    (*     module Value = struct *)
-    (*       type nonrec t = Args of t list | Pred of t [@@deriving compare, hash, sexp] *)
-
-    (*       module Ctx = Unit *)
-
-    (*       let default = Pred Bottom *)
-
-    (*       let eval _ op args = *)
-    (*         match (op, args) with *)
-    (*         | Op.Args, preds -> *)
-    (*             Args (List.map preds ~f:(function Pred p -> p | _ -> assert false)) *)
-    (*         | And _, [ Pred p; Pred p' ] -> Pred (and_ p p') *)
-    (*         | Pred (_, p), [] -> Pred (singleton p) *)
-    (*         | _ -> assert false *)
-
-    (*       let is_error = function Pred p -> length p > k | _ -> false *)
-    (*     end *)
-    (*   end in *)
-    (*   let open Conjunct_lang in *)
-    (*   let module Synth = Baseline.Make (Conjunct_lang) in *)
-    (*   let ops = *)
-    (*     Op.Args *)
-    (*     :: List.concat_mapi too_strong ~f:(fun slot conc -> *)
-    (*            let pred_ops = *)
-    (*              lift conc |> to_iter *)
-    (*              |> Iter.map (fun p -> Op.Pred (slot, p)) *)
-    (*              |> Iter.to_list *)
-    (*            in *)
-    (*            Op.And slot :: pred_ops) *)
-    (*   in *)
-    (*   let exception Done of t list in *)
-    (*   let synth = *)
-    (*     let config = *)
-    (*       Synth.Ctx.create () ops *)
-    (*         (`Pred *)
-    (*           (fun _ v -> *)
-    (*             match v with *)
-    (*             | Value.Args args -> *)
-    (*                 let args = List.map2_exn args too_weak ~f:and_ in *)
-    (*                 if check args then raise (Done args) else false *)
-    (*             | _ -> false)) *)
-    (*     in *)
-    (*     new Synth.synthesizer config *)
-    (*   in *)
-    (*   try *)
-    (*     let (_ : _) = synth#run in *)
-    (*     raise_s [%message "failed to refine"] *)
-    (*   with Done args -> args *)
 
     let strengthen_simple ~k too_strong too_weak implies =
       let candidates =
@@ -409,9 +260,9 @@ struct
         |> Iter.to_set (module Pred)
       in
       (if debug then
-       let new_preds = Set.diff preds ctx.preds in
-       Fmt.epr "@[<v>Added new predicates: %a\n%!@]" (Iter.pp_seq Pred.pp)
-         (Iter.of_set new_preds));
+         let new_preds = Set.diff preds ctx.preds in
+         Fmt.epr "@[<v>Added new predicates: %a\n%!@]" (Iter.pp_seq Pred.pp)
+           (Iter.of_set new_preds));
       let preds' = Set.union ctx.preds preds in
 
       Some { ctx with preds = preds' }

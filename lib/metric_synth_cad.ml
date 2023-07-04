@@ -1,13 +1,10 @@
 open Cad_ext
 
 module Params = struct
-  type t = { dim : Scene2d.Dim.t; distance : [ `Relative | `Jaccard ] }
-  [@@deriving yojson]
+  type t = { distance : [ `Relative | `Jaccard ] } [@@deriving yojson]
 
-  let default_max_repeat_count = 4
-  let default_dim = Scene2d.Dim.create ()
   let default_distance = `Relative
-  let create ?(dim = default_dim) ?(distance = default_distance) () = { dim; distance }
+  let create ?(distance = default_distance) () = { distance }
 
   let param =
     let open Command.Let_syntax in
@@ -18,16 +15,13 @@ module Params = struct
       | _ -> failwith "invalid distance type"
     in
     [%map_open
-      let dim = Scene2d.Dim.param
-      and distance =
+      let distance =
         flag "distance"
           (optional_with_default default_distance distance)
           ~doc:"distance type"
       in
-      create ~dim ~distance ()]
+      create ~distance ()]
 end
-
-let max_repeat_count = 4
 
 let relative_distance ~target (v : Value.t) (v' : Value.t) =
   match (v, v') with
@@ -95,10 +89,11 @@ let rewrite operators =
       ]
   | _ -> []
 
-let synthesize (metric_params : Metric_synth.Params.t) (dsl_params : Params.t) target =
+let synthesize (metric_params : Metric_synth.Params.t) (dsl_params : Cad_ext.Params.t)
+    (params : Params.t) target =
   let dim = dsl_params.dim in
   let value_distance =
-    match dsl_params.distance with
+    match params.distance with
     | `Relative -> relative_distance ~target
     | `Jaccard -> jaccard_distance
   in
@@ -116,7 +111,6 @@ let synthesize (metric_params : Metric_synth.Params.t) (dsl_params : Params.t) t
       end
 
       let operators = Op.default_operators ~xres:dim.xres ~yres:dim.yres
-      let parse = parse
       let serialize = serialize
       let rewrite = rewrite operators
     end : Metric_synth.DSL

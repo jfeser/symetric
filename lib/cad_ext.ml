@@ -1,3 +1,16 @@
+module Params = struct
+  type t = { dim : Scene2d.Dim.t } [@@deriving yojson]
+
+  let default_dim = Scene2d.Dim.create ()
+  let create ?(dim = default_dim) () = { dim }
+
+  let param =
+    let open Command.Let_syntax in
+    [%map_open
+      let dim = Scene2d.Dim.param in
+      create ~dim ()]
+end
+
 module Type = struct
   type t = Int | Rep_count | Scene | Error [@@deriving compare, equal, hash, sexp]
 

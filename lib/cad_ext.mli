@@ -1,3 +1,11 @@
+module Params : sig
+  type t = { dim : Scene2d.Dim.t } [@@deriving yojson]
+
+  val default_dim : Scene2d.Dim.t
+  val create : ?dim:Scene2d.Dim.t -> unit -> t
+  val param : t Command.Param.t
+end
+
 module Type : sig
   type t = Int | Rep_count | Scene | Error [@@deriving compare, equal, hash, sexp]
 
