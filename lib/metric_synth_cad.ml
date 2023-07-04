@@ -1,20 +1,13 @@
 open Cad_ext
 
 module Params = struct
-  type t = {
-    dim : Scene2d.Dim.t;
-    max_repeat_count : int;
-    distance : [ `Relative | `Jaccard ];
-  }
+  type t = { dim : Scene2d.Dim.t; distance : [ `Relative | `Jaccard ] }
   [@@deriving yojson]
 
   let default_max_repeat_count = 4
   let default_dim = Scene2d.Dim.create ()
   let default_distance = `Relative
-
-  let create ?(max_repeat_count = default_max_repeat_count) ?(dim = default_dim)
-      ?(distance = default_distance) () =
-    { dim; max_repeat_count; distance }
+  let create ?(dim = default_dim) ?(distance = default_distance) () = { dim; distance }
 
   let param =
     let open Command.Let_syntax in
@@ -25,17 +18,13 @@ module Params = struct
       | _ -> failwith "invalid distance type"
     in
     [%map_open
-      let max_repeat_count =
-        flag "max-repeat-count"
-          (optional_with_default default_max_repeat_count int)
-          ~doc:"maximum value of repeat count"
-      and dim = Scene2d.Dim.param
+      let dim = Scene2d.Dim.param
       and distance =
         flag "distance"
           (optional_with_default default_distance distance)
           ~doc:"distance type"
       in
-      create ~max_repeat_count ~dim ~distance ()]
+      create ~dim ~distance ()]
 end
 
 let max_repeat_count = 4
@@ -58,15 +47,28 @@ let relative_distance ~target (v : Value.t) (v' : Value.t) =
 
 let jaccard_distance = Value.distance
 
-let rewrite dim =
-  let res = max (Scene2d.Dim.xres dim) (Scene2d.Dim.yres dim) in
+let rewrite operators =
+  let min_int, max_int =
+    let elems =
+      List.filter_map operators ~f:(function Op.Int x -> Some x | _ -> None)
+    in
+    ( List.min_elt ~compare:Int.compare elems |> Option.value ~default:0,
+      List.max_elt ~compare:Int.compare elems |> Option.value ~default:0 )
+  in
+  let min_repeat_count, max_repeat_count =
+    let elems =
+      List.filter_map operators ~f:(function Op.Rep_count x -> Some x | _ -> None)
+    in
+    ( List.min_elt ~compare:Int.compare elems |> Option.value ~default:0,
+      List.max_elt ~compare:Int.compare elems |> Option.value ~default:0 )
+  in
   function
   | Program.Apply (Op.Int x, []) ->
-      if x <= 0 then [ Program.Apply (Op.Int (x + 1), []) ]
-      else if x >= res then [ Apply (Int (x - 1), []) ]
+      if x <= min_int then [ Program.Apply (Op.Int (x + 1), []) ]
+      else if x >= max_int then [ Apply (Int (x - 1), []) ]
       else [ Apply (Int (x + 1), []); Apply (Int (x - 1), []) ]
   | Apply (Rep_count x, []) ->
-      if x <= 1 then [ Apply (Rep_count (x + 1), []) ]
+      if x <= min_repeat_count then [ Apply (Rep_count (x + 1), []) ]
       else if x >= max_repeat_count then [ Apply (Rep_count (x - 1), []) ]
       else [ Apply (Rep_count (x + 1), []); Apply (Rep_count (x - 1), []) ]
   | Apply (Circle, [ Apply (Int x, []); Apply (Int y, []); Apply (Int r, []) ]) ->
@@ -116,7 +118,7 @@ let synthesize (metric_params : Metric_synth.Params.t) (dsl_params : Params.t) t
       let operators = Op.default_operators ~xres:dim.xres ~yres:dim.yres
       let parse = parse
       let serialize = serialize
-      let rewrite = rewrite dim
+      let rewrite = rewrite operators
     end : Metric_synth.DSL
       with type Op.t = _)
   in
