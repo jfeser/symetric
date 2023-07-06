@@ -38,7 +38,7 @@ end
 
 val synthesize :
   (module DSL with type Op.t = 'op and type Value.t = 'value) ->
-  ?output_stats:(Yojson.Safe.t -> unit) ->
+  ?log:(Yojson.Safe.t -> unit) ->
   Params.t ->
   [ `Pred of 'op -> 'value -> bool | `Value of 'value ] ->
   'op Program.t option

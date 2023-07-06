@@ -45,6 +45,8 @@ module Op = struct
   let pp fmt x = Sexp.pp_hum fmt @@ [%sexp_of: t] x
 end
 
+let dim = 32
+
 module Value = struct
   module Block = struct
     module T = struct
@@ -87,7 +89,7 @@ module Value = struct
           let min_y = b.y in
           List.map (b :: bs) ~f:(fun b -> { b with x = b.x - min_x; y = b.y - min_y })
 
-    let pp dim fmt blocks =
+    let pp fmt blocks =
       let is_h b x y = mem b Block.{ x; y; kind = 0 } in
       let is_v b x y = mem b Block.{ x; y; kind = 1 } in
       let is_on b x y =
@@ -113,7 +115,7 @@ module Value = struct
     type t = { hand : int; tops : Small_int_array.t; blocks : Block_set.t }
     [@@deriving compare, equal, hash, sexp]
 
-    let default dim =
+    let default =
       {
         hand = 0;
         tops = Small_int_array.init (dim + 2) ~f:(fun _ -> 0);
@@ -132,71 +134,19 @@ module Value = struct
 
   let default = Int (-1)
 
-  module Ctx = struct
-    type t = {
-      summary_states : State.t list;
-      dim : int;
-      slices : (Block_set.t * int) list;
-    }
-    [@@deriving sexp]
-
-    let slices dim (blocks : Block_set.t) =
-      let v_slices_l =
-        Iter.int_range ~start:0 ~stop:(dim - 1)
-        |> Iter.filter (fun min_x ->
-               not
-                 (List.exists
-                    ~f:(fun b ->
-                      Block.is_horiz b
-                      && (min_x = b.x || min_x - 1 = b.x || min_x - 2 = b.x))
-                    blocks))
-        |> Iter.map (fun min_x ->
-               let blocks' = List.filter blocks ~f:(fun b -> min_x <= b.x) in
-               (blocks', List.length blocks - List.length blocks'))
-        |> Iter.to_list
-        |> List.dedup_and_sort ~compare:[%compare: Block_set.t * int]
-        |> List.map ~f:(fun (b, d) -> (Block_set.zero b, d))
-      in
-      let v_slices_r =
-        Iter.int_range ~start:0 ~stop:(dim - 1)
-        |> Iter.filter (fun max_x ->
-               not
-                 (List.exists
-                    ~f:(fun b ->
-                      Block.is_horiz b
-                      && (max_x = b.x || max_x - 1 = b.x || max_x - 2 = b.x))
-                    blocks))
-        |> Iter.map (fun max_x ->
-               let blocks' = List.filter blocks ~f:(fun b -> max_x >= b.x) in
-               (blocks', List.length blocks - List.length blocks'))
-        |> Iter.to_list
-        |> List.dedup_and_sort ~compare:[%compare: Block_set.t * int]
-        |> List.map ~f:(fun (b, d) -> (Block_set.zero b, d))
-      in
-      v_slices_l @ v_slices_r
-
-    let create ?(dim = 32) ?(summary_states = [ State.default dim ]) ~target () =
-      let target_blocks =
-        match target with
-        | Trans x -> (List.hd_exn x.summary).blocks
-        | Int _ -> assert false
-      in
-      { summary_states; dim; slices = slices dim target_blocks }
-  end
-
-  let pp (ctx : Ctx.t) fmt (s : State.t) =
+  let pp fmt (s : State.t) =
     Fmt.pf fmt "@[<v>";
     Fmt.pf fmt "%a@," Sexp.pp_hum ([%sexp_of: State.t] s);
-    for i = 0 to ctx.dim - 1 do
+    for i = 0 to dim - 1 do
       if i = s.hand then Fmt.pf fmt "v" else Fmt.pf fmt " "
     done;
     Fmt.pf fmt "@,";
-    Block_set.pp ctx.dim fmt s.blocks;
+    Block_set.pp fmt s.blocks;
     Fmt.pf fmt "@]"
 
   let empty = Set.empty (module Int)
 
-  let eval_unmemoized (ctx : Ctx.t) (op : Op.t) args : t =
+  let eval (op : Op.t) args : t =
     let fail () = raise_s [%message "unexpected arguments" (op : Op.t) (args : t list)] in
     let prog =
       let arg_progs =
@@ -209,7 +159,7 @@ module Value = struct
         {
           func;
           summary =
-            (let s0 = State.default ctx.dim in
+            (let s0 = State.default in
              let s1 = func s0 in
              let s2 = func s1 in
              let s3 = func s2 in
@@ -223,19 +173,19 @@ module Value = struct
     | (Drop_h | Drop_v), _ :: _ -> fail ()
     | Drop_h, [] ->
         let func (s : State.t) : State.t =
-          if s.hand < 0 || s.hand > ctx.dim - 2 then s
+          if s.hand < 0 || s.hand > dim - 2 then s
           else
             let v_pos =
               Small_int_array.(
                 max (get s.tops s.hand)
                 @@ max (get s.tops (s.hand + 1)) (get s.tops (s.hand + 2)))
             in
-            if v_pos >= ctx.dim then s
+            if v_pos >= dim then s
             else
               let blocks = Block_set.add s.blocks { x = s.hand; y = v_pos; kind = 0 } in
               let tops =
                 Small_int_array.set_many s.tops
-                  (Iter.int_range ~start:s.hand ~stop:(min (ctx.dim - 1) (s.hand + 2))
+                  (Iter.int_range ~start:s.hand ~stop:(min (dim - 1) (s.hand + 2))
                   |> Iter.map (fun i -> (i, v_pos + 1)))
               in
               { s with blocks; tops }
@@ -243,10 +193,10 @@ module Value = struct
         trans func
     | Drop_v, [] ->
         let func (s : State.t) : State.t =
-          if s.hand < 0 || s.hand > ctx.dim - 2 then s
+          if s.hand < 0 || s.hand > dim - 2 then s
           else
             let v_pos = Small_int_array.get s.tops s.hand in
-            if v_pos >= ctx.dim then s
+            if v_pos >= dim then s
             else
               let blocks = Block_set.add s.blocks { x = s.hand; y = v_pos; kind = 1 } in
               let tops = Small_int_array.set s.tops s.hand (v_pos + 3) in
@@ -269,27 +219,6 @@ module Value = struct
         trans func
     | _ -> assert false
 
-  let mk_eval_memoized () =
-    let module Key = struct
-      module T = struct
-        type nonrec t = Op.t * t list [@@deriving compare, hash, sexp]
-      end
-
-      include T
-      include Comparable.Make (T)
-    end in
-    let tbl = Hashtbl.create (module Key) in
-    let find_or_eval (ctx : Ctx.t) op args =
-      match Hashtbl.find tbl (op, args) with
-      | Some v -> v
-      | None ->
-          let v = eval_unmemoized ctx op args in
-          Hashtbl.set tbl ~key:(op, args) ~data:v;
-          v
-    in
-    find_or_eval
-
-  let eval = eval_unmemoized
   let is_error _ = false
 
   let zeroed_overlap (s : Block_set.t) (s' : Block_set.t) =
@@ -331,7 +260,7 @@ module Value = struct
     let union = left + inter + right in
     if union = 0 then 0. else 1. -. Float.(of_int inter /. of_int union)
 
-  let distance _ctx v v' =
+  let distance v v' =
     match (v, v') with
     | Int x, Int x' -> if x = x' then 0. else Float.infinity
     | Trans x, Trans x' ->
@@ -344,9 +273,57 @@ module Value = struct
           |> Iter.of_list |> Iter.mean |> Option.value ~default:0.)
     | _, _ -> Float.infinity
 
-  let blocks_distance (ctx : Ctx.t) s s' =
+  let blocks_distance s s' =
     let left, _, right, x_dist = zeroed_overlap s s' in
-    Float.of_int (left + (10 * right)) +. (Float.of_int x_dist /. Float.of_int ctx.dim)
+    Float.of_int (left + (10 * right)) +. (Float.of_int x_dist /. Float.of_int dim)
+
+  module Ctx = struct
+    type t = { summary_states : State.t list; slices : (Block_set.t * int) list }
+    [@@deriving sexp]
+
+    let slices (blocks : Block_set.t) =
+      let v_slices_l =
+        Iter.int_range ~start:0 ~stop:(dim - 1)
+        |> Iter.filter (fun min_x ->
+               not
+                 (List.exists
+                    ~f:(fun b ->
+                      Block.is_horiz b
+                      && (min_x = b.x || min_x - 1 = b.x || min_x - 2 = b.x))
+                    blocks))
+        |> Iter.map (fun min_x ->
+               let blocks' = List.filter blocks ~f:(fun b -> min_x <= b.x) in
+               (blocks', List.length blocks - List.length blocks'))
+        |> Iter.to_list
+        |> List.dedup_and_sort ~compare:[%compare: Block_set.t * int]
+        |> List.map ~f:(fun (b, d) -> (Block_set.zero b, d))
+      in
+      let v_slices_r =
+        Iter.int_range ~start:0 ~stop:(dim - 1)
+        |> Iter.filter (fun max_x ->
+               not
+                 (List.exists
+                    ~f:(fun b ->
+                      Block.is_horiz b
+                      && (max_x = b.x || max_x - 1 = b.x || max_x - 2 = b.x))
+                    blocks))
+        |> Iter.map (fun max_x ->
+               let blocks' = List.filter blocks ~f:(fun b -> max_x >= b.x) in
+               (blocks', List.length blocks - List.length blocks'))
+        |> Iter.to_list
+        |> List.dedup_and_sort ~compare:[%compare: Block_set.t * int]
+        |> List.map ~f:(fun (b, d) -> (Block_set.zero b, d))
+      in
+      v_slices_l @ v_slices_r
+
+    let create ?(summary_states = [ State.default ]) ~target () =
+      let target_blocks =
+        match target with
+        | Trans x -> (List.hd_exn x.summary).blocks
+        | Int _ -> assert false
+      in
+      { summary_states; slices = slices target_blocks }
+  end
 
   let target_distance (ctx : Ctx.t) = function
     | Int _ -> 1.
@@ -356,7 +333,7 @@ module Value = struct
                Iter.of_list x.summary
                |> Iter.mapi (fun iter (candidate : State.t) ->
                       Float.of_int dropped
-                      +. blocks_distance ctx slice candidate.blocks
+                      +. blocks_distance slice candidate.blocks
                       +. Float.of_int iter))
         |> Iter.concat |> Iter.min |> Option.value ~default:1.
 end

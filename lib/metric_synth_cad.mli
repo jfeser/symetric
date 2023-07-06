@@ -6,6 +6,7 @@ module Params : sig
 end
 
 val synthesize :
+  ?log:(Yojson.Safe.t -> unit) ->
   Metric_synth.Params.t ->
   Cad_ext.Params.t ->
   Params.t ->

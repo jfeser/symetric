@@ -23,6 +23,15 @@ module Params = struct
       create ~distance ()]
 end
 
+let mk_log dsl_params params output synth_log =
+  output
+    (`Assoc
+      [
+        ("synth", synth_log);
+        ("dsl", Cad_ext.Params.yojson_of_t dsl_params);
+        ("metric-cad", Params.yojson_of_t params);
+      ])
+
 let relative_distance ~target (v : Value.t) (v' : Value.t) =
   match (v, v') with
   | Scene x, Scene x' ->
@@ -89,8 +98,8 @@ let rewrite operators =
       ]
   | _ -> []
 
-let synthesize (metric_params : Metric_synth.Params.t) (dsl_params : Cad_ext.Params.t)
-    (params : Params.t) target =
+let synthesize ?log (metric_params : Metric_synth.Params.t)
+    (dsl_params : Cad_ext.Params.t) (params : Params.t) target =
   let dim = dsl_params.dim in
   let value_distance =
     match params.distance with
@@ -116,4 +125,26 @@ let synthesize (metric_params : Metric_synth.Params.t) (dsl_params : Cad_ext.Par
     end : Metric_synth.DSL
       with type Op.t = _)
   in
-  Metric_synth.synthesize metric_params dsl
+  Metric_synth.synthesize ?log metric_params dsl
+
+let cmd =
+  let open Command.Let_syntax in
+  Command.basic ~summary:"Solve CAD problems with enumeration."
+    [%map_open
+      let synth_params = Metric_synth.Params.param
+      and dsl_params = Cad_ext.Params.param
+      and params = Params.param
+      and out = flag "-out" (optional string) ~doc:" output file" in
+      fun () ->
+        let prog = Cad_ext.parse @@ Sexp.input_sexp In_channel.stdin in
+        let target =
+          Program.eval
+            (Cad_ext.Value.eval ~error_on_trivial:false ~dim:dsl_params.dim)
+            prog
+        in
+        synthesize
+          ?log:
+            (Option.map out ~f:(fun out ->
+                 mk_log dsl_params params (Yojson.Safe.to_file out)))
+          synth_params dsl_params params target
+        |> ignore]

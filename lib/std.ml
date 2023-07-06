@@ -420,3 +420,8 @@ module Time = struct
       | _ -> failwith "expected float"
   end
 end
+
+let extend_assoc a b =
+  match (a, b) with
+  | `Assoc a, `Assoc b -> `Assoc (a @ b)
+  | _ -> failwith "expected assoc"

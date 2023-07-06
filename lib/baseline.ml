@@ -105,7 +105,7 @@ module Make (Lang : DSL) = struct
       Fmt.epr "Finished cost %d\n%!" cost;
       S.print_stats this.search_state)
 
-  let synthesize ?(output_stats = fun _ -> ()) params goal =
+  let synthesize ?(log = fun _ _ -> ()) params goal =
     let this =
       {
         goal =
@@ -124,20 +124,38 @@ module Make (Lang : DSL) = struct
     try
       for cost = 0 to params.max_cost do
         fill this cost;
-        output_stats this.stats
+        log this.stats None
       done;
       Timer.stop this.stats.runtime;
       None
     with Done p ->
       this.stats.program_cost := Float.of_int @@ Program.size p;
-      output_stats this.stats;
+      log this.stats (Some p);
       Timer.stop this.stats.runtime;
       Some p
 end
 
 let synthesize (type op value)
-    (module Dsl : DSL with type Op.t = op and type Value.t = value) ?output_stats params
-    goal =
+    (module Dsl : DSL with type Op.t = op and type Value.t = value) ?log params goal =
   let module Synth = Make (Dsl) in
-  let output_stats = Option.map output_stats ~f:(fun f s -> f (Stats.yojson_of_t s)) in
-  Synth.synthesize ?output_stats params goal
+  let mk_log output stats m_prog =
+    let program_size =
+      Option.map m_prog ~f:(fun p -> Float.of_int @@ Program.size p)
+      |> Option.value ~default:Float.nan
+    in
+    let program_json =
+      Option.map m_prog ~f:(fun p ->
+          `String (Sexp.to_string @@ [%sexp_of: Dsl.Op.t Program.t] p))
+      |> Option.value ~default:`Null
+    in
+    output
+      (`Assoc
+        [
+          ("method", `String "enumeration");
+          ("program_size", `Float program_size);
+          ("program", program_json);
+          ("stats", Stats.yojson_of_t stats);
+        ])
+  in
+  let log = Option.map log ~f:mk_log in
+  Synth.synthesize ?log params goal

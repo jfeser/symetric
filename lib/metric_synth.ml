@@ -100,7 +100,8 @@ module Params = struct
       let max_cost =
         flag "-max-cost" (required int) ~doc:" the maximum size of program to evaluate"
       and max_height =
-        flag "-max-cost" (optional int) ~doc:" the maximum height of program to evaluate"
+        flag "-max-height" (optional int)
+          ~doc:" the maximum height of program to evaluate"
       and group_threshold =
         flag "-group-threshold" (required float)
           ~doc:"distance threshold to trigger grouping"
@@ -353,11 +354,11 @@ module Make (Dsl : DSL) = struct
           ("params", [%yojson_of: Params.t] this.params);
         ])
 
-  let synthesize ?(output_stats = fun _ -> ())
+  let synthesize ?(log = fun _ -> ())
       ({ Params.verbosity; backward_pass_repeats } as params) =
     let stats = Stats.create () in
     let xfta = S.create () in
-    let this = { stats; params; xfta; output_stats = output_metric_stats output_stats } in
+    let this = { stats; params; xfta; output_stats = output_metric_stats log } in
 
     Timer.start stats.runtime;
 
@@ -410,6 +411,6 @@ module Make (Dsl : DSL) = struct
     ret
 end
 
-let synthesize (type op) ?output_stats p (module Dsl : DSL with type Op.t = op) =
+let synthesize (type op) ?log p (module Dsl : DSL with type Op.t = op) =
   let module Synth = Make (Dsl) in
-  Synth.synthesize ?output_stats p
+  Synth.synthesize ?log p

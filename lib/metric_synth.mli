@@ -66,7 +66,7 @@ module Params : sig
 end
 
 val synthesize :
-  ?output_stats:([> `Assoc of (string * Yojson.Safe.t) list ] -> unit) ->
+  ?log:(Yojson.Safe.t -> unit) ->
   Params.t ->
   (module DSL with type Op.t = 'op) ->
   'op Program.t option

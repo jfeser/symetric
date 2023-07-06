@@ -17,7 +17,7 @@ let rewrite : Op.t P.t -> Op.t P.t list = function
       ret
   | _ -> []
 
-let synthesize (metric_params : Metric_synth.Params.t) target =
+let synthesize ?log (metric_params : Metric_synth.Params.t) target =
   let ctx = Value.Ctx.create ~target () in
   let module Dsl = struct
     include Tower
@@ -25,21 +25,23 @@ let synthesize (metric_params : Metric_synth.Params.t) target =
     module Value = struct
       include Value
 
-      let eval = eval ctx
-      let distance = distance ctx
       let target_distance = target_distance ctx
       let pp = Fmt.nop
     end
 
     let rewrite = rewrite
   end in
-  Metric_synth.synthesize metric_params (module Dsl)
+  Metric_synth.synthesize ?log metric_params (module Dsl)
 
-(* let cmd = *)
-(*   let open Command.Let_syntax in *)
-(*   Command.basic ~summary:"Solve CAD problems with metric synthesis." *)
-(*     [%map_open *)
-(*       let mk_params = Params.cmd in *)
-(*       fun () -> *)
-(*         Set_once.set_exn params [%here] @@ mk_params (); *)
-(*         synthesize ()] *)
+let cmd =
+  let open Command.Let_syntax in
+  Command.basic ~summary:"Solve tower problems with metric synthesis."
+    [%map_open
+      let out = flag "-out" (optional string) ~doc:" output file"
+      and synth_params = Metric_synth.Params.param in
+      fun () ->
+        let target =
+          Sexp.input_sexp In_channel.stdin |> Tower.parse |> Program.eval Tower.Value.eval
+        in
+        synthesize ?log:(Option.map out ~f:Yojson.Safe.to_file) synth_params target
+        |> ignore]

@@ -121,3 +121,6 @@ module Time : sig
     val t_of_yojson : Yojson.Safe.t -> t
   end
 end
+
+val extend_assoc :
+  [> `Assoc of 'a list ] -> [> `Assoc of 'a list ] -> [> `Assoc of 'a list ]
