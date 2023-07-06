@@ -1,7 +1,0 @@
-(library
- (name tests)
- (libraries symetric core base_quickcheck)
- (preprocess
-  (pps ppx_jane))
- (inline_tests)
- (flags :standard -open Core))
