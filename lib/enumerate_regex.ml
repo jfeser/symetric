@@ -1,5 +1,4 @@
 open Std
-open Regex
 
 module Stats = struct
   type t = { runtime : Timer.t } [@@deriving yojson_of]
@@ -48,22 +47,22 @@ let synthesize (synth_params : Baseline.Params.t) bench =
     synth_params
     (`Pred (fun _ v -> Float.(Regex.Value.target_distance vctx v = 0.)))
 
-let cmd =
-  let open Command.Let_syntax in
-  Command.basic ~summary:"Solve regex problems with enumeration."
-    [%map_open
-      let sketch = flag "-sketch" (required string) ~doc:" regex sketch"
-      and out = flag "-out" (required string) ~doc:" output file" in
-      fun () ->
-        let ctx, ops = Regex_bench.load_sketch_bench sketch In_channel.stdin in
-        let synth_ctx =
-          Synth.Ctx.create ctx
-            (Op.default_operators 15 @ ops)
-            (`Pred (fun _ v -> Float.(Regex.Value.target_distance ctx v = 0.)))
-        in
-        write_output out None;
-        Timer.start stats.runtime;
-        let synth = new Synth.synthesizer synth_ctx in
-        let p = synth#run in
-        Timer.stop stats.runtime;
-        write_output out p]
+(* let cmd = *)
+(*   let open Command.Let_syntax in *)
+(*   Command.basic ~summary:"Solve regex problems with enumeration." *)
+(*     [%map_open *)
+(*       let sketch = flag "-sketch" (required string) ~doc:" regex sketch" *)
+(*       and out = flag "-out" (required string) ~doc:" output file" in *)
+(*       fun () -> *)
+(*         let ctx, ops = Regex_bench.load_sketch_bench sketch In_channel.stdin in *)
+(*         let synth_ctx = *)
+(*           Synth.Ctx.create ctx *)
+(*             (Op.default_operators 15 @ ops) *)
+(*             (`Pred (fun _ v -> Float.(Regex.Value.target_distance ctx v = 0.))) *)
+(*         in *)
+(*         write_output out None; *)
+(*         Timer.start stats.runtime; *)
+(*         let synth = new Synth.synthesizer synth_ctx in *)
+(*         let p = synth#run in *)
+(*         Timer.stop stats.runtime; *)
+(*         write_output out p] *)

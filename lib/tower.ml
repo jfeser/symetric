@@ -175,9 +175,13 @@ module Value = struct
       in
       v_slices_l @ v_slices_r
 
-    let create ?(dim = 32) ?(summary_states = [ State.default dim ]) ?target () =
-      let slices = Option.map target ~f:(slices dim) |> Option.value ~default:[] in
-      { summary_states; dim; slices }
+    let create ?(dim = 32) ?(summary_states = [ State.default dim ]) ~target () =
+      let target_blocks =
+        match target with
+        | Trans x -> (List.hd_exn x.summary).blocks
+        | Int _ -> assert false
+      in
+      { summary_states; dim; slices = slices dim target_blocks }
   end
 
   let pp (ctx : Ctx.t) fmt (s : State.t) =
@@ -388,3 +392,10 @@ let rec desugar : Op.t P.t -> Op.t P.t = function
   | Apply (op, args) -> Apply (op, List.map ~f:desugar args)
 
 let parse s = parse s |> desugar
+
+let operators =
+  [ Op.Loop; Drop_v; Drop_h; Embed; Seq ]
+  @ (Iter.int_range ~start:1 ~stop:8 |> Iter.map (fun i -> Op.Int i) |> Iter.to_list)
+  @ (Iter.append (Iter.int_range ~start:(-8) ~stop:(-1)) (Iter.int_range ~start:1 ~stop:8)
+    |> Iter.map (fun i -> Iter.of_list [ Op.Move_p i; Op.Move_s i ])
+    |> Iter.concat |> Iter.to_list)
