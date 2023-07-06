@@ -348,7 +348,7 @@ module Value = struct
     let left, _, right, x_dist = zeroed_overlap s s' in
     Float.of_int (left + (10 * right)) +. (Float.of_int x_dist /. Float.of_int ctx.dim)
 
-  let target_distance (ctx : Ctx.t) _t = function
+  let target_distance (ctx : Ctx.t) = function
     | Int _ -> 1.
     | Trans x ->
         Iter.of_list ctx.slices
