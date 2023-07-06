@@ -270,30 +270,33 @@ struct
     let is_error = List.exists ~f:(fun s -> Set.mem s `False)
   end
 
+  exception Done of int * Lang.Op.t Program.t
+
   let synth ?initial_preds check_abs_example check_example ectx examples ops =
-    let module Abs = struct
-      include Lang
-
-      module Value = struct
-        include Abs_value
-
-        (* When searching, only consider the predicates in the context *)
-        let eval ctx = eval_restricted ctx examples
-      end
-    end in
-    let exception Done of int * Abs.Op.t Program.t in
-    let module Synth = Baseline.Make (Abs) in
+    let baseline_params = Baseline.Params.create ~verbose:debug ~max_cost:40 () in
     let rec loop iters ctx =
+      let module Abs = struct
+        include Lang
+
+        module Value = struct
+          include Abs_value
+
+          (* When searching, only consider the predicates in the context *)
+          let eval = eval_restricted ctx examples
+        end
+
+        let operators = ops
+      end in
       let ctx' =
-        let sctx =
-          Synth.Ctx.create ~max_cost:40 ~verbose:debug ctx ops
+        let m_prog =
+          Baseline.synthesize (module Abs) baseline_params
           @@ `Pred
                (fun op s ->
                  [%equal: Abs.Type.t] (Abs.Op.ret_type op) Abs.Type.output
                  && List.for_all2_exn examples s ~f:check_abs_example)
         in
-        let synth = new Synth.synthesizer sctx in
-        match synth#run with
+
+        match m_prog with
         | Some p -> (
             Fmt.epr "Found program: %a\n%!" (Program.pp Lang.Op.pp) p;
             match
@@ -314,7 +317,7 @@ struct
           loop (iters + 1) ctx'
       | None -> failwith "refinement failed"
     in
-    let ctx = Abs.Value.Ctx.create ?initial_preds ectx in
+    let ctx = Abs_value.Ctx.create ?initial_preds ectx in
     try
       ignore (loop 0 ctx : Abs_value.Ctx.t);
       None
@@ -324,6 +327,6 @@ struct
           "synthesis completed"
             (iters : int)
             (Program.size p : int)
-            (p : Abs.Op.t Program.t)];
+            (p : Lang.Op.t Program.t)];
       Some p
 end
