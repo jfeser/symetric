@@ -22,6 +22,9 @@ val pixels : t -> Bitarray.t
 val dim : t -> Dim.t
 val init : Dim.t -> f:(int -> int -> int -> bool) -> t
 val npixels : t -> int
+val iter : t -> (x:int -> y:int -> bool -> unit) -> unit
+val to_iter : t -> (int * int * bool) Iter.t
+val to_list : t -> (int * int * bool) list
 val pp : Format.formatter -> t -> unit [@@ocaml.toplevel_printer]
 val get : t -> int -> bool
 val hamming : t -> t -> int

@@ -70,9 +70,22 @@ let init (dim : Dim.t) ~f =
 
 let npixels s = Bitarray.length @@ pixels s
 
-(* let to_iter (size : Dim.t) s f = *)
-(*   let pixel_gen = Dim.pixels size in *)
-(*   Bitarray.iteri (pixels s) ~f:(fun _ v -> f (Option.value_exn (pixel_gen ()), v)) *)
+let iter s f =
+  let xres = Dim.scaled_xres s.dim and yres = Dim.scaled_yres s.dim in
+  let px = ref 0 and py = ref (yres - 1) in
+  Bitarray.iter (pixels s) (fun v ->
+      f ~x:!px ~y:!py v;
+      incr px;
+      if !px = xres then (
+        px := 0;
+        decr py))
+
+let to_iter s k = iter s (fun ~x ~y v -> k (x, y, v))
+
+let to_list s =
+  let l = ref [] in
+  iter s (fun ~x ~y v -> l := (x, y, v) :: !l);
+  List.rev !l
 
 let pp fmt x =
   let xres = Dim.scaled_xres x.dim in

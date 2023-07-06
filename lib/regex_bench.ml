@@ -31,6 +31,8 @@ let load_prompt str =
   |> Iter.drop_while (fun line -> not ([%equal: string] line "// natural language"))
   |> Iter.drop 1 |> Iter.head_exn
 
+type t = Regex.Value.Ctx.t * Regex.Op.t list
+
 let load_sketch_bench sketch_str bench_ch =
   let sketch_ast =
     let buf = Lexing.from_string sketch_str in
