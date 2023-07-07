@@ -8,11 +8,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1688422225,
-        "narHash": "sha256-Hak3zQtWjtOK8iMcNQSuxhVQ6PlrlxRLVgOfn5vHEDA=",
+        "lastModified": 1688748188,
+        "narHash": "sha256-s0YxWbwmPtR8W8R+1JDDHmYPxCw65q79oQs4ceL60zg=",
         "owner": "jfeser",
         "repo": "ocaml-ancient",
-        "rev": "ef71d813c3035b6957662616d8eff43ae72d6bff",
+        "rev": "a10aff10d257ff834e0d836b6783a88f19d90020",
         "type": "github"
       },
       "original": {
@@ -29,11 +29,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1688421217,
-        "narHash": "sha256-qfc2ztLF99ywpQaXoZNOdjYDCi1ZjacVSbZ+6R2w2Bk=",
+        "lastModified": 1688748829,
+        "narHash": "sha256-1bIbDhampDI7nC2wFYQkyxcXFDW+jc9HhQgPiGKczn8=",
         "owner": "jfeser",
         "repo": "bitarray",
-        "rev": "ef208a15260099f754e546491068e30edfcbdb9c",
+        "rev": "e2f9191cd59531cfbf1dd91e6cb759c039a9d4a9",
         "type": "github"
       },
       "original": {
@@ -50,11 +50,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1688419886,
-        "narHash": "sha256-9OoGztQ0el0k1C6N7A3U3NhhKmBy1I+TvqoARWuiF10=",
+        "lastModified": 1688748965,
+        "narHash": "sha256-RD11yMNtvQLVzCSp68TQUXt+wCJJBYWlVYTzWtH7cAs=",
         "owner": "jfeser",
         "repo": "combinat",
-        "rev": "e00f9375b0fb3358e5e8b08b596c92d9394bf751",
+        "rev": "0bee425c8a0b4c709a8a3dec389315cf28f8147d",
         "type": "github"
       },
       "original": {
@@ -146,11 +146,11 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1688221086,
-        "narHash": "sha256-cdW6qUL71cNWhHCpMPOJjlw0wzSRP0pVlRn2vqX/VVg=",
+        "lastModified": 1688646010,
+        "narHash": "sha256-kCeza5eKI2NEi8k0EoeZfv3lN1r1Vwx+L/VA6I8tmG4=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "cd99c2b3c9f160cd004318e0697f90bbd5960825",
+        "rev": "5daaa32204e9c46b05cd709218b7ba733d07e80c",
         "type": "github"
       },
       "original": {
@@ -208,11 +208,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1688420623,
-        "narHash": "sha256-tIUYgbpInU0xPWS3Zrs/SBzF2X97QzzLtDTtZmvdO/I=",
+        "lastModified": 1688749085,
+        "narHash": "sha256-wIcLjWNsIp36Osn4fIPgZlR1UhREfbDBiC2Kcv0ExsU=",
         "owner": "jfeser",
         "repo": "vp-tree",
-        "rev": "0e865c34da0e06416ca7b75374d175a5a963fc29",
+        "rev": "df03a3f8e5920f08066a059d413878fb5ea89ae0",
         "type": "github"
       },
       "original": {

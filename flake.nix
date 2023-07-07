@@ -15,33 +15,47 @@
     { self, flake-utils, nixpkgs, bitarray, combinat, vp-tree, ancient }@inputs:
     flake-utils.lib.eachDefaultSystem (system:
       let
-        pkgs = nixpkgs.legacyPackages.${system};
-        ocamlPkgs = pkgs.ocaml-ng.ocamlPackages;
-        symetric = ocamlPkgs.buildDunePackage rec {
-          pname = "symetric";
-          version = "0.1";
-          duneVersion = "3";
-          propagatedBuildInputs = [
-            ocamlPkgs.core
-            ocamlPkgs.core_bench
-            ocamlPkgs.core_unix
-            ocamlPkgs.ppx_yojson_conv
-            ocamlPkgs.menhir
-            ocamlPkgs.fmt
-            ocamlPkgs.yojson
-            ocamlPkgs.iter
-            ocamlPkgs.bheap
-            ocamlPkgs.logs
-            combinat.defaultPackage.${system}
-            bitarray.defaultPackage.${system}
-            vp-tree.defaultPackage.${system}
-            ancient.defaultPackage.${system}
+        overlay = final: prev: {
+          ocamlPackages = prev.ocamlPackages.overrideScope' (ofinal: oprev: {
+            ocaml = oprev.ocaml.override { flambdaSupport = true; };
+            symetric = ofinal.buildDunePackage rec {
+              pname = "symetric";
+              version = "0.1";
+              duneVersion = "3";
+              propagatedBuildInputs = [
+                ofinal.core
+                ofinal.core_bench
+                ofinal.core_unix
+                ofinal.ppx_yojson_conv
+                ofinal.menhir
+                ofinal.fmt
+                ofinal.yojson
+                ofinal.iter
+                ofinal.bheap
+                ofinal.logs
+                ofinal.ancient
+                ofinal.bitarray
+                ofinal.combinat
+                ofinal.vpt
+              ];
+              src = ./.;
+            };
+          });
+        };
+        pkgs = import nixpkgs {
+          inherit system;
+          overlays = [
+            ancient.overlays.${system}.default
+            bitarray.overlays.${system}.default
+            combinat.overlays.${system}.default
+            vp-tree.overlays.${system}.default
+            overlay
           ];
-          src = ./.;
         };
       in {
-        packages = { symetric = symetric; };
-        defaultPackage = symetric;
+        packages = { symetric = pkgs.ocamlPackages.symetric; };
+        overlays.default = overlay;
+        defaultPackage = self.packages.${system}.symetric;
         devShell = pkgs.mkShell {
           nativeBuildInputs = [
             pkgs.ocamlformat
@@ -53,7 +67,7 @@
             pkgs.python3Packages.pandas
             pkgs.python3Packages.tqdm
           ];
-          inputsFrom = [ symetric ];
+          inputsFrom = [ self.defaultPackage.${system} ];
         };
       });
 }
