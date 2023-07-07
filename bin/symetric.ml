@@ -7,7 +7,7 @@ let cmd =
       ("enumerate-cad", Enumerate_cad.cmd);
       ("enumerate-regex", Enumerate_regex.cmd);
       ("enumerate-tower", Enumerate_towers.cmd);
-      ("metric-cad", Metric_synth_tower.cmd);
+      ("metric-cad", Metric_synth_cad.cmd);
       ("metric-regex", Metric_synth_regex.cmd);
       ("metric-tower", Metric_synth_tower.cmd);
       ("abs-cad", Abs_synth_cad.cmd);

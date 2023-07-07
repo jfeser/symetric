@@ -129,7 +129,7 @@ let synthesize ?log (metric_params : Metric_synth.Params.t)
 
 let cmd =
   let open Command.Let_syntax in
-  Command.basic ~summary:"Solve CAD problems with enumeration."
+  Command.basic ~summary:"Solve CAD problems with metric synthesis"
     [%map_open
       let synth_params = Metric_synth.Params.param
       and dsl_params = Cad_ext.Params.param

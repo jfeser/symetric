@@ -34,15 +34,18 @@ module Params = struct
   type t = { max_cost : int; verbose : bool } [@@deriving yojson]
 
   let default_verbose = false
-  let create ?(verbose = default_verbose) ~max_cost () = { max_cost; verbose }
+  let default_max_cost = Int.max_value
+
+  let create ?(verbose = default_verbose) ?(max_cost = default_max_cost) () =
+    { max_cost; verbose }
 
   let param =
     let open Command.Let_syntax in
     [%map_open
       let max_cost =
-        flag "max-cost" (required int) ~doc:"maximum cost of programs to consider"
+        flag "max-cost" (optional int) ~doc:"maximum cost of programs to consider"
       and verbose = flag "verbose" no_arg ~doc:"print verbose output" in
-      create ~verbose ~max_cost ()]
+      create ~verbose ?max_cost ()]
 end
 
 module Stats = struct

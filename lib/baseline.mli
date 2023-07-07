@@ -32,7 +32,8 @@ module Params : sig
   type t = { max_cost : int; verbose : bool } [@@deriving yojson]
 
   val default_verbose : bool
-  val create : ?verbose:bool -> max_cost:int -> unit -> t
+  val default_max_cost : int
+  val create : ?verbose:bool -> ?max_cost:int -> unit -> t
   val param : t Command.Param.t
 end
 

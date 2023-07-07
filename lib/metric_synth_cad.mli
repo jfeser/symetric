@@ -12,3 +12,5 @@ val synthesize :
   Params.t ->
   Cad_ext.Value.t ->
   Cad_ext.Op.t Program.t option
+
+val cmd : Command.t
