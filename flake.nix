@@ -18,10 +18,11 @@
         overlay = final: prev: {
           ocamlPackages = prev.ocamlPackages.overrideScope' (ofinal: oprev: {
             ocaml = oprev.ocaml.override { flambdaSupport = true; };
-            symetric = ofinal.buildDunePackage rec {
-              pname = "symetric";
+            symetric-lib = ofinal.buildDunePackage rec {
+              pname = "symetric-lib";
               version = "0.1";
               duneVersion = "3";
+              nativeBuildInputs = [ ofinal.menhir ];
               propagatedBuildInputs = [
                 ofinal.core
                 ofinal.core_bench
@@ -40,8 +41,18 @@
               ];
               src = ./.;
             };
+
+            symetric = ofinal.buildDunePackage rec {
+              pname = "symetric";
+              version = "0.1";
+              duneVersion = "3";
+              buildInputs = [ ofinal.core_unix ofinal.symetric-lib ];
+              src = ./.;
+              doNixSupport = false;
+            };
           });
         };
+
         pkgs = import nixpkgs {
           inherit system;
           overlays = [
@@ -53,7 +64,19 @@
           ];
         };
       in {
-        packages = { symetric = pkgs.ocamlPackages.symetric; };
+        packages = {
+          symetric = pkgs.ocamlPackages.symetric;
+
+          buildContainer = pkgs.dockerTools.streamLayeredImage {
+            name = "jfeser/symetric";
+            tag = "latest";
+            contents = [ pkgs.ocamlPackages.symetric ];
+            config = {
+              Cmd = [ "${pkgs.bash}/bin/bash" ];
+              WorkingDir = "/work";
+            };
+          };
+        };
         overlays.default = overlay;
         defaultPackage = self.packages.${system}.symetric;
         devShell = pkgs.mkShell {
@@ -66,6 +89,8 @@
             pkgs.python3Packages.docopt
             pkgs.python3Packages.pandas
             pkgs.python3Packages.tqdm
+            pkgs.parallel
+            pkgs.xonsh
           ];
           inputsFrom = [ self.defaultPackage.${system} ];
         };

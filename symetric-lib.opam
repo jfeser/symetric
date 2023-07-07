@@ -5,7 +5,17 @@ maintainer: ["jack.feser@gmail.com"]
 depends: [
   "dune" {>= "2.8"}
   "core" {>= "v0.15"}
-  "symetric-lib"
+  "menhir"
+  "ppx_jane"
+  "base_quickcheck"
+  "fmt"
+  "sek"
+  "ppx_yojson_conv"
+  "core_bench"
+  "gen"
+  "bheap"
+  "iter"
+  "logs"
   "odoc" {with-doc}
 ]
 build: [

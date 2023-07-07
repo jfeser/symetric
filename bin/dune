@@ -1,9 +1,8 @@
 (executable
- (name symetric)
+ (public_name symetric)
+ (package symetric)
  (modules symetric)
- (libraries core symetric core_unix.command_unix)
- (preprocess
-  (pps ppx_jane)))
+ (libraries core symetric core_unix.command_unix))
 
 ; (executable
 ;  (name run_tower)

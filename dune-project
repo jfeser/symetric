@@ -1,7 +1,16 @@
-(lang dune 2.7)
+(lang dune 2.8)
 (generate_opam_files true)
+
 (package
  (name symetric)
+ (synopsis "tool")
+ (maintainers jack.feser@gmail.com)
+ (depends
+  (core (>= v0.15))
+  symetric-lib))
+
+(package
+ (name symetric-lib)
  (synopsis "tool")
  (maintainers jack.feser@gmail.com)
  (depends

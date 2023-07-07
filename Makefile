@@ -1,7 +1,12 @@
-REMOTE=ec2-user@ec2-3-80-213-96.compute-1.amazonaws.com
-PREFIX=/home/ec2-user/
+all: build
 
-.PHONY: get-runs send-code send-container build-table
+build:
+	dune build
+
+container:
+	nix build .#buildContainer
+	./result | podman load
+	rm result
 
 send-code:
 	cd ..; csail rsync -rL --exclude _build --exclude runs --exclude regel-runs --exclude .direnv symetric bitarray vp-tree combinat $(REMOTE):$(PREFIX)/ocaml-workspace/
