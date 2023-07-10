@@ -34,7 +34,7 @@
                 ofinal.iter
                 ofinal.bheap
                 ofinal.logs
-                ofinal.ancient
+                # ofinal.ancient
                 ofinal.bitarray
                 ofinal.combinat
                 ofinal.vpt
@@ -63,22 +63,32 @@
             overlay
           ];
         };
+        parallel = pkgs.parallel.override {
+          procps = pkgs.procps.override { withSystemd = false; };
+        };
       in {
         packages = {
           symetric = pkgs.ocamlPackages.symetric;
+          symetric-lib = pkgs.ocamlPackages.symetric-lib;
 
           buildContainer = pkgs.dockerTools.streamLayeredImage {
             name = "jfeser/symetric";
             tag = "latest";
-            contents = [ pkgs.ocamlPackages.symetric ];
+            contents = [
+              self.packages.${system}.symetric
+              pkgs.busybox
+              pkgs.xonsh
+              pkgs.gnumake
+              parallel
+            ];
             config = {
-              Cmd = [ "${pkgs.bash}/bin/bash" ];
+              Cmd = [ "${pkgs.bashInteractive}/bin/bash" ];
               WorkingDir = "/work";
             };
           };
         };
         overlays.default = overlay;
-        defaultPackage = self.packages.${system}.symetric;
+        defaultPackage = self.packages.${system}.symetric-lib;
         devShell = pkgs.mkShell {
           nativeBuildInputs = [
             pkgs.ocamlformat

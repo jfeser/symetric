@@ -72,7 +72,7 @@ module Make (Lang : DSL) = struct
   let generate_states this cost =
     Generate.generate
       (module Lang)
-      (S.search_iter this.search_state)
+      (fun ~cost ~type_ -> S.search_iter this.search_state ~type_ ~cost)
       S.Class.value operators cost
 
   let insert_states this cost states =

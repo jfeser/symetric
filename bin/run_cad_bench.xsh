@@ -6,11 +6,11 @@ import os
 import random
 
 dry_run = False
-run_metric = False
-run_ablations = False
-run_exhaustive = False
-run_abstract = False
-run_llm = True
+run_metric = True
+run_ablations = True
+run_exhaustive = True
+run_abstract = True
+run_llm = False
 
 run_extract_ablation = True
 run_repair_ablation = True
@@ -26,22 +26,11 @@ build_dir = base_dir + "/../_build/default/symetric/"
 runs_dir = base_dir + "/runs/"
 print(base_dir, build_dir, runs_dir)
 
-if not dry_run:
-    dune build --profile=release bin/metric_synth_cad.exe bin/pixels.exe bin/abs_synth_cad.exe bin/enumerate_cad.exe
-
 run_dir = runs_dir + $(date '+%Y-%m-%d-%H:%M:%S').strip()
 if not dry_run:
     mkdir -p @(run_dir)
     cp cad.sk cad_header.sk bin/timeout @(run_dir)/
     cd @(run_dir)
-
-if not dry_run:
-    with open('job_params', 'w') as f:
-        json.dump({
-            'mlimit': mlimit,
-            'tlimit': tlimit,
-            'commit': $(git rev-parse HEAD),
-        }, f)
 
 jobs = []
 benchmarks = [('tiny', 10), ('small', 20), ('generated', 35)]
@@ -55,7 +44,7 @@ if run_abstract:
             job_name = f"abstract-{bench_name}-{len(jobs)}"
             cmd = [
                 ulimit_stanza,
-                f"{build_dir}/bin/abs_synth_cad.exe -scaling 2 -no-repl < {f} &> {job_name}.log"
+                f"symetric abs-cad -scaling 2 -no-repl < {f} &> {job_name}.log"
             ]
             cmd = ' '.join(cmd) + '\n'
             jobs.append(cmd)
@@ -67,7 +56,7 @@ if run_exhaustive:
             job_name = f"exhaustive-{bench_name}-{len(jobs)}"
             cmd = [
                 ulimit_stanza,
-                f"{build_dir}/bin/enumerate_cad.exe -verbose -scaling 2 < {f} &> {job_name}.log"
+                f"symetric enumerate-cad -verbose -scaling 2 < {f} &> {job_name}.log"
             ]
             cmd = ' '.join(cmd) + '\n'
             jobs.append(cmd)
@@ -88,7 +77,7 @@ def build_metric_command(bench_file,
     job_name = f"{name}-{len(jobs)}"
     cmd = [
         ulimit_stanza,
-        f"{build_dir}/bin/metric_synth_cad.exe -max-cost {max_cost} -verbosity 1",
+        f"symetric metric-cad -max-cost {max_cost} -verbosity 1",
         f"-group-threshold {group_threshold} -scaling {scaling} -n-groups {n_groups}",
         f"-out {job_name}.json -backward-pass-repeats {backward_pass_repeats}",
         f"-local-search-steps {local_search_steps} -extract {extract}",

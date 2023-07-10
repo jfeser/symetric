@@ -39,12 +39,12 @@
 ;  (preprocess
 ;   (pps ppx_jane)))
 
-; (executable
-;  (name print_bench)
-;  (modules print_bench)
-;  (libraries core symetric core_unix.command_unix)
-;  (preprocess
-;   (pps ppx_jane)))
+(executable
+ (name print_bench)
+ (modules print_bench)
+ (libraries core symetric core_unix.command_unix)
+ (preprocess
+  (pps ppx_jane)))
 
 ; (executable
 ;  (name equiv_cad)
@@ -95,12 +95,12 @@
 ;  (preprocess
 ;   (pps ppx_jane)))
 
-; (executable
-;  (name gen_cad)
-;  (modules gen_cad)
-;  (libraries core symetric core_unix.command_unix)
-;  (preprocess
-;   (pps ppx_jane)))
+(executable
+ (name gen_cad)
+ (modules gen_cad)
+ (libraries core symetric core_unix.command_unix)
+ (preprocess
+  (pps ppx_jane)))
 
 ; (executable
 ;  (name grouping_bench)

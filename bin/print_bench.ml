@@ -17,15 +17,13 @@ let () =
       in
       fun () ->
         let dim = Scene2d.Dim.create ~xres:scene_width ~yres:scene_height ~scaling () in
-        let ectx = Value.Ctx.create dim in
         let p = parse @@ Sexp.input_sexp In_channel.stdin in
-        Cad_ext.error_on_trivial := false;
-        let value = Program.eval (Value.eval ectx) p in
+        let value = Program.eval (Value.eval ~dim ~error_on_trivial:false) p in
         if numeric then
           match value with
           | Scene s ->
-              Scene2d.to_iter dim s
-              |> Iter.iter (fun ((x, y), v) -> if v then Fmt.pr "%d %d@." x y)
+              Scene2d.to_iter s
+              |> Iter.iter (fun (x, y, v) -> if v then Fmt.pr "%d %d@." x y)
           | _ -> assert false
         else Fmt.pr "%a@." Value.pp value]
   |> Command_unix.run

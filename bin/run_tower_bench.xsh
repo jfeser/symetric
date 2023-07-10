@@ -6,13 +6,9 @@ import os
 import random
 
 dry_run = False
-run_enum = False
-run_metric = False
-run_llm = True
-run_extract_ablation = False
-run_repair_ablation = False
-run_rank_ablation = False
-run_cluster_ablation = False
+run_enum = True
+run_metric = True
+run_llm = False
 
 mlimit = 16 * 1000000 # 4GB
 tlimit = 600
