@@ -10,9 +10,12 @@
     vp-tree.inputs.nixpkgs.follows = "nixpkgs";
     ancient.url = "github:jfeser/ocaml-ancient";
     ancient.inputs.nixpkgs.follows = "nixpkgs";
+    sketch.url = "github:jfeser/sketch-nix";
+    sketch.inputs.nixpkgs.follows = "nixpkgs";
+    sketch.inputs.flake-utils.follows = "flake-utils";
   };
-  outputs =
-    { self, flake-utils, nixpkgs, bitarray, combinat, vp-tree, ancient }@inputs:
+  outputs = { self, flake-utils, nixpkgs, bitarray, combinat, vp-tree, ancient
+    , sketch }@inputs:
     flake-utils.lib.eachDefaultSystem (system:
       let
         overlay = final: prev: {
@@ -76,6 +79,8 @@
             tag = "latest";
             contents = [
               self.packages.${system}.symetric
+              sketch.defaultPackage.${system}
+              pkgs.openjdk11_headless
               pkgs.busybox
               pkgs.xonsh
               pkgs.gnumake

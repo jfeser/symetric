@@ -7,10 +7,11 @@ import random
 import sys
 
 dry_run = False
-run_metric = True
-run_ablations = True
-run_exhaustive = True
-run_abstract = True
+run_metric = False
+run_ablations = False
+run_exhaustive = False
+run_abstract = False
+run_sketch = True
 run_llm = False
 
 run_extract_ablation = True
@@ -82,6 +83,31 @@ def build_metric_command(bench_file,
         f"{extra_args} < {bench_file} 2> {job_name}.log\n"
     ]
     return ' '.join(cmd)
+
+if run_sketch:
+    cp ../../cad.sk .
+    for (d, max_cost) in benchmarks:
+        for f in glob.glob(base_dir + '/bench/cad_ext/' + d + '/*'):
+            if max_cost <= 10:
+                height = 2
+            elif max_cost <= 20:
+                height = 4
+            else:
+                height = 6
+
+            bench_name = $(basename @(f)).strip()
+            job_name = f"sketch-{bench_name}-{len(jobs)}"
+            cmd = [
+                f"symetric pixels -scaling 2 < {f} > {job_name}.in;",
+                f"sed 's/INFILE/{job_name}.in/' cad.sk > {job_name}.sk;",
+                f"timeout {tlimit}",
+                f"sketch -V5 --fe-output-test --fe-def SCALING=2 --fe-def DEPTH={height}",
+                f"--bnd-inbits 10 --bnd-unroll-amnt 5 --bnd-cbits 4 --bnd-int-range 3000 --bnd-inline-amnt {height + 1}",
+                f"--slv-nativeints",
+                f"{job_name}.sk &> {job_name}.log"
+            ]
+            cmd = ' '.join(cmd) + '\n'
+            jobs.append(cmd)
 
 if run_metric:
     for (d, max_cost) in benchmarks:
