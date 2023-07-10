@@ -287,7 +287,10 @@ module Make (Dsl : DSL) = struct
              S.insert_class xfta type_ cost value op args)
 
   let generate xfta =
-    Generate.generate (module Dsl) (S.search_iter xfta) S.Class.value operators
+    Generate.generate
+      (module Dsl)
+      (fun ~cost ~type_ -> S.search_iter xfta ~type_ ~cost)
+      S.Class.value operators
 
   let fill_search_space
       ({

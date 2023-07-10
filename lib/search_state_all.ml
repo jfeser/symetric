@@ -151,10 +151,15 @@ module Make (Lang : DSL) = struct
         Fmt.pf fmt "%d [shape=dot];\n" id);
     Fmt.pf fmt "}"
 
-  let search_iter ctx ~cost ~type_ k =
-    match H.find ctx.classes @@ Attr.create cost type_ with
-    | Some q -> List.iter ~f:k q
-    | None -> ()
+  let search_iter ?type_ ~cost ctx k =
+    match type_ with
+    | Some type_ -> (
+        match H.find ctx.classes @@ Attr.create cost type_ with
+        | Some q -> List.iter ~f:k q
+        | None -> ())
+    | None ->
+        H.iteri ctx.classes ~f:(fun ~key ~data ->
+            if key.cost = cost then List.iter ~f:k data)
 
   let search ctx ~cost ~type_ =
     search_iter ctx ~cost ~type_ |> Iter.map Class.value |> Iter.to_list
