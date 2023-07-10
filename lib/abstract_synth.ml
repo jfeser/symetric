@@ -400,7 +400,6 @@ struct
         in
         match Baseline.synthesize (module Abs) params goal with
         | Some p ->
-            Fmt.epr "Found program: %a\n%!" (Program.pp Lang.Op.pp) p;
             let v = Program.eval Lang.Value.eval p in
             if equals_target v then raise @@ Done (iters, p)
             else (

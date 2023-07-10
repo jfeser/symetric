@@ -4,6 +4,7 @@ import glob
 import json
 import os
 import random
+import sys
 
 dry_run = False
 run_metric = True
@@ -23,13 +24,9 @@ tlimit = 1     # 1hr
 
 base_dir = $(pwd).strip()
 build_dir = base_dir + "/../_build/default/symetric/"
-runs_dir = base_dir + "/runs/"
-print(base_dir, build_dir, runs_dir)
 
-run_dir = runs_dir + $(date '+%Y-%m-%d-%H:%M:%S').strip()
+run_dir = sys.argv[1]
 if not dry_run:
-    mkdir -p @(run_dir)
-    cp cad.sk cad_header.sk bin/timeout @(run_dir)/
     cd @(run_dir)
 
 jobs = []
