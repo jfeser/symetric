@@ -26,4 +26,4 @@ send-container:
 	csail ssh $(REMOTE) "docker load < $(PREFIX)metric-synth.tar"
 
 get-runs:
-	rsync -r --progress -zu $(REMOTE):$(PREFIX)/ocaml-workspace/symetric/runs/ /mnt/scratch/metric-synth-runs/
+	rsync -r --progress -zu $(REMOTE):$(PREFIX)/ocaml-workspace/symetric/runs/ runs/

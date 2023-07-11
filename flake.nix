@@ -96,6 +96,8 @@
             pkgs.ocamlPackages.ocaml-lsp
             pkgs.ocamlPackages.odoc
             pkgs.openai
+            pkgs.python3Packages.jupyter
+            pkgs.python3Packages.matplotlib
             pkgs.python3Packages.docopt
             pkgs.python3Packages.pandas
             pkgs.python3Packages.tqdm
