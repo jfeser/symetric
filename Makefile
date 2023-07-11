@@ -1,4 +1,6 @@
 RUNS=runs/$(shell date '+%Y-%m-%d-%H:%M:%S')
+REMOTE=sketch3.csail.mit.edu
+PREFIX=/scratch/feser/
 
 all: build
 
@@ -30,13 +32,12 @@ bench-tower:
 	xonsh bin/run_tower_bench.xsh $(RUNS)
 
 send-code:
-	cd ..; csail rsync -rL --exclude _build --exclude runs --exclude regel-runs --exclude .direnv symetric bitarray vp-tree combinat $(REMOTE):$(PREFIX)/ocaml-workspace/
+	cd ..; rsync -rL --exclude _build --exclude runs --exclude regel-runs --exclude .direnv symetric $(REMOTE):$(PREFIX)/ocaml-workspace/
 
-send-container:
-	podman build -t localhost/metric-synth .
-	podman save localhost/metric-synth | pv > /tmp/metric-synth.tar
-	csail rsync --progress /tmp/metric-synth.tar $(REMOTE):$(PREFIX)
-	csail ssh $(REMOTE) "docker load < $(PREFIX)metric-synth.tar"
+send-container: container
+	podman save jfeser/symetric:latest | pv > /tmp/symetric.tar
+	rsync --progress /tmp/symetric.tar $(REMOTE):$(PREFIX)
+	ssh $(REMOTE) "docker load < $(PREFIX)/symetric.tar"
 
 get-runs:
 	rsync -r --progress -zu $(REMOTE):$(PREFIX)/ocaml-workspace/symetric/runs/ /mnt/scratch/metric-synth-runs/

@@ -7,10 +7,10 @@ import random
 import sys
 
 dry_run = False
-run_metric = False
-run_ablations = False
-run_exhaustive = False
-run_abstract = False
+run_metric = True
+run_ablations = True
+run_exhaustive = True
+run_abstract = True
 run_sketch = True
 run_llm = False
 
@@ -21,7 +21,7 @@ run_cluster_ablation = True
 run_distance_ablation = True
 
 mlimit = 4 * 1000000 # 4GB
-tlimit = 1     # 1hr
+tlimit = 60*60     # 1hr
 
 base_dir = $(pwd).strip()
 build_dir = base_dir + "/../_build/default/symetric/"
@@ -31,6 +31,7 @@ if not dry_run:
     cd @(run_dir)
 
 jobs = []
+sketch_jobs = []
 benchmarks = [('tiny', 10), ('small', 20), ('generated', 35)]
 
 ulimit_stanza = f"ulimit -v {mlimit}; timeout {tlimit}"
@@ -107,7 +108,7 @@ if run_sketch:
                 f"{job_name}.sk &> {job_name}.log"
             ]
             cmd = ' '.join(cmd) + '\n'
-            jobs.append(cmd)
+        sketch_jobs.append(cmd)
 
 if run_metric:
     for (d, max_cost) in benchmarks:
@@ -161,8 +162,11 @@ if dry_run:
 
 with open('jobs', 'w') as f:
     f.writelines(jobs)
+with open('sketch_jobs', 'w') as f:
+    f.writelines(sketch_jobs)
 
-parallel --will-cite --eta --joblog joblog :::: jobs
+parallel --will-cite -j 20 --eta --joblog joblog :::: jobs
+parallel --will-cite -j 1 --eta --joblog sketch_joblog :::: sketch_jobs
 
 # Local Variables:
 # mode: python

@@ -16,7 +16,7 @@ run_llm = False
 run_llm_with_sketch = False
 
 mlimit = 4 * 1000000 # 4GB
-tlimit = 0.1          # 5min
+tlimit = 300          # 5min
 
 base_dir = $(pwd).strip()
 build_dir = base_dir + "/../_build/default/symetric/"
@@ -92,7 +92,7 @@ if dry_run:
 with open('jobs', 'w') as f:
     f.writelines(jobs)
 
-parallel --will-cite --eta --joblog joblog :::: jobs
+parallel --will-cite -j 20 --eta --joblog joblog :::: jobs
 
 # Local Variables:
 # mode: python

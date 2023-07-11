@@ -11,8 +11,8 @@ run_enum = True
 run_metric = True
 run_llm = False
 
-mlimit = 16 * 1000000 # 4GB
-tlimit = 1
+mlimit = 16 * 1000000 # 16GB
+tlimit = 600 # 10 minutes
 
 base_dir = $(pwd).strip()
 build_dir = base_dir + "/../_build/default/symetric/"
@@ -68,7 +68,7 @@ if dry_run:
 with open('jobs', 'w') as f:
     f.writelines(jobs)
 
-parallel --will-cite --eta --joblog joblog :::: jobs
+parallel --will-cite -j 20 --eta --joblog joblog :::: jobs
 
 # Local Variables:
 # mode: python
