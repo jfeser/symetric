@@ -155,7 +155,7 @@ module Abs_value = struct
       in
       match all_concrete_m with
       | Some args ->
-          let c = Value.eval ~error_on_trivial:true ~dim op args in
+          let c = Value.eval ~error_on_trivial:false ~dim op args in
           (false, Some c, Iter.to_list @@ lift c)
       | None ->
           let concrete, preds =
@@ -191,7 +191,7 @@ let synth (dsl_params : Params.t) target ops =
     module Value = struct
       include Value
 
-      let eval = eval ~error_on_trivial:true ~dim:dsl_params.dim
+      let eval = eval ~error_on_trivial:false ~dim:dsl_params.dim
     end
   end in
   let module Synth = Abstract_synth.Make (Dsl) (Abs_value) in

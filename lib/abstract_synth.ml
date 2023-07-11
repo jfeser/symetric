@@ -272,16 +272,17 @@ struct
                    |> Iter.to_list
                  in
                  Op.And slot :: pred_ops)
+
+        exception Done of t list [@@deriving sexp]
       end in
       let open Conjunct_lang in
-      let exception Done of t list in
       let goal =
         `Pred
           (fun _ v ->
             match v with
             | Value.Args args ->
                 let args = List.map2_exn args too_weak ~f:and_ in
-                if check args then raise (Done args) else false
+                check args
             | _ -> false)
       in
       let params = Baseline.Params.create ~max_cost:Int.max_value () in
@@ -374,7 +375,7 @@ struct
     let is_error = function Bottom -> true | _ -> false
   end
 
-  let params = Baseline.Params.create ~max_cost:Int.max_value ()
+  let params = Baseline.Params.create ~max_cost:Int.max_value ~verbose:true ()
 
   let synth contains_target equals_target ops =
     let exception Done of int * Lang.Op.t Program.t in
@@ -400,6 +401,7 @@ struct
         in
         match Baseline.synthesize (module Abs) params goal with
         | Some p ->
+            Fmt.epr "Found program: %a\n%!" (Program.pp Lang.Op.pp) p;
             let v = Program.eval Lang.Value.eval p in
             if equals_target v then raise @@ Done (iters, p)
             else (
