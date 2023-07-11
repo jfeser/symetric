@@ -365,19 +365,19 @@ module Make (Dsl : DSL) = struct
 
     Timer.start stats.runtime;
 
-    fill_search_space this;
-    this.output_stats this None;
-
-    Log.log verbosity 1 (fun m -> m "Starting backwards pass");
-
-    let classes =
-      S.classes xfta
-      |> Iter.filter (fun c -> [%compare.equal: Type.t] Type.output (S.Class.type_ c))
-      |> Iter.map (fun c -> (target_distance @@ S.Class.value c, c))
-      |> Iter.sort ~cmp:(fun (d, _) (d', _) -> [%compare: float] d d')
-    in
     let ret =
       try
+        fill_search_space this;
+        this.output_stats this None;
+
+        Log.log verbosity 1 (fun m -> m "Starting backwards pass");
+
+        let classes =
+          S.classes xfta
+          |> Iter.filter (fun c -> [%compare.equal: Type.t] Type.output (S.Class.type_ c))
+          |> Iter.map (fun c -> (target_distance @@ S.Class.value c, c))
+          |> Iter.sort ~cmp:(fun (d, _) (d', _) -> [%compare: float] d d')
+        in
         classes
         |> Iter.iteri (fun i (d, (class_ : S.Class.t)) ->
                incr stats.groups_searched;
