@@ -365,6 +365,7 @@ module Make (Dsl : DSL) = struct
 
     Timer.start stats.runtime;
 
+    fill_search_space this;
     this.output_stats this None;
 
     Log.log verbosity 1 (fun m -> m "Starting backwards pass");

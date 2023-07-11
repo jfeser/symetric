@@ -4,45 +4,32 @@ import glob
 import json
 import os
 import random
+import sys
 
 dry_run = False
 run_abs = True
 run_enum = True
 run_metric = True
+
 run_llm = False
-run_llm_with_sketch = True
+run_llm_with_sketch = False
 
 mlimit = 4 * 1000000 # 4GB
-tlimit = 300          # 5min
+tlimit = 0.1          # 5min
 
 base_dir = $(pwd).strip()
 build_dir = base_dir + "/../_build/default/symetric/"
-runs_dir = base_dir + "/runs/"
-print(base_dir, build_dir, runs_dir)
 
+run_dir = sys.argv[1]
 if not dry_run:
-    dune build --profile=release bin/metric_synth_regex.exe bin/abs_synth_regex.exe bin/enumerate_regex.exe
-
-run_dir = runs_dir + $(date '+%Y-%m-%d-%H:%M:%S').strip()
-if not dry_run:
-    mkdir -p @(run_dir)
-    cp cad.sk cad_header.sk bin/timeout @(run_dir)/
     cd @(run_dir)
-
-if not dry_run:
-    with open('job_params', 'w') as f:
-        json.dump({
-            'mlimit': mlimit,
-            'tlimit': tlimit,
-            'commit': $(git rev-parse HEAD),
-        }, f)
 
 jobs = []
 
 def mk_cmd(sketch, job_name, bench_file, max_cost=20, n_groups=200, group_threshold=0.3, extra_args=""):
     return ' '.join([
         f"ulimit -v {mlimit} -c 0; timeout {tlimit}s",
-        f"{build_dir}/bin/metric_synth_regex.exe -max-cost {max_cost} -verbosity 1",
+        f"symetric metric-regex -max-cost {max_cost} -verbosity 1",
         f"-group-threshold {group_threshold} -n-groups {n_groups}",
         f"-sketch '{sketch}'",
         f"-out {job_name}.json -backward-pass-repeats 1",
@@ -76,7 +63,7 @@ for f in glob.glob(base_dir + '/vendor/regel/exp/so/benchmark/*'):
             job_name = f"abs-regex-{len(jobs)}"
             cmd = ' '.join([
                 f"ulimit -v {mlimit} -c 0; timeout {tlimit}s",
-                f"{build_dir}/bin/abs_synth_regex.exe -sketch '{sketch}' -out {job_name}.json",
+                f"symetric abs-regex -sketch '{sketch}' -out {job_name}.json",
                 f"< {f} 2> {job_name}.log\n",
             ])
             jobs.append(cmd)
@@ -85,7 +72,7 @@ for f in glob.glob(base_dir + '/vendor/regel/exp/so/benchmark/*'):
             job_name = f"enum-regex-{len(jobs)}"
             cmd = ' '.join([
                 f"ulimit -v {mlimit}; ulimit -c 0; timeout {tlimit}s",
-                f"{build_dir}/bin/enumerate_regex.exe -sketch '{sketch}' -out {job_name}.json",
+                f"symetric enumerate-regex -sketch '{sketch}' -out {job_name}.json",
                 f"< {f} 2> {job_name}.log\n",
             ])
             jobs.append(cmd)
@@ -104,7 +91,7 @@ if dry_run:
 with open('jobs', 'w') as f:
     f.writelines(jobs)
 
-parallel --will-cite --eta --joblog joblog -j 1 :::: jobs
+parallel --will-cite --eta --joblog joblog :::: jobs
 
 # Local Variables:
 # mode: python

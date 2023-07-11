@@ -167,7 +167,31 @@
         "combinat": "combinat",
         "flake-utils": "flake-utils_4",
         "nixpkgs": "nixpkgs",
+        "sketch": "sketch",
         "vp-tree": "vp-tree"
+      }
+    },
+    "sketch": {
+      "inputs": {
+        "flake-utils": [
+          "flake-utils"
+        ],
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1689006740,
+        "narHash": "sha256-l3Tfbtg3vFq1qysVVxtRZYEP8KG9i+uf/+hcWIwmzQU=",
+        "owner": "jfeser",
+        "repo": "sketch-nix",
+        "rev": "20f327bba11e5cb3e90a28509379853ff38d7fca",
+        "type": "github"
+      },
+      "original": {
+        "owner": "jfeser",
+        "repo": "sketch-nix",
+        "type": "github"
       }
     },
     "systems": {
