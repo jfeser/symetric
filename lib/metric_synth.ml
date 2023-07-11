@@ -245,7 +245,7 @@ module Make (Dsl : DSL) = struct
 
   let insert_states
       ({ stats; xfta; params = { group_threshold; target_groups; verbosity; _ } } as this)
-      cost (all_edges : Edge.t Iter.t) =
+      (all_edges : Edge.t Iter.t) =
     let module Edges = struct
       type t = Value.t * (Edge.t list[@compare.ignore]) [@@deriving compare, hash, sexp]
 
@@ -267,24 +267,24 @@ module Make (Dsl : DSL) = struct
           match center_edges with (_, op, args) :: _ -> (op, args) | _ -> assert false
         in
         let type_ = Op.ret_type op in
-        let class_ = S.Class.create type_ cost group_center in
+        let class_ = S.Class.create group_center type_ in
         (* insert new representative (some may already exist) *)
         if not @@ S.mem_class xfta class_ then
-          S.insert_class xfta type_ cost group_center op args;
+          S.insert_class xfta group_center op (List.map ~f:S.Class.value args);
         List.iter members ~f:(fun (_, edges) -> S.insert_class_members xfta class_ edges))
 
-  let insert_states_beam { xfta; params = { target_groups; _ }; _ } cost all_edges =
+  let insert_states_beam { xfta; params = { target_groups; _ }; _ } all_edges =
     all_edges
     |> Iter.filter (fun (value, op, _) ->
            let type_ = Op.ret_type op in
-           let class_ = S.Class.create type_ cost value in
+           let class_ = S.Class.create value type_ in
            not (S.mem_class xfta class_))
     |> Iter.top_k_distinct (module Value) ~score:Edge.score ~key:Edge.value target_groups
     |> Iter.iter (fun (value, op, args) ->
            let type_ = Op.ret_type op in
-           let class_ = S.Class.create type_ cost value in
+           let class_ = S.Class.create value type_ in
            if not (S.mem_class xfta class_) then
-             S.insert_class xfta type_ cost value op args)
+             S.insert_class xfta value op (List.map ~f:S.Class.value args))
 
   let generate xfta =
     Generate.generate
@@ -310,8 +310,8 @@ module Make (Dsl : DSL) = struct
 
           Synth_utils.timed (`Set run_time) (fun () ->
               if Float.(0. = group_threshold) then
-                insert_states_beam this cost (states_iter cost)
-              else insert_states this cost (states_iter cost));
+                insert_states_beam this (states_iter cost)
+              else insert_states this (states_iter cost));
 
           incr stats.max_cost_generated;
           output_stats this None;

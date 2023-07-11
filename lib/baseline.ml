@@ -75,13 +75,14 @@ module Make (Lang : DSL) = struct
       (fun ~cost ~type_ -> S.search_iter this.search_state ~type_ ~cost)
       S.Class.value operators cost
 
-  let insert_states this cost states =
+  let insert_states this states =
     let new_states =
       Iter.filter
         (fun (state, op, args) ->
           let type_ = Op.ret_type op in
-          let in_bank = S.mem this.search_state type_ cost state in
-          if not in_bank then S.insert_class this.search_state type_ cost state op args;
+          let in_bank = S.mem_class this.search_state (S.Class.create state type_) in
+          if not in_bank then
+            S.insert_class this.search_state state op (List.map args ~f:S.Class.value);
           not in_bank)
         states
     in
@@ -102,7 +103,7 @@ module Make (Lang : DSL) = struct
 
   let fill this cost =
     let new_states = generate_states this cost in
-    let inserted_states = insert_states this cost new_states in
+    let inserted_states = insert_states this new_states in
     check_states this inserted_states;
     if this.params.verbose then (
       Fmt.epr "Finished cost %d\n%!" cost;

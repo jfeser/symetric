@@ -7,7 +7,6 @@ import random
 import sys
 
 dry_run = False
-
 run_abs = True
 run_enum = True
 run_metric = True

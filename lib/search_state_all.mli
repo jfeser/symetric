@@ -6,6 +6,9 @@ module type DSL = sig
   module Op : sig
     type t [@@deriving compare, equal, hash, sexp]
 
+    val cost : t -> int
+    val args_type : t -> Type.t list
+    val ret_type : t -> Type.t
     val pp : t Fmt.t
   end
 
@@ -20,10 +23,9 @@ module Make (Dsl : DSL) : sig
 
     include Comparator.S with type t := t
 
-    val create : Dsl.Type.t -> int -> Dsl.Value.t -> t
+    val create : Dsl.Value.t -> Dsl.Type.t -> t
     val value : t -> Dsl.Value.t
     val type_ : t -> Dsl.Type.t
-    val cost : t -> int
   end
 
   type t [@@deriving sexp]
@@ -53,18 +55,15 @@ module Make (Dsl : DSL) : sig
 
   val to_channel : Out_channel.t -> t -> unit
   val of_channel : In_channel.t -> t
-  val search_iter : ?type_:Dsl.Type.t -> cost:int -> t -> Class.t Iter.t
+  val search_iter : t -> cost:int -> type_:Dsl.Type.t -> Class.t Iter.t
   val search : t -> cost:int -> type_:Dsl.Type.t -> Dsl.Value.t list
   val find_term : t -> Dsl.Op.t Program.t -> (Dsl.Op.t * Class.t list) Program.t
   val mem_class : t -> Class.t -> bool
-  val mem : t -> Dsl.Type.t -> int -> Dsl.Value.t -> bool
 
   val insert_class_members :
     t -> Class.t -> (Dsl.Value.t * Dsl.Op.t * Class.t list) list -> unit
 
-  val insert_class :
-    t -> Dsl.Type.t -> int -> Dsl.Value.t -> Dsl.Op.t -> Class.t list -> unit
-
+  val insert_class : t -> Dsl.Value.t -> Dsl.Op.t -> Dsl.Value.t list -> unit
   val length : t -> int
   val print_stats : t -> unit
   val program_of_op_args_exn : t -> int -> Dsl.Op.t -> Class.t list -> Dsl.Op.t Program.t

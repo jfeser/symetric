@@ -37,7 +37,7 @@
                 ofinal.iter
                 ofinal.bheap
                 ofinal.logs
-                ofinal.ancient
+                # ofinal.ancient
                 ofinal.bitarray
                 ofinal.combinat
                 ofinal.vpt
@@ -80,7 +80,6 @@
             contents = [
               self.packages.${system}.symetric
               sketch.defaultPackage.${system}
-              pkgs.openjdk11_headless
               pkgs.busybox
               pkgs.xonsh
               pkgs.gnumake
@@ -101,6 +100,8 @@
             pkgs.ocamlPackages.ocaml-lsp
             pkgs.ocamlPackages.odoc
             pkgs.openai
+            pkgs.python3Packages.jupyter
+            pkgs.python3Packages.matplotlib
             pkgs.python3Packages.docopt
             pkgs.python3Packages.pandas
             pkgs.python3Packages.tqdm
