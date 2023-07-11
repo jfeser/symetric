@@ -1,4 +1,4 @@
-(data_only_dirs etc bench cadtests doc learn notebooks runs regel-runs)
+(data_only_dirs etc bench cadtests doc learn notebooks py runs regel-runs stage-lib)
 
 (vendored_dirs vendor)
 
