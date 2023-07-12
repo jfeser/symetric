@@ -13,7 +13,7 @@ The container build of SyMetric is for *x86-64 linux only*. There is no support 
 To run the benchmarks in Section 6 of the paper, run the following commands:
 
 1. Load the containers with `make container`.
-   2. The SyMetric container can be built with `make build-container`, but you will need to have `nix` installed. The build process only works on linux.
+   2. The SyMetric container can be built with `make build-container`, but you will need to have `nix` installed. `nix` will take care of setting up an OCaml toolchain and building the container. The build process only works on linux.
    3. The Regel container is built from the upstream repository and is provided as-is.
 2. Run `make bench`. Benchmarks for the individual domains can be run separately with `make bench-cad`, `make bench-regex`, and `make bench-tower`.
    The cad benchmarks take ~?? hours, the regex benchmarks take ~5 hours, and the tower benchmarks take ~15 minutes, on 20 cores.
