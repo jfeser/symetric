@@ -192,7 +192,7 @@ Benchmark & \multicolumn{2}{c}{Expansion} & \multicolumn{2}{c}{Clustering} & \mu
 & Median & Max & Median & Max & Median & Max \\
 \midrule
 """,
-        **kwargs
+        **kwargs,
     )
     print(
         "All & {:.1f} & {:.1f} & {:.1f} & {:.1f} & {:.1f} & {:.1f} \\\\".format(
@@ -203,7 +203,7 @@ Benchmark & \multicolumn{2}{c}{Expansion} & \multicolumn{2}{c}{Clustering} & \mu
             float(df.loc["median"]["rank_time"]),
             float(df.loc["max"]["rank_time"]),
         ),
-        **kwargs
+        **kwargs,
     )
     print(r"\bottomrule", **kwargs)
     print(r"\end{tabular}", **kwargs)
@@ -424,6 +424,113 @@ def plot_tower(df, filename="tower.pdf"):
     plt.savefig(filename, bbox_inches="tight")
 
 
+def plot_csg(df, filename="csg.pdf"):
+    plt.tight_layout()
+    fig = plt.figure(figsize=(5, 2.5))
+    ax = fig.add_subplot(1, 1, 1)
+
+    # joblog_df.loc[joblog_df['status'] != 'success', 'JobRuntime'] = float('nan')
+    df = df.groupby(["method", "bench"])["JobRuntime"].max()
+    std = df.xs("metric")
+    print("Std solved: ", len(std.dropna()))
+    std = std.sort_values().fillna(1e10)
+    ax.plot(
+        [0] + list(std) + [1e10],
+        range(0, len(std) + 2),
+        label=r"\textsc{SyMetric}",
+        color="C2",
+    )
+
+    sketch = df.xs("sketch")
+    sketch = sketch.sort_values().fillna(1e10)
+    ax.plot(
+        [0] + list(sketch) + [1e10],
+        range(0, len(sketch) + 2),
+        label=r"\textsc{Sketch-Du}",
+        color="C3",
+    )
+
+    absn = df.xs("abstract_norepl")
+    absn = absn.sort_values().fillna(1e10)
+    ax.plot(
+        [0] + list(absn) + [1e10],
+        range(0, len(absn) + 2),
+        label=r"\textsc{AFTA}",
+        color="C1",
+    )
+
+    enum = df.xs("enumerate")
+    enum = enum.sort_values().fillna(1e10)
+    ax.plot(
+        [0] + list(enum) + [1e10],
+        range(0, len(enum) + 2),
+        label=r"\textsc{FTA}",
+        color="C0",
+    )
+
+    ax.set_ylim([0, n_bench])
+    ax.set_xlim([1e0, 1e4])
+    ax.set_xscale("log")
+    ax.set_ylabel("Benchmarks solved")
+    ax.set_xlabel("Time (s)")
+    plt.legend(loc="upper left")
+    ax.set_title(r"(a) Synthesis Performance on Inverse CSG")
+    plt.savefig(filename, bbox_inches="tight")
+
+
+def plot_method(df, ax, dff, label):
+    dff = dff.sort_values().fillna(1e10)
+    ax.plot(
+        [0] + list(dff),
+        range(0, len(dff) + 1),
+        label=f"\\textsc{{{label}}}",
+    )
+
+
+def plot_csg_ablation(df, filename="csg-ablation.pdf"):
+    plt.tight_layout()
+    fig = plt.figure(figsize=(7, 2.5))
+    ax = fig.add_subplot(1, 1, 1)
+    df = df[
+        df["method"].isin(
+            [
+                "metric",
+                "metric-extractrandom",
+                "metric-repairrandom",
+                "metric-norank",
+                "metric-nocluster",
+                "metric-simpledist",
+            ]
+        )
+    ]
+    # TODO: ensure we only plot generated benchmarks
+    # df = df[df["bench"].str.startswith("bench")]
+    df.loc[~df["success"], "runtime"] = 1e10
+
+    plot_method(df, ax, df[df["method"] == "metric"]["runtime"], "SyMetric")
+    plot_method(
+        df, ax, df[df["method"] == "metric-extractrandom"]["runtime"], "Extract random"
+    )
+    plot_method(
+        df, ax, df[df["method"] == "metric-repairrandom"]["runtime"], "Repair random"
+    )
+    plot_method(df, ax, df[df["method"] == "metric-norank"]["runtime"], "No Rank")
+    plot_method(df, ax, df[df["method"] == "metric-nocluster"]["runtime"], "No Cluster")
+    plot_method(
+        df, ax, df[df["method"] == "metric-simpledist"]["runtime"], "Simple distance"
+    )
+
+    ax.set_ylabel("Benchmarks solved")
+    ax.set_xlabel("Time (s)")
+    ax.set_title(r"Effect of Ablations on \textsc{SyMetric} Performance")
+    ax.set_xlim(5, 3600)
+    ax.set_xscale("log")
+    ax.legend(loc="upper left", ncol=3)
+    plt.savefig(filename, bbox_inches="tight")
+
+    return ax
+
+
 def load_regel(d):
     times = []
     for fn in os.listdir(d):
@@ -448,7 +555,10 @@ if __name__ == "__main__":
         exit(1)
 
     df = load(run_dir)
+    print(set(df["method"]))
     regel_df = load_regel(run_dir + "/regel")
+
+    plot_csg_ablation(df)
     plot_regex(df, regel_df)
     plot_regex_detail(df, regel_df)
     plot_tower(df)
