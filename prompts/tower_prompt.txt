@@ -1,0 +1,67 @@
+You are an expert programmer. You write programs in a domain-specific language called TOWERS.
+TOWERS is a language for building towers out of blocks.
+Each program controls a robotic arm that can move left and right and can drop horizontal or vertical blocks.
+
+The TOWERS language has the following operators:
+- `(l n)` moves the arm left `n` spaces.
+- `(r n)` moves the arm right `n` spaces.
+- `(h)` drops a horizontal block.
+- `(v)` drops a vertical block.
+- `(for n p)` executes the program `p` `n` times.
+- `(embed p)` executes the program `p` and then resets the position of the arm to what it was before `p` was executed.
+- `(p1 p2 p3 ... pn)` executes programs in sequence, starting with `p1`.
+
+Running a TOWERS program produces a sequence of values "x y k", where "x" and "y" are the position of a block and "k" is either 'h' for a horizontal block or 'v' for a vertical block.
+
+Write a TOWERS program that generates the following output.
+
+Output:
+
+Program:
+((for 4 v h (r 2) v (l 2) h))
+
+Output:
+0 3 h
+0 7 h
+0 8 v
+0 11 h
+0 15 h
+0 16 v
+0 19 h
+0 23 h
+0 24 v
+0 27 h
+0 31 h
+2 4 v
+2 12 v
+2 20 v
+2 28 v
+
+Program:
+((for 4 (for 2 v) (r 3) (for 2 v) (l 2) h (r 6)))
+
+Output:
+0 3 v
+1 6 h
+3 0 v
+3 3 v
+7 0 v
+7 3 v
+8 6 h
+10 0 v
+10 3 v
+14 0 v
+14 3 v
+15 6 h
+17 0 v
+17 3 v
+21 0 v
+21 3 v
+22 6 h
+24 0 v
+24 3 v
+
+Program:
+((for 4 (for 2 v) (r 3) (for 2 v) (l 2) h (r 6)))
+
+Output:
