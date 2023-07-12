@@ -9,27 +9,30 @@ all: build
 build:
 	dune build
 
-container:
+build-container:
 	nix build .#buildContainer
-	./result | podman load
-	rm result
+	./result > containers/symetric.tar
+
+container:
+	sudo docker load < containers/symetric.tar
+	sudo docker load < containers/regel.tar
 
 bench: bench-cad bench-regex bench-tower
 
 bench-cad:
-	mkdir -p /tmp
-	mkdir -p $(RUNS)
-	xonsh bin/run_cad_bench.xsh $(RUNS)
+	mkdir -p latest
+	sudo docker run --it --rm -v $(shell pwd):/work localhost/jfeser/symetric:latest \
+		bash -c "mkdir -p /tmp; xonsh bin/run_cad_bench.xsh latest"
 
 bench-regex:
-	mkdir -p /tmp
-	mkdir -p $(RUNS)
-	xonsh bin/run_regex_bench.xsh $(RUNS)
+	mkdir -p latest
+	sudo docker run --it --rm -v $(shell pwd):/work localhost/jfeser/symetric:latest \
+		bash -c "mkdir -p /tmp; xonsh bin/run_regex_bench.xsh latest"
 
 bench-tower:
-	mkdir -p /tmp
-	mkdir -p $(RUNS)
-	xonsh bin/run_tower_bench.xsh $(RUNS)
+	mkdir -p latest
+	sudo docker run --it --rm -v $(shell pwd):/work localhost/jfeser/symetric:latest \
+		bash -c "mkdir -p /tmp; xonsh bin/run_tower_bench.xsh latest"
 
 send-code:
 	cd ..; rsync -rL --exclude _build --exclude runs --exclude regel-runs --exclude .direnv symetric $(REMOTE):$(PREFIX)/ocaml-workspace/

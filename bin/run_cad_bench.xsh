@@ -166,7 +166,9 @@ with open('sketch_jobs', 'w') as f:
     f.writelines(sketch_jobs)
 
 parallel --will-cite -j 20 --eta --joblog joblog :::: jobs
-parallel --will-cite -j 1 --eta --joblog sketch_joblog :::: sketch_jobs
+
+if run_sketch:
+    parallel --will-cite -j 1 --eta --joblog sketch_joblog :::: sketch_jobs
 
 # Local Variables:
 # mode: python
