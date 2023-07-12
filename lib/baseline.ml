@@ -134,8 +134,8 @@ module Make (Lang : DSL) = struct
       None
     with Done p ->
       this.stats.program_cost := Float.of_int @@ Program.size p;
-      log this.stats (Some p);
       Timer.stop this.stats.runtime;
+      log this.stats (Some p);
       Some p
 end
 

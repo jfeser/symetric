@@ -295,8 +295,8 @@ let cmd =
           | _ -> false
         in
         let examples = ctx.input in
-        write_output out None;
         Timer.start stats.runtime;
+        write_output out None;
         let p =
           Synth.synth
             ~initial_preds:
