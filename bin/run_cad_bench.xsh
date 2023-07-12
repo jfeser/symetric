@@ -146,8 +146,7 @@ if run_ablations:
 
             # no cluster
             if run_cluster_ablation:
-                jobs.append(build_metric_command(f, max_cost, name="metric-nocluster",
-                                                 group_threshold=0.0, extra_args="-use-beam-search"))
+                jobs.append(build_metric_command(f, max_cost, name="metric-nocluster", group_threshold=0.0))
 
             # simple distance
             if run_distance_ablation:
