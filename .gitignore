@@ -338,4 +338,9 @@ runs/
 doc
 runs
 
-.direnv
+/.direnv
+/.envrc
+containers/
+__pycache__
+.ipynb_checkpoints
+/result
