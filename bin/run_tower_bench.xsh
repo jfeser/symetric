@@ -65,10 +65,10 @@ if dry_run:
     print(''.join(jobs))
     exit(0)
 
-with open('jobs', 'w') as f:
+with open('tower_jobs', 'w') as f:
     f.writelines(jobs)
 
-parallel --will-cite -j 20 --eta --joblog joblog :::: jobs
+parallel --will-cite -j 20 --eta --joblog tower_joblog :::: tower_jobs
 
 # Local Variables:
 # mode: python

@@ -2,7 +2,7 @@
  (name symetric)
  (package symetric-lib)
  (libraries core core_kernel.pairing_heap combinat fmt vpt logs yojson
-   bitarray bheap ancient)
+   bitarray bheap)
  (preprocess
   (pps ppx_jane ppx_yojson_conv))
  (inline_tests)
