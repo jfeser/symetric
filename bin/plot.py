@@ -1,10 +1,9 @@
-import pandas as pd
 import os
 import json
 import re
 import sys
-from tqdm import tqdm
 
+from tqdm import tqdm
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -317,7 +316,7 @@ def load_joblog(run_dir, name="joblog"):
     return df
 
 
-def plot_regex(df, filename="regex.pdf"):
+def plot_regex(df, reg, filename="regex.pdf"):
     plt.tight_layout()
     fig = plt.figure(figsize=(5, 2.5))
     ax = fig.add_subplot(1, 1, 1)
@@ -344,8 +343,7 @@ def plot_regex(df, filename="regex.pdf"):
         color="C1",
     )
 
-    reg = df[df["method"] == "regel"]["runtime"]
-    reg = reg.sort_values().fillna(1e10)
+    reg = reg["runtime"].sort_values().fillna(1e10)
     ax.plot(
         [0] + list(reg) + [1e10],
         range(0, len(reg) + 2),
@@ -363,7 +361,7 @@ def plot_regex(df, filename="regex.pdf"):
     fig.savefig(filename, bbox_inches="tight")
 
 
-def plot_regex_detail(df, filename="regex-detail.pdf"):
+def plot_regex_detail(df, reg, filename="regex-detail.pdf"):
     plt.tight_layout()
     fig = plt.figure(figsize=(5, 2.5))
     ax = fig.add_subplot(1, 1, 1)
@@ -381,8 +379,7 @@ def plot_regex_detail(df, filename="regex-detail.pdf"):
         color="C0",
     )
 
-    reg = df[df["method"] == "regel"]["runtime"]
-    reg = reg.sort_values().fillna(1e10)
+    reg = reg["runtime"].sort_values().fillna(1e10)
     ax.plot(
         [0] + list(reg) + [1e10],
         range(0, len(reg) + 2),
@@ -427,6 +424,19 @@ def plot_tower(df, filename="tower.pdf"):
     plt.savefig(filename, bbox_inches="tight")
 
 
+def load_regel(d):
+    times = []
+    for fn in os.listdir(d):
+        with open(d + "/" + fn, "r") as f:
+            x = f.readlines()
+        for line in x:
+            if "Total time:" in line:
+                time = float(line.split(":")[1])
+                times.append(time)
+                break
+    return pd.DataFrame({"runtime": times})
+
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         run_dir = "runs/latest"
@@ -438,6 +448,7 @@ if __name__ == "__main__":
         exit(1)
 
     df = load(run_dir)
-    plot_regex(df)
-    plot_regex_detail(df)
+    regel_df = load_regel(run_dir + "/regel")
+    plot_regex(df, regel_df)
+    plot_regex_detail(df, regel_df)
     plot_tower(df)

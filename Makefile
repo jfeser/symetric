@@ -31,6 +31,9 @@ bench-tower:
 	mkdir -p $(RUNS)
 	xonsh bin/run_tower_bench.xsh $(RUNS)
 
+plots:
+	python bin/plot.py
+
 send-code:
 	cd ..; rsync -rL --exclude _build --exclude runs --exclude regel-runs --exclude .direnv symetric $(REMOTE):$(PREFIX)/ocaml-workspace/
 
