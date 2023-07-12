@@ -159,15 +159,15 @@ if dry_run:
     print(''.join(jobs))
     exit(0)
 
-with open('jobs', 'w') as f:
+with open('cad_jobs', 'w') as f:
     f.writelines(jobs)
-with open('sketch_jobs', 'w') as f:
+with open('cad_sketch_jobs', 'w') as f:
     f.writelines(sketch_jobs)
 
-parallel --will-cite -j 20 --eta --joblog joblog :::: jobs
+parallel --will-cite -j 20 --eta --joblog cad_joblog :::: cad_jobs
 
 if run_sketch:
-    parallel --will-cite -j 1 --eta --joblog sketch_joblog :::: sketch_jobs
+    parallel --will-cite -j 1 --eta --joblog cad_sketch_joblog :::: cad_sketch_jobs
 
 # Local Variables:
 # mode: python

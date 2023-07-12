@@ -88,10 +88,10 @@ if dry_run:
     print('\n'.join(jobs))
     exit(0)
 
-with open('jobs', 'w') as f:
+with open('regex_jobs', 'w') as f:
     f.writelines(jobs)
 
-parallel --will-cite -j 20 --eta --joblog joblog :::: jobs
+parallel --will-cite -j 20 --eta --joblog regex_joblog :::: regex_jobs
 
 # Local Variables:
 # mode: python
