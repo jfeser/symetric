@@ -17,3 +17,4 @@ sketch:
   | REPEATATLEAST; LPAREN; x = sketch; COMMA; x1 = num; RPAREN { `Repeat_at_least (x, x1) }
   | REPEATRANGE; LPAREN; x = sketch; COMMA; x1 = num; COMMA; x2 = num; RPAREN { `Repeat_range (x, x1, x2) }
   | LBRACK; xs = separated_nonempty_list(COMMA, sketch); RBRACK { `Hole xs }
+  | QMARK { `Hole [] }
