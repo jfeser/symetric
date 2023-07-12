@@ -8,14 +8,12 @@
     bitarray.inputs.nixpkgs.follows = "nixpkgs";
     vp-tree.url = "github:jfeser/vp-tree";
     vp-tree.inputs.nixpkgs.follows = "nixpkgs";
-    ancient.url = "github:jfeser/ocaml-ancient";
-    ancient.inputs.nixpkgs.follows = "nixpkgs";
     sketch.url = "github:jfeser/sketch-nix";
     sketch.inputs.nixpkgs.follows = "nixpkgs";
     sketch.inputs.flake-utils.follows = "flake-utils";
   };
-  outputs = { self, flake-utils, nixpkgs, bitarray, combinat, vp-tree, ancient
-    , sketch }@inputs:
+  outputs =
+    { self, flake-utils, nixpkgs, bitarray, combinat, vp-tree, sketch }@inputs:
     flake-utils.lib.eachDefaultSystem (system:
       let
         overlay = final: prev: {
@@ -37,7 +35,6 @@
                 ofinal.iter
                 ofinal.bheap
                 ofinal.logs
-                # ofinal.ancient
                 ofinal.bitarray
                 ofinal.combinat
                 ofinal.vpt
@@ -59,7 +56,6 @@
         pkgs = import nixpkgs {
           inherit system;
           overlays = [
-            ancient.overlays.${system}.default
             bitarray.overlays.${system}.default
             combinat.overlays.${system}.default
             vp-tree.overlays.${system}.default
