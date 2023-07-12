@@ -33,9 +33,6 @@ module type DSL = sig
   val rewrite : Op.t Program.t -> Op.t Program.t list
 end
 
-(* constants *)
-let max_repeat_count = 4
-
 (* parameters *)
 module Params = struct
   type t = {
