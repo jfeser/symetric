@@ -40,6 +40,9 @@ bench-tower:
 	docker run -it --rm -v $(shell pwd):/work localhost/jfeser/symetric:latest \
 		sh -c "mkdir -p /tmp; xonsh bin/run_tower_bench.xsh /work/runs/latest"
 
+plots:
+	python bin/plot.py
+
 send-code:
 	cd ..; rsync -rL --progress --exclude _build --exclude runs --exclude regel-runs --exclude .direnv symetric $(REMOTE):$(PREFIX)/ocaml-workspace/
 
