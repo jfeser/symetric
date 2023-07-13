@@ -22,12 +22,12 @@ bench: bench-cad bench-regex bench-tower bench-regel
 
 bench-cad:
 	mkdir -p runs/latest
-	docker run -it --rm -v $(shell pwd):/work localhost/jfeser/symetric:latest \
+	docker run -it --rm -v $(shell pwd):/work jfeser/symetric:latest \
 		sh -c "mkdir -p /tmp; xonsh bin/run_cad_bench.xsh /work/runs/latest"
 
 bench-regex:
 	mkdir -p runs/latest
-	docker run -it --rm -v $(shell pwd):/work localhost/jfeser/symetric:latest \
+	docker run -it --rm -v $(shell pwd):/work jfeser/symetric:latest \
 		sh -c "mkdir -p /tmp; xonsh bin/run_regex_bench.xsh /work/runs/latest"
 
 bench-regel:
@@ -37,7 +37,7 @@ bench-regel:
 
 bench-tower:
 	mkdir -p runs/latest
-	docker run -it --rm -v $(shell pwd):/work localhost/jfeser/symetric:latest \
+	docker run -it --rm -v $(shell pwd):/work jfeser/symetric:latest \
 		sh -c "mkdir -p /tmp; xonsh bin/run_tower_bench.xsh /work/runs/latest"
 
 plots:
