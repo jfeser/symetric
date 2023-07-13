@@ -1,3 +1,4 @@
+import glob
 import os
 import json
 import re
@@ -11,6 +12,7 @@ import pandas as pd
 
 use_latex = False
 
+n_cad_bench = 40
 n_regex_bench = 2174
 n_tower_bench = 34
 tower_baseline_perc = 0.575
@@ -20,6 +22,7 @@ regel_label = r"\textsc{Regel}" if use_latex else "Regel"
 fta_label = r"\textsc{FTA}" if use_latex else "FTA"
 afta_label = r"\textsc{AFTA}" if use_latex else "AFTA"
 symetric_label = r"\textsc{SyMetric}" if use_latex else "SyMetric"
+sketch_label = r"\textsc{Sketch-Du}" if use_latex else "Sketch-Du"
 
 if use_latex:
     plt.rcParams.update(
@@ -57,8 +60,10 @@ def bench_of_out_file(jobs, out_file):
 
 
 def load(run_dir):
-    with open(run_dir + "/jobs", "r") as f:
-        jobs = f.readlines()
+    jobs = []
+    for fn in glob.glob(run_dir + "/*_jobs"):
+        with open(fn, "r") as f:
+            jobs += f.readlines()
 
     results = []
     for fn in tqdm(os.listdir(run_dir)):
@@ -210,17 +215,17 @@ Benchmark & \multicolumn{2}{c}{Expansion} & \multicolumn{2}{c}{Clustering} & \mu
 
 
 def classify_method(x):
-    if "metric_synth_cad" in x:
+    if "metric-cad" in x:
         if re.search("metric-[0-9]+.json", x) is not None:
             return "metric"
         else:
             return "ablation"
-    if "abs_synth_cad" in x:
+    if "abs-cad" in x:
         if "-no-repl" in x:
             return "abstract_norepl"
         else:
             return "abstract"
-    if "enumerate_cad" in x:
+    if "enumerate-cad" in x:
         return "enumerate"
     if "sketch" in x:
         if "--slv-parallel" in x:
@@ -271,7 +276,7 @@ def load_joblog(run_dir, name="joblog"):
             out_file = out_re.search(x["Command"]).group(0)
             with open(run_dir + "/" + out_file, "r") as f:
                 out = json.load(f)
-                return "failure" if out["program"] is None else "success"
+                return "failure" if out["synth"]["program"] is None else "success"
 
         e = x["Exitval"]
         if e == 0:
@@ -299,8 +304,8 @@ def load_joblog(run_dir, name="joblog"):
                 out = json.load(f)
             ret = []
             for f in fields:
-                if f in out["stats"]:
-                    ret.append(out["stats"][f])
+                if f in out["synth"]["stats"]:
+                    ret.append(out["synth"]["stats"][f])
                 else:
                     ret.append(float("nan"))
             return pd.Series(ret)
@@ -429,15 +434,14 @@ def plot_csg(df, filename="csg.pdf"):
     fig = plt.figure(figsize=(5, 2.5))
     ax = fig.add_subplot(1, 1, 1)
 
-    # joblog_df.loc[joblog_df['status'] != 'success', 'JobRuntime'] = float('nan')
+    df.loc[df["status"] != "success", "JobRuntime"] = float("nan")
     df = df.groupby(["method", "bench"])["JobRuntime"].max()
     std = df.xs("metric")
-    print("Std solved: ", len(std.dropna()))
     std = std.sort_values().fillna(1e10)
     ax.plot(
         [0] + list(std) + [1e10],
         range(0, len(std) + 2),
-        label=r"\textsc{SyMetric}",
+        label=symetric_label,
         color="C2",
     )
 
@@ -446,29 +450,23 @@ def plot_csg(df, filename="csg.pdf"):
     ax.plot(
         [0] + list(sketch) + [1e10],
         range(0, len(sketch) + 2),
-        label=r"\textsc{Sketch-Du}",
+        label=sketch_label,
         color="C3",
     )
 
     absn = df.xs("abstract_norepl")
     absn = absn.sort_values().fillna(1e10)
     ax.plot(
-        [0] + list(absn) + [1e10],
-        range(0, len(absn) + 2),
-        label=r"\textsc{AFTA}",
-        color="C1",
+        [0] + list(absn) + [1e10], range(0, len(absn) + 2), label=afta_label, color="C1"
     )
 
     enum = df.xs("enumerate")
     enum = enum.sort_values().fillna(1e10)
     ax.plot(
-        [0] + list(enum) + [1e10],
-        range(0, len(enum) + 2),
-        label=r"\textsc{FTA}",
-        color="C0",
+        [0] + list(enum) + [1e10], range(0, len(enum) + 2), label=fta_label, color="C0"
     )
 
-    ax.set_ylim([0, n_bench])
+    ax.set_ylim([0, n_cad_bench])
     ax.set_xlim([1e0, 1e4])
     ax.set_xscale("log")
     ax.set_ylabel("Benchmarks solved")
@@ -478,13 +476,10 @@ def plot_csg(df, filename="csg.pdf"):
     plt.savefig(filename, bbox_inches="tight")
 
 
-def plot_method(df, ax, dff, label):
+def plot_method(df, ax, dff, label_str):
     dff = dff.sort_values().fillna(1e10)
-    ax.plot(
-        [0] + list(dff),
-        range(0, len(dff) + 1),
-        label=f"\\textsc{{{label}}}",
-    )
+    label = f"\\textsc{{{label_str}}}" if use_latex else label_str
+    ax.plot([0] + list(dff), range(0, len(dff) + 1), label=label)
 
 
 def plot_csg_ablation(df, filename="csg-ablation.pdf"):
@@ -522,7 +517,7 @@ def plot_csg_ablation(df, filename="csg-ablation.pdf"):
 
     ax.set_ylabel("Benchmarks solved")
     ax.set_xlabel("Time (s)")
-    ax.set_title(r"Effect of Ablations on \textsc{SyMetric} Performance")
+    ax.set_title(f"Effect of Ablations on {symetric_label} Performance")
     ax.set_xlim(5, 3600)
     ax.set_xscale("log")
     ax.legend(loc="upper left", ncol=3)
@@ -555,9 +550,18 @@ if __name__ == "__main__":
         exit(1)
 
     df = load(run_dir)
-    print(set(df["method"]))
-    regel_df = load_regel(run_dir + "/regel")
 
+    regel_df = (
+        load_regel(run_dir + "/regel")
+        if os.path.isdir(run_dir + "/regel")
+        else pd.DataFrame({"runtime": []})
+    )
+
+    cad_joblog_df = load_joblog(run_dir, "cad_joblog")
+    cad_sketch_joblog_df = load_joblog(run_dir, "cad_sketch_joblog")
+    cad_joblog_df = pd.concat([cad_joblog_df, cad_sketch_joblog_df])
+
+    plot_csg(cad_joblog_df)
     plot_csg_ablation(df)
     plot_regex(df, regel_df)
     plot_regex_detail(df, regel_df)
