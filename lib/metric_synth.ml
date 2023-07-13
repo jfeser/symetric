@@ -51,9 +51,9 @@ module Params = struct
   [@@deriving yojson]
 
   let default_verbosity = 0
-  let default_exhaustive_width = 4
+  let default_exhaustive_width = 16
   let default_use_ranking = true
-  let default_extract = `Greedy
+  let default_extract = `Exhaustive
   let default_repair = `Guided
   let default_backwards_pass_repeats = 1
 
