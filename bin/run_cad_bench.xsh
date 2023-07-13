@@ -108,7 +108,7 @@ if run_sketch:
                 f"{job_name}.sk &> {job_name}.log"
             ]
             cmd = ' '.join(cmd) + '\n'
-        sketch_jobs.append(cmd)
+            sketch_jobs.append(cmd)
 
 if run_metric:
     for (d, max_cost) in benchmarks:
