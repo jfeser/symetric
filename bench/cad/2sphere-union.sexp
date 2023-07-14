@@ -1,5 +1,0 @@
-((ops ((Sphere ((center ((x 0) (y 0) (z 0))) (radius 1)))
-       (Sphere ((center ((x 1) (y 0) (z 0))) (radius 1)))
-       Union Inter Sub))
- (input ((-0.1 0 0) (0.1 0 0) (0.9 0 0) (1.1 0 0) (5 5 5)))
- (output (1 1 1 1 0)))
