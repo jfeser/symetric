@@ -102,7 +102,7 @@ if run_sketch:
                 f"symetric pixels -scaling 2 < {f} > {job_name}.in;",
                 f"sed 's/INFILE/{job_name}.in/' cad.sk > {job_name}.sk;",
                 f"perl -w ../../bin/timeout -t {tlimit} -s {mlimit}",
-                f"sketch -V5 --fe-output-test --fe-def SCALING=2 --fe-def DEPTH={height}",
+                f"sketch -V10 --fe-output-test --fe-def SCALING=2 --fe-def DEPTH={height}",
                 f"--bnd-inbits 10 --bnd-unroll-amnt 5 --bnd-cbits 4 --bnd-int-range 3000 --bnd-inline-amnt {height + 1}",
                 f"--slv-nativeints",
                 f"{job_name}.sk &> {job_name}.log"
