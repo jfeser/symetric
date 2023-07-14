@@ -70,7 +70,10 @@ def load(run_dir):
         if not fn.endswith(".json"):
             continue
         with open(os.path.join(run_dir, fn), "r") as f:
-            bench_json = json.load(f)
+            try:
+                bench_json = json.load(f)
+            except UnicodeDecodeError:
+                continue
 
         method = "-".join(fn.split("-")[:-1])
         if "program" in bench_json:
@@ -498,8 +501,7 @@ def plot_csg_ablation(df, filename="csg-ablation.pdf"):
             ]
         )
     ]
-    # TODO: ensure we only plot generated benchmarks
-    # df = df[df["bench"].str.startswith("bench")]
+    df = df[df["bench"].str.startswith("bench")]
     df.loc[~df["success"], "runtime"] = 1e10
 
     plot_method(df, ax, df[df["method"] == "metric"]["runtime"], "SyMetric")
