@@ -34,8 +34,8 @@ bench-regex:
 bench-regel:
 	mkdir -p runs/latest/regel
 	chmod a+rwx runs/latest/regel
-	docker run -it --rm -v $(shell pwd):/work localhost/regel:latest \
-		sh -c "cp /work/bin/regel_commands.txt /work/bin/parallel .; ant -buildfile resnax/build.xml resnax; mkdir -p /home/regel/exp/so/log; ./parallel --timeout 300 --eta -j 20 --joblog regel_joblog :::: regel_commands.txt"
+	docker run --rm -it -v $(shell pwd):/work localhost/regel:latest \
+		sh -c "cp /work/bin/regel_commands.txt /work/bin/parallel .; ant -buildfile resnax/build.xml resnax; mkdir -p /home/regel/exp/so/log; ./parallel --timeout 300 --eta -j 20 --joblog regel_joblog :::: regel_commands.txt; cp -r /home/regel/exp/so/log/* /work/runs/latest/regel"
 
 bench-tower:
 	mkdir -p runs/latest
