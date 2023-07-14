@@ -101,7 +101,7 @@ if run_sketch:
             cmd = [
                 f"symetric pixels -scaling 2 < {f} > {job_name}.in;",
                 f"sed 's/INFILE/{job_name}.in/' cad.sk > {job_name}.sk;",
-                f"timeout {tlimit}",
+                f"perl -w ../../bin/timeout -t {tlimit} -s {mlimit}",
                 f"sketch -V5 --fe-output-test --fe-def SCALING=2 --fe-def DEPTH={height}",
                 f"--bnd-inbits 10 --bnd-unroll-amnt 5 --bnd-cbits 4 --bnd-int-range 3000 --bnd-inline-amnt {height + 1}",
                 f"--slv-nativeints",
@@ -167,7 +167,7 @@ with open('cad_sketch_jobs', 'w') as f:
 parallel --will-cite -j 20 --eta --joblog cad_joblog :::: cad_jobs
 
 if run_sketch:
-    parallel --will-cite -j 1 --eta --joblog cad_sketch_joblog :::: cad_sketch_jobs
+    parallel --will-cite -j 20 --eta --joblog cad_sketch_joblog :::: cad_sketch_jobs
 
 # Local Variables:
 # mode: python

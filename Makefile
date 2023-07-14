@@ -12,6 +12,7 @@ build:
 build-container:
 	nix build .#buildContainer
 	./result > containers/symetric.tar
+	podman load < containers/symetric.tar
 	rm result
 
 container:

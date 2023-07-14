@@ -76,9 +76,11 @@
             contents = [
               self.packages.${system}.symetric
               sketch.defaultPackage.${system}
+              pkgs.procps
               pkgs.busybox
               pkgs.xonsh
               pkgs.gnumake
+              pkgs.perl
               parallel
             ];
             config = {
